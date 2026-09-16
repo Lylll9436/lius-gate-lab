@@ -1,0 +1,21 @@
+{
+  "title": {
+    "en": "Example output",
+    "zh": "示例成果"
+  },
+  "summary": {
+    "en": "Example description — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "visibility": "draft",
+  "order": 10,
+  "sections": [],
+  "properties": [],
+  "links": [],
+  "id": "example-output",
+  "people": [],
+  "buildingId": null,
+  "date": "2026-09-15",
+  "researchId": null,
+  "type": "paper"
+}

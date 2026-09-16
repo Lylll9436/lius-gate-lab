@@ -1,0 +1,9 @@
+Use case: logo-brand
+Asset type: single flat logo symbol for the header and favicon of LIU’S GATE, an urban analytics research lab.
+Primary request: Design ONE extremely simple, modern, flat 2D geometric gate/arch mark. A bold symmetrical frontal arch with two straight upright pillars and a clean open central doorway formed by negative space. Subtle architectural character, calm academic design, confident and memorable. The entire mark should read instantly at 24 pixels.
+Style/medium: crisp vector-like solid silhouette, two-dimensional flat graphic, precise clean edges.
+Composition/framing: one centered standalone symbol on a square canvas, occupying about 72% of the square, generous even transparent margin.
+Color palette: solid deep forest green #294D43 only.
+Scene/backdrop: genuinely transparent background with RGBA alpha, including the open doorway; no white rectangle and no simulated checkerboard.
+Text: none.
+Constraints: no words, letters, numbers, Chinese characters, logos within the logo, miniature city, skyline, blocks, pixels, isometric design, perspective, 3D, bevel, gradients, lighting, textures, shadows, outlines, enclosing badge, or mockup. No decorative detail. This is a minimal flat professional symbol.

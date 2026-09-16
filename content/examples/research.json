@@ -1,0 +1,19 @@
+{
+  "title": {
+    "en": "Example — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "summary": {
+    "en": "Example description — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "visibility": "draft",
+  "order": 10,
+  "sections": [],
+  "properties": [],
+  "links": [],
+  "id": "example-research",
+  "status": "active",
+  "people": [],
+  "buildingId": null
+}

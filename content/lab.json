@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 2,
+  "people": [
+    {
+      "id": "pengyuan-liu",
+      "title": {
+        "en": "Pengyuan Liu",
+        "zh": "Pengyuan Liu"
+      },
+      "summary": {
+        "en": "Lab supervisor at the University of Glasgow.",
+        "zh": "在格拉斯哥大学开展研究的实验室导师。"
+      },
+      "visibility": "published",
+      "order": 0,
+      "role": {
+        "en": "LAB SUPERVISOR",
+        "zh": "实验室导师"
+      },
+      "affiliation": {
+        "en": "University of Glasgow",
+        "zh": "格拉斯哥大学"
+      },
+      "photo": null,
+      "buildingId": "pengyuan-liu",
+      "sections": [],
+      "links": [],
+      "properties": []
+    },
+    {
+      "id": "yunlong-liu",
+      "title": {
+        "en": "Yunlong Liu",
+        "zh": "Yunlong Liu"
+      },
+      "summary": {
+        "en": "Student of Pengyuan Liu at the University of Glasgow.",
+        "zh": "Pengyuan Liu 的学生，在格拉斯哥大学开展研究。"
+      },
+      "visibility": "published",
+      "order": 1,
+      "role": {
+        "en": "RESEARCH STUDENT",
+        "zh": "研究生"
+      },
+      "affiliation": {
+        "en": "University of Glasgow",
+        "zh": "格拉斯哥大学"
+      },
+      "photo": null,
+      "buildingId": "yunlong-liu",
+      "sections": [],
+      "links": [],
+      "properties": []
+    },
+    {
+      "id": "qin-li",
+      "title": {
+        "en": "Qin Li",
+        "zh": "Qin Li"
+      },
+      "summary": {
+        "en": "Student of Pengyuan Liu at the University of Glasgow.",
+        "zh": "Pengyuan Liu 的学生，在格拉斯哥大学开展研究。"
+      },
+      "visibility": "published",
+      "order": 2,
+      "role": {
+        "en": "RESEARCH STUDENT",
+        "zh": "研究生"
+      },
+      "affiliation": {
+        "en": "University of Glasgow",
+        "zh": "格拉斯哥大学"
+      },
+      "photo": null,
+      "buildingId": "qin-li",
+      "sections": [],
+      "links": [],
+      "properties": []
+    }
+  ],
+  "research": [],
+  "events": [],
+  "outputs": [],
+  "notes": []
+}

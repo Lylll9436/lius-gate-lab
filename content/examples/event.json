@@ -1,0 +1,20 @@
+{
+  "title": {
+    "en": "Example — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "summary": {
+    "en": "Example description — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "visibility": "draft",
+  "order": 10,
+  "sections": [],
+  "properties": [],
+  "links": [],
+  "id": "example-event",
+  "date": "2026-01-01",
+  "category": "milestone",
+  "people": [],
+  "image": null
+}

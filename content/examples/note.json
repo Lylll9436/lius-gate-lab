@@ -1,0 +1,20 @@
+{
+  "title": {
+    "en": "Example note",
+    "zh": "示例研究记录"
+  },
+  "summary": {
+    "en": "Example description — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "visibility": "draft",
+  "order": 10,
+  "sections": [],
+  "properties": [],
+  "links": [],
+  "id": "example-note",
+  "people": [],
+  "buildingId": null,
+  "date": "2026-09-15",
+  "researchId": null
+}
