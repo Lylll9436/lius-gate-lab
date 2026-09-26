@@ -1543,7 +1543,7 @@ export function createCity(
   renderer.domElement.setAttribute('role', 'img');
   renderer.domElement.setAttribute(
     'aria-label',
-    "LIU'S GATE: a playful overview of the lab. All research content is also available below.",
+    "LIU'S GATE: a playful overview of the group. All research content is also available below.",
   );
   container.appendChild(renderer.domElement);
   const scene = new T.Scene(),

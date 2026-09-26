@@ -1,6 +1,6 @@
-# LIU’S GATE / 刘家门 — Glasgow Lab City
+# LIU’S GATE / 刘家门 — Urban Intelligence Group
 
-第十三版。实验室名称为「刘家门」，由 Pengyuan Liu 命名。默认进入城市探索，同时保留完整的学术阅读模式。内容和城市场景分开维护；新增人员、研究、活动、成果、研究记录及属性可使用统一目录。维护入口与规则详见 [MAINTENANCE.md](MAINTENANCE.md)。本轮与参考库的比较及模型调整见 [MODEL_STUDY.md](MODEL_STUDY.md)。
+第十三版。研究组正式名称为 Urban Intelligence Group（城市智能研究组）；保留 Pengyuan Liu 命名的「刘家门 / LIU’S GATE」作为网站与小城的名字。默认进入城市探索，同时保留完整的学术阅读模式。内容和城市场景分开维护；新增人员、研究、活动、成果、研究记录及属性可使用统一目录。维护入口与规则详见 [MAINTENANCE.md](MAINTENANCE.md)。本轮与参考库的比较及模型调整见 [MODEL_STUDY.md](MODEL_STUDY.md)。
 
 ## 启动
 

@@ -36,8 +36,8 @@ const places: Building[] = [
     short: t("LIU'S GATE", '刘家门'),
     category: t('CENTRAL LANDMARK', '中央地标'),
     summary: t(
-      'The name of our lab, given by Pengyuan Liu. A shared gateway into our people, research and ideas.',
-      '由 Pengyuan Liu 为实验室命名的「刘家门」，是认识团队、研究与想法的共同入口。',
+      'The name of our group, given by Pengyuan Liu. A shared gateway into our people, research and ideas.',
+      '由 Pengyuan Liu 为研究组命名的「刘家门」，是认识团队、研究与想法的共同入口。',
     ),
     style: t('Sandstone triumphal arch', '砂岩凯旋门'),
     architecture: t(
@@ -55,8 +55,8 @@ const places: Building[] = [
       {
         heading: t('A name, a meeting place', '一个名字，一处相聚之地'),
         body: t(
-          'Pengyuan Liu named our lab LIU’S GATE. Here, LIU’S GATE gives that name a place at the centre of our city. Our work in urban analytics begins with the people who come together here.',
-          'Pengyuan Liu 为实验室起名「刘家门」。LIU’S GATE 将这个名字化为城市中央的一处地标。我们的城市分析研究，从在这里相聚的人开始。',
+          'Pengyuan Liu named our group LIU’S GATE. Here, LIU’S GATE gives that name a place at the centre of our city. Our work in urban analytics begins with the people who come together here.',
+          'Pengyuan Liu 为研究组起名「刘家门」。LIU’S GATE 将这个名字化为城市中央的一处地标。我们的城市分析研究，从在这里相聚的人开始。',
         ),
       },
       {
@@ -79,8 +79,8 @@ const places: Building[] = [
   {
     id: 'town-hall',
     name: t('Town Hall', '市政厅'),
-    short: t('The lab', '实验室'),
-    category: t('ABOUT THE LAB', '关于实验室'),
+    short: t('The group', '研究组'),
+    category: t('ABOUT THE GROUP', '关于研究组'),
     summary: t(
       'The shared home of our story, our questions and the city we are building together.',
       '记录团队的起点、共同的研究问题，以及我们一起建设的小城。',
@@ -101,8 +101,8 @@ const places: Building[] = [
       {
         heading: t('Our beginning', '我们的起点'),
         body: t(
-          'This is the first year of our lab. Based at the University of Glasgow, our community brings together Pengyuan Liu and his students Yunlong Liu and Qin Li around urban analytics.',
-          '这是实验室成立的第一年。我们在格拉斯哥大学开展城市分析相关研究，团队包括导师 Pengyuan Liu 及其学生 Yunlong Liu 和 Qin Li。',
+          'This is the first year of the Urban Intelligence Group. Based at the University of Glasgow, our community brings together Pengyuan Liu and his students Yunlong Liu and Qin Li around urban analytics.',
+          '这是研究组成立的第一年。我们在格拉斯哥大学开展城市分析相关研究，团队包括导师 Pengyuan Liu 及其学生 Yunlong Liu 和 Qin Li。',
         ),
       },
       {
@@ -115,8 +115,8 @@ const places: Building[] = [
       {
         heading: t('A living history', '生长中的历史'),
         body: t(
-          'The city begins with its founding members. New people and projects will find a place here, while completed research becomes part of the city archive. Architectural eras tell Glasgow’s story; the lab’s timeline starts with this first chapter.',
-          '小城从创始成员开始。新成员与新项目将在这里找到自己的位置，已完成的研究则进入城市档案馆。建筑年代讲述格拉斯哥的故事；实验室的时间线从这一章起步。',
+          'The city begins with its founding members. New people and projects will find a place here, while completed research becomes part of the city archive. Architectural eras tell Glasgow’s story; the group’s timeline starts with this first chapter.',
+          '小城从创始成员开始。新成员与新项目将在这里找到自己的位置，已完成的研究则进入城市档案馆。建筑年代讲述格拉斯哥的故事；研究组的时间线从这一章起步。',
         ),
       },
     ],
@@ -127,10 +127,10 @@ const places: Building[] = [
       {
         id: 'pengyuan-liu',
         name: 'Pengyuan Liu',
-        role: t('LAB SUPERVISOR', '实验室导师'),
+        role: t('GROUP SUPERVISOR', '研究组导师'),
         summary: t(
-          'Lab supervisor at the University of Glasgow.',
-          '在格拉斯哥大学开展研究的实验室导师。',
+          'Group supervisor at the University of Glasgow.',
+          '在格拉斯哥大学开展研究的研究组导师。',
         ),
         x: 1,
         z: 5,
@@ -209,7 +209,7 @@ const places: Building[] = [
             : 'red-tenement',
       color: p.color,
       sections: [
-        { heading: t('At the lab', '在实验室'), body: p.summary },
+        { heading: t('In the group', '在研究组'), body: p.summary },
         {
           heading: t('Research & publications', '研究与成果'),
           body: t(
@@ -246,8 +246,8 @@ const places: Building[] = [
       {
         heading: t('Projects taking shape', '研究正在展开'),
         body: t(
-          'The district is ready for the lab’s first project records. Each project will bring together a research question, methods, data, people and outputs. No project records have been published in this founding edition.',
-          '街区已为实验室的首批项目记录预留位置。每个项目将整合研究问题、方法、数据、成员与成果。此创立版暂未发布具体项目记录。',
+          'The district is ready for the group’s first project records. Each project will bring together a research question, methods, data, people and outputs. No project records have been published in this founding edition.',
+          '街区已为研究组的首批项目记录预留位置。每个项目将整合研究问题、方法、数据、成员与成果。此创立版暂未发布具体项目记录。',
         ),
       },
       {

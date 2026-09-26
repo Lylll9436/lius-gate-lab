@@ -378,14 +378,14 @@ export function LabContent({
         </div>
         <p className="welcome-lead">
           {tr(
-            'Urban analytics, at the University of Glasgow.',
-            '格拉斯哥大学的城市分析研究团队。',
+            'Urban Intelligence Group, University of Glasgow.',
+            '格拉斯哥大学城市智能研究组。',
           )}
         </p>
         <p>
           {tr(
             'Our first year begins with a small city, named LIU’S GATE by Pengyuan Liu.',
-            '我们用一座小城开启实验室的第一年，Pengyuan Liu 为它取名「刘家门」。',
+            '我们用一座小城开启研究组的第一年，Pengyuan Liu 为它取名「刘家门」。',
           )}
         </p>
         <div className="welcome-addresses">
@@ -436,7 +436,7 @@ export function LabContent({
         <h3>{tr('The first chapter', '第一章')}</h3>
         <p>
           {tr(
-            'The riverside corner park is part of our lab’s shared home. Future group photos, celebrations and small surprises will find a place here.',
+            'The riverside corner park is part of our group’s shared home. Future group photos, celebrations and small surprises will find a place here.',
             '滨水街角公园是我们共同的家的一部分。未来的团队合影、节日庆典与小彩蛋将在这里找到位置。',
           )}
         </p>

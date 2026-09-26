@@ -231,17 +231,17 @@ export default function Home() {
   }, [mode, inspect, b, panelOpen]);
   const navLabel = (id: ContentId) =>
     id === 'town-hall'
-      ? tr('The lab', '实验室')
+      ? tr('The group', '研究组')
       : id === 'people'
         ? tr('People', '人员')
         : id === 'research-studio'
           ? tr('Research', '研究')
           : id === 'city-archive'
             ? tr('Archive', '成果')
-            : tr('Lab life', '生活');
+            : tr('Group life', '生活');
   const readingTitle = (id: ContentId) =>
     id === 'town-hall'
-      ? tr('About the lab', '关于实验室')
+      ? tr('About the group', '关于研究组')
       : id === 'research-studio'
         ? tr('Research', '研究方向与项目')
         : id === 'city-archive'
@@ -274,7 +274,7 @@ export default function Home() {
           LIU’S GATE{zh && <span>刘家门</span>}
         </a>
         <span className="header-affiliation">
-          Urban Analytics · University of Glasgow
+          Urban Intelligence Group · University of Glasgow
         </span>
         <button
           className="language"
@@ -306,20 +306,20 @@ export default function Home() {
         <span>
           {mode === 'city'
             ? tr('First year · Glasgow', '创立第一年 · 格拉斯哥')
-            : tr('The same lab, page by page.', '同一份资料，按页面阅读。')}
+            : tr('The same group, page by page.', '同一份资料，按页面阅读。')}
         </span>
       </div>
       {error && (
         <p className="scene-fallback" role="alert">
           {tr(
-            'The city could not load. The complete lab content is available in reading mode.',
-            '城市暂时无法加载，全部实验室资料仍可在常规阅读模式中访问。',
+            'The city could not load. The complete group content is available in reading mode.',
+            '城市暂时无法加载，全部研究组资料仍可在常规阅读模式中访问。',
           )}
         </p>
       )}
       <nav
         className="district-navigation"
-        aria-label={tr('Lab destinations', '实验室内容入口')}
+        aria-label={tr('Group destinations', '研究组内容入口')}
       >
         {destinations.map((id) => (
           <a
@@ -340,12 +340,12 @@ export default function Home() {
         className="city-section"
         id="city"
         hidden={mode !== 'city'}
-        aria-label={tr('Interactive lab city', '交互实验室城市')}
+        aria-label={tr('Interactive research group city', '交互研究组城市')}
       >
         <div className="exploration-heading">
           <div>
             <span className="overline">LIU’S GATE / GLASGOW</span>
-            <h1>{tr('The lab is a small city.', '实验室，是一座小城。')}</h1>
+            <h1>{tr('A research group, a small city.', '研究组，是一座小城。')}</h1>
           </div>
           <div>
             <button
@@ -379,8 +379,8 @@ export default function Home() {
                 <output className="loading">
                   {error
                     ? tr(
-                        'The interactive overview is unavailable. All lab content is below.',
-                        '交互概览暂时无法加载，实验室内容仍可在下方阅读。',
+                        'The interactive overview is unavailable. All group content is below.',
+                        '交互概览暂时无法加载，研究组内容仍可在下方阅读。',
                       )
                     : tr('Loading the city…', '正在加载城市…')}
                 </output>
@@ -433,8 +433,8 @@ export default function Home() {
                 <strong>{tr('Corner park', '街角公园')}</strong>
                 <span>
                   {tr(
-                    'Lab life · Archive & riverside',
-                    '实验室生活 · 档案与滨水区',
+                    'Group life · Archive & riverside',
+                    '研究组生活 · 档案与滨水区',
                   )}
                 </span>
               </div>
@@ -586,8 +586,8 @@ export default function Home() {
             className="place-dossier"
             hidden={!panelOpen}
             aria-label={tr(
-              'Selected place and lab content',
-              '当前位置与实验室资料',
+              'Selected place and group content',
+              '当前位置与研究组资料',
             )}
           >
             <div className="dossier-heading">
@@ -644,7 +644,7 @@ export default function Home() {
             ))}
             <button onClick={() => navigate('city', 'corner-park')}>
               <strong>{tr('Corner park', '街角公园')}</strong>
-              <span>{tr('Lab life & memories', '生活与记忆')}</span>
+              <span>{tr('Group life & memories', '生活与记忆')}</span>
               <ArrowUpRight size={15} />
             </button>
           </div>
@@ -720,7 +720,7 @@ export default function Home() {
       <footer className="site-footer">
         <div>
           <strong>{zh ? 'LIU’S GATE · 刘家门' : 'LIU’S GATE'}</strong>
-          <span>Urban Analytics · University of Glasgow</span>
+          <span>Urban Intelligence Group · University of Glasgow</span>
         </div>
         <span>{tr('Founding edition', '创立版')}</span>
         <button

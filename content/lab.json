@@ -8,14 +8,14 @@
         "zh": "Pengyuan Liu"
       },
       "summary": {
-        "en": "Lab supervisor at the University of Glasgow.",
-        "zh": "在格拉斯哥大学开展研究的实验室导师。"
+        "en": "Group supervisor at the University of Glasgow.",
+        "zh": "在格拉斯哥大学开展研究的研究组导师。"
       },
       "visibility": "published",
       "order": 0,
       "role": {
-        "en": "LAB SUPERVISOR",
-        "zh": "实验室导师"
+        "en": "GROUP SUPERVISOR",
+        "zh": "研究组导师"
       },
       "affiliation": {
         "en": "University of Glasgow",
