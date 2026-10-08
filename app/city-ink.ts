@@ -43,7 +43,7 @@ export function createCityInk(
       selection: { value: target.texture },
       hasSelection: { value: 0 },
       selectionStep: { value: new T.Vector2() },
-      selectionColor: { value: new T.Color('#e8b45b') },
+      selectionColor: { value: new T.Color('#f0b85a') },
     },
     depthTest: false,
     depthWrite: false,
@@ -95,9 +95,10 @@ export function createCityInk(
       pixelHeight = Math.max(1, Math.round(height * dpr));
       mask?.setSize(pixelWidth, pixelHeight);
       maskMaterial.uniforms.resolution.value.set(pixelWidth, pixelHeight);
+      // A one-pixel ring just outside the silhouette of the selected building.
       material.uniforms.selectionStep.value.set(
-        1.8 / Math.max(width, 1),
-        1.8 / Math.max(height, 1),
+        1.05 / Math.max(width, 1),
+        1.05 / Math.max(height, 1),
       );
       target.setSize(
         Math.max(1, Math.round(width * dpr)),

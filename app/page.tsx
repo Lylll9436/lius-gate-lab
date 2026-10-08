@@ -35,6 +35,9 @@ export default function Home() {
   const mount = useRef<HTMLDivElement>(null),
     api = useRef<CityAPI | null>(null),
     pendingScroll = useRef<ContentId | null>(null),
+    // While the page scrolls itself to a chapter, the camera heads straight there
+    // instead of visiting every chapter the scroll passes on the way.
+    scrollLock = useRef<{ chapter: ContentId; until: number } | null>(null),
     viewRef = useRef<View>({ mode: 'reading', content: 'overview' });
   const [locale, setLocale] = useState<Locale>(() =>
     typeof navigator !== 'undefined' && /^zh/i.test(navigator.language)
@@ -202,6 +205,9 @@ export default function Home() {
     if (mode !== 'reading' || !pendingScroll.current) return;
     const id = pendingScroll.current;
     pendingScroll.current = null;
+    const chapter = id === 'overview' ? 'overview' : chapterFor(id);
+    scrollLock.current = { chapter, until: performance.now() + 1500 };
+    setActive(chapter);
     const frame = requestAnimationFrame(() => {
       const target =
         document.getElementById(`read-${id}`) ??
@@ -228,6 +234,11 @@ export default function Home() {
       )) {
         if (section.getBoundingClientRect().top <= line)
           current = section.dataset.chapter as ContentId;
+      }
+      const lock = scrollLock.current;
+      if (lock) {
+        if (performance.now() < lock.until && current !== lock.chapter) return;
+        scrollLock.current = null;
       }
       setActive((previous) => (previous === current ? previous : current));
       // Keep a deeper address (a person) while their chapter is the active one.

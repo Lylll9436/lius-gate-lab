@@ -479,7 +479,7 @@ export function PersonCard({
           {home && onVisit && (
             <button className="link-action quiet" onClick={() => onVisit(home.id)}>
               <PlaceGlyph kind="house" size={15} />
-              {zh ? `住在 ${home.style.zh}` : home.style.en}
+              {zh ? `住所 · ${home.style.zh}` : `Home · ${home.style.en}`}
             </button>
           )}
         </div>
@@ -541,14 +541,8 @@ export function LabContent({
       <div className="welcome">
         <p className="record-lead">
           {tr(
-            'Urban Intelligence Group, University of Glasgow. A research group, built as a small city.',
-            '格拉斯哥大学城市智能研究组。一个研究组，建成一座小城。',
-          )}
-        </p>
-        <p>
-          {tr(
-            'Each building is a chapter: the Town Hall tells our story, the terraces house our people, the studio holds the work in progress and the archive keeps what is finished.',
-            '每栋建筑都是一个章节：市政厅讲述我们的故事，联排住宅住着成员，工作室放着进行中的研究，档案馆收藏已完成的成果。',
+            'Urban Intelligence Group, University of Glasgow. The site is organised as a small city; choose a building to read that part of the group’s record.',
+            '格拉斯哥大学城市智能研究组。本站按一座小城组织，选择一栋建筑阅读对应内容。',
           )}
         </p>
         <div className="address-list">
@@ -569,8 +563,8 @@ export function LabContent({
       <div className="park">
         <p className="record-lead">
           {tr(
-            'The riverside corner park is the group’s shared garden. Group photos, celebrations and small discoveries will be kept here.',
-            '滨水街角公园是研究组共同的花园。团队合影、节日庆典与小小发现都会保存在这里。',
+            'Group photos, events and announcements are kept in the corner park.',
+            '研究组的合影、活动与公告保存在街角公园。',
           )}
         </p>
         {eventRecords.length ? (
@@ -584,9 +578,9 @@ export function LabContent({
         ) : (
           <ul className="empty-shelves">
             {[
-              tr('Group photos', '团队合影'),
-              tr('Celebrations', '节日庆典'),
-              tr('Small discoveries', '小小发现'),
+              tr('Group photos', '合影'),
+              tr('Events', '活动'),
+              tr('Announcements', '公告'),
             ].map((label) => (
               <li key={label}>
                 <span>{label}</span>
@@ -596,7 +590,7 @@ export function LabContent({
           </ul>
         )}
         <button className="link-action" onClick={() => onOpen('lius-gate')}>
-          {tr('The story behind our name', '「刘家门」的由来')}
+          {tr('About the name', '关于名字')}
           <ArrowUpRight size={14} />
         </button>
       </div>

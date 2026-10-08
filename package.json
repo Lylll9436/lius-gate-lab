@@ -7,21 +7,18 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "node --experimental-strip-types scripts/content.mjs validate && node scripts/check-city.mjs && node scripts/check-physics.mjs && node scripts/check-hover.mjs && node scripts/check-detail.mjs && vinext build",
+    "build": "node --experimental-strip-types scripts/content.mjs validate && node scripts/check-town.mjs && node scripts/check-hover.mjs && vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "check:city": "node scripts/check-city.mjs",
+    "check:town": "node scripts/check-town.mjs",
     "check:navigation": "node scripts/check-navigation.mjs",
-    "check:physics": "node scripts/check-physics.mjs",
-    "check:inspection": "node scripts/check-inspection.mjs",
     "check:content": "node --experimental-strip-types scripts/check-content.mjs",
     "content": "node --experimental-strip-types scripts/content.mjs",
     "format": "oxfmt",
     "check:hover": "node scripts/check-hover.mjs",
-    "check:detail": "node scripts/check-detail.mjs",
     "build:pages": "node scripts/build-pages.mjs",
-    "check": "node scripts/check-city.mjs && node scripts/check-physics.mjs && node scripts/check-navigation.mjs && node scripts/check-hover.mjs && node scripts/check-content.mjs && node scripts/check-inspection.mjs && node scripts/check-detail.mjs"
+    "check": "node scripts/check-town.mjs && node scripts/check-navigation.mjs && node scripts/check-hover.mjs && node scripts/check-content.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

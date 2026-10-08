@@ -129,7 +129,7 @@ export function CityStage({
           aria-hidden="true"
         >
           <strong>{tr('Corner park', '街角公园')}</strong>
-          <span>{tr('Group life · Riverside', '研究组生活 · 滨水区')}</span>
+          <span>{tr('Group life · Harbour', '研究组生活 · 港口')}</span>
         </div>
       </div>
 
@@ -322,10 +322,10 @@ export function CityStage({
                 {b
                   ? b.category[locale]
                   : ctl.content === 'people'
-                    ? tr('Residential gardens', '花园住区')
+                    ? tr('The crescent', '新月联排')
                     : ctl.content === 'corner-park'
-                      ? tr('Riverside', '滨水区')
-                      : tr('The city', '小城')}
+                      ? tr('Harbour', '港口')
+                      : tr('Overview', '总览')}
               </span>
               <h2 id="dossier-title" tabIndex={-1}>
                 {titleFor(ctl.content, locale)}

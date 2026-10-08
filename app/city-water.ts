@@ -87,7 +87,7 @@ function createCreekMaterial() {
   return { material, uniforms };
 }
 
-export function createIslandWater() {
+export function createIslandWater(level = 0.0725, bedLevel = -0.38) {
   const { material, uniforms } = createCreekMaterial();
   const geometry = new T.PlaneGeometry(320, 320, 1, 1);
   geometry.rotateX(-Math.PI / 2);
@@ -101,7 +101,7 @@ export function createIslandWater() {
   })(material.onBeforeCompile.bind(material));
   material.customProgramCacheKey = () => 'lius-island-water-v1';
   const mesh = new T.Mesh(geometry, material);
-  mesh.position.y = 0.0725;
+  mesh.position.y = level;
   mesh.name = 'island-sea';
   mesh.renderOrder = 2;
   mesh.castShadow = false;
@@ -111,7 +111,7 @@ export function createIslandWater() {
     new T.MeshBasicMaterial({ color: '#659998', depthWrite: false }),
   );
   bottom.rotation.x = -Math.PI / 2;
-  bottom.position.y = -0.38;
+  bottom.position.y = bedLevel;
   bottom.name = 'sea-colour-bed';
   bottom.renderOrder = -2;
   const dayBed = new T.Color('#659998'),

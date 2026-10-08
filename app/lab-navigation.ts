@@ -40,8 +40,8 @@ export function titleFor(id: ContentId, locale: Locale) {
     buildings.find((b) => b.id === id.replace(/^place:/, ''))?.name[locale] ??
     (
       {
-        overview: { en: 'Welcome to LIU’S GATE', zh: '欢迎来到刘家门' },
-        people: { en: 'Our people', zh: '研究团队' },
+        overview: { en: 'LIU’S GATE', zh: '刘家门' },
+        people: { en: 'People', zh: '成员' },
         'corner-park': {
           en: 'Corner park · Group life',
           zh: '街角公园 · 研究组生活',

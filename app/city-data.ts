@@ -36,41 +36,41 @@ const places: Building[] = [
     short: t("LIU'S GATE", '刘家门'),
     category: t('CENTRAL LANDMARK', '中央地标'),
     summary: t(
-      'The name of our group, given by Pengyuan Liu. A shared gateway into our people, research and ideas.',
-      '由 Pengyuan Liu 为研究组命名的「刘家门」，是认识团队、研究与想法的共同入口。',
+      'The gate gives the group’s name a place at the centre of the city. The avenues to the other districts start here.',
+      '拱门把研究组的名字放在小城中央，通往各区的大道由此出发。',
     ),
-    style: t('Sandstone triumphal arch', '砂岩凯旋门'),
+    style: t('Sandstone arch', '砂岩拱门'),
     architecture: t(
-      'A walk-through stone arch anchors the civic axis and the four surrounding neighbourhoods.',
-      '可穿行的石砌拱门，连接公共主轴与周围四个街区。',
+      'A sandstone arch standing on a reflecting pool, with the plaza and the avenues around it.',
+      '立在倒影池上的砂岩拱门，四周是广场与大道。',
     ),
     x: 6,
     z: 6,
     w: 2,
     d: 2,
-    height: 5.7,
+    height: 6,
     model: 'gate',
     color: '#d7c49e',
     sections: [
       {
-        heading: t('A name, a meeting place', '一个名字，一处相聚之地'),
+        heading: t('The name', '名字'),
         body: t(
-          'Pengyuan Liu named our group LIU’S GATE. Here, LIU’S GATE gives that name a place at the centre of our city. Our work in urban analytics begins with the people who come together here.',
-          'Pengyuan Liu 为研究组起名「刘家门」。LIU’S GATE 将这个名字化为城市中央的一处地标。我们的城市分析研究，从在这里相聚的人开始。',
+          'Pengyuan Liu named the group LIU’S GATE. The arch at the centre of the city stands for that name, and the rest of the city is arranged around it.',
+          'Pengyuan Liu 为研究组取名「刘家门」。小城中央的拱门代表这个名字，其余部分都围绕它布置。',
         ),
       },
       {
-        heading: t('The city plan', '城市的规划'),
+        heading: t('Layout', '布局'),
         body: t(
-          'The civic quarter sits to the north, residential gardens to the west, the research campus to the east and the archive beside the southern waterfront. A walkable street network connects them through the central square.',
-          '北侧为公共文化区，西侧为花园住区，东侧为研究园区，南侧档案馆连接滨水空间。连续的步行街网通过中央广场将它们串联。',
+          'The Town Hall (about the group) stands north of the plaza. The crescent of homes (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',
+          '广场北侧是市政厅（研究组介绍），西侧是新月联排（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。',
         ),
       },
       {
-        heading: t('Explore together', '一起探索'),
+        heading: t('How to use the site', '使用方式'),
         body: t(
-          'Follow the city tour, select a building, or open the planning view to discover how the neighbourhoods fit together.',
-          '跟随城市导览、选择一栋建筑，或打开规划视图，了解各个街区如何彼此连接。',
+          'Scroll to read the chapters in order, or switch to the city view to click on buildings, follow the tour and open the cutaway views.',
+          '向下滚动按顺序阅读各章，或切换到小城视图点击建筑、跟随导览、查看建筑剖面。',
         ),
       },
     ],
@@ -79,44 +79,44 @@ const places: Building[] = [
   {
     id: 'town-hall',
     name: t('Town Hall', '市政厅'),
-    short: t('The group', '研究组'),
+    short: t('About', '关于'),
     category: t('ABOUT THE GROUP', '关于研究组'),
     summary: t(
-      'The shared home of our story, our questions and the city we are building together.',
-      '记录团队的起点、共同的研究问题，以及我们一起建设的小城。',
+      'The Urban Intelligence Group is a research group in urban analytics at the University of Glasgow, led by Pengyuan Liu.',
+      '城市智能研究组是格拉斯哥大学一个从事城市分析的研究组，由 Pengyuan Liu 领导。',
     ),
     style: t('Gothic Revival', '哥特复兴'),
     architecture: t(
-      'A sandstone tower, pointed windows and slate roofs draw on Glasgow’s historic university architecture.',
-      '砂岩塔楼、尖拱窗与板岩屋顶，取意于格拉斯哥大学的历史建筑。',
+      'A sandstone hall with a clock tower. The clock keeps Glasgow time.',
+      '带钟楼的砂岩市政厅。钟面显示格拉斯哥当地时间。',
     ),
     x: 4,
     z: 1,
     w: 2,
     d: 3,
-    height: 7,
+    height: 9.5,
     model: 'hall',
     color: '#c8b18a',
     sections: [
       {
-        heading: t('Our beginning', '我们的起点'),
+        heading: t('The group', '研究组'),
         body: t(
-          'This is the first year of the Urban Intelligence Group. Based at the University of Glasgow, our community brings together Pengyuan Liu and his students Yunlong Liu and Qin Li around urban analytics.',
-          '这是研究组成立的第一年。我们在格拉斯哥大学开展城市分析相关研究，团队包括导师 Pengyuan Liu 及其学生 Yunlong Liu 和 Qin Li。',
+          'The group brings together Pengyuan Liu and the research students Yunlong Liu and Qin Li. It is based at the University of Glasgow and works on urban analytics.',
+          '研究组由导师 Pengyuan Liu 与研究生 Yunlong Liu、Qin Li 组成，隶属格拉斯哥大学，研究方向为城市分析。',
         ),
       },
       {
-        heading: t('Research in the city', '城市中的研究'),
+        heading: t('Research focus', '研究方向'),
         body: t(
-          'Urban analytics is the focus of our work. The research district will introduce each project through its questions, methods, data and people as the team adds its research records.',
-          '城市分析是我们的研究方向。随着团队补充研究记录，办公区将通过研究问题、方法、数据与参与成员介绍各个项目。',
+          'Urban analytics: using spatial data, statistics and computational methods to understand how cities work. Project pages will be added to the Research chapter as work is published.',
+          '城市分析：用空间数据、统计与计算方法理解城市的运行。研究项目将随成果发表陆续加入「研究」一章。',
         ),
       },
       {
-        heading: t('A living history', '生长中的历史'),
+        heading: t('This site', '关于本站'),
         body: t(
-          'The city begins with its founding members. New people and projects will find a place here, while completed research becomes part of the city archive. Architectural eras tell Glasgow’s story; the group’s timeline starts with this first chapter.',
-          '小城从创始成员开始。新成员与新项目将在这里找到自己的位置，已完成的研究则进入城市档案馆。建筑年代讲述格拉斯哥的故事；研究组的时间线从这一章起步。',
+          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive. All content is maintained in one catalogue file in the repository.',
+          '本站按一座小城组织：每一章对应一栋建筑，完成的工作从工作室转入档案馆。全部内容由仓库中的一个目录文件统一维护。',
         ),
       },
     ],
@@ -130,7 +130,7 @@ const places: Building[] = [
         role: t('GROUP SUPERVISOR', '研究组导师'),
         summary: t(
           'Group supervisor at the University of Glasgow.',
-          '在格拉斯哥大学开展研究的研究组导师。',
+          '格拉斯哥大学，研究组导师。',
         ),
         x: 1,
         z: 5,
@@ -142,8 +142,8 @@ const places: Building[] = [
         name: 'Yunlong Liu',
         role: t('RESEARCH STUDENT', '研究生'),
         summary: t(
-          'Student of Pengyuan Liu at the University of Glasgow.',
-          'Pengyuan Liu 的学生，在格拉斯哥大学开展研究。',
+          'Research student supervised by Pengyuan Liu at the University of Glasgow.',
+          '格拉斯哥大学研究生，导师 Pengyuan Liu。',
         ),
         x: 3,
         z: 5,
@@ -155,8 +155,8 @@ const places: Building[] = [
         name: 'Qin Li',
         role: t('RESEARCH STUDENT', '研究生'),
         summary: t(
-          'Student of Pengyuan Liu at the University of Glasgow.',
-          'Pengyuan Liu 的学生，在格拉斯哥大学开展研究。',
+          'Research student supervised by Pengyuan Liu at the University of Glasgow.',
+          '格拉斯哥大学研究生，导师 Pengyuan Liu。',
         ),
         x: 3,
         z: 8,
@@ -176,24 +176,24 @@ const places: Building[] = [
           ? 'Sandstone end terrace'
           : p.id === 'qin-li'
             ? 'Gabled sandstone house'
-            : 'Victorian red sandstone terrace',
+            : 'Red sandstone terrace',
         p.model === 'villa'
           ? '砂岩联排端户'
           : p.id === 'qin-li'
-            ? '浅砂岩山墙住宅'
-            : '维多利亚红砂岩联排',
+            ? '山墙砂岩住宅'
+            : '红砂岩联排',
       ),
       architecture: t(
         p.model === 'villa'
-          ? 'A sandstone end terrace with a slate roof, a dormer and a deep bay window, facing the shared residential street.'
+          ? 'A blonde sandstone terrace with a bay window, a dormer and a green front door.'
           : p.id === 'qin-li'
-            ? 'A pale sandstone home with a front-facing gable, three sash windows, a round fanlight and a green entrance.'
-            : 'A red sandstone terrace with a continuous bay, six-pane sash windows, fine iron railings and paired chimney pots.',
+            ? 'A pale sandstone house with a front gable, a bay window and a dark red door.'
+            : 'A red sandstone terrace with a bay window, a dormer and a blue front door.',
         p.model === 'villa'
-          ? '朝向共享街道的砂岩联排端户，配以板岩屋顶、老虎窗、门廊与凸窗。'
+          ? '浅砂岩联排，带凸窗、老虎窗和绿色大门。'
           : p.id === 'qin-li'
-            ? '浅色砂岩住宅，以朝街山墙、三联推拉窗、圆形门楣窗与绿色入口形成自己的表情。'
-            : '红砂岩联排住宅，配有贯通凸窗、六格推拉窗、细铁栏杆与成对烟囱帽。',
+            ? '浅色砂岩住宅，带朝街山墙、凸窗和深红色大门。'
+            : '红砂岩联排，带凸窗、老虎窗和蓝色大门。',
       ),
       x: p.x,
       z: p.z,
@@ -209,12 +209,12 @@ const places: Building[] = [
             : 'red-tenement',
       color: p.color,
       sections: [
-        { heading: t('In the group', '在研究组'), body: p.summary },
+        { heading: t('Role', '身份'), body: p.summary },
         {
-          heading: t('Research & publications', '研究与成果'),
+          heading: t('Research and publications', '研究与成果'),
           body: t(
-            'Research interests, project contributions and selected publications will be added here.',
-            '研究兴趣、项目贡献与代表性成果将在此补充。',
+            'Research interests, projects and selected publications will be listed here.',
+            '研究兴趣、项目与代表性成果将在此列出。',
           ),
         },
       ],
@@ -224,37 +224,37 @@ const places: Building[] = [
   {
     id: 'research-studio',
     name: t('Research Studio', '研究工作室'),
-    short: t('Research', '研究项目'),
-    category: t('RESEARCH DISTRICT', '研究街区'),
+    short: t('Research', '研究'),
+    category: t('CURRENT RESEARCH', '进行中的研究'),
     summary: t(
-      'A place for the questions, methods and collaborations behind our research.',
-      '展示研究问题、方法与合作过程的空间。',
+      'Current research projects of the group: their questions, methods, data and people.',
+      '研究组进行中的项目：研究问题、方法、数据与参与成员。',
     ),
-    style: t('Contemporary campus', '现代校园建筑'),
+    style: t('Contemporary campus', '当代校园建筑'),
     architecture: t(
-      'Glazed workspaces and a planted roof introduce a contemporary layer to the sandstone city.',
-      '玻璃工作空间与种植屋顶，为砂岩小城带来当代建筑的层次。',
+      'A glass studio with a green roof and solar panels, next to a reserved plot for future projects.',
+      '带种植屋面和太阳能板的玻璃工作室，旁边是为后续项目预留的地块。',
     ),
     x: 10,
     z: 2,
     w: 2,
     d: 2,
-    height: 4,
+    height: 5,
     model: 'studio',
     color: '#799c9b',
     sections: [
       {
-        heading: t('Projects taking shape', '研究正在展开'),
+        heading: t('Projects', '项目'),
         body: t(
-          'The district is ready for the group’s first project records. Each project will bring together a research question, methods, data, people and outputs. No project records have been published in this founding edition.',
-          '街区已为研究组的首批项目记录预留位置。每个项目将整合研究问题、方法、数据、成员与成果。此创立版暂未发布具体项目记录。',
+          'No project records have been published yet. Each project page will list its research question, methods, data, people and outputs.',
+          '目前尚未发布项目记录。每个项目页面将列出研究问题、方法、数据、参与成员与成果。',
         ),
       },
       {
-        heading: t('A district that grows', '逐渐发展的街区'),
+        heading: t('How records are added', '记录维护'),
         body: t(
-          'As projects are added, new workspaces can occupy neighbouring plots. Completed projects will remain connected to their people and to the city archive.',
-          '随着项目增加，新的工作空间可以入驻相邻地块。完成的项目仍将保留与参与成员及城市档案馆的联系。',
+          'Projects are added to the catalogue as records. When a project is marked completed it moves to the Archive automatically, keeping its links to people and outputs.',
+          '项目以记录形式加入目录。项目标记为完成后自动转入档案馆，并保留与成员和成果的关联。',
         ),
       },
     ],
@@ -263,37 +263,37 @@ const places: Building[] = [
   {
     id: 'city-archive',
     name: t('City Archive', '城市档案馆'),
-    short: t('Archive', '档案馆'),
-    category: t('COMPLETED RESEARCH', '研究成果'),
+    short: t('Publications', '成果'),
+    category: t('PUBLICATIONS & RESOURCES', '成果与资源'),
     summary: t(
-      'The city’s collective memory: completed projects, publications and open resources.',
-      '小城的共同记忆：已完成的项目、论文与开放资源。',
+      'Completed projects, publications, datasets and software from the group.',
+      '研究组已完成的项目、论文、数据集与软件。',
     ),
     style: t('Industrial heritage', '工业遗产改造'),
     architecture: t(
-      'A red-brick storehouse with sawtooth rooflights, reimagined as a public archive.',
-      '红砖仓库与锯齿形采光屋顶，被重新诠释为公共档案馆。',
+      'A red-brick warehouse with a sawtooth roof, by the harbour.',
+      '港口旁的红砖仓库，锯齿形屋顶。',
     ),
     x: 10,
     z: 8,
     w: 2,
     d: 2,
-    height: 3.4,
+    height: 4.2,
     model: 'archive',
     color: '#a96046',
     sections: [
       {
-        heading: t('The first shelves are ready', '档案架已经就绪'),
+        heading: t('Publications', '论文'),
         body: t(
-          'There are no archived records in this edition yet. Completed research will be collected here with its authors, publication details and links to available code or data.',
-          '此版本尚未收录档案。已完成研究将在这里汇集，附上作者、发表信息以及可用的代码或数据链接。',
+          'No publications have been listed yet. Entries will include authors, venue, year and links to the paper, code or data.',
+          '目前尚未列出论文。条目将包含作者、发表渠道、年份以及论文、代码或数据的链接。',
         ),
       },
       {
-        heading: t('Connected to the city', '与城市保持连接'),
+        heading: t('Open resources', '开放资源'),
         body: t(
-          'Every record will link back to the people and research that produced it, preserving the story behind each contribution.',
-          '每条记录都将链接回相关人员与研究项目，保留每项贡献背后的故事。',
+          'Datasets and software released by the group will be listed here with their licences and links.',
+          '研究组发布的数据集与软件将在此列出，并附许可证与链接。',
         ),
       },
     ],
@@ -315,12 +315,12 @@ export const buildings: Building[] = places.map((building) => {
       }
     : {
         ...building,
-        name: t('Garden residence', '花园住宅'),
-        short: t('Residence', '住宅'),
-        category: t('RESIDENTIAL QUARTER', '花园住区'),
+        name: t('Crescent home', '新月住宅'),
+        short: t('Home', '住宅'),
+        category: t('THE CRESCENT', '新月联排'),
         summary: t(
-          'A residential address in our growing city.',
-          '小城花园住区中的一处住所。',
+          'A home in the crescent, currently unoccupied.',
+          '新月联排中的一户住宅，目前无人居住。',
         ),
         sections: [],
       };

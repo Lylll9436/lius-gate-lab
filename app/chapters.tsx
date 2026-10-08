@@ -35,17 +35,17 @@ export function Hero({
         </h1>
         <p className="hero-lede">
           {zh
-            ? '一个做城市分析的研究组，把自己建成了一座小城。每栋建筑是一个章节；向下滚动，镜头会带你走过去。'
-            : 'An urban analytics group that built itself as a small city. Every building is a chapter; scroll, and the camera walks you there.'}
+            ? '城市智能研究组在格拉斯哥大学从事城市分析研究。本站做成了一座小城：每栋建筑对应研究组的一章内容。向下滚动阅读，或直接探索小城。'
+            : 'The Urban Intelligence Group works on urban analytics at the University of Glasgow. This site is built as a small city: each building holds one chapter about the group. Scroll to read, or explore the city directly.'}
         </p>
         <div className="hero-actions">
           <button className="button-primary" onClick={onRead}>
-            {zh ? '开始阅读' : 'Start reading'}
+            {zh ? '阅读' : 'Read'}
             <ArrowDown size={15} />
           </button>
           <button className="button-ghost" onClick={onExplore}>
             <Map size={15} />
-            {zh ? '自由探索' : 'Explore freely'}
+            {zh ? '探索小城' : 'Explore the city'}
           </button>
         </div>
       </div>
