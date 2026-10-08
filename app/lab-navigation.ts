@@ -19,8 +19,8 @@ export const readingChapters = [
   'people',
   'research-studio',
   'city-archive',
-  'lius-gate',
   'corner-park',
+  'lius-gate',
 ];
 export const people = peopleRecords.map((p) => ({
   ...p,

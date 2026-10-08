@@ -7,12 +7,13 @@ export function createCityInk(
   renderer: T.WebGLRenderer,
   scene: T.Scene,
   camera: T.OrthographicCamera,
+  samples = 4,
 ) {
   const target = new T.WebGLRenderTarget(1, 1, {
     type: T.HalfFloatType,
     minFilter: T.LinearFilter,
     magFilter: T.LinearFilter,
-    samples: Math.min(4, renderer.capabilities.maxSamples),
+    samples: Math.min(samples, renderer.capabilities.maxSamples),
   });
   target.depthTexture = new T.DepthTexture(1, 1, T.UnsignedIntType);
   let selected: T.Object3D[] = [],
@@ -72,6 +73,8 @@ export function createCityInk(
         float d=distanceAt(vUv);
         float line=max(max(edge(vec2(1.,0.),d),edge(vec2(-1.,0.),d)),max(edge(vec2(0.,1.),d),edge(vec2(0.,-1.),d)));
         gl_FragColor=vec4(mix(c.rgb,min(c.rgb,ink),line*.68),c.a);
+        float vignette=smoothstep(.5,1.08,length((vUv-.5)*vec2(1.08,1.))*1.38);
+        gl_FragColor.rgb*=1.-.14*vignette;
         if(hasSelection>0.5){float center=texture2D(selection,vUv).r;float ring=0.;
           for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)ring=max(ring,texture2D(selection,vUv+vec2(float(x),float(y))*selectionStep).r);
           gl_FragColor.rgb=mix(gl_FragColor.rgb,selectionColor,max(0.,ring-center)*.95);

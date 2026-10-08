@@ -4,6 +4,7 @@ import { createStreetLighting } from './city-lighting';
 import { createIslandWater } from './city-water';
 import { createDetailManager, type DetailAsset } from './city-detail';
 import { createCityInk } from './city-ink';
+import { createRain, createGulls, sunOffsetFor } from './city-atmosphere';
 import { groundHeightAt, grades } from './city-ground';
 import * as T from 'three';
 import {
@@ -44,6 +45,11 @@ import {
   type DistrictId,
 } from './city-plan';
 
+export type HoverTarget = BuildingId | 'corner-park' | null;
+export type CityOptions = {
+  /** Called whenever the building or place under the mouse changes. */
+  onHover?: (id: HoverTarget) => void;
+};
 export type CityAPI = {
   select: (id: BuildingId) => void;
   enter: (id: BuildingId) => void;
@@ -58,6 +64,17 @@ export type CityAPI = {
   focusPark: () => void;
   focusBuildings: (ids: BuildingId[]) => void;
   setInterior: (v: boolean) => void;
+  /** Real sky: night amount 0..1 plus solar elevation/azimuth in radians. */
+  setSky: (sky: { night: number; elevation: number; azimuth: number }) => void;
+  setRain: (v: boolean) => void;
+  /** Slow idle camera drift while nobody is touching the city. */
+  setDrift: (v: boolean) => void;
+  /** Absolute camera bearing; the camera takes the shortest turn. */
+  setYaw: (angle: number) => void;
+  /** Keep the subject left of centre (fraction of the viewport width) so a reading panel can sit beside it. */
+  setFrameShift: (fraction: number) => void;
+  /** Ring one building from the page (hovering a person card, for example). */
+  setAccent: (id: BuildingId | null) => void;
   dispose: () => void;
 };
 
@@ -1524,15 +1541,24 @@ export function createCity(
   container: HTMLDivElement,
   onSelect: (id: BuildingId) => void,
   onPark: () => void = () => {},
+  options: CityOptions = {},
 ): CityAPI {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Two quality tiers up front, then a frame-time governor that lowers resolution if needed.
+  const cores = navigator.hardwareConcurrency || 4,
+    memory = (navigator as { deviceMemory?: number }).deviceMemory || 8,
+    coarse = window.matchMedia('(pointer: coarse)').matches;
+  const tier: 'high' | 'low' =
+    coarse || cores <= 4 || memory <= 4 ? 'low' : 'high';
   const renderer = new T.WebGLRenderer({
     antialias: true,
     alpha: true,
     premultipliedAlpha: false,
     powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(
+    Math.min(window.devicePixelRatio || 1, tier === 'low' ? 1.5 : 2),
+  );
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.outputColorSpace = T.SRGBColorSpace;
@@ -1550,8 +1576,11 @@ export function createCity(
     camera = new T.OrthographicCamera(-24, 24, 24, -24, 0.1, 180),
     model = buildCityModel({ quality: 'far' });
   const { city, models, walkers, lamps, tram, ferry, jibs } = model;
-  const ink = createCityInk(renderer, scene, camera);
+  const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
   scene.add(city);
+  // Distance haze: the sea dissolves into the page instead of ending at a hard edge.
+  const fog = new T.Fog('#d9e3dd', 72, 150);
+  scene.fog = fog;
   const detailAssets: DetailAsset[] = model.treeLods.map((t, i) => ({
     id: 'tree-' + i,
     root: t.root,
@@ -1593,10 +1622,15 @@ export function createCity(
   const lighting = createStreetLighting(scene, lamps);
   const sky = new T.HemisphereLight('#f4f1e4', '#6e8986', 1.65);
   scene.add(sky);
+  const sunOffset = new T.Vector3(-16, 32, 20),
+    targetSunOffset = sunOffset.clone();
+  let sunWarmth = 0,
+    targetWarmth = 0;
   const sun = new T.DirectionalLight('#fff0d5', 3.3);
-  sun.position.set(-16, 32, 20);
+  sun.position.copy(sunOffset);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const shadowBase = tier === 'low' ? 1024 : 2048;
+  sun.shadow.mapSize.set(shadowBase, shadowBase);
   Object.assign(sun.shadow.camera, {
     left: -27,
     right: 27,
@@ -1610,14 +1644,14 @@ export function createCity(
   scene.add(sun);
   scene.add(sun.target);
   function shadowFocus(center?: T.Vector3, radius = 30) {
-    const resolution = center ? 4096 : 2048;
+    const resolution = center ? shadowBase * 2 : shadowBase;
     if (sun.shadow.mapSize.x !== resolution) {
       sun.shadow.mapSize.set(resolution, resolution);
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     }
     sun.target.position.copy(center || new T.Vector3());
-    sun.position.copy(sun.target.position).add(new T.Vector3(-16, 32, 20));
+    sun.position.copy(sun.target.position).add(sunOffset);
     Object.assign(sun.shadow.camera, {
       left: -radius,
       right: radius,
@@ -1685,6 +1719,22 @@ export function createCity(
     openAmount = 0,
     inspectionAutoFit = true,
     trafficDistance = 0;
+  // Decorative state: weather, idle drift, reading-panel framing and hover feedback.
+  let rain = 0,
+    targetRain = 0,
+    drift = false,
+    driftAngle = 0,
+    frameShift = 0,
+    lastInteraction = -1e9,
+    lastHover: HoverTarget = null,
+    accentId: BuildingId | null = null,
+    skyKnown = false;
+  const shiftApplied = new T.Vector3();
+  const weather = createRain(tier === 'low' ? 900 : 1700),
+    gulls = createGulls();
+  scene.add(weather.object, gulls.object);
+  let frameCost = 0.016,
+    lastGovern = 0;
   const sectionPlane = new T.Plane(new T.Vector3(0, -1, 0), 100);
   const inspectionMaterials: T.Material[] = [];
   const target = new T.Vector3(),
@@ -1770,6 +1820,7 @@ export function createCity(
     const bounds = new T.Box3();
     roots.forEach((r) => bounds.union(new T.Box3().setFromObject(r)));
     target.copy(bounds.getCenter(new T.Vector3()));
+    shiftApplied.set(0, 0, 0);
     const size = bounds.getSize(new T.Vector3());
     const spanX = (size.x + size.z) * 0.707,
       spanY = (size.x + size.z) * 0.48 + size.y * 0.75;
@@ -1819,7 +1870,8 @@ export function createCity(
   visibilityObserver.observe(container);
   resize();
   function align() {
-    offset.set(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38);
+    const bearing = yaw + driftAngle;
+    offset.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
     camera.position.copy(controls.target).add(offset);
     camera.lookAt(controls.target);
     camera.updateProjectionMatrix();
@@ -1849,6 +1901,7 @@ export function createCity(
     const b = buildings.find((b) => b.id === id)!,
       m = models.get(id)!;
     target.copy(m.center).add(new T.Vector3(0, 1, 0));
+    shiftApplied.set(0, 0, 0);
     focusedIds = [id];
     parkSelected = false;
     autoFocus = true;
@@ -1864,6 +1917,7 @@ export function createCity(
     parkSelected = false;
     autoFocus = false;
     target.set(0, 0, 0);
+    shiftApplied.set(0, 0, 0);
     targetZoom = 1;
     targetYaw = yaw + shortestAngle(yaw, Math.PI / 4);
     tween = true;
@@ -1875,6 +1929,7 @@ export function createCity(
     inspectionAutoFit = false;
     tween = false;
     targetZoom = camera.zoom;
+    lastInteraction = performance.now();
   }
   controls.addEventListener('start', cancel);
   const ray = new T.Raycaster(),
@@ -1962,6 +2017,7 @@ export function createCity(
     const active =
       hoverAllowed(hover, !!inspect, inViewport) && !document.hidden;
     const id = active ? pickAt(hover.x, hover.y) : null;
+    hover.id = id;
     const rect = container.getBoundingClientRect();
     renderer.domElement.style.cursor = id ? 'pointer' : 'grab';
     for (const { b, element } of labels) {
@@ -2106,14 +2162,100 @@ export function createCity(
     });
     model.water?.update(time, night, camera);
     updateHover();
+    // Weather, birds, hover rings and the real sun live outside the audited frame body.
+    if (typeof animateExtras === 'function') animateExtras(dt, now, blend);
+    ink.render();
+  }
+  function animateExtras(dt: number, now: number, blend: number) {
+    // Hover feedback: a second ink ring and a callback for the page.
+    if (hover.id !== lastHover) {
+      lastHover = hover.id as HoverTarget;
+      options.onHover?.(lastHover);
+    }
+    const ringed = new Set<T.Object3D>(
+      focusedIds.map((id) => models.get(id)!.root),
+    );
+    const extra = hover.id && hover.id !== 'corner-park' ? hover.id : accentId;
+    if (extra && !inspect) {
+      const root = models.get(extra as BuildingId)?.root;
+      if (root) ringed.add(root);
+    }
     ink.setSelection(
       inspect
         ? []
         : parkSelected
           ? city.children[0].children.filter((g) => g.userData.parkSelection)
-          : focusedIds.map((id) => models.get(id)!.root),
+          : [...ringed],
     );
-    ink.render();
+    // Reading-panel framing: keep the subject beside the panel, not behind it.
+    if (!inspect) {
+      const wanted = new T.Vector3(
+        Math.cos(targetYaw),
+        0,
+        -Math.sin(targetYaw),
+      ).multiplyScalar(
+        (frameShift * (camera.right - camera.left)) / Math.max(targetZoom, 0.1),
+      );
+      if (wanted.distanceToSquared(shiftApplied) > 1e-6) {
+        target.sub(shiftApplied).add(wanted);
+        shiftApplied.copy(wanted);
+        tween = true;
+      }
+    }
+    // Idle drift: a slow, breathing turn that stops the moment the visitor acts.
+    const idle =
+      drift &&
+      !inspect &&
+      !hover.dragging &&
+      !paused &&
+      now - lastInteraction > 4000;
+    const driftTarget = idle ? Math.sin(time * 0.07) * 0.16 : 0;
+    const nextDrift = reduced
+      ? driftTarget
+      : driftAngle + (driftTarget - driftAngle) * Math.min(1, blend * 0.35);
+    if (Math.abs(nextDrift - driftAngle) > 1e-6) {
+      driftAngle = nextDrift;
+      align();
+    }
+    // The sun follows Glasgow's real sky; low sun turns warm.
+    if (sunOffset.distanceToSquared(targetSunOffset) > 1e-4) {
+      sunOffset.lerp(targetSunOffset, reduced ? 1 : Math.min(1, blend * 0.4));
+      sun.position.copy(sun.target.position).add(sunOffset);
+    }
+    sunWarmth = T.MathUtils.lerp(sunWarmth, targetWarmth, reduced ? 1 : blend);
+    rain = T.MathUtils.lerp(rain, targetRain, reduced ? 1 : blend * 0.5);
+    const overcast = 1 - rain * 0.42;
+    sun.color
+      .set('#fff1d6')
+      .lerp(new T.Color('#ffbe7a'), sunWarmth * (1 - night))
+      .lerp(new T.Color('#8daed0'), night);
+    sun.intensity *= overcast;
+    sky.intensity *= 1 - rain * 0.18;
+    sky.color
+      .set('#f4f1e4')
+      .lerp(new T.Color('#f2d3c0'), sunWarmth * 0.6 * (1 - night))
+      .lerp(new T.Color('#cfd9dc'), rain * 0.5);
+    weather.update(dt, rain, paused);
+    gulls.object.visible = !inspect && night < 0.85;
+    gulls.update(time);
+    fog.color
+      .set('#d9e3dd')
+      .lerp(new T.Color('#101b20'), night)
+      .lerp(new T.Color('#c3ced0'), rain * 0.45 * (1 - night));
+    model.water?.update(time, night, camera, { rain, sun: sunOffset });
+    // Governor: sustained slow frames trade pixels for smoothness, never geometry.
+    frameCost = T.MathUtils.lerp(frameCost, dt, 0.04);
+    if (
+      now - lastGovern > 2500 &&
+      frameCost > 0.034 &&
+      renderer.getPixelRatio() > 1
+    ) {
+      lastGovern = now;
+      frameCost = 0.016;
+      renderer.setPixelRatio(Math.max(1, renderer.getPixelRatio() - 0.25));
+      renderer.setSize(Math.max(1, width), Math.max(1, height), false);
+      ink.resize(width, height);
+    }
   }
   raf = requestAnimationFrame(frame);
   return {
@@ -2183,15 +2325,47 @@ export function createCity(
     rotate() {
       targetYaw += Math.PI / 2;
       inspectionAutoFit = true;
+      lastInteraction = performance.now();
     },
     zoom(f) {
       inspectionAutoFit = false;
       targetZoom = T.MathUtils.clamp(camera.zoom * f, 0.7, inspect ? 8 : 4);
       target.copy(controls.target);
+      shiftApplied.set(0, 0, 0);
       tween = true;
+      lastInteraction = performance.now();
     },
     setNight(v) {
       targetNight = v ? 1 : 0;
+    },
+    setSky({ night: amount, elevation, azimuth }) {
+      targetNight = T.MathUtils.clamp(amount, 0, 1);
+      targetSunOffset.copy(sunOffsetFor(elevation, azimuth));
+      targetWarmth = T.MathUtils.clamp((0.5 - elevation) / 0.42, 0, 1);
+      // The first sky arrives before the first frame: no flash of noon at midnight.
+      if (!skyKnown) {
+        skyKnown = true;
+        night = targetNight;
+        sunWarmth = targetWarmth;
+        sunOffset.copy(targetSunOffset);
+        sun.position.copy(sun.target.position).add(sunOffset);
+      }
+    },
+    setRain(v) {
+      targetRain = v ? 1 : 0;
+    },
+    setDrift(v) {
+      drift = v;
+    },
+    setYaw(angle) {
+      targetYaw = yaw + shortestAngle(yaw, angle);
+      inspectionAutoFit = true;
+    },
+    setFrameShift(fraction) {
+      frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
+    },
+    setAccent(id) {
+      accentId = id;
     },
     setGrid(v) {
       gridEnabled = v;
@@ -2210,6 +2384,7 @@ export function createCity(
       exitInspection();
       const d = districts.find((d) => d.id === id)!;
       target.set(d.center[0], 0, d.center[1]);
+      shiftApplied.set(0, 0, 0);
       targetZoom = 1.3;
       tween = true;
       zones.children.forEach(
@@ -2226,6 +2401,7 @@ export function createCity(
       autoFocus = false;
       highlight.visible = false;
       target.set(-10.65, 0, 9.95);
+      shiftApplied.set(0, 0, 0);
       targetZoom = 2.3;
       tween = true;
     },
@@ -2261,6 +2437,8 @@ export function createCity(
       details.dispose();
       lighting.dispose();
       model.water?.dispose();
+      weather.dispose();
+      gulls.dispose();
       ink.dispose();
       model.disposeMaterials();
       renderer.dispose();

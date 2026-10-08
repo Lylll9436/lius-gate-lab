@@ -106,11 +106,16 @@ function surfaceMaps(kind: SurfaceKind) {
         level = 0.98 + wave * 0.012;
         height = 0.5 + wave * 0.18 + Math.sin((u * 7 + v * 9) * 6.283) * 0.035;
       } else if (kind === 'grass' || kind === 'soil') {
+        // Three octaves: meadow drifts, mown patches and blade-level grain.
         const patch =
-          noise(u * 5.7 + 8.2, v * 5.7 - 2.4) * 0.56 +
-          noise(u * 13.3 - 5, v * 13.3 + 9) * 0.29 +
-          noise(u * 29, v * 29) * 0.15;
-        level = 0.83 + patch * 0.22 + (grain - 0.5) * 0.07;
+          noise(u * 2.3 + 3.1, v * 2.3 + 7.7) * 0.42 +
+          noise(u * 5.7 + 8.2, v * 5.7 - 2.4) * 0.3 +
+          noise(u * 13.3 - 5, v * 13.3 + 9) * 0.18 +
+          noise(u * 29, v * 29) * 0.1;
+        level =
+          (kind === 'grass' ? 0.78 : 0.83) +
+          patch * (kind === 'grass' ? 0.3 : 0.22) +
+          (grain - 0.5) * 0.07;
         height = 0.45 + (grain - 0.5) * 0.32;
       } else if (kind === 'sand' || kind === 'gravel') {
         const ripple = Math.sin((v * 9 + Math.sin(u * 6.283) * 0.18) * 6.283);

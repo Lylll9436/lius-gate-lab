@@ -9,6 +9,7 @@ function createCreekMaterial() {
     cloud: { value: 0 },
     eyeDirection: { value: new T.Vector3(0.46, 0.55, 0.69) },
     moonPosition: { value: new T.Vector3(-160, 320, 200) },
+    sunPosition: { value: new T.Vector3(-160, 320, 200) },
   };
   // Local lamps illuminate the bank; their specular lobes do not become glowing water pillars.
   const material = new T.MeshPhysicalMaterial({
@@ -37,7 +38,7 @@ function createCreekMaterial() {
    creekWorldP=(modelMatrix*vec4(transformed,1.)).xyz;`,
     );
     shader.fragmentShader =
-      `varying vec3 creekWorldP; uniform float time; uniform float night; uniform float rain; uniform float cloud; uniform vec3 eyeDirection; uniform vec3 moonPosition;
+      `varying vec3 creekWorldP; uniform float time; uniform float night; uniform float rain; uniform float cloud; uniform vec3 eyeDirection; uniform vec3 moonPosition; uniform vec3 sunPosition;
    float creekHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
    float creekNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(creekHash(i),creekHash(i+vec2(1.,0.)),f.x),mix(creekHash(i+vec2(0.,1.)),creekHash(i+vec2(1.,1.)),f.x),f.y);}
    vec3 creekNormal(vec2 p){
@@ -74,6 +75,12 @@ function createCreekMaterial() {
    float reflection=(pow(alignment,150.)*.32+pow(alignment,48.)*.025)*brokenGlint;
    float fresnel=.05+.18*pow(1.-max(0.,dot(waveNormal,normalize(eyeDirection))),4.);
    totalEmissiveRadiance+=night*(1.-cloud*.85)*vec3(.48,.65,.86)*(reflection+fresnel*.1);
+   vec3 toSun=normalize(sunPosition-creekWorldP);
+   vec3 halfSun=normalize(toSun+normalize(eyeDirection));
+   float sunAlign=max(0.,dot(waveNormal,halfSun));
+   float sunGlint=(pow(sunAlign,260.)*.28+pow(sunAlign,40.)*.03)*brokenGlint;
+   totalEmissiveRadiance+=(1.-night)*(1.-rain*.7)*vec3(1.,.96,.86)*(sunGlint+fresnel*.06);
+   diffuseColor.rgb*=1.-rain*.08;
   `,
     );
   };
@@ -112,10 +119,18 @@ export function createIslandWater() {
   return {
     mesh,
     bottom,
-    update(time: number, night: number, camera: T.Camera) {
+    update(
+      time: number,
+      night: number,
+      camera: T.Camera,
+      weather: { rain?: number; sun?: T.Vector3 } = {},
+    ) {
       bottom.material.color.copy(dayBed).lerp(nightBed, night);
       uniforms.time.value = time;
       uniforms.night.value = night;
+      uniforms.rain.value = weather.rain ?? 0;
+      if (weather.sun)
+        uniforms.sunPosition.value.copy(weather.sun).multiplyScalar(8);
       camera.getWorldDirection(uniforms.eyeDirection.value).negate();
     },
     dispose() {

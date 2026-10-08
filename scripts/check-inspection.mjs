@@ -40,6 +40,7 @@ for (const name of [
   'city-path-plan',
   'city-curved-paving',
   'city-shore',
+  'city-atmosphere',
 ]) {
   const source = await fs.readFile(
     path.join(root, 'app', name + '.ts'),
@@ -148,9 +149,9 @@ for (const [id, m] of models) {
           id +
             ' roof overlaps the room at ' +
             degree +
-            '° in ' +
+            '掳 in ' +
             width +
-            '×' +
+            '脳' +
             height,
         );
         assert(

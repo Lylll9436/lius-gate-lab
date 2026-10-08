@@ -204,7 +204,10 @@ export function createCraft(
       ? ['#907b44', '#a08b50', '#b29c5f', '#b6a570']
       : ['#416f50', '#537e54', '#6b915d', '#8da869'];
     let leafCount = 0;
-    for (let branchId = 0; branchId < (detailed ? 9 : 4); branchId++) {
+    // Overview trees carry fewer, larger leaves so crowns still read as crowns.
+    const leafScale = detailed ? 1 : 1.55,
+      leafSpread = detailed ? 0.23 : 0.31;
+    for (let branchId = 0; branchId < (detailed ? 9 : 5); branchId++) {
       const n = seed + branchId * 701,
         a = branchId * 2.399 + random(n) * 0.6;
       const r = 0.27 + random(n + 1) * 0.13,
@@ -247,7 +250,7 @@ export function createCraft(
           0.014 * size,
           0.002 * size,
         );
-        for (let i = 0; i < (detailed ? 26 : 6); i++) {
+        for (let i = 0; i < (detailed ? 26 : 9); i++) {
           const k = n + fork * 197 + i * 13,
             theta = random(k) * Math.PI * 2,
             vertical = random(k + 1) * 2 - 1;
@@ -257,9 +260,9 @@ export function createCraft(
             .clone()
             .add(
               new T.Vector3(
-                Math.cos(theta) * circle * 0.23 * spread * size,
+                Math.cos(theta) * circle * leafSpread * spread * size,
                 vertical * 0.19 * spread * size,
-                Math.sin(theta) * circle * 0.23 * spread * size,
+                Math.sin(theta) * circle * leafSpread * spread * size,
               ),
             );
           const q = new T.Quaternion().setFromEuler(
@@ -269,7 +272,7 @@ export function createCraft(
               random(k + 4) * 0.9 - 0.45,
             ),
           );
-          const len = (0.145 + random(k + 5) * 0.065) * size;
+          const len = (0.145 + random(k + 5) * 0.065) * size * leafScale;
           const tint = new T.Color(greens[Math.floor(random(k + 6) * 4)]);
           const point = (t: number, side: number): Point => {
             const edge =

@@ -4,9 +4,11 @@ export type PointerState = {
   active: boolean;
   blocked: boolean;
   dragging: boolean;
+  /** The building or place under the pointer after the last hover pass. */
+  id: string | null;
 };
 export function hoverPointer(): PointerState {
-  return { x: 0, y: 0, active: false, blocked: false, dragging: false };
+  return { x: 0, y: 0, active: false, blocked: false, dragging: false, id: null };
 }
 export function pointerMove(
   state: PointerState,
@@ -21,6 +23,7 @@ export function pointerMove(
 export function clearPointer(state: PointerState) {
   state.active = false;
   state.blocked = true;
+  state.id = null;
 }
 export function hoverAllowed(
   state: PointerState,

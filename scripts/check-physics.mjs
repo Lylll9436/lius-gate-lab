@@ -48,6 +48,7 @@ for (const name of [
   'city-path-plan',
   'city-curved-paving',
   'city-shore',
+  'city-atmosphere',
 ]) {
   let source = await fs.readFile(path.join(root, 'app', name + '.ts'), 'utf8');
   sources.set(name, source);
@@ -771,7 +772,7 @@ for (const from of nodeIds)
       collisions(
         boxShape(swept),
         `route:${key}`,
-        `Pedestrian segment [${a}] → [${b}]`,
+        `Pedestrian segment [${a}] 鈫?[${b}]`,
       );
     }
   }
@@ -834,7 +835,7 @@ for (const from of nodeIds) {
         collisions(
           boxShape(swept),
           `lane:${key}`,
-          `Offset pedestrian segment [${a}] → [${b}]`,
+          `Offset pedestrian segment [${a}] 鈫?[${b}]`,
         );
       }
     }
@@ -1033,7 +1034,7 @@ assert.equal(
   0,
   'The removed bridge must not survive in the physical plan.',
 );
-// More than two laps of the ellipse (2π/.12); also catches the old 28s reversal.
+// More than two laps of the ellipse (2蟺/.12); also catches the old 28s reversal.
 for (let time = 0; time <= 120; time += 1 / 120) {
   stats.boatSamples++;
   const pose = motion.boatPose(time),
@@ -1215,7 +1216,7 @@ function currentSegment(walker) {
     if (remaining <= length + EPS || i === walker.path.length - 1)
       return [a.join(','), b.join(',')]
         .sort((x, y) => x.localeCompare(y))
-        .join(' ↔ ');
+        .join(' 鈫?');
     remaining -= length;
   }
   return `waiting at ${walker.at}`;
@@ -1229,7 +1230,7 @@ for (let i = 110; i < 20110; i++) {
     ) < 1e-6,
     'Vehicle wheels must sit on asphalt.',
   );
-  harness.walkers.forEach((person, index) => {
+  harness.walkers.forEach((person) => {
     person.updateMatrixWorld(true);
     const feet = Math.min(
       ...['leg-left', 'leg-right'].map(

@@ -1,17 +1,9 @@
-'use client';
+import { useState, type CSSProperties, type ReactNode } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { publicAsset } from './public-asset';
-import { useState } from 'react';
-import Image from 'next/image';
-import { ArrowUpRight, UserRound } from 'lucide-react';
-import { buildings, type Locale } from './city-data';
+import { buildings, type BuildingId, type Locale } from './city-data';
 import { personPhotos } from './people-photos';
-
-import {
-  people,
-  titleFor,
-  destinations,
-  type ContentId,
-} from './lab-navigation';
+import { people, titleFor, destinations, type ContentId } from './lab-navigation';
 import {
   getRecord,
   outputRecords,
@@ -27,140 +19,211 @@ import type {
   PersonRecord,
   ResearchRecord,
   EventRecord,
+  OutputRecord,
 } from './content-schema';
 
-export function BrandLogo({ size = 64 }: { size?: number }) {
-  return (
-    <Image
-      className="brand-logo"
-      src={publicAsset('/brand/lius-gate-flat-v2.png')}
-      alt="LIU’S GATE logo"
-      width={size}
-      height={size}
-      unoptimized
-    />
-  );
-}
+/* ------------------------------------------------------------------ */
+/* Marks and glyphs                                                    */
+/* ------------------------------------------------------------------ */
 
-export function IsoIcon({
-  kind = 'town-hall',
-  size = 44,
+/** The gate, drawn as a single line: two piers and a round arch. */
+export function GateMark({
+  size = 28,
+  className = '',
 }: {
-  kind?: ContentId;
   size?: number;
+  className?: string;
 }) {
-  const home = people.some((p) => p.id === kind) || kind === 'people',
-    park = kind === 'corner-park',
-    gate = kind === 'lius-gate' || kind === 'overview';
   return (
     <svg
-      viewBox="0 0 64 64"
+      viewBox="0 0 32 32"
       width={size}
       height={size}
-      fill="none"
       aria-hidden="true"
-      className="iso-icon"
+      className={`gate-mark ${className}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <path
-        d="m4 44 28-16 28 16-28 16L4 44Z"
-        fill={park ? '#aac091' : '#d6c7a5'}
-      />
-      <path d="m4 44 28 16v4L4 48v-4Z" fill="#b5a383" />
-      <path d="m60 44-28 16v4l28-16v-4Z" fill="#8d9778" />
-      {park ? (
-        <>
-          <path d="m13 45 37-20 3 3-37 20-3-3Z" fill="#e3d5af" />
-          <path d="M24 36v12m16-21v13" stroke="#786044" strokeWidth="3" />
-          <path d="m12 31 12-16 12 16-12 7-12-7Z" fill="#718d54" />
-          <path d="m30 22 10-14 10 14-10 6-10-6Z" fill="#8ba768" />
-          <path d="m37 44 12-7v4l-12 7v-4Z" fill="#966d47" />
-        </>
-      ) : gate ? (
-        <>
-          <path
-            d="m17 42 7 4V31c0-9 13-9 13 0v8l8-5V13L17 29v13Z"
-            fill="#d7bf90"
-          />
-          <path d="m17 29 28-16-9-5L8 24l9 5Z" fill="#efe0bd" />
-          <path d="M8 24v23l9-5V29l-9-5Z" fill="#ad956d" />
-          <path d="m17 24 28-16V4L17 20v4Z" fill="#d4bb8d" />
-          <path d="m8 15 28-16 9 5-28 16-9-5Z" fill="#eee0c0" />
-          <path d="m8 15 9 5v4l-9-5v-4Z" fill="#a8906a" />
-        </>
-      ) : (
-        <>
-          <path
-            d="m17 46 17 10V26L17 16v30Z"
-            fill={home ? '#b17d5d' : '#a7b6aa'}
-          />
-          <path
-            d="m34 56 17-10V16L34 26v30Z"
-            fill={home ? '#d9b890' : '#ced3b9'}
-          />
-          <path
-            d={
-              home
-                ? 'm12 18 22-13 22 13-22 13-22-13Z'
-                : 'm15 16 19-11 19 11-19 11-19-11Z'
-            }
-            fill={home ? '#4d6261' : '#779493'}
-          />
-          {[0, 1, 2].map((i) => (
-            <g key={i}>
-              <path d={`m21 ${24 + i * 8} 6 3v4l-6-3v-4Z`} fill="#dedbbb" />
-              <path d={`m39 ${28 + i * 8} 7-4v4l-7 4v-4Z`} fill="#567d7b" />
-            </g>
-          ))}
-        </>
-      )}
+      <path d="M5 28V15a11 11 0 0 1 22 0v13" />
+      <path d="M2.5 28h9M20.5 28h9" />
+      <path d="M9 28V16a7 7 0 0 1 14 0v12" />
+      <path d="M4 7.5h24" />
     </svg>
   );
 }
-function PortraitImage({
-  src,
-  name,
-  locale,
+
+export type GlyphKind =
+  | 'gate'
+  | 'hall'
+  | 'house'
+  | 'studio'
+  | 'archive'
+  | 'park'
+  | 'people';
+
+export function glyphFor(id: ContentId): GlyphKind {
+  if (id === 'lius-gate' || id === 'overview') return 'gate';
+  if (id === 'town-hall') return 'hall';
+  if (id === 'research-studio') return 'studio';
+  if (id === 'city-archive') return 'archive';
+  if (id === 'corner-park') return 'park';
+  if (id === 'people') return 'people';
+  return 'house';
+}
+
+/** Small line glyphs for places; one stroke weight, one grid. */
+export function PlaceGlyph({
+  kind,
+  size = 20,
 }: {
-  src: string | null;
-  name: string;
-  locale: Locale;
+  /** A glyph name, or any content id (resolved through glyphFor). */
+  kind: string;
+  size?: number;
 }) {
-  const [failed, setFailed] = useState(false);
+  const k = (
+    ['gate', 'hall', 'house', 'studio', 'archive', 'park', 'people'].includes(
+      kind,
+    )
+      ? kind
+      : glyphFor(kind)
+  ) as GlyphKind;
+  const paths: Record<GlyphKind, string> = {
+    gate: 'M4 20V10a8 8 0 0 1 16 0v10M2 20h20M8 20v-9a4 4 0 0 1 8 0v9',
+    hall: 'M3 21h18M5 21V10h14v11M12 10V4l3 2M9 14h2v7M13 14h2v7M8 7h8',
+    house: 'M3 11l9-7 9 7M5 9.5V21h14V9.5M10 21v-6h4v6M14 5V3h2v4',
+    studio: 'M3 21h18M4 21V8h9v13M13 21V12h7v9M7 11h3M7 15h3M16 15h2',
+    archive: 'M3 21h18M4 21V9l4-3 4 3 4-3 4 3v12M7 13h2M11 13h2M15 13h2M9 21v-5h6v5',
+    park: 'M3 21h18M8 21v-4M8 17c-3 0-4-2-4-4 0-3 2-5 4-6 2 1 4 3 4 6 0 2-1 4-4 4M16 21v-3M16 18c-2 0-3-1.5-3-3 0-2 1.5-4 3-5 1.5 1 3 3 3 5 0 1.5-1 3-3 3',
+    people:
+      'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6M16 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M2 20c0-3 2.5-5 6-5s6 2 6 5M14 20c0-2.5 1.5-4 4-4s4 1.5 4 4',
+  };
   return (
-    <div className="portrait-frame">
-      {src && !failed ? (
-        <Image
-          src={publicAsset(src)}
-          alt={locale === 'zh' ? `${name} 的照片` : `Portrait of ${name}`}
-          width={400}
-          height={500}
-          loading="lazy"
-          unoptimized
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="portrait-placeholder">
-          <UserRound size={38} strokeWidth={1} />
-          <span>{locale === 'zh' ? '照片待补充' : 'Portrait to follow'}</span>
-        </div>
-      )}
-    </div>
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="place-glyph"
+    >
+      <path d={paths[k]} />
+    </svg>
   );
 }
-export function Portrait({ id, locale }: { id: ContentId; locale: Locale }) {
+
+/* ------------------------------------------------------------------ */
+/* Portraits                                                           */
+/* ------------------------------------------------------------------ */
+
+export function houseFor(id: ContentId) {
+  const entry = getRecord(id);
+  const buildingId =
+    entry?.kind === 'person'
+      ? (entry.record as PersonRecord).buildingId
+      : id.replace(/^place:/, '');
+  return buildings.find((b) => b.id === buildingId);
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+
+/** A photo when there is one; otherwise a monogram in the colour of their house. */
+export function Portrait({
+  id,
+  locale,
+  size = 'medium',
+}: {
+  id: ContentId;
+  locale: Locale;
+  size?: 'small' | 'medium' | 'large';
+}) {
   const entry = getRecord(id);
   const src =
     entry?.kind === 'person'
       ? (entry.record as PersonRecord).photo
       : (personPhotos[id] ?? null);
+  const name = titleFor(id, locale);
+  const house = houseFor(id);
   return (
     <PortraitImage
       key={`${id}-${src}`}
       src={src}
-      name={titleFor(id, locale)}
+      name={name}
       locale={locale}
+      tint={house?.color ?? '#9aa58f'}
+      size={size}
     />
   );
+}
+
+function PortraitImage({
+  src,
+  name,
+  locale,
+  tint,
+  size,
+}: {
+  src: string | null;
+  name: string;
+  locale: Locale;
+  tint: string;
+  size: 'small' | 'medium' | 'large';
+}) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div
+      className={`portrait portrait-${size}`}
+      style={{ '--tint': tint } as CSSProperties}
+    >
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element -- Pages has no image server.
+        <img
+          src={publicAsset(src)}
+          alt={locale === 'zh' ? `${name} 的照片` : `Portrait of ${name}`}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="monogram" aria-hidden="true">
+          {initials(name)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Records                                                             */
+/* ------------------------------------------------------------------ */
+
+const typeLabel = (type: OutputRecord['type'], zh: boolean) =>
+  zh
+    ? { paper: '论文', dataset: '数据集', software: '软件', report: '报告' }[type]
+    : { paper: 'Paper', dataset: 'Dataset', software: 'Software', report: 'Report' }[
+        type
+      ];
+
+function Pill({
+  children,
+  tone = 'neutral',
+}: {
+  children: ReactNode;
+  tone?: 'neutral' | 'active' | 'done';
+}) {
+  return <span className={`pill pill-${tone}`}>{children}</span>;
 }
 
 function RecordView({
@@ -179,82 +242,73 @@ function RecordView({
   const person = kind === 'person' ? (record as PersonRecord) : null;
   const research = kind === 'research' ? (record as ResearchRecord) : null;
   const event = kind === 'event' ? (record as EventRecord) : null;
+  const output = kind === 'output' ? (record as OutputRecord) : null;
   const home = person?.buildingId
     ? buildings.find((b) => b.id === person.buildingId)
     : undefined;
+  const contributions = person
+    ? researchRecords.filter((r) => r.people.includes(person.id))
+    : [];
   return (
-    <div
-      className={
-        'record-content ' + (person ? 'person-record' : 'catalog-record')
-      }
-    >
+    <div className={`record ${person ? 'record-person' : ''}`}>
       {person ? (
-        <div className="profile-identity">
-          <Portrait id={id} locale={locale} />
+        <div className="identity">
+          <Portrait id={id} locale={locale} size="large" />
           <div>
-            <span className="overline">{person.role[locale]}</span>
-            <p>{record.summary[locale]}</p>
+            <span className="eyebrow">{person.role[locale]}</span>
+            <p className="record-lead">{record.summary[locale]}</p>
             <span className="institution">{person.affiliation[locale]}</span>
           </div>
         </div>
       ) : (
         <p className="record-lead">{record.summary[locale]}</p>
       )}
-      {research && (
-        <span className="record-state">
-          {research.status === 'completed'
-            ? zh
-              ? '已完成'
-              : 'Completed'
-            : zh
-              ? '进行中'
-              : 'In progress'}
-        </span>
-      )}
-      {'date' in record && (
-        <time className="record-state" dateTime={record.date}>
-          {record.date}
-        </time>
-      )}
+      <div className="record-meta">
+        {research && (
+          <Pill tone={research.status === 'completed' ? 'done' : 'active'}>
+            {research.status === 'completed'
+              ? zh
+                ? '已完成'
+                : 'Completed'
+              : zh
+                ? '进行中'
+                : 'In progress'}
+          </Pill>
+        )}
+        {output && <Pill>{typeLabel(output.type, zh)}</Pill>}
+        {'date' in record && (
+          <time className="record-date" dateTime={record.date}>
+            {record.date}
+          </time>
+        )}
+        {'researchId' in record && record.researchId && (
+          <button
+            className="link-action"
+            onClick={() => onOpen('research:' + record.researchId)}
+          >
+            {zh ? '相关研究项目' : 'Related project'}
+            <ArrowUpRight size={14} />
+          </button>
+        )}
+      </div>
       {event?.image && (
-        <Image
-          className="event-image"
+        // eslint-disable-next-line @next/next/no-img-element -- Pages has no image server.
+        <img
+          className="record-image"
           src={publicAsset(event.image)}
           alt={event.title[locale]}
-          width={960}
-          height={640}
-          unoptimized
+          loading="lazy"
+          decoding="async"
         />
-      )}
-      {'researchId' in record && record.researchId && (
-        <button
-          className="text-action"
-          onClick={() => onOpen('research:' + record.researchId)}
-        >
-          {zh ? '相关研究项目' : 'Related research project'}
-          <ArrowUpRight size={15} />
-        </button>
-      )}
-      {'type' in record && (
-        <span className="record-state">
-          {zh
-            ? {
-                paper: '论文',
-                dataset: '数据集',
-                software: '软件',
-                report: '报告',
-              }[record.type]
-            : record.type}
-        </span>
       )}
       {record.sections.map((s, i) => (
         <section className="record-section" key={i}>
-          <h3>{s.heading[locale]}</h3>
+          <h4>{s.heading[locale]}</h4>
           <p>{s.body[locale]}</p>
         </section>
       ))}
       {!!record.properties.length && (
-        <dl className="record-properties">
+        <dl className="record-props">
           {record.properties.map((p) => (
             <div key={p.key}>
               <dt>{p.label[locale]}</dt>
@@ -268,51 +322,64 @@ function RecordView({
           {record.links.map((link) => (
             <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
               {link.label[locale]}
-              <ArrowUpRight size={15} />
+              <ArrowUpRight size={14} />
             </a>
           ))}
         </div>
       )}
       {'people' in record && !!record.people.length && (
-        <div className="related-records">
-          <span>{zh ? '相关成员' : 'People involved'}</span>
-          {record.people.map((key) => {
-            const p = peopleRecords.find((p) => p.id === key);
-            return p ? (
-              <button key={key} onClick={() => onOpen(personContentId(p))}>
-                {p.title[locale]}
-                <ArrowUpRight size={14} />
-              </button>
-            ) : null;
-          })}
+        <div className="record-related">
+          <span className="eyebrow">{zh ? '相关成员' : 'People'}</span>
+          <div>
+            {record.people.map((key) => {
+              const p = peopleRecords.find((p) => p.id === key);
+              return p ? (
+                <button key={key} onClick={() => onOpen(personContentId(p))}>
+                  {p.title[locale]}
+                  <ArrowUpRight size={13} />
+                </button>
+              ) : null;
+            })}
+          </div>
         </div>
       )}
-      {person && researchRecords.some((r) => r.people.includes(person.id)) && (
-        <div className="related-records">
-          <span>{zh ? '相关研究' : 'Research contributions'}</span>
-          {researchRecords
-            .filter((r) => r.people.includes(person.id))
-            .map((r) => (
+      {person && !!contributions.length && (
+        <div className="record-related">
+          <span className="eyebrow">{zh ? '相关研究' : 'Research'}</span>
+          <div>
+            {contributions.map((r) => (
               <button key={r.id} onClick={() => onOpen('research:' + r.id)}>
                 {r.title[locale]}
-                <ArrowUpRight size={14} />
+                <ArrowUpRight size={13} />
               </button>
             ))}
+          </div>
         </div>
       )}
-      {home && (
-        <details className="architecture-note">
-          <summary>{zh ? '这栋建筑的风格' : 'About this building'}</summary>
-          <p>
-            <strong>{home.style[locale]}</strong>
-            <br />
-            {home.architecture[locale]}
-          </p>
-        </details>
-      )}
+      {home && <ArchitectureNote locale={locale} building={home} />}
     </div>
   );
 }
+
+function ArchitectureNote({
+  locale,
+  building,
+}: {
+  locale: Locale;
+  building: (typeof buildings)[number];
+}) {
+  return (
+    <details className="architecture-note">
+      <summary>
+        <PlaceGlyph kind={glyphFor(building.id)} size={16} />
+        {locale === 'zh' ? '这栋建筑' : 'About this building'}
+        <em>{building.style[locale]}</em>
+      </summary>
+      <p>{building.architecture[locale]}</p>
+    </details>
+  );
+}
+
 function CatalogList({
   kind,
   records,
@@ -327,7 +394,7 @@ function CatalogList({
   onOpen: (id: ContentId) => void;
 }) {
   return (
-    <div className="catalog-list">
+    <div className={`catalog catalog-${kind}`}>
       {records.map((record) => {
         const id = kind + ':' + record.id;
         return (
@@ -343,9 +410,9 @@ function CatalogList({
               locale={locale}
               onOpen={onOpen}
             />
-            <button className="text-action" onClick={() => onOpen(id)}>
+            <button className="link-action" onClick={() => onOpen(id)}>
               {locale === 'zh' ? '打开此记录' : 'Open this record'}
-              <ArrowUpRight size={15} />
+              <ArrowUpRight size={14} />
             </button>
           </article>
         );
@@ -353,6 +420,105 @@ function CatalogList({
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* People                                                              */
+/* ------------------------------------------------------------------ */
+
+export function PersonCard({
+  id,
+  locale,
+  onOpen,
+  onHover,
+  onVisit,
+  index,
+}: {
+  id: ContentId;
+  locale: Locale;
+  index: number;
+  onOpen: (id: ContentId) => void;
+  onHover?: (building: BuildingId | null) => void;
+  onVisit?: (building: BuildingId) => void;
+}) {
+  const person = people.find((p) => p.id === id);
+  if (!person) return null;
+  const zh = locale === 'zh',
+    home = person.buildingId
+      ? buildings.find((b) => b.id === person.buildingId)
+      : undefined;
+  return (
+    <div
+      className="person-card"
+      id={`read-${id}`}
+      onMouseEnter={() => onHover?.(home?.id ?? null)}
+      onMouseLeave={() => onHover?.(null)}
+    >
+      <Portrait id={id} locale={locale} size="medium" />
+      <div className="person-body">
+        <span className="eyebrow">
+          {String(index + 1).padStart(2, '0')} · {person.category[locale]}
+        </span>
+        <h3 tabIndex={-1}>{person.name[locale]}</h3>
+        <p>{person.summary[locale]}</p>
+        <span className="institution">{person.affiliation?.[locale]}</span>
+        {!!person.links.length && (
+          <div className="record-links compact">
+            {person.links.map((link) => (
+              <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+                {link.label[locale]}
+                <ArrowUpRight size={13} />
+              </a>
+            ))}
+          </div>
+        )}
+        <div className="person-actions">
+          <button className="link-action" onClick={() => onOpen(id)}>
+            {zh ? '个人资料' : 'Profile'}
+            <ArrowUpRight size={14} />
+          </button>
+          {home && onVisit && (
+            <button className="link-action quiet" onClick={() => onVisit(home.id)}>
+              <PlaceGlyph kind="house" size={15} />
+              {zh ? `住在 ${home.style.zh}` : home.style.en}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PeopleCards({
+  locale,
+  onOpen,
+  onHover,
+  onVisit,
+}: {
+  locale: Locale;
+  onOpen: (id: ContentId) => void;
+  onHover?: (building: BuildingId | null) => void;
+  onVisit?: (building: BuildingId) => void;
+}) {
+  return (
+    <div className="people-cards">
+      {people.map((person, i) => (
+        <PersonCard
+          key={person.id}
+          id={person.id}
+          index={i}
+          locale={locale}
+          onOpen={onOpen}
+          onHover={onHover}
+          onVisit={onVisit}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared content for the dossier and the reading chapters             */
+/* ------------------------------------------------------------------ */
 
 export function LabContent({
   id,
@@ -372,72 +538,39 @@ export function LabContent({
     return <RecordView id={id} entry={entry} locale={locale} onOpen={onOpen} />;
   if (id === 'overview')
     return (
-      <div className="welcome-content">
-        <div className="welcome-logo">
-          <BrandLogo size={124} />
-        </div>
-        <p className="welcome-lead">
+      <div className="welcome">
+        <p className="record-lead">
           {tr(
-            'Urban Intelligence Group, University of Glasgow.',
-            '格拉斯哥大学城市智能研究组。',
+            'Urban Intelligence Group, University of Glasgow. A research group, built as a small city.',
+            '格拉斯哥大学城市智能研究组。一个研究组，建成一座小城。',
           )}
         </p>
         <p>
           {tr(
-            'Our first year begins with a small city, named LIU’S GATE by Pengyuan Liu.',
-            '我们用一座小城开启研究组的第一年，Pengyuan Liu 为它取名「刘家门」。',
+            'Each building is a chapter: the Town Hall tells our story, the terraces house our people, the studio holds the work in progress and the archive keeps what is finished.',
+            '每栋建筑都是一个章节：市政厅讲述我们的故事，联排住宅住着成员，工作室放着进行中的研究，档案馆收藏已完成的成果。',
           )}
         </p>
-        <div className="welcome-addresses">
+        <div className="address-list">
           {destinations.map((key) => (
             <button key={key} onClick={() => onOpen(key)}>
-              <IsoIcon kind={key} size={41} />
+              <PlaceGlyph kind={glyphFor(key)} size={18} />
               <span>{titleFor(key, locale)}</span>
-              <ArrowUpRight size={16} />
+              <ArrowUpRight size={15} />
             </button>
           ))}
         </div>
       </div>
     );
   if (id === 'people')
-    return (
-      <div className="team-register">
-        {people.map((person, i) => (
-          <article
-            className="profile-entry"
-            key={person.id}
-            id={`profile-${person.id}`}
-          >
-            <Portrait id={person.id} locale={locale} />
-            <div>
-              <span className="entry-number">
-                0{i + 1} / {person.category[locale]}
-              </span>
-              <h3>{person.name[locale]}</h3>
-              <p>{person.summary[locale]}</p>
-              <button className="text-action" onClick={() => onOpen(person.id)}>
-                {tr('Open profile', '查看个人资料')}
-                <ArrowUpRight size={15} />
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    );
+    return <PeopleCards locale={locale} onOpen={onOpen} />;
   if (id === 'corner-park')
     return (
-      <div className="park-content">
-        <div className="park-keepsake">
-          <IsoIcon kind="corner-park" size={108} />
-          <span>
-            {tr('A place for our memories.', '给我们的记忆留一处位置。')}
-          </span>
-        </div>
-        <h3>{tr('The first chapter', '第一章')}</h3>
-        <p>
+      <div className="park">
+        <p className="record-lead">
           {tr(
-            'The riverside corner park is part of our group’s shared home. Future group photos, celebrations and small surprises will find a place here.',
-            '滨水街角公园是我们共同的家的一部分。未来的团队合影、节日庆典与小彩蛋将在这里找到位置。',
+            'The riverside corner park is the group’s shared garden. Group photos, celebrations and small discoveries will be kept here.',
+            '滨水街角公园是研究组共同的花园。团队合影、节日庆典与小小发现都会保存在这里。',
           )}
         </p>
         {eventRecords.length ? (
@@ -449,22 +582,22 @@ export function LabContent({
             onOpen={onOpen}
           />
         ) : (
-          <div className="memory-shelves">
+          <ul className="empty-shelves">
             {[
               tr('Group photos', '团队合影'),
               tr('Celebrations', '节日庆典'),
-              tr('Small discoveries', '小小彩蛋'),
+              tr('Small discoveries', '小小发现'),
             ].map((label) => (
-              <div key={label}>
+              <li key={label}>
                 <span>{label}</span>
                 <small>{tr('No records yet', '暂无记录')}</small>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
-        <button className="text-action" onClick={() => onOpen('lius-gate')}>
-          {tr('The story behind our name', '了解「刘家门」的命名故事')}
-          <ArrowUpRight size={15} />
+        <button className="link-action" onClick={() => onOpen('lius-gate')}>
+          {tr('The story behind our name', '「刘家门」的由来')}
+          <ArrowUpRight size={14} />
         </button>
       </div>
     );
@@ -487,14 +620,16 @@ export function LabContent({
     );
   const person = people.some((p) => p.id === id);
   return (
-    <div className={`record-content ${person ? 'person-record' : ''}`}>
+    <div className={`record ${person ? 'record-person' : ''}`}>
       {person ? (
-        <div className="profile-identity">
-          <Portrait id={b.id} locale={locale} />
+        <div className="identity">
+          <Portrait id={b.id} locale={locale} size="large" />
           <div>
-            <span className="overline">{b.category[locale]}</span>
-            <p>{b.summary[locale]}</p>
-            <span className="institution">University of Glasgow</span>
+            <span className="eyebrow">{b.category[locale]}</span>
+            <p className="record-lead">{b.summary[locale]}</p>
+            <span className="institution">
+              {tr('University of Glasgow', '格拉斯哥大学')}
+            </span>
           </div>
         </div>
       ) : (
@@ -521,28 +656,23 @@ export function LabContent({
       {(!records.length && !additional.length ? b.sections : []).map(
         (section, i) => (
           <section className="record-section" key={i}>
-            <h3>{section.heading[locale]}</h3>
+            <h4>{section.heading[locale]}</h4>
             <p>{section.body[locale]}</p>
           </section>
         ),
       )}
-      <details className="architecture-note">
-        <summary>{tr('About this building', '这栋建筑的风格')}</summary>
-        <p>
-          <strong>{b.style[locale]}</strong>
-          <br />
-          {b.architecture[locale]}
-        </p>
-      </details>
-      <div className="related-records">
-        <span>{tr('Continue exploring', '继续探索')}</span>
-        {b.related.map((key) => (
-          <button key={key} onClick={() => onOpen(key)}>
-            <IsoIcon kind={key} size={30} />
-            {titleFor(key, locale)}
-            <ArrowUpRight size={14} />
-          </button>
-        ))}
+      <ArchitectureNote locale={locale} building={b} />
+      <div className="record-related">
+        <span className="eyebrow">{tr('Continue exploring', '继续探索')}</span>
+        <div>
+          {b.related.map((key) => (
+            <button key={key} onClick={() => onOpen(key)}>
+              <PlaceGlyph kind={glyphFor(key)} size={15} />
+              {titleFor(key, locale)}
+              <ArrowUpRight size={13} />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

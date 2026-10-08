@@ -11,7 +11,7 @@ import type { createCraft } from './city-craft';
 import type { SurfaceKind } from './city-materials';
 import { groundSurfaces, groundHeightAt, supportSurfaces } from './city-ground';
 import { routeBetween, visitNodes } from './city-motion';
-import type { BuildingId, Locale } from './city-data';
+import type { BuildingId } from './city-data';
 
 import { CELL, GRID_SIZE, districts, type DistrictId } from './city-districts';
 export { CELL, GRID_SIZE, districts, type DistrictId };
