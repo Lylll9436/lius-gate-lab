@@ -221,12 +221,14 @@ city.traverse((o) => {
 assert(windows > 5);
 const scene = new T.Scene();
 scene.add(city);
-const lighting = createStreetLighting(scene, lamps.slice(0, 10));
+const lighting = createStreetLighting(scene, lamps.slice(0, 6), { shadows: 1 });
 lighting.update(1, false);
-assert.equal(lighting.lights.length, 10);
+assert.equal(lighting.lights.length, 6);
 assert(lighting.lights.every((l) => l.isSpotLight && l.intensity > 0 && l.position.y > l.target.position.y));
+assert(scene.children.includes(lighting.lights[0]), 'Spotlights join the scene at night.');
 lighting.update(0, false);
 assert(lighting.lights.every((l) => l.intensity === 0));
+assert(!scene.children.includes(lighting.lights[0]), 'Spotlights leave the scene by day.');
 lighting.dispose();
 console.log(
   `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms, furnished rooms with separate roofs, clickable buildings, open sea and lit windows at night.`,

@@ -79,17 +79,25 @@ export function createCity(
     coarse = window.matchMedia('(pointer: coarse)').matches;
   const tier: 'high' | 'low' =
     coarse || cores <= 4 || memory <= 4 ? 'low' : 'high';
+  // The ink pass does its own multisampling; a multisampled default framebuffer would
+  // only add a second full-resolution resolve every frame.
   const renderer = new T.WebGLRenderer({
-    antialias: true,
+    antialias: false,
     alpha: true,
     premultipliedAlpha: false,
     powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(
-    Math.min(window.devicePixelRatio || 1, tier === 'low' ? 1.5 : 2),
+  // 1.5x pixels is where extra sharpness stops being visible and starts costing frames.
+  const baseRatio = Math.min(
+    window.devicePixelRatio || 1,
+    tier === 'low' ? 1.25 : 1.5,
   );
+  renderer.setPixelRatio(baseRatio);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  renderer.shadowMap.type = T.PCFShadowMap;
+  // Shadow maps are refreshed on a cadence from the frame loop, not every frame.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
@@ -105,17 +113,35 @@ export function createCity(
     camera = new T.OrthographicCamera(-24, 24, 24, -24, 0.1, 180),
     model = buildTown();
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
-  const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
+  const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 0 : 2);
   scene.add(city);
   const fog = new T.Fog('#d9e3dd', 72, 150);
   scene.fog = fog;
   const water = createIslandWater(model.waterLevel, -0.5);
   city.add(water.bottom, water.mesh);
-  // Only the lanterns near the centre carry real spotlights; the rest glow.
+  // Only the lanterns around the plaza carry real spotlights (after dusk); the rest glow.
   const litLanterns = lamps
     .filter((l) => l.getWorldPosition(new T.Vector3()).length() < 9.5)
-    .slice(0, 10);
-  const lighting = createStreetLighting(scene, litLanterns);
+    .slice(0, 6);
+  const lighting = createStreetLighting(scene, litLanterns, {
+    shadows: tier === 'low' ? 0 : 1,
+    shadowSize: 512,
+  });
+  // Pointer picking uses one invisible box per building, never the merged geometry.
+  city.updateMatrixWorld(true);
+  for (const [id, m] of models) {
+    const bounds = new T.Box3().setFromObject(m.root),
+      size = bounds.getSize(new T.Vector3()),
+      centre = bounds.getCenter(new T.Vector3());
+    const hit = new T.Mesh(
+      new T.BoxGeometry(size.x, size.y, size.z),
+      new T.MeshBasicMaterial({ visible: false }),
+    );
+    hit.position.copy(centre);
+    hit.userData.buildingId = id;
+    city.add(hit);
+    m.hit = hit;
+  }
   const sky = new T.HemisphereLight('#f4f1e4', '#6e8986', 1.6);
   scene.add(sky);
   const sunOffset = new T.Vector3(-16, 32, 20),
@@ -139,8 +165,26 @@ export function createCity(
   sun.shadow.bias = -0.00012;
   scene.add(sun);
   scene.add(sun.target);
+  // Quality ladder, climbed down by the frame-time governor and back up when frames are cheap:
+  // 0 full, 1 fewer pixels, 2 smaller shadows and no lantern shadow, 3 and 4 fewer pixels still.
+  let quality = 0,
+    qualityChanged = 0;
+  const shadowSizeFor = () =>
+    quality >= 2 ? Math.max(512, shadowBase / 2) : shadowBase;
+  function applyQuality() {
+    const ratio = Math.max(0.75, baseRatio - 0.25 * [0, 1, 1, 2, 3][quality]);
+    if (Math.abs(renderer.getPixelRatio() - ratio) > 1e-3) {
+      renderer.setPixelRatio(ratio);
+      renderer.setSize(Math.max(1, width), Math.max(1, height), false);
+      ink.resize(width, height);
+    }
+    for (const [i, light] of lighting.lights.entries())
+      light.castShadow = i === 0 && tier !== 'low' && quality < 2;
+    shadowFocus(sun.target.position.length() ? sun.target.position.clone() : undefined, sun.shadow.camera.right);
+  }
   function shadowFocus(center?: T.Vector3, radius = 30) {
-    const resolution = center ? shadowBase * 2 : shadowBase;
+    const base = shadowSizeFor();
+    const resolution = center ? base * 2 : base;
     if (sun.shadow.mapSize.x !== resolution) {
       sun.shadow.mapSize.set(resolution, resolution);
       sun.shadow.map?.dispose();
@@ -156,8 +200,9 @@ export function createCity(
     });
     sun.shadow.camera.updateProjectionMatrix();
   }
+  // The island's shadow on the sea bed: only as large as the island and its harbour.
   const shadow = new T.Mesh(
-    new T.PlaneGeometry(180, 180),
+    new T.PlaneGeometry(100, 100),
     new T.ShadowMaterial({ color: '#2f4a44', opacity: 0.14, depthWrite: false }),
   );
   shadow.rotation.x = -Math.PI / 2;
@@ -223,7 +268,20 @@ export function createCity(
     frameCost = 0.016,
     lastGovern = 0,
     clockChecked = -1e9,
-    hoverSignature = '';
+    hoverSignature = '',
+    frameIndex = 0;
+  // Colours used every frame, allocated once.
+  const tint = {
+    sunDay: new T.Color('#fff1d6'),
+    sunWarm: new T.Color('#ffbe7a'),
+    sunNight: new T.Color('#8daed0'),
+    skyDay: new T.Color('#f4f1e4'),
+    skyWarm: new T.Color('#f2d3c0'),
+    skyRain: new T.Color('#cfd9dc'),
+    fogDay: new T.Color('#d9e3dd'),
+    fogNight: new T.Color('#101b20'),
+    fogRain: new T.Color('#c3ced0'),
+  };
   const shiftApplied = new T.Vector3();
   const weather = createRain(tier === 'low' ? 900 : 1700),
     gulls = createGulls();
@@ -414,8 +472,9 @@ export function createCity(
       (-(clientY - rect.top) / rect.height) * 2 + 1,
     );
     ray.setFromCamera(mouse, camera);
+    // Each model carries an invisible hit box; the merged geometry is never raycast.
     const hit = ray.intersectObjects(
-      [...Array.from(models.values(), (m) => m.root), parkHit],
+      [...Array.from(models.values(), (m) => m.hit ?? m.root), parkHit],
       true,
     )[0];
     if (!hit) return null;
@@ -572,7 +631,11 @@ export function createCity(
           camera,
           width / height,
         );
-        roof.position.copy(dock.offset).multiplyScalar(openAmount);
+        // The dock offset is a world-space vector; the roof moves in its parent's frame.
+        roof.position
+          .copy(dock.offset)
+          .applyQuaternion(inspect.quaternion.clone().invert())
+          .multiplyScalar(openAmount);
         roof.scale.setScalar(1 + (dock.scale - 1) * openAmount);
         roof.visible = dock.visible || openAmount < 0.015;
         if (inspectionAutoFit) {
@@ -684,39 +747,59 @@ export function createCity(
     rain = T.MathUtils.lerp(rain, targetRain, reduced ? 1 : blend * 0.5);
     const overcast = 1 - rain * 0.42;
     sun.color
-      .set('#fff1d6')
-      .lerp(new T.Color('#ffbe7a'), sunWarmth * (1 - night))
-      .lerp(new T.Color('#8daed0'), night);
+      .copy(tint.sunDay)
+      .lerp(tint.sunWarm, sunWarmth * (1 - night))
+      .lerp(tint.sunNight, night);
     sun.intensity *= overcast;
     sky.intensity *= 1 - rain * 0.18;
     sky.color
-      .set('#f4f1e4')
-      .lerp(new T.Color('#f2d3c0'), sunWarmth * 0.6 * (1 - night))
-      .lerp(new T.Color('#cfd9dc'), rain * 0.5);
+      .copy(tint.skyDay)
+      .lerp(tint.skyWarm, sunWarmth * 0.6 * (1 - night))
+      .lerp(tint.skyRain, rain * 0.5);
     fog.color
-      .set('#d9e3dd')
-      .lerp(new T.Color('#101b20'), night)
-      .lerp(new T.Color('#c3ced0'), rain * 0.45 * (1 - night));
+      .copy(tint.fogDay)
+      .lerp(tint.fogNight, night)
+      .lerp(tint.fogRain, rain * 0.45 * (1 - night));
     weather.update(dt, rain, paused);
     gulls.object.visible = !inspect && night < 0.85;
     gulls.update(time);
     water.update(time, night, camera, { rain, sun: sunOffset });
-    // Governor: sustained slow frames trade pixels for smoothness, never geometry.
+    // Shadows refresh every other frame: moving things still get moving shadows,
+    // and the costliest pass runs half as often.
+    frameIndex++;
+    renderer.shadowMap.needsUpdate = paused ? frameIndex % 30 === 0 : frameIndex % 2 === 0;
+    // Governor: sustained slow frames step down the quality ladder; sustained cheap
+    // frames step back up, slowly, so the picture settles where the device can hold it.
     frameCost = T.MathUtils.lerp(frameCost, dt, 0.04);
-    if (
-      now - lastGovern > 2500 &&
-      frameCost > 0.034 &&
-      renderer.getPixelRatio() > 1
-    ) {
-      lastGovern = now;
-      frameCost = 0.016;
-      renderer.setPixelRatio(Math.max(1, renderer.getPixelRatio() - 0.25));
-      renderer.setSize(Math.max(1, width), Math.max(1, height), false);
-      ink.resize(width, height);
+    if (now - lastGovern > 2500) {
+      if (frameCost > 0.034 && quality < 4) {
+        quality++;
+        qualityChanged = now;
+        lastGovern = now;
+        frameCost = 0.016;
+        applyQuality();
+      } else if (frameCost < 0.011 && quality > 0 && now - qualityChanged > 12000) {
+        quality--;
+        qualityChanged = now;
+        lastGovern = now;
+        frameCost = 0.016;
+        applyQuality();
+      }
     }
   }
   setClocks();
   raf = requestAnimationFrame(frame);
+  // `?debug` exposes the renderer so frame costs can be inspected from the console.
+  if (new URLSearchParams(window.location.search).has('debug'))
+    (window as unknown as { __city: unknown }).__city = {
+      renderer,
+      scene,
+      camera,
+      ink,
+      model,
+      frameCost: () => frameCost,
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality }),
+    };
   return {
     select,
     enter(id) {
@@ -726,16 +809,18 @@ export function createCity(
       m.root.getWorldPosition(inspect.position);
       inspect.rotation.copy(m.root.rotation);
       m.root.updateMatrixWorld(true);
-      const inverse = m.root.matrixWorld.clone().invert();
+      // Bounds in world orientation, relative to the building's position: the fit and the
+      // roof docking reason in camera space, so a rotated building must not fool them.
+      const shift = inspect.position.clone().negate();
       inspect.userData.bodyBounds = new T.Box3()
         .setFromObject(m.interior)
-        .applyMatrix4(inverse);
+        .translate(shift);
       inspect.userData.roofBounds = new T.Box3()
         .setFromObject(m.roof)
-        .applyMatrix4(inverse);
+        .translate(shift);
       inspect.userData.exteriorBounds = new T.Box3()
         .setFromObject(m.root)
-        .applyMatrix4(inverse);
+        .translate(shift);
       inspectionAutoFit = true;
       if (id !== 'lius-gate')
         inspect.children[1].traverse((o) => {

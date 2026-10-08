@@ -24,6 +24,8 @@ export type Model = {
   interior: T.Group;
   fade: T.MeshStandardMaterial[];
   center: T.Vector3;
+  /** Invisible box for pointer picking, set by the scene. */
+  hit?: T.Mesh;
 };
 export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: number };
 

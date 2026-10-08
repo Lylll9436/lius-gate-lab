@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildings, type BuildingId, type Locale } from './city-data';
 import {
   chapterFor,
@@ -38,7 +38,8 @@ export default function Home() {
     // While the page scrolls itself to a chapter, the camera heads straight there
     // instead of visiting every chapter the scroll passes on the way.
     scrollLock = useRef<{ chapter: ContentId; until: number } | null>(null),
-    viewRef = useRef<View>({ mode: 'reading', content: 'overview' });
+    viewRef = useRef<View>({ mode: 'reading', content: 'overview' }),
+    wideRef = useRef(true);
   const [locale, setLocale] = useState<Locale>(() =>
     typeof navigator !== 'undefined' && /^zh/i.test(navigator.language)
       ? 'zh'
@@ -71,7 +72,8 @@ export default function Home() {
     b = buildingForContent(content);
   useEffect(() => {
     viewRef.current = view;
-  }, [view]);
+    wideRef.current = wide;
+  }, [view, wide]);
 
   function applyView(next: View, keepTour = false) {
     setView(next);
@@ -81,19 +83,74 @@ export default function Home() {
     setDirectory(false);
     if (!keepTour) setTour(-1);
   }
+  /** Scroll the reading page to a chapter or card, and send the camera straight there. */
+  const scrollToContent = useCallback((id: ContentId) => {
+    const chapter = id === 'overview' ? 'overview' : chapterFor(id);
+    scrollLock.current = { chapter, until: performance.now() + 2500 };
+    setActive(chapter);
+    // Two frames: the story must be laid out again if explore mode was just left.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const target =
+          document.getElementById(`read-${id}`) ??
+          document.getElementById(`read-${chapterFor(id)}`);
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+          .matches;
+        if (id === 'overview')
+          window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+        else
+          target?.scrollIntoView({
+            behavior: reduced ? 'auto' : 'smooth',
+            block: 'start',
+          });
+        target
+          ?.querySelector<HTMLElement>('h2,h3')
+          ?.focus({ preventScroll: true });
+      }),
+    );
+  }, []);
   function navigate(
     nextMode: BrowseMode,
     nextContent: ContentId,
     options: { keepTour?: boolean; replace?: boolean } = {},
   ) {
     applyView({ mode: nextMode, content: nextContent }, options.keepTour);
-    if (nextMode === 'reading') pendingScroll.current = nextContent;
+    if (nextMode === 'reading') scrollToContent(nextContent);
     const hash = `#${nextMode === 'city' ? 'city' : 'read'}/${nextContent}`;
     if (window.location.hash !== hash) {
       if (options.replace) window.history.replaceState(null, '', hash);
       else window.history.pushState(null, '', hash);
     }
   }
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  });
+  // Stable handlers keep the chapter DOM from re-rendering on every hover or scroll.
+  const goRead = useCallback(
+    (id: ContentId) => navigateRef.current('reading', id),
+    [],
+  );
+  const goCity = useCallback(
+    (id: ContentId) => navigateRef.current('city', id),
+    [],
+  );
+  const goExplore = useCallback(
+    () => navigateRef.current('city', 'overview'),
+    [],
+  );
+  const startReading = useCallback(
+    () => navigateRef.current('reading', 'town-hall'),
+    [],
+  );
+  const visitHome = useCallback((id: BuildingId) => {
+    api.current?.select(id);
+    api.current?.setFrameShift(wideRef.current ? 0.21 : 0);
+  }, []);
+  const accentBuilding = useCallback(
+    (id: BuildingId | null) => api.current?.setAccent(id),
+    [],
+  );
   const select = (id: BuildingId) =>
     navigate(viewRef.current.mode, contentForBuilding(id));
   const openPark = () => navigate(viewRef.current.mode, 'corner-park');
@@ -159,8 +216,9 @@ export default function Home() {
         if (disposed || !mount.current) return;
         api.current = createCity(
           mount.current,
-          (id) => select(id),
-          () => openPark(),
+          (id) =>
+            navigateRef.current(viewRef.current.mode, contentForBuilding(id)),
+          () => navigateRef.current(viewRef.current.mode, 'corner-park'),
           { onHover: (id) => setHovered(id) },
         );
         api.current.setDrift(true);
@@ -186,7 +244,6 @@ export default function Home() {
     if (engine) {
       engine.setPlan(false);
       engine.reset();
-      engine.setFrameShift(panelOpen && wide ? 0.17 : 0);
       const destination = sceneTarget(content);
       if (destination.district)
         engine.focusBuildings(selectionForContent(content));
@@ -198,28 +255,20 @@ export default function Home() {
       document.getElementById('dossier-title')?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [mode, content, ready, panelOpen, wide]);
+  }, [mode, content, ready]);
+  // Explore mode: the dossier takes the right-hand side, so the subject moves left.
+  useEffect(() => {
+    if (mode === 'city')
+      api.current?.setFrameShift(panelOpen && wide ? 0.17 : 0);
+  }, [mode, panelOpen, wide, ready]);
 
-  // Reading mode: a requested address scrolls to its chapter or card.
+  // Reading mode: an address arriving from the address bar scrolls to its chapter.
   useEffect(() => {
     if (mode !== 'reading' || !pendingScroll.current) return;
     const id = pendingScroll.current;
     pendingScroll.current = null;
-    const chapter = id === 'overview' ? 'overview' : chapterFor(id);
-    scrollLock.current = { chapter, until: performance.now() + 1500 };
-    setActive(chapter);
-    const frame = requestAnimationFrame(() => {
-      const target =
-        document.getElementById(`read-${id}`) ??
-        document.getElementById(`read-${chapterFor(id)}`);
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
-        .matches;
-      if (id === 'overview') window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
-      else target?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
-      target?.querySelector<HTMLElement>('h2,h3')?.focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [mode, content]);
+    scrollToContent(id);
+  }, [mode, content, scrollToContent]);
 
   // Reading mode: the chapter under the reading line drives the camera.
   useEffect(() => {
@@ -386,9 +435,12 @@ export default function Home() {
         locale={locale}
         mode={mode}
         active={explore ? chapterFor(content) : active}
-        onNavigate={(id) => navigate('reading', id)}
+        onNavigate={goRead}
         onToggleMode={() =>
-          navigate(explore ? 'reading' : 'city', explore ? chapterFor(content) : content)
+          navigate(
+            explore ? 'reading' : 'city',
+            explore ? chapterFor(content) : content,
+          )
         }
         onToggleLocale={() => setLocale(zh ? 'en' : 'zh')}
       />
@@ -408,18 +460,15 @@ export default function Home() {
             locale={locale}
             sky={sky}
             skyMode={skyMode}
-            onExplore={() => navigate('city', 'overview')}
-            onRead={() => navigate('reading', 'town-hall')}
+            onExplore={goExplore}
+            onRead={startReading}
           />
           <Chapters
             locale={locale}
-            onOpen={(id) => navigate('reading', id)}
-            onVisit={(id) => {
-              api.current?.select(id);
-              api.current?.setFrameShift(wide ? 0.21 : 0);
-            }}
-            onHoverBuilding={(id) => api.current?.setAccent(id)}
-            onExplore={(id) => navigate('city', id)}
+            onOpen={goRead}
+            onVisit={visitHome}
+            onHoverBuilding={accentBuilding}
+            onExplore={goCity}
           />
         </div>
       </div>

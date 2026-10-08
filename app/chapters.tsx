@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { ArrowDown, ArrowUpRight, Map } from 'lucide-react';
 import type { BuildingId, Locale } from './city-data';
 import type { ContentId } from './lab-navigation';
@@ -6,7 +7,7 @@ import { chapterMeta } from './site-chrome';
 import type { SkyState } from './city-atmosphere';
 import type { SkyMode } from './use-sky';
 
-export function Hero({
+export const Hero = memo(function Hero({
   locale,
   sky,
   skyMode,
@@ -58,9 +59,10 @@ export function Hero({
       </div>
     </section>
   );
-}
+});
 
-export function Chapters({
+/** The six chapters. Memoised: hovering a building must not re-render the page's text. */
+export const Chapters = memo(function Chapters({
   locale,
   onOpen,
   onVisit,
@@ -126,4 +128,4 @@ export function Chapters({
       ))}
     </>
   );
-}
+});
