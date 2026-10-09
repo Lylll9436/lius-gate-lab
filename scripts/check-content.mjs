@@ -277,6 +277,14 @@ await fs.copyFile(
   path.join(sandbox, 'scripts/content.mjs'),
 );
 await fs.writeFile(path.join(sandbox, 'content/lab.json'), original);
+// The CLI checks that every referenced photo exists, so mirror those files too.
+for (const item of [...catalog.people, ...(catalog.events ?? [])]) {
+  const asset = item.photo ?? item.image;
+  if (!asset) continue;
+  const target = path.join(sandbox, 'public', asset.slice(1));
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.copyFile(path.join(root, 'public', asset.slice(1)), target);
+}
 const file = path.join(sandbox, 'person.json');
 await fs.writeFile(file, JSON.stringify(person));
 for (const args of [
