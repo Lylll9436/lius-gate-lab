@@ -5,11 +5,11 @@
       "id": "pengyuan-liu",
       "title": {
         "en": "Pengyuan Liu",
-        "zh": "Pengyuan Liu"
+        "zh": "刘鹏远"
       },
       "summary": {
-        "en": "Group supervisor at the University of Glasgow.",
-        "zh": "在格拉斯哥大学开展研究的研究组导师。"
+        "en": "Lecturer (Assistant Professor) in Digital Planning at the University of Glasgow, working on GeoAI and urban digital twins in quantitative urban geography.",
+        "zh": "格拉斯哥大学数字规划讲师（助理教授），从事定量城市地理学研究，专注于 GeoAI 与城市数字孪生。"
       },
       "visibility": "published",
       "order": 0,
@@ -18,70 +18,248 @@
         "zh": "研究组导师"
       },
       "affiliation": {
-        "en": "University of Glasgow",
-        "zh": "格拉斯哥大学"
+        "en": "Lecturer in Digital Planning, University of Glasgow",
+        "zh": "格拉斯哥大学数字规划讲师"
       },
-      "photo": null,
+      "photo": "/people/pengyuan-liu.jpg",
       "buildingId": "pengyuan-liu",
-      "sections": [],
-      "links": [],
-      "properties": []
+      "sections": [
+        {
+          "heading": {
+            "en": "About",
+            "zh": "简介"
+          },
+          "body": {
+            "en": "I am a Lecturer (Assistant Professor) in Digital Planning at the University of Glasgow. I work in quantitative urban geography, specialising in GeoAI and urban digital twin research, and I hold a PhD in Geography from the University of Leicester.",
+            "zh": "我是格拉斯哥大学数字规划讲师（助理教授），研究领域为定量城市地理学，专注于 GeoAI 与城市数字孪生研究，拥有英国莱斯特大学地理学博士学位。"
+          }
+        },
+        {
+          "heading": {
+            "en": "Career",
+            "zh": "经历"
+          },
+          "body": {
+            "en": "Before joining Glasgow, I was a Senior Postdoctoral Researcher and Coordinator at the Future Cities Laboratory, Singapore-ETH Centre. In 2023 I was also a Lecturer in Human Geography and Urban Planning at Nanjing University of Information Science and Technology, and I previously held postdoctoral positions at the NUS Urban Analytics Lab and the University of Helsinki.",
+            "zh": "加入格拉斯哥大学之前，我曾任新加坡-ETH 中心未来城市实验室高级博士后研究员兼协调员，并于 2023 年在南京信息工程大学担任人文地理与城市规划方向讲师。此前，我在新加坡国立大学城市分析实验室和赫尔辛基大学从事博士后研究。"
+          }
+        },
+        {
+          "heading": {
+            "en": "Research",
+            "zh": "研究"
+          },
+          "body": {
+            "en": "I am passionate about integrating geospatial analytics, artificial intelligence and digital twins into urban studies, and about developing the theories, algorithms and models that make this integration possible. I also advocate open data in academia and have helped organise international OpenStreetMap academic conferences, including the 2022 State of the Map Academic Track and OSMScience 2023.",
+            "zh": "我致力于把地理空间分析、人工智能与数字孪生融入城市研究，发展支撑这一融合的理论、算法与模型。我也倡导学术界的开放数据，曾参与组织 OpenStreetMap 国际学术会议，包括 2022 年 State of the Map 学术分会和 2023 年 OSMScience。"
+          }
+        },
+        {
+          "heading": {
+            "en": "Collaboration and PhD opportunities",
+            "zh": "合作与博士招生"
+          },
+          "body": {
+            "en": "I am always keen to explore collaborations and welcome enquiries from prospective PhD students who want to push the boundaries of urban science and GeoAI. Feel free to get in touch to discuss ideas; I am always happy to start a conversation over a coffee.",
+            "zh": "我乐于探索各类合作机会，也欢迎有志于推动城市科学与 GeoAI 前沿的博士申请者与我联系。欢迎来信讨论想法，我随时愿意从一杯咖啡开始交流。"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "key": "interests",
+          "label": {
+            "en": "Research interests",
+            "zh": "研究方向"
+          },
+          "value": {
+            "en": "GeoAI, urban digital twins, quantitative urban geography, geospatial analytics",
+            "zh": "GeoAI、城市数字孪生、定量城市地理学、地理空间分析"
+          }
+        },
+        {
+          "key": "education",
+          "label": {
+            "en": "Education",
+            "zh": "学历"
+          },
+          "value": {
+            "en": "PhD in Geography, University of Leicester",
+            "zh": "英国莱斯特大学地理学博士"
+          }
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Email",
+            "zh": "邮箱"
+          },
+          "url": "mailto:Pengyuan.Liu@glasgow.ac.uk"
+        }
+      ]
     },
     {
       "id": "yunlong-liu",
       "title": {
         "en": "Yunlong Liu",
-        "zh": "Yunlong Liu"
+        "zh": "刘云龙"
       },
       "summary": {
-        "en": "Student of Pengyuan Liu at the University of Glasgow.",
-        "zh": "Pengyuan Liu 的学生，在格拉斯哥大学开展研究。"
+        "en": "PhD researcher in Urban Studies at the University of Glasgow, focusing on urban data science, human mobility and graph neural networks.",
+        "zh": "格拉斯哥大学城市研究博士生，专注于城市数据科学、人类移动性与图神经网络。"
       },
       "visibility": "published",
       "order": 1,
       "role": {
-        "en": "RESEARCH STUDENT",
-        "zh": "研究生"
+        "en": "PHD RESEARCHER",
+        "zh": "博士生"
       },
       "affiliation": {
-        "en": "University of Glasgow",
-        "zh": "格拉斯哥大学"
+        "en": "Urban Studies, University of Glasgow",
+        "zh": "格拉斯哥大学城市研究"
       },
-      "photo": null,
+      "photo": "/people/yunlong-liu.jpg",
       "buildingId": "yunlong-liu",
       "sections": [],
-      "links": [],
-      "properties": []
+      "properties": [
+        {
+          "key": "interests",
+          "label": {
+            "en": "Research interests",
+            "zh": "研究方向"
+          },
+          "value": {
+            "en": "Urban data science, human mobility, graph neural networks",
+            "zh": "城市数据科学、人类移动性、图神经网络"
+          }
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Email",
+            "zh": "邮箱"
+          },
+          "url": "mailto:y.liu.22@research.gla.ac.uk"
+        }
+      ]
     },
     {
       "id": "qin-li",
       "title": {
         "en": "Qin Li",
-        "zh": "Qin Li"
+        "zh": "李秦"
       },
       "summary": {
-        "en": "Student of Pengyuan Liu at the University of Glasgow.",
-        "zh": "Pengyuan Liu 的学生，在格拉斯哥大学开展研究。"
+        "en": "PhD student in Urban Studies at the University of Glasgow, using spatial data and GeoAI to study cities, environments and human well-being.",
+        "zh": "格拉斯哥大学城市研究博士生，运用空间数据与 GeoAI 研究城市、环境与人类福祉。"
       },
       "visibility": "published",
       "order": 2,
       "role": {
-        "en": "RESEARCH STUDENT",
-        "zh": "研究生"
+        "en": "PHD STUDENT",
+        "zh": "博士生"
       },
       "affiliation": {
-        "en": "University of Glasgow",
-        "zh": "格拉斯哥大学"
+        "en": "Urban Studies, University of Glasgow",
+        "zh": "格拉斯哥大学城市研究"
       },
-      "photo": null,
+      "photo": "/people/qin-li.jpg",
       "buildingId": "qin-li",
-      "sections": [],
-      "links": [],
-      "properties": []
+      "sections": [
+        {
+          "heading": {
+            "en": "About",
+            "zh": "简介"
+          },
+          "body": {
+            "en": "I am a PhD student in Urban Studies at the University of Glasgow, with a background in landscape architecture, architecture, spatial data science and GeoAI. My research uses spatial data and computational methods to understand cities, environments and human well-being.",
+            "zh": "我是格拉斯哥大学城市研究方向的博士生，学科背景涵盖风景园林、建筑学、空间数据科学与 GeoAI。我的研究借助空间数据与计算方法，理解城市、环境与人类福祉。"
+          }
+        },
+        {
+          "heading": {
+            "en": "Research interests",
+            "zh": "研究方向"
+          },
+          "body": {
+            "en": "GeoAI, remote sensing, urban analytics and environmental justice, as well as the emerging use of multimodal AI and large language models in geographic research.",
+            "zh": "GeoAI、遥感、城市分析与环境正义，以及多模态 AI 和大语言模型在地理研究中的新兴应用。"
+          }
+        },
+        {
+          "heading": {
+            "en": "Background",
+            "zh": "经历"
+          },
+          "body": {
+            "en": "Before joining Glasgow, I studied Landscape Architecture and Architecture at Beijing Forestry University and worked on interdisciplinary research with the Harvard Spatial Data Lab and the University of Southern California. My earlier projects explored urban green-space equity, environmental quality and health, the built environment, remote sensing and AI-assisted spatial analysis.",
+            "zh": "来格拉斯哥之前，我在北京林业大学学习风景园林与建筑学，并曾与哈佛大学空间数据实验室、南加州大学合作开展跨学科研究。此前的项目涉及城市绿地公平、环境质量与健康、建成环境、遥感以及 AI 辅助的空间分析。"
+          }
+        },
+        {
+          "heading": {
+            "en": "Collaboration",
+            "zh": "合作交流"
+          },
+          "body": {
+            "en": "I enjoy working across disciplines, turning real-world urban and environmental questions into research that combines spatial thinking, data and emerging technologies. I am always glad to connect with researchers and practitioners in GeoAI, urban science, remote sensing, environmental justice and human-centred AI.",
+            "zh": "我喜欢跨学科的工作，乐于把现实中的城市与环境问题转化为融合空间思维、数据与新技术的研究，也欢迎 GeoAI、城市科学、遥感、环境正义和以人为本的 AI 等领域的研究者与从业者交流。"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "key": "education",
+          "label": {
+            "en": "Education",
+            "zh": "学历"
+          },
+          "value": {
+            "en": "Landscape Architecture and Architecture, Beijing Forestry University",
+            "zh": "北京林业大学，风景园林与建筑学"
+          }
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Email",
+            "zh": "邮箱"
+          },
+          "url": "mailto:3215468L@student.gla.ac.uk"
+        }
+      ]
     }
   ],
   "research": [],
-  "events": [],
+  "events": [
+    {
+      "id": "pollok-highland-cows-2026",
+      "title": {
+        "en": "Highland cows in Pollokshaws",
+        "zh": "去 Pollokshaws 看高地牛"
+      },
+      "summary": {
+        "en": "A trip to Pollok Country Park in Pollokshaws to meet the Highland cows, celebrating Yunlong Liu and Qin Li joining the group as new PhD students.",
+        "zh": "去 Pollokshaws 的 Pollok 公园看高地牛，庆祝刘云龙和李秦两位新同学加入研究组。"
+      },
+      "visibility": "published",
+      "order": 0,
+      "sections": [],
+      "properties": [],
+      "links": [],
+      "date": "2026-10-03",
+      "category": "celebration",
+      "people": [
+        "pengyuan-liu",
+        "yunlong-liu",
+        "qin-li"
+      ],
+      "image": "/media/pollok-highland-cows-2026.jpg"
+    }
+  ],
   "outputs": [],
   "notes": []
 }
