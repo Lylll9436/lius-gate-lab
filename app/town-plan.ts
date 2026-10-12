@@ -64,6 +64,14 @@ export function terrainHeight(x: number, z: number) {
     const d = Math.hypot(x - m.x, z - m.z) / m.r;
     if (d < 1) y += m.h * (1 - d * d) ** 2;
   }
+  // Cut a flat pad under each cottage so its plinth sits level (cottages is only read at call time).
+  for (const c of cottages) {
+    const d = Math.hypot(x - c.x, z - c.z);
+    if (d < 3.4) {
+      const t = Math.max(0, (d - 2.2) / 1.2);
+      y *= t * t * (3 - 2 * t);
+    }
+  }
   return y;
 }
 
@@ -253,7 +261,7 @@ export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
 export const cottages: { x: number; z: number; rotation: number; color: string }[] = [
   { x: -21.5, z: -9.5, rotation: Math.PI / 2, color: '#e1cfa8' },
   { x: -21, z: 10.5, rotation: Math.PI / 2 + 0.3, color: '#d9c39a' },
-  { x: 19.5, z: 1.5, rotation: -Math.PI / 2, color: '#e4d2ad' },
+  { x: 20.5, z: 1.5, rotation: -Math.PI / 2, color: '#e4d2ad' },
   { x: 5, z: -17.5, rotation: 0, color: '#cdb48d' },
   { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8' },
 ];

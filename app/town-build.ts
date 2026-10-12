@@ -566,11 +566,14 @@ export function buildTown(
     const positions: number[] = [],
       colors: number[] = [],
       indices: number[] = [];
-    const light = new T.Color(palette.grassLight),
-      dark = new T.Color(palette.grassDark),
-      shore = new T.Color('#b9c48a');
+    // A clean yellow-green town lawn (lawnCore: inside the ring and the terrace gardens) and a
+    // patchier outer meadow, from two low octaves only so the ~1-unit vertex spacing cannot alias.
+    const lo = new T.Color('#98b74a'),
+      hi = new T.Color('#aac757'),
+      patch = new T.Color('#8bb038'),
+      crest = new T.Color('#b4cf5c');
     positions.push(0, plan.terrainHeight(0, 0), 0);
-    colors.push(...light.clone().lerp(dark, 0.4).toArray());
+    colors.push(...new T.Color('#a2bf50').toArray());
     for (let i = 1; i <= rings; i++)
       for (let j = 0; j < segments; j++) {
         const a = (j / segments) * Math.PI * 2,
@@ -579,13 +582,10 @@ export function buildTown(
           x = Math.cos(a) * r,
           z = Math.sin(a) * r;
         positions.push(x, plan.terrainHeight(x, z), z);
-        const n =
-          noise2(x * 0.09 + 5, z * 0.09 + 3) * 0.5 +
-          noise2(x * 0.3 + 11, z * 0.3 + 7) * 0.3 +
-          noise2(x * 1.1, z * 1.1) * 0.2;
-        const lawn = plan.distanceToStreets(x, z) < 2.2 ? 0.18 : 0;
-        const c = dark.clone().lerp(light, T.MathUtils.clamp(n * 1.15 + lawn, 0, 1));
-        if (t > 0.9) c.lerp(shore, (t - 0.9) / 0.1);
+        const n = noise2(x * 0.07 + 5, z * 0.07 + 3) * 0.6 + noise2(x * 0.19 + 11, z * 0.19 + 7) * 0.4;
+        const c = lo.clone().lerp(hi, T.MathUtils.smoothstep(n, 0.3, 0.7));
+        c.lerp(patch, 0.6 * (1 - plan.lawnCore(x, z)) * T.MathUtils.smoothstep(noise2(x * 0.23 + 31, z * 0.23 + 17), 0.6, 0.7));
+        c.lerp(crest, 0.45 * T.MathUtils.clamp(plan.terrainHeight(x, z) / 0.9, 0, 1));
         colors.push(c.r, c.g, c.b);
       }
     const index = (i: number, j: number) => (i === 0 ? 0 : 1 + (i - 1) * segments + (j % segments));
