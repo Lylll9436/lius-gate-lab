@@ -1687,7 +1687,7 @@ export function buildTown(
   function batch(g: T.Object3D, opts: { groundShade?: number } = {}) {
     g.updateMatrixWorld(true);
     const inv = g.matrixWorld.clone().invert(),
-      groups = new Map<T.Material, T.BufferGeometry[]>(),
+      groups = new Map<string, { mat: T.Material; cast: boolean; list: T.BufferGeometry[] }>(),
       old: T.Mesh[] = [];
     const bounds = new T.Box3().setFromObject(g);
     g.traverse((o) => {
@@ -1709,6 +1709,13 @@ export function buildTown(
         local.dispose();
       }
       geometry.applyMatrix4(inv.clone().multiply(o.matrixWorld));
+      // Cast by size: glass volumes cast, flowers, trims and thin panes do not, water never does.
+      geometry.computeBoundingBox();
+      const size = geometry.boundingBox!.getSize(new T.Vector3());
+      const k = source.userData.surfaceKind as SurfaceKind;
+      const cast = Math.max(size.x, size.y, size.z) >= 0.3 && k !== 'water'
+        && !(k === 'glass' && Math.min(size.x, size.y, size.z) < 0.3) && !o.userData.noShadow;
+      const key = mat.uuid + (cast ? '|c' : '|n');
       if (source.userData.surfaceKind === 'grass') projectMaterialUV(geometry, 'grass');
       const count = geometry.getAttribute('position').count,
         previous = geometry.getAttribute('color'),
@@ -1725,12 +1732,12 @@ export function buildTown(
         colors[i * 3 + 2] = source.color.b * (previous ? previous.getZ(i) : 1) * shade;
       }
       geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
-      if (!groups.has(mat)) groups.set(mat, []);
-      groups.get(mat)!.push(geometry);
+      if (!groups.has(key)) groups.set(key, { mat, cast, list: [] });
+      groups.get(key)!.list.push(geometry);
       old.push(o);
     });
     old.forEach((o) => o.removeFromParent());
-    for (const [mat, geometries] of groups) {
+    for (const { mat, cast, list: geometries } of groups.values()) {
       const normalized = geometries.map((geo) => {
         const plain = geo.index ? geo.toNonIndexed() : geo;
         for (const name of Object.keys(plain.attributes))
@@ -1741,7 +1748,7 @@ export function buildTown(
       const merged = mergeGeometries(normalized, false);
       if (merged) {
         const mesh = new T.Mesh(merged, mat);
-        mesh.castShadow = (mat as T.MeshStandardMaterial).userData.surfaceKind !== 'glass';
+        mesh.castShadow = cast;
         mesh.receiveShadow = true;
         g.add(mesh);
       }
