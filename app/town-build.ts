@@ -647,7 +647,10 @@ export function buildTown(
       si: number[] = [];
     for (let i = 0; i < n; i++)
       for (const band of profile) {
-        const p = shorePoint(i, band.width, band.height);
+        // The inner edge meets the lawn's outer ring, which rises where a mound reaches the coast;
+        // a flat edge there leaves a crack that shows the sea under the island.
+        const [ox, oz] = plan.islandOutline[i],
+          p = shorePoint(i, band.width, band.width === 0 ? plan.terrainHeight(ox, oz) : band.height);
         sp.push(...p);
         const tone = 0.96 + 0.04 * Math.sin(i * 0.9 + band.width * 2.1) + 0.02 * (hash(i * 7 + band.width * 13) - 0.5);
         const c = new T.Color(band.color).multiplyScalar(tone);
