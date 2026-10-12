@@ -803,9 +803,14 @@ img {
   gap: 28px;
   padding: calc(var(--masthead) + 24px) clamp(16px, 4vw, 56px) 76px;
 }
+/* The hero text floats over the island: drags on it pan the city (as the hint says)
+   instead of selecting the text. Only the buttons take the pointer. */
 .hero-copy {
-  pointer-events: auto;
+  pointer-events: none;
   max-width: 680px;
+}
+.hero-copy .hero-actions {
+  pointer-events: auto;
 }
 /* Gate's News: frosted glass pinned beside the island, the town showing through. */
 .hero {
