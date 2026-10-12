@@ -21,7 +21,7 @@ export const chapterMeta: ChapterMeta[] = [
     id: 'people',
     label: { en: 'People', zh: '成员' },
     title: { en: 'People', zh: '成员' },
-    place: { en: 'The crescent · Homes', zh: '新月联排 · 住宅区' },
+    place: { en: 'Terrace row · Homes', zh: '联排住宅 · 住宅区' },
   },
   {
     id: 'research-studio',

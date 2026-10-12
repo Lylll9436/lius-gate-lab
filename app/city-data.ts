@@ -62,8 +62,8 @@ const places: Building[] = [
       {
         heading: t('Layout', '布局'),
         body: t(
-          'The Town Hall (about Liu’s Gate) stands north of the plaza. The crescent of homes (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',
-          '广场北侧是市政厅（关于刘家门），西侧是新月联排（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。',
+          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',
+          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。',
         ),
       },
       {
@@ -315,12 +315,12 @@ export const buildings: Building[] = places.map((building) => {
       }
     : {
         ...building,
-        name: t('Crescent home', '新月住宅'),
+        name: t('Terrace house', '联排住宅'),
         short: t('Home', '住宅'),
-        category: t('THE CRESCENT', '新月联排'),
+        category: t('THE TERRACE', '联排住宅'),
         summary: t(
-          'A home in the crescent, currently unoccupied.',
-          '新月联排中的一户住宅，目前无人居住。',
+          'A home in the terrace row, currently unoccupied.',
+          '联排中的一户住宅，目前无人居住。',
         ),
         sections: [],
       };

@@ -3,7 +3,7 @@ import type { DistrictId } from './city-districts';
 
 /**
  * The plan of the town: one island, one plaza around the gate, a ring road,
- * four avenues, a crescent of homes, a harbour and a few hills.
+ * four avenues, a row of terrace houses, a harbour and a few hills.
  * Pure data and maths; nothing here touches WebGL.
  */
 export type XZ = [number, number];
@@ -180,7 +180,7 @@ export function distanceToStreets(x: number, z: number) {
     d = Math.min(d, distanceToSegment(p, a.from, a.to) - ROAD_WIDTH / 2);
   return d;
 }
-/** 1 inside the ring, its pavements and the crescent gardens (the mown town lawn), fading to 0 over 2.5 units. */
+/** 1 inside the ring, its pavements and the terrace gardens (the mown town lawn), fading to 0 over 2.5 units. */
 export function lawnCore(x:number,z:number){const rr=(cx:number,cz:number,hx:number,hz:number,r:number)=>{const qx=Math.abs(x-cx)-hx+r,qz=Math.abs(z-cz)-hz+r;return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-r;};const d=Math.min(rr(0,ring.cz,ring.hw+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.hd+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.radius+2),rr(-22,1,5,7,2.5));const t=Math.min(1,Math.max(0,d/2.5));return 1-t*t*(3-2*t);}
 
 /* ------------------------------------------------------------------ */
@@ -197,24 +197,29 @@ export type Site = {
   d: number;
   height: number;
 };
-const crescent = { x: -29, z: 1, r: 8.2 };
-function crescentUnit(id: BuildingId, theta: number): Site {
+/**
+ * The three homes stand side by side in a straight row, fronts in one line facing the ring
+ * road (east), with a 2.4 gap between neighbours so each reads as its own house. Set back so
+ * every front garden is as deep (about 1.9 beyond the pavement) as the deepest one used to be.
+ */
+export const terraceRow = { x: -22, z: 1, spacing: 5.0, w: 2.6, d: 4.2 };
+function rowUnit(id: BuildingId, slot: -1 | 0 | 1): Site {
   return {
     id,
-    x: crescent.x + crescent.r * Math.cos(theta),
-    z: crescent.z + crescent.r * Math.sin(theta),
-    rotation: Math.atan2(Math.cos(theta), Math.sin(theta)),
-    w: 2.6,
-    d: 4.2,
+    x: terraceRow.x,
+    z: terraceRow.z + slot * terraceRow.spacing,
+    rotation: Math.PI / 2,
+    w: terraceRow.w,
+    d: terraceRow.d,
     height: 3.3,
   };
 }
 export const sites: Record<BuildingId, Site> = {
   'lius-gate': { id: 'lius-gate', x: 0, z: 0, rotation: 0, w: 4.8, d: 1.9, height: 6 },
   'town-hall': { id: 'town-hall', x: 0, z: -8.6, rotation: 0, w: 7.4, d: 4.6, height: 9.5 },
-  'pengyuan-liu': crescentUnit('pengyuan-liu', -0.5),
-  'yunlong-liu': crescentUnit('yunlong-liu', 0),
-  'qin-li': crescentUnit('qin-li', 0.5),
+  'pengyuan-liu': rowUnit('pengyuan-liu', -1),
+  'yunlong-liu': rowUnit('yunlong-liu', 0),
+  'qin-li': rowUnit('qin-li', 1),
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
 };
@@ -330,7 +335,7 @@ export function plantingPlan(): TreeSpec[] {
   const outerLength = polylineLength(outer, true);
   for (let d = 1.6; d < outerLength; d += 3.7) {
     const p = samplePolyline(outer, d, true);
-    if (p.x < -15.5) continue; // the crescent gardens face this side
+    if (p.x < -15.5) continue; // the terrace gardens face this side
     if (nearJunction(p.x, p.z, 3.2)) continue;
     push(p.x, p.z, 0.82 + hash(d * 3) * 0.12, 'round');
   }
@@ -352,7 +357,7 @@ export function plantingPlan(): TreeSpec[] {
       const a = (Math.PI / 2) * i + Math.PI / 4 + side * 0.4;
       push(Math.cos(a) * 4.55, Math.sin(a) * 4.55, 0.6, 'round');
     }
-  // Park and crescent gardens.
+  // Park and terrace gardens.
   for (let i = 0; i < 7; i++) {
     const x = park.x + (hash(i * 11 + 3) - 0.5) * (park.w - 1.6),
       z = park.z + (hash(i * 11 + 5) - 0.5) * (park.d - 1.6);
@@ -360,9 +365,8 @@ export function plantingPlan(): TreeSpec[] {
     push(x, z, 0.9 + hash(i * 11 + 7) * 0.25, i % 3 === 1 ? 'autumn' : 'round');
   }
   for (const [x, z] of [
-    [-24.8, -2.2],
-    [-25.4, 4.4],
-    [-23.9, 1.1],
+    [-24.9, terraceRow.z - terraceRow.spacing / 2],
+    [-24.9, terraceRow.z + terraceRow.spacing / 2],
   ] as XZ[])
     push(x, z, 0.85, 'round');
   // Outskirts: a seeded scatter that keeps clear of streets, sites and the shore.
@@ -375,7 +379,7 @@ export function plantingPlan(): TreeSpec[] {
     if (insideRect(x, z, reservedPlot, 1.6)) continue;
     if (cottages.some((c) => Math.hypot(c.x - x, c.z - z) < 3.2)) continue;
     if (Math.hypot(x - pier.start[0], z - pier.start[1]) < 4) continue;
-    if (Math.hypot(x - crescent.x, z - crescent.z) < 10.5 && x > -27) continue;
+    if (x > -27.5 && x < -16.5 && Math.abs(z - terraceRow.z) < terraceRow.spacing + 4) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.9)) continue;
     const hilly = terrainHeight(x, z) > 0.15 || z < -16;
     push(

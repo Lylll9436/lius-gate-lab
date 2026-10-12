@@ -1828,10 +1828,9 @@ export function buildTown(
   phoneBox(land, 4.65, plan.levels.plaza, -0.9, -0.6);
   bin(land, 0.9, plan.levels.plaza, 4.9);
   bin(land, -4.9, plan.levels.plaza, 0.9);
-  // Crescent gardens: a shared lawn and hedges.
-  box(land, -23.5, 0.02, 1, 5.5, 0.04, 9.5, palette.grassLight, 'grass');
-  flowerBed(land, -24.6, 0.04, -1.4, 0.8, 1.6, 41);
-  flowerBed(land, -24.6, 0.04, 3.6, 0.8, 1.6, 43);
+  // Terrace gardens: a flower bed in each gap between the three homes.
+  for (const [side, seed] of [[-0.5, 41], [0.5, 43]] as const)
+    flowerBed(land, plan.terraceRow.x + 0.4, 0.04, plan.terraceRow.z + side * plan.terraceRow.spacing, 1.4, 0.8, seed);
   plan.cottages.forEach((c, i) => buildCottage(land, c, i));
   crane(land, plan.reservedPlot.x, plan.reservedPlot.z);
   pierAndHarbour(land);

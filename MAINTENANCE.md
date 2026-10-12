@@ -16,7 +16,7 @@
 | properties | 可扩展的属性：唯一 key，加上双语 label 与 value |
 | links | 双语链接标题和 HTTPS / mailto 地址 |
 
-- 人员额外字段：`role`、`affiliation`、`photo`、`buildingId`。照片放在 `public/people/`，`photo` 填 `/people/文件名.jpg`，无照片用 `null`（页面显示姓名首字母的方块，颜色取自住所）。`buildingId` 只能是 `pengyuan-liu`、`yunlong-liu`、`qin-li` 三户之一或 `null`；为 `null` 时人员仍出现在成员章节，在小城中定位到新月联排。
+- 人员额外字段：`role`、`affiliation`、`photo`、`buildingId`。照片放在 `public/people/`，`photo` 填 `/people/文件名.jpg`，无照片用 `null`（页面显示姓名首字母的方块，颜色取自住所）。`buildingId` 只能是 `pengyuan-liu`、`yunlong-liu`、`qin-li` 三户之一或 `null`；为 `null` 时人员仍出现在成员章节，在小城中定位到联排住宅。
 - 研究额外字段：`status`（`active` / `completed`）、`people`、`buildingId`。`active` 进入研究工作室，`completed` 自动进入档案馆。
 - 活动额外字段：`date`（真实 YYYY-MM-DD）、`category`（`group-photo` / `celebration` / `milestone`）、`people`、`image`（`public/media/` 下的图片或 `null`）。活动按日期倒序进入街角公园。
 - 成果（`outputs`）：`type` 为 `paper` / `dataset` / `software` / `report`，加 `date`、`people`、`researchId`、`buildingId`。研究记录（`notes`）同样有 `date`、`people`、`researchId`、`buildingId`。

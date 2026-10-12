@@ -310,7 +310,7 @@ export function CityStage({
                 {b
                   ? b.category[locale]
                   : ctl.content === 'people'
-                    ? tr('The crescent', '新月联排')
+                    ? tr('The terrace', '联排住宅')
                     : ctl.content === 'corner-park'
                       ? tr('Harbour', '港口')
                       : tr('Overview', '总览')}

@@ -25,10 +25,10 @@ export const districts: {
   },
   {
     id: 'residential',
-    name: { en: 'The crescent', zh: '新月联排' },
+    name: { en: 'The terrace', zh: '联排住宅' },
     description: {
-      en: 'A crescent of sandstone homes with front gardens facing the ring road.',
-      zh: '一弯砂岩联排，前花园面向环路。',
+      en: 'Three sandstone terrace houses side by side, with front gardens facing the ring road.',
+      zh: '三栋并排的砂岩联排住宅，前花园面向环路。',
     },
     color: '#82ab73',
     center: [-21.5, 1],
