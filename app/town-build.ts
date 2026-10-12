@@ -107,19 +107,30 @@ export function buildTown(
     d: number,
     color: string,
     kind?: SurfaceKind,
-    opts: { bevel?: number; ry?: number; rx?: number; rz?: number } = {},
+    opts: { bevel?: number; segments?: number; taper?: number; ry?: number; rx?: number; rz?: number } = {},
   ) {
     const mat = material(color, kind);
     const thinnest = Math.min(w, h, d);
-    // Explicit bevels keep their look; everything else thicker than a slab gets a soft edge.
-    const bevel = opts.bevel ?? (thinnest >= 0.1 ? Math.min(0.045, thinnest * 0.22) : 0);
-    const geometry =
-      bevel > 0
-        ? roundedBox(w, h, d, Math.min(bevel, thinnest * 0.32), opts.bevel ? 2 : 1)
-        : unitBox;
+    // Clash bevel: r = clamp(0.2*thinnest, 0.03, 0.12), x0.6 on metal; plates under 0.1 stay sharp.
+    // An explicit bevel overrides the automatic one ({ bevel: 0 } is sharp); under 0.06 is always sharp.
+    const auto =
+      thinnest >= 0.1
+        ? T.MathUtils.clamp(0.2 * thinnest, 0.03, 0.12) * (mat.userData.surfaceKind === 'metal' ? 0.6 : 1)
+        : 0;
+    const radius = thinnest < 0.06 ? 0 : Math.min(opts.bevel ?? auto, thinnest * 0.45);
+    let geometry: T.BufferGeometry = radius > 0 ? roundedBox(w, h, d, radius, opts.segments ?? 1) : unitBox;
+    if (opts.taper && radius > 0) { // battered plinths: top ring pulled in by `taper`
+      geometry = geometry.clone();
+      const p = geometry.getAttribute('position');
+      for (let i = 0; i < p.count; i++) {
+        const t = p.getY(i) / h + 0.5;
+        p.setX(i, p.getX(i) * (1 - (2 * opts.taper * t) / w));
+        p.setZ(i, p.getZ(i) * (1 - (2 * opts.taper * t) / d));
+      }
+    }
     const m = new T.Mesh(geometry, mat);
     m.position.set(x, y, z);
-    if (bevel <= 0) m.scale.set(w, h, d);
+    if (radius <= 0) m.scale.set(w, h, d);
     if (opts.ry) m.rotation.y = opts.ry;
     if (opts.rx) m.rotation.x = opts.rx;
     if (opts.rz) m.rotation.z = opts.rz;
@@ -139,7 +150,9 @@ export function buildTown(
     kind?: SurfaceKind,
     sides = 12,
   ) {
-    const smooth = sides >= 5 ? Math.max(sides, 18) : sides;
+    // Thin posts and pivots need far fewer sides than towers and tanks.
+    const rr = Math.max(rTop, rBottom);
+    const smooth = sides < 5 ? sides : rr < 0.06 ? 8 : rr < 0.2 ? 12 : Math.max(sides, 18);
     const m = new T.Mesh(new T.CylinderGeometry(rTop, rBottom, h, smooth), material(color, kind));
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;
@@ -158,8 +171,10 @@ export function buildTown(
     sides = 4,
     ry = Math.PI / 4,
   ) {
-    const smooth = sides >= 5 ? Math.max(sides, 18) : sides;
-    const m = new T.Mesh(new T.ConeGeometry(r, h, smooth), material(color, kind));
+    const smooth = sides < 5 ? sides : r < 0.2 ? 12 : Math.max(sides, 18);
+    let geo: T.BufferGeometry = new T.ConeGeometry(r, h, smooth);
+    if (smooth <= 6) { geo = geo.toNonIndexed(); geo.computeVertexNormals(); } // flat pyramid facets
+    const m = new T.Mesh(geo, material(color, kind));
     m.position.set(x, y, z);
     m.rotation.y = ry;
     m.castShadow = m.receiveShadow = true;
@@ -176,8 +191,15 @@ export function buildTown(
     kind?: SurfaceKind,
     segments = 12,
   ) {
-    const smooth = Math.max(segments, 18);
-    const m = new T.Mesh(new T.SphereGeometry(r, smooth, Math.round(smooth * 0.7)), material(color, kind));
+    // Small spheres (flowers, hubs, finials) become icosahedra with smooth normals.
+    const s = Math.max(segments, 18);
+    const geo =
+      r < 0.16
+        ? new T.IcosahedronGeometry(r, 1)
+        : r < 0.3
+          ? new T.IcosahedronGeometry(r, 2)
+          : new T.SphereGeometry(r, s, Math.round(s * 0.7));
+    const m = new T.Mesh(geo, material(color, kind));
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;
     g.add(m);
@@ -1124,7 +1146,7 @@ export function buildTown(
       trim = palette.trim;
     for (const x of [-1.45, 1.45]) {
       box(shell, x, 0.17, 0, 1.4, 0.34, 1.9, palette.plinth, 'stone');
-      box(shell, x, 1.85, 0, 1.05, 3.0, 1.5, stone, 'stone', { bevel: 0.02 });
+      box(shell, x, 1.85, 0, 1.05, 3.0, 1.5, stone, 'stone', { segments: 2 });
       for (const z of [-0.78, 0.78]) {
         box(shell, x - 0.38, 1.85, z, 0.16, 2.7, 0.14, trim, 'stone');
         box(shell, x + 0.38, 1.85, z, 0.16, 2.7, 0.14, trim, 'stone');
@@ -1154,7 +1176,7 @@ export function buildTown(
     box(shell, 0, base + outer + 0.05, 0, 0.5, 0.42, 1.6, trim, 'stone');
     box(shell, 0, 4.25, 0, 4.3, 0.42, 1.78, stone, 'stone');
     box(shell, 0, 4.56, 0, 4.55, 0.16, 1.98, trim, 'stone');
-    box(shell, 0, 4.98, 0, 4.0, 0.7, 1.62, stone, 'stone', { bevel: 0.02 });
+    box(shell, 0, 4.98, 0, 4.0, 0.7, 1.62, stone, 'stone');
     for (const z of [-0.83, 0.83]) box(shell, 0, 4.98, z, 2.9, 0.42, 0.04, '#4e5a56', 'metal');
     box(shell, 0, 5.4, 0, 4.3, 0.14, 1.86, trim, 'stone');
     balustrade(shell, 0, 5.47, 0.82, 3.9);
@@ -1178,7 +1200,7 @@ export function buildTown(
       h = 4.2,
       stone = palette.blonde;
     box(shell, 0, 0.15, 0, w + 0.3, 0.3, d + 0.3, palette.plinth, 'stone');
-    box(shell, 0, 0.3 + h / 2, 0, w, h, d, stone, 'stone', { bevel: 0.02 });
+    box(shell, 0, 0.3 + h / 2, 0, w, h, d, stone, 'stone');
     quoins(shell, w, d, h + 0.3, palette.trim);
     // Pilasters and arched windows on the front, plain windows elsewhere.
     for (let i = 0; i < 7; i++) {
@@ -1234,7 +1256,7 @@ export function buildTown(
       tz = 0.3,
       tw = 1.8,
       th = 8.0;
-    box(shell, tx, 0.3 + th / 2, tz, tw, th, tw, stone, 'stone', { bevel: 0.02 });
+    box(shell, tx, 0.3 + th / 2, tz, tw, th, tw, stone, 'stone', { segments: 2 });
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(shell, tx + (sx * tw) / 2, 0.3 + th / 2, tz + (sz * tw) / 2, 0.24, th, 0.24, palette.trim, 'stone');
     for (const y of [4.6, 6.1]) box(shell, tx, y, tz, tw + 0.2, 0.1, tw + 0.2, palette.trim, 'stone');
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
@@ -1306,7 +1328,7 @@ export function buildTown(
     const trim = variant === 'red-tenement' ? palette.trimRed : palette.trim;
     const doorColor = variant === 'villa' ? palette.greenDoor : variant === 'red-tenement' ? palette.blueDoor : palette.redDoor;
     box(shell, 0, 0.12, 0, w + 0.2, 0.24, d + 0.2, variant === 'red-tenement' ? palette.plinthRed : palette.plinth, 'stone');
-    box(shell, 0, 0.24 + h / 2, 0, w, h, d, stone, 'stone', { bevel: 0.02 });
+    box(shell, 0, 0.24 + h / 2, 0, w, h, d, stone, 'stone');
     quoins(shell, w, d, h + 0.24, trim, 0.24);
     box(shell, 0, 0.24 + h * 0.5, 0, w + 0.08, 0.07, d + 0.08, trim, 'stone');
     box(shell, 0, 0.24 + h + 0.06, 0, w + 0.3, 0.16, d + 0.3, trim, 'stone');
@@ -1316,7 +1338,7 @@ export function buildTown(
     const bay = new T.Group();
     bay.position.set(bayX, 0, d / 2);
     shell.add(bay);
-    box(bay, 0, 0.9, 0.2, 1.05, 1.5, 0.42, stone, 'stone', { bevel: 0.02 });
+    box(bay, 0, 0.9, 0.2, 1.05, 1.5, 0.42, stone, 'stone');
     box(bay, 0, 0.3, 0.2, 1.15, 0.3, 0.52, palette.plinth, 'stone');
     box(bay, 0, 1.72, 0.2, 1.2, 0.1, 0.56, trim, 'stone');
     windowAt(bay, 0, 1.0, 0.41, 0.6, 1.0, { frame: trim, sill: false });
@@ -1410,14 +1432,14 @@ export function buildTown(
     const bw = 2.2,
       bh = 3.1,
       bx = 1.6;
-    box(shell, bx, 0.24 + bh / 2, 0.3, bw, bh, d - 0.6, palette.render, 'paint', { bevel: 0.02 });
+    box(shell, bx, 0.24 + bh / 2, 0.3, bw, bh, d - 0.6, palette.render, 'paint');
     for (const y of [1.3, 2.5]) {
       box(shell, bx, y, d / 2 - 0.3 + 0.02, bw - 0.4, 0.55, 0.05, palette.glassDark, 'glass');
       box(shell, bx + bw / 2 + 0.02, y, 0.3, 0.05, 0.55, d - 1.2, palette.glassDark, 'glass');
       box(shell, bx, y - 0.32, d / 2 - 0.3 + 0.05, bw - 0.3, 0.06, 0.1, '#d5d0c0', 'stone');
     }
     // Entrance canopy on the front, bikes and a bench beside it.
-    box(shell, ax, 2.55, d / 2 + 0.55, 2.4, 0.1, 1.1, palette.frame, 'paint', { bevel: 0.02 });
+    box(shell, ax, 2.55, d / 2 + 0.55, 2.4, 0.1, 1.1, palette.frame, 'paint');
     for (const sx of [-1.0, 1.0]) cylinder(shell, ax + sx, 1.4, d / 2 + 0.95, 0.04, 0.04, 2.3, palette.metal, 'metal', 8);
     box(shell, ax, 1.1, d / 2 + 0.02, 1.1, 2.2, 0.06, '#5e7f7f', 'glass');
     box(shell, ax, 1.1, d / 2 + 0.05, 0.05, 2.2, 0.08, palette.frame, 'paint');
@@ -1446,7 +1468,7 @@ export function buildTown(
       d = site.d,
       h = 3.3;
     box(shell, 0, 0.12, 0, w + 0.3, 0.24, d + 0.3, palette.plinth, 'stone');
-    box(shell, 0, 0.24 + h / 2, 0, w, h, d, palette.brick, 'stone', { bevel: 0.02 });
+    box(shell, 0, 0.24 + h / 2, 0, w, h, d, palette.brick, 'stone');
     quoins(shell, w, d, h + 0.24, palette.brickLight, 0.24);
     for (let i = 0; i < 5; i++) {
       const x = -w / 2 + 0.6 + (i * (w - 1.2)) / 4;
@@ -1525,7 +1547,7 @@ export function buildTown(
       d = 2.4,
       h = 2.2;
     box(root, 0, 0.1, 0, w + 0.2, 0.2, d + 0.2, palette.plinth, 'stone');
-    box(root, 0, 0.2 + h / 2, 0, w, h, d, c.color, 'stone', { bevel: 0.02 });
+    box(root, 0, 0.2 + h / 2, 0, w, h, d, c.color, 'stone');
     pitchedRoof(root, 0, 0.2 + h, 0, w + 0.3, d + 0.3, 0.9, index % 2 ? palette.slate : palette.slateDark);
     gabledRoofEnds(root, 0, 0.2 + h, 0, w + 0.3, d + 0.3, 0.9, c.color);
     door(root, 0.6, 0.2, d / 2, 0.6, 1.5, [palette.greenDoor, palette.blueDoor, palette.redDoor][index % 3], { steps: 1, width: 0.9 });
