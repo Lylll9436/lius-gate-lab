@@ -28,48 +28,23 @@ export type Model = {
 export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: number };
 
 export const palette = {
-  blonde: '#dfcba3',
-  pale: '#e8dbb9',
-  red: '#b86a52',
-  brick: '#a8604a',
-  brickLight: '#c38b73',
-  trim: '#f1e7cf',
-  stoneDark: '#c4b28f',
-  plinth: '#cdbf9f',
-  slate: '#56626c',
-  slateLight: '#6b7883',
-  slateDark: '#46515a',
-  glass: '#8fb2b4',
-  glassDark: '#5e8688',
-  greenDoor: '#2f5b4c',
-  blueDoor: '#2e4b63',
-  redDoor: '#8a3b33',
-  wood: '#8a6a46',
-  woodDark: '#5f4a33',
-  metal: '#3f4a4a',
-  bronze: '#9a7a46',
-  road: '#8b8e88',
-  roadLine: '#d9d7c9',
-  kerb: '#d2ccb8',
-  pavement: '#d8d2c0',
-  plaza: '#d6cdb6',
-  plazaDark: '#c4b99f',
-  pool: '#6aa0a4',
-  render: '#eee8da',
-  grassLight: '#b7cf86',
-  grassDark: '#7f9f63',
-  grass: '#9dba7c',
-  sand: '#e0d2ad',
-  sandWet: '#c3b28d',
-  canopy: ['#5f9460', '#76a86a', '#8fbd74', '#4f8457'],
-  autumn: ['#c9a05a', '#d4b16a', '#b8894a', '#c7913f'],
-  blossom: ['#e8b4c0', '#f0c6cf', '#dca2b2', '#f4d3da'],
-  pine: ['#4b7a56', '#3f6b4a', '#5b8a62'],
-  bark: '#6e5640',
-  white: '#f3f0e8',
-  lantern: '#ffd48a',
-  balloon: '#2f5b4c',
-  balloonBand: '#f1e7cf',
+  blonde: '#dcc08c', pale: '#e6d2a2', red: '#b8604a', brick: '#a4452e', brickLight: '#dcc08c',
+  trim: '#ecdcb6', trimRed: '#d29a7c', frame: '#f5efe0', stoneDark: '#c4a878', plinth: '#c4a878', plinthRed: '#93503c',
+  slate: '#7d91a5', slateLight: '#9aabbb', slateDark: '#7d91a5', // alias: no dark slate; delete once unused (Step 19)
+  copper: '#6faf9b', copperLight: '#8cc7b2', pantile: '#c8644a', pantileLight: '#d98a6c',
+  glass: '#6fa8c4', glassDark: '#6fa8c4', studioGlass: '#8cc4d8', ink: '#26313a',
+  greenDoor: '#2e6e4c', blueDoor: '#2d5f8f', redDoor: '#b23a30',
+  wood: '#a06b3e', woodDark: '#6b4529', metal: '#4b545b', bronze: '#a87b45', gold: '#e8b84a',
+  road: '#6b7279', roadLine: '#e8e2cc', kerb: '#cfc3a6', pavement: '#d4c4a0', plaza: '#d4c4a0', plazaDark: '#bfac86', path: '#b8946a',
+  pool: '#2a86b0', poolEdge: '#62c0d4', poolWater: '#3fa6c4', render: '#f2e9d6',
+  grass: '#a2bf50', grassLight: '#aac757', grassDark: '#98b74a', lawnPad: '#8bb038', lawnEdge: '#7a9638',
+  sand: '#e4cc94', sandWet: '#c2a675', soil: '#6b4a2e',
+  canopy: ['#7aab2e', '#93bb3a', '#86b234', '#6f9e2a'], hedge: '#5e8f28', hedgeTop: '#93bb3a',
+  autumn: ['#d39a3a', '#e0ab45', '#c8862f', '#d9a03c'], blossom: ['#f0a6bd', '#f4b8cb', '#e894b0', '#f6c4d3'],
+  pine: ['#3e8a4a', '#357a40', '#4a9655'], bark: '#6b4529', pineBark: '#5c3c22',
+  flowers: ['#e5483c', '#f6c63f', '#f18fb0', '#f5efe0', '#8e6ad0'],
+  white: '#f5efe0', lantern: '#ffd48a', tram: '#2f6b4a', tramOrange: '#e07a2c', tramCream: '#efe2c2',
+  boat: '#c9412f', balloon: '#c9412f', balloonBand: '#efe2c2',
 };
 
 type Point = [number, number, number];
@@ -750,7 +725,7 @@ export function buildTown(
       box(land, px, plan.levels.plaza + 0.5, pz, 0.95, 0.3, 0.36, palette.canopy[1], 'foliage', { bevel: 0.1, ry: -a });
       for (let f = 0; f < 6; f++) {
         const t = -0.4 + (0.8 * f) / 5;
-        sphere(land, px + Math.cos(a) * t, plan.levels.plaza + 0.68, pz + Math.sin(a) * t, 0.05, ['#e8657a', '#f3c64c', '#f0f0ea'][f % 3], 'paint', 6);
+        sphere(land, px + Math.cos(a) * t, plan.levels.plaza + 0.68, pz + Math.sin(a) * t, 0.05, palette.flowers[f % palette.flowers.length], 'paint', 6);
       }
       for (const side of [-1, 1]) {
         const ba = a + side * 0.62,
@@ -854,17 +829,17 @@ export function buildTown(
     return t;
   }
   function hedge(g: T.Object3D, x: number, y: number, z: number, length: number, ry = 0, height = 0.5) {
-    return box(g, x, y + height / 2, z, length, height, 0.34, palette.canopy[0], 'foliage', { bevel: 0.1, ry });
+    return box(g, x, y + height / 2, z, length, height, 0.34, palette.hedge, 'foliage', { bevel: 0.1, ry });
   }
   function flowerBed(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, seed: number) {
     // Soil rises above its stone edging, so no two tops share a height.
-    box(g, x, y + 0.06, z, w, 0.12, d, '#6f6a52', 'soil');
+    box(g, x, y + 0.06, z, w, 0.12, d, palette.soil, 'soil');
     box(g, x, y + 0.05, z, w + 0.12, 0.1, d + 0.12, palette.stoneDark, 'stone');
     const count = Math.round(w * d * 5);
     for (let i = 0; i < count; i++) {
       const px = x + (hash(seed + i * 3) - 0.5) * (w - 0.2),
         pz = z + (hash(seed + i * 3 + 1) - 0.5) * (d - 0.2);
-      sphere(g, px, y + 0.17, pz, 0.055, ['#e8657a', '#f3c64c', '#f0f0ea', '#c97bd6'][i % 4], 'paint', 5);
+      sphere(g, px, y + 0.17, pz, 0.055, palette.flowers[i % palette.flowers.length], 'paint', 5);
       box(g, px, y + 0.11, pz, 0.02, 0.1, 0.02, palette.canopy[0], 'foliage');
     }
   }
@@ -920,7 +895,7 @@ export function buildTown(
     const ring = new T.Mesh(new T.CylinderGeometry(1.5, 1.5, 0.12, 8, 1, true), material(palette.trim, 'paint'));
     ring.position.y = 2.5;
     p.add(ring);
-    cone(p, 0, 3.02, 0, 1.75, 1.0, '#5e7f6a', 'slate', 8, Math.PI / 8);
+    cone(p, 0, 3.02, 0, 1.75, 1.0, palette.copper, 'slate', 8, Math.PI / 8);
     sphere(p, 0, 3.6, 0, 0.09, palette.bronze, 'metal', 8);
     bench(p, 0, 0.24, 0.55, Math.PI);
     return p;
@@ -943,28 +918,28 @@ export function buildTown(
     box(base, 0, 0.12, 0, 1.4, 0.24, 1.4, '#9b9a90', 'stone');
     const mastH = 7.5;
     for (const sx of [-0.28, 0.28])
-      for (const sz of [-0.28, 0.28]) box(base, sx, mastH / 2 + 0.24, sz, 0.07, mastH, 0.07, '#d9b23a', 'metal');
+      for (const sz of [-0.28, 0.28]) box(base, sx, mastH / 2 + 0.24, sz, 0.07, mastH, 0.07, palette.gold, 'metal');
     for (let y = 0.6; y < mastH; y += 0.7) {
-      box(base, 0, y + 0.24, 0.28, 0.6, 0.04, 0.04, '#d9b23a', 'metal');
-      box(base, 0, y + 0.24, -0.28, 0.6, 0.04, 0.04, '#d9b23a', 'metal');
-      box(base, 0.28, y + 0.24, 0, 0.04, 0.04, 0.6, '#d9b23a', 'metal');
-      box(base, -0.28, y + 0.24, 0, 0.04, 0.04, 0.6, '#d9b23a', 'metal');
-      box(base, 0, y + 0.59, 0.28, 0.68, 0.035, 0.035, '#d9b23a', 'metal', { rz: 0.8 });
+      box(base, 0, y + 0.24, 0.28, 0.6, 0.04, 0.04, palette.gold, 'metal');
+      box(base, 0, y + 0.24, -0.28, 0.6, 0.04, 0.04, palette.gold, 'metal');
+      box(base, 0.28, y + 0.24, 0, 0.04, 0.04, 0.6, palette.gold, 'metal');
+      box(base, -0.28, y + 0.24, 0, 0.04, 0.04, 0.6, palette.gold, 'metal');
+      box(base, 0, y + 0.59, 0.28, 0.68, 0.035, 0.035, palette.gold, 'metal', { rz: 0.8 });
     }
     const jib = new T.Group();
     jib.position.set(0, mastH + 0.4, 0);
     jib.userData.keepSeparate = true;
     base.add(jib);
-    box(jib, 0, 0.1, 0, 0.9, 0.5, 0.9, '#d9b23a', 'metal');
-    box(jib, 2.9, 0.4, 0, 6.4, 0.12, 0.12, '#d9b23a', 'metal');
-    box(jib, 2.9, 0.0, 0, 6.4, 0.08, 0.08, '#d9b23a', 'metal');
-    for (let i = 0; i < 9; i++) box(jib, 0.4 + i * 0.7, 0.2, 0, 0.05, 0.42, 0.05, '#d9b23a', 'metal', { rz: i % 2 ? 0.7 : -0.7 });
-    box(jib, -1.6, 0.25, 0, 2.2, 0.1, 0.1, '#d9b23a', 'metal');
+    box(jib, 0, 0.1, 0, 0.9, 0.5, 0.9, palette.gold, 'metal');
+    box(jib, 2.9, 0.4, 0, 6.4, 0.12, 0.12, palette.gold, 'metal');
+    box(jib, 2.9, 0.0, 0, 6.4, 0.08, 0.08, palette.gold, 'metal');
+    for (let i = 0; i < 9; i++) box(jib, 0.4 + i * 0.7, 0.2, 0, 0.05, 0.42, 0.05, palette.gold, 'metal', { rz: i % 2 ? 0.7 : -0.7 });
+    box(jib, -1.6, 0.25, 0, 2.2, 0.1, 0.1, palette.gold, 'metal');
     box(jib, -2.2, 0.0, 0, 0.9, 0.5, 0.9, '#7b7b74', 'stone');
-    box(jib, 0, 1.2, 0, 0.1, 1.8, 0.1, '#d9b23a', 'metal');
+    box(jib, 0, 1.2, 0, 0.1, 1.8, 0.1, palette.gold, 'metal');
     box(jib, 1.6, 1.3, 0, 3.6, 0.02, 0.02, palette.metal, 'metal', { rz: -0.42 });
     box(jib, -1.2, 1.3, 0, 2.4, 0.02, 0.02, palette.metal, 'metal', { rz: 0.56 });
-    box(jib, 0.3, 0.6, 0, 1.0, 0.3, 0.9, '#d9b23a', 'metal');
+    box(jib, 0.3, 0.6, 0, 1.0, 0.3, 0.9, palette.gold, 'metal');
     box(jib, 0.3, 0.55, 0.4, 0.5, 0.3, 0.02, palette.glass, 'glass');
     box(jib, 4.2, 0.3, 0, 0.3, 0.12, 0.3, palette.metal, 'metal');
     box(jib, 4.2, -1.6, 0, 0.02, 3.6, 0.02, palette.metal, 'metal');
@@ -1074,7 +1049,7 @@ export function buildTown(
     }
     cylinder(rock, 0, 0.4, 0, 0.9, 1.0, 0.3, palette.stoneDark, 'stone', 12);
     cylinder(rock, 0, 2.1, 0, 0.45, 0.6, 3.2, palette.white, 'paint', 14);
-    cylinder(rock, 0, 2.2, 0, 0.47, 0.5, 0.5, '#c23a2e', 'paint', 14);
+    cylinder(rock, 0, 2.2, 0, 0.47, 0.5, 0.5, palette.boat, 'paint', 14);
     cylinder(rock, 0, 3.75, 0, 0.62, 0.62, 0.12, palette.metal, 'metal', 14);
     const railRing = new T.Mesh(new T.TorusGeometry(0.6, 0.02, 6, 20), material(palette.metal, 'metal'));
     railRing.rotation.x = Math.PI / 2;
@@ -1086,7 +1061,7 @@ export function buildTown(
     lanternRoom.position.y = 4.2;
     rock.add(lanternRoom);
     lamps.push(lanternRoom);
-    cone(rock, 0, 4.78, 0, 0.5, 0.45, '#c23a2e', 'paint', 10, 0);
+    cone(rock, 0, 4.78, 0, 0.5, 0.45, palette.boat, 'paint', 10, 0);
     sphere(rock, 0, 5.05, 0, 0.07, palette.bronze, 'metal', 8);
     // The beam: a translucent cone that sweeps the harbour at night.
     const beamMaterial = new T.MeshBasicMaterial({
@@ -1277,12 +1252,12 @@ export function buildTown(
       dial.rotation.x = Math.PI / 2;
       dial.position.set(0, 7.95, tw / 2 + 0.04);
       face.add(dial);
-      const bezel = new T.Mesh(new T.TorusGeometry(0.47, 0.035, 6, 24), material(palette.slateDark, 'metal'));
+      const bezel = new T.Mesh(new T.TorusGeometry(0.47, 0.035, 6, 24), material(palette.ink, 'metal'));
       bezel.position.set(0, 7.95, tw / 2 + 0.07);
       face.add(bezel);
       for (let i = 0; i < 12; i++) {
         const a = (i * Math.PI) / 6;
-        box(face, Math.sin(a) * 0.37, 7.95 + Math.cos(a) * 0.37, tw / 2 + 0.075, 0.03, i % 3 ? 0.06 : 0.1, 0.01, palette.slateDark, 'metal', { rz: -a });
+        box(face, Math.sin(a) * 0.37, 7.95 + Math.cos(a) * 0.37, tw / 2 + 0.075, 0.03, i % 3 ? 0.06 : 0.1, 0.01, palette.ink, 'metal', { rz: -a });
       }
       const hands = new T.Group();
       hands.position.set(0, 7.95, tw / 2 + 0.09);
@@ -1291,8 +1266,8 @@ export function buildTown(
       const hour = new T.Group(),
         minute = new T.Group();
       hands.add(hour, minute);
-      box(hour, 0, 0.13, 0, 0.05, 0.3, 0.015, palette.slateDark, 'metal');
-      box(minute, 0, 0.18, 0, 0.035, 0.4, 0.012, palette.slateDark, 'metal');
+      box(hour, 0, 0.13, 0, 0.05, 0.3, 0.015, palette.ink, 'metal');
+      box(minute, 0, 0.18, 0, 0.035, 0.4, 0.012, palette.ink, 'metal');
       sphere(hands, 0, 0, 0, 0.035, palette.bronze, 'metal', 8);
       clocks.push({ hour, minute });
     }
@@ -1328,9 +1303,9 @@ export function buildTown(
       d = site.d,
       h = 3.1;
     const stone = variant === 'villa' ? palette.blonde : variant === 'red-tenement' ? palette.red : palette.pale;
-    const trim = variant === 'red-tenement' ? '#d9b89a' : palette.trim;
+    const trim = variant === 'red-tenement' ? palette.trimRed : palette.trim;
     const doorColor = variant === 'villa' ? palette.greenDoor : variant === 'red-tenement' ? palette.blueDoor : palette.redDoor;
-    box(shell, 0, 0.12, 0, w + 0.2, 0.24, d + 0.2, palette.plinth, 'stone');
+    box(shell, 0, 0.12, 0, w + 0.2, 0.24, d + 0.2, variant === 'red-tenement' ? palette.plinthRed : palette.plinth, 'stone');
     box(shell, 0, 0.24 + h / 2, 0, w, h, d, stone, 'stone', { bevel: 0.02 });
     quoins(shell, w, d, h + 0.24, trim, 0.24);
     box(shell, 0, 0.24 + h * 0.5, 0, w + 0.08, 0.07, d + 0.08, trim, 'stone');
@@ -1425,12 +1400,12 @@ export function buildTown(
       ax = -1.1;
     box(shell, ax, 0.24 + ah / 2, 0, aw, ah, d, palette.glass, 'glass');
     for (const z of [-d / 2, d / 2]) {
-      for (let x = -aw / 2; x <= aw / 2 + 0.01; x += aw / 6) box(shell, ax + x, 0.24 + ah / 2, z, 0.06, ah, 0.08, '#dfe3d8', 'paint');
-      for (let y = 0.24; y <= 0.24 + ah + 0.01; y += ah / 4) box(shell, ax, y, z, aw + 0.04, 0.08, 0.1, '#dfe3d8', 'paint');
+      for (let x = -aw / 2; x <= aw / 2 + 0.01; x += aw / 6) box(shell, ax + x, 0.24 + ah / 2, z, 0.06, ah, 0.08, palette.frame, 'paint');
+      for (let y = 0.24; y <= 0.24 + ah + 0.01; y += ah / 4) box(shell, ax, y, z, aw + 0.04, 0.08, 0.1, palette.frame, 'paint');
     }
     for (const x of [ax - aw / 2, ax + aw / 2]) {
-      for (let z = -d / 2; z <= d / 2 + 0.01; z += d / 6) box(shell, x, 0.24 + ah / 2, z, 0.08, ah, 0.06, '#dfe3d8', 'paint');
-      for (let y = 0.24; y <= 0.24 + ah + 0.01; y += ah / 4) box(shell, x, y, 0, 0.1, 0.08, d + 0.04, '#dfe3d8', 'paint');
+      for (let z = -d / 2; z <= d / 2 + 0.01; z += d / 6) box(shell, x, 0.24 + ah / 2, z, 0.08, ah, 0.06, palette.frame, 'paint');
+      for (let y = 0.24; y <= 0.24 + ah + 0.01; y += ah / 4) box(shell, x, y, 0, 0.1, 0.08, d + 0.04, palette.frame, 'paint');
     }
     const bw = 2.2,
       bh = 3.1,
@@ -1442,16 +1417,16 @@ export function buildTown(
       box(shell, bx, y - 0.32, d / 2 - 0.3 + 0.05, bw - 0.3, 0.06, 0.1, '#d5d0c0', 'stone');
     }
     // Entrance canopy on the front, bikes and a bench beside it.
-    box(shell, ax, 2.55, d / 2 + 0.55, 2.4, 0.1, 1.1, '#dfe3d8', 'paint', { bevel: 0.02 });
+    box(shell, ax, 2.55, d / 2 + 0.55, 2.4, 0.1, 1.1, palette.frame, 'paint', { bevel: 0.02 });
     for (const sx of [-1.0, 1.0]) cylinder(shell, ax + sx, 1.4, d / 2 + 0.95, 0.04, 0.04, 2.3, palette.metal, 'metal', 8);
     box(shell, ax, 1.1, d / 2 + 0.02, 1.1, 2.2, 0.06, '#5e7f7f', 'glass');
-    box(shell, ax, 1.1, d / 2 + 0.05, 0.05, 2.2, 0.08, '#dfe3d8', 'paint');
+    box(shell, ax, 1.1, d / 2 + 0.05, 0.05, 2.2, 0.08, palette.frame, 'paint');
     box(shell, ax, 0.22, d / 2 + 0.8, 2.0, 0.06, 1.3, palette.plaza, 'paving');
     for (let i = 0; i < 3; i++) bike(shell, bx + 0.2 + i * 0.5, 0.24, d / 2 + 0.7, 0.2, ['#c23a2e', '#2f5b4c', '#2e4b63'][i]);
     bench(shell, -w / 2 + 0.6, 0.24, d / 2 + 0.75, Math.PI);
     // Roofs: a green roof with panels and a deck on A, planters on B.
     box(shell, ax, 0.24 + ah + 0.1, 0, aw + 0.3, 0.2, d + 0.3, '#c9d2c0', 'stone');
-    box(shell, ax - 0.2, 0.24 + ah + 0.26, 0.3, aw - 0.8, 0.14, d - 1.4, '#86a66a', 'foliage', { bevel: 0.05 });
+    box(shell, ax - 0.2, 0.24 + ah + 0.26, 0.3, aw - 0.8, 0.14, d - 1.4, palette.canopy[1], 'foliage', { bevel: 0.05 });
     for (let i = 0; i < 3; i++) {
       const panel = box(shell, ax + 0.9, 0.24 + ah + 0.42, -d / 2 + 0.9 + i * 1.3, 1.0, 0.05, 0.75, '#2f4e66', 'metal');
       panel.rotation.x = 0.3;
@@ -1566,11 +1541,11 @@ export function buildTown(
   function buildTram() {
     const tram = new T.Group();
     tram.name = 'tram';
-    box(tram, 0, 0.5, 0, 0.95, 0.5, 3.4, '#2f5b4c', 'paint', { bevel: 0.05 });
-    box(tram, 0, 0.95, 0, 0.92, 0.5, 3.3, '#efe6cf', 'paint', { bevel: 0.05 });
+    box(tram, 0, 0.5, 0, 0.95, 0.5, 3.4, palette.tram, 'paint', { bevel: 0.05 });
+    box(tram, 0, 0.95, 0, 0.92, 0.5, 3.3, palette.tramCream, 'paint', { bevel: 0.05 });
     box(tram, 0, 1.0, 0, 0.98, 0.3, 3.0, palette.glass, 'glass');
-    for (let z = -1.3; z <= 1.3; z += 0.52) box(tram, 0, 1.0, z, 1.0, 0.32, 0.05, '#efe6cf', 'paint');
-    box(tram, 0, 1.3, 0, 0.9, 0.12, 3.5, '#2f5b4c', 'paint', { bevel: 0.04 });
+    for (let z = -1.3; z <= 1.3; z += 0.52) box(tram, 0, 1.0, z, 1.0, 0.32, 0.05, palette.tramCream, 'paint');
+    box(tram, 0, 1.3, 0, 0.9, 0.12, 3.5, palette.tram, 'paint', { bevel: 0.04 });
     box(tram, 0, 1.45, 0, 0.5, 0.05, 1.6, palette.metal, 'metal');
     box(tram, 0, 1.75, 0, 0.04, 0.55, 0.04, palette.metal, 'metal', { rx: 0.5 });
     box(tram, 0, 1.75, 0, 0.04, 0.55, 0.04, palette.metal, 'metal', { rx: -0.5 });
@@ -1590,15 +1565,15 @@ export function buildTown(
   function buildBoat() {
     const boat = new T.Group();
     boat.name = 'harbour-boat';
-    box(boat, 0, 0.16, 0, 1.0, 0.36, 2.6, '#2e4b63', 'paint', { bevel: 0.08 });
+    box(boat, 0, 0.16, 0, 1.0, 0.36, 2.6, palette.boat, 'paint', { bevel: 0.08 });
     box(boat, 0, 0.3, 0, 1.04, 0.08, 2.64, '#efe6cf', 'paint', { bevel: 0.03 });
     box(boat, 0, 0.36, 0.1, 0.86, 0.06, 2.3, palette.wood, 'wood');
     box(boat, 0, 0.68, -0.4, 0.7, 0.6, 0.9, '#efe6cf', 'paint', { bevel: 0.03 });
     box(boat, 0, 0.76, -0.4, 0.74, 0.26, 0.94, palette.glass, 'glass');
-    box(boat, 0, 1.02, -0.4, 0.8, 0.08, 1.0, '#2e4b63', 'paint', { bevel: 0.02 });
+    box(boat, 0, 1.02, -0.4, 0.8, 0.08, 1.0, palette.boat, 'paint', { bevel: 0.02 });
     cylinder(boat, 0, 1.6, 0.4, 0.025, 0.035, 1.3, palette.woodDark, 'wood', 7);
     box(boat, 0, 1.3, 0.4, 0.6, 0.02, 0.02, palette.woodDark, 'wood');
-    cone(boat, 0, 0.12, 1.4, 0.45, 0.7, '#2e4b63', 'paint', 4).rotation.x = Math.PI / 2;
+    cone(boat, 0, 0.12, 1.4, 0.45, 0.7, palette.boat, 'paint', 4).rotation.x = Math.PI / 2;
     const light = material(palette.lantern, 'glass').clone();
     light.emissive.set(palette.lantern);
     const lanternMesh = new T.Mesh(new T.SphereGeometry(0.06, 8, 6), light);

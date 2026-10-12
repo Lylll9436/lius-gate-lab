@@ -18,47 +18,6 @@ export type SurfaceKind =
   | 'sand'
   | 'gravel';
 
-// Physical surface families survive batching. Pigment alone is not a material.
-const colours: Partial<Record<SurfaceKind, string[]>> = {
-  wood: [
-    '#886344',
-    '#9f7a52',
-    '#947650',
-    '#81624c',
-    '#b79a6a',
-    '#9c7857',
-    '#cbbb97',
-    '#80654e',
-    '#a99c7c',
-    '#a8734e',
-  ],
-  slate: ['#43525b', '#33484f', '#445c63', '#647573'],
-  metal: [
-    '#344c4a',
-    '#3d574c',
-    '#43574e',
-    '#486158',
-    '#445f58',
-    '#536963',
-    '#718078',
-    '#c8a96e',
-    '#baa56f',
-    '#adb4a0',
-    '#55645a',
-  ],
-  glass: ['#719b9b', '#385c61', '#88aba5', '#8fafaa', '#b8d0c5', '#769b95'],
-  grass: ['#aab983', '#a9b984', '#b2bb91', '#b4bd8a'],
-  foliage: ['#758d5c', '#58754a', '#496f4c'],
-};
-
-export function surfaceForColour(colour: string): SurfaceKind {
-  return (
-    (Object.entries(colours).find(([, values]) =>
-      values.includes(colour.toLowerCase()),
-    )?.[0] as SurfaceKind) || 'stone'
-  );
-}
-
 const fract = (n: number) => n - Math.floor(n);
 const hash = (x: number, y: number) =>
   fract(Math.sin(x * 127.1 + y * 311.7) * 43758.5453);
@@ -181,28 +140,28 @@ export function createCityMaterials() {
   const maps = new Map<SurfaceKind, ReturnType<typeof surfaceMaps>>();
   /**
    * A studio render, not a texture atlas: clean matte clay for masonry, satin paint,
-   * soft plastic foliage, glossy glass. The room environment does the shading;
+   * soft plastic foliage, satin glass. The room environment does the shading;
    * only meadows keep a broad colour drift.
    */
   const finish: Partial<Record<SurfaceKind, { roughness: number; metalness?: number }>> = {
-    stone: { roughness: 0.7 },
-    slate: { roughness: 0.52 },
-    wood: { roughness: 0.6 },
-    bark: { roughness: 0.78 },
-    metal: { roughness: 0.32, metalness: 0.55 },
-    glass: { roughness: 0.07, metalness: 0.12 },
-    foliage: { roughness: 0.6 },
-    grass: { roughness: 0.82 },
-    paving: { roughness: 0.74 },
-    asphalt: { roughness: 0.8 },
-    soil: { roughness: 0.88 },
-    fabric: { roughness: 0.86 },
-    paint: { roughness: 0.42 },
-    water: { roughness: 0.2, metalness: 0.1 },
-    sand: { roughness: 0.86 },
-    gravel: { roughness: 0.86 },
+    stone: { roughness: 0.9 },
+    slate: { roughness: 0.85 },
+    wood: { roughness: 0.88 },
+    bark: { roughness: 0.95 },
+    metal: { roughness: 0.55, metalness: 0.3 },
+    glass: { roughness: 0.22, metalness: 0 },
+    foliage: { roughness: 0.9 },
+    grass: { roughness: 0.95 },
+    paving: { roughness: 0.92 },
+    asphalt: { roughness: 0.93 },
+    soil: { roughness: 0.95 },
+    fabric: { roughness: 0.9 },
+    paint: { roughness: 0.7 },
+    water: { roughness: 0.3 },
+    sand: { roughness: 0.95 },
+    gravel: { roughness: 0.95 },
   };
-  function material(colour: string, kind = surfaceForColour(colour)) {
+  function material(colour: string, kind: SurfaceKind = 'stone') {
     const key = `${kind}:${colour}`;
     if (!cache.has(key)) {
       const look = finish[kind] ?? { roughness: 0.7 };
@@ -217,8 +176,6 @@ export function createCityMaterials() {
       if (kind === 'glass') {
         m.emissive.set('#ffd29a');
         m.emissiveIntensity = night * 0.72;
-      } else if (kind === 'foliage') {
-        m.side = T.DoubleSide;
       } else if (kind === 'grass' || kind === 'soil') {
         if (!maps.has(kind)) maps.set(kind, surfaceMaps(kind));
         m.map = maps.get(kind)!.map;
