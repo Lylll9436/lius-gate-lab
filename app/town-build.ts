@@ -30,7 +30,7 @@ export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: numbe
 export const palette = {
   blonde: '#dcc08c', pale: '#e6d2a2', red: '#b8604a', brick: '#a4452e', brickLight: '#dcc08c',
   trim: '#ecdcb6', trimRed: '#d29a7c', frame: '#f5efe0', stoneDark: '#c4a878', plinth: '#c4a878', plinthRed: '#93503c',
-  slate: '#7d91a5', slateLight: '#9aabbb', slateDark: '#7d91a5', // alias: no dark slate; delete once unused (Step 19)
+  slate: '#8fa4b9', slateLight: '#a9b8c6', slateDark: '#8fa4b9', // alias: no dark slate; delete once unused (Step 19)
   copper: '#6faf9b', copperLight: '#8cc7b2', pantile: '#c8644a', pantileLight: '#d98a6c',
   glass: '#6fa8c4', glassDark: '#6fa8c4', studioGlass: '#8cc4d8', ink: '#26313a',
   greenDoor: '#2e6e4c', blueDoor: '#2d5f8f', redDoor: '#b23a30',

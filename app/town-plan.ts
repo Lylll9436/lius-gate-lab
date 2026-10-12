@@ -227,7 +227,7 @@ export const siteList = Object.values(sites);
 export const chapterBearings: Record<string, number> = {
   overview: Math.PI / 4,
   'town-hall': 0.9,
-  people: 1.3,
+  people: 1.9,
   'research-studio': -0.7,
   'city-archive': -0.97,
   'corner-park': Math.PI / 4 + 0.22,

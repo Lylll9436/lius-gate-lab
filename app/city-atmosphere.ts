@@ -69,16 +69,17 @@ export function glasgowSky(date = new Date()): SkyState {
   };
 }
 
-/** Camera-independent sun offset for the directional light, with a floor for crisp shadows. */
+/**
+ * Stylised key-light offset for the overview bearing (the scene turns it with the camera yaw).
+ * The real sun only nudges it: elevation is lifted to 50-57 degrees and the sideways swing
+ * is capped at +-35 degrees around the founding light (-16, 32, 20), so tops stay brightest
+ * and the +z fronts stay lit all year.
+ */
 export function sunOffsetFor(elevation: number, azimuth: number, distance = 41) {
-  const lifted = Math.max(elevation, 0.3);
-  // The founding light came from (-16, 32, 20); keep that as solar noon.
-  const bearing = azimuth - Math.PI + Math.atan2(-16, 20);
-  return new T.Vector3(
-    Math.cos(lifted) * Math.sin(bearing) * distance,
-    Math.sin(lifted) * distance,
-    Math.cos(lifted) * Math.cos(bearing) * distance,
-  );
+  const lifted = T.MathUtils.lerp(0.87, 1.0, T.MathUtils.smoothstep(elevation, 0, 0.6)); // 50-57 degrees
+  const swing = T.MathUtils.clamp(azimuth - Math.PI, -2.2, 2.2) * 0.28; // at most +-35 degrees
+  const bearing = Math.atan2(-16, 20) + swing;
+  return new T.Vector3(Math.cos(lifted) * Math.sin(bearing) * distance, Math.sin(lifted) * distance, Math.cos(lifted) * Math.cos(bearing) * distance);
 }
 
 /** West-coast rain: short falling streaks over the whole island. */

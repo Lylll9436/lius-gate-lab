@@ -123,7 +123,7 @@ export function createCity(
   const studio = pmrem.fromScene(new RoomEnvironment(), 0.04);
   pmrem.dispose();
   scene.environment = studio.texture;
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = 0.25;
   const fog = new T.Fog('#d9e3dd', 72, 150);
   scene.fog = fog;
   const water = createIslandWater(model.waterLevel, -0.5);
@@ -151,29 +151,40 @@ export function createCity(
     city.add(hit);
     m.hit = hit;
   }
-  const sky = new T.HemisphereLight('#f4f1e4', '#6e8986', 0.9);
+  const sky = new T.HemisphereLight('#bcd4f2', '#7f8f44', 0.85);
   scene.add(sky);
   const sunOffset = new T.Vector3(-16, 32, 20),
     targetSunOffset = sunOffset.clone();
   let sunWarmth = 0,
     targetWarmth = 0;
-  const sun = new T.DirectionalLight('#fff0d5', 3.0);
-  sun.position.copy(sunOffset);
+  const sun = new T.DirectionalLight('#ffe3bd', 3.8);
   sun.castShadow = true;
-  const shadowBase = tier === 'low' ? 1024 : 2048;
+  const shadowBase = tier === 'low' ? 1024 : 1536;
   sun.shadow.mapSize.set(shadowBase, shadowBase);
   Object.assign(sun.shadow.camera, {
-    left: -30,
-    right: 30,
-    top: 30,
-    bottom: -30,
+    left: -34,
+    right: 34,
+    top: 34,
+    bottom: -34,
     near: 1,
     far: 90,
   });
-  sun.shadow.normalBias = 0.012;
-  sun.shadow.bias = -0.00012;
+  sun.shadow.normalBias = 0.02;
+  sun.shadow.bias = -0.0001;
+  sun.shadow.intensity = 1.0;
   scene.add(sun);
   scene.add(sun.target);
+  // The key light turns with the camera yaw, so the visible faces keep the same
+  // top-bright / left-lit / right-shade read from every side.
+  const UP = new T.Vector3(0, 1, 0), keyOffset = new T.Vector3(), lastKey = new T.Vector3();
+  let shadowDirty = true;
+  function placeSun() {
+    keyOffset.copy(sunOffset).applyAxisAngle(UP, yaw - Math.PI / 4); // yaw only: idle drift must not swing shadows
+    sun.position.copy(sun.target.position).add(keyOffset);
+    // The studio fill turns too, or the shade sides darken after rotate().
+    scene.environmentRotation.y = yaw - Math.PI / 4;
+    if (lastKey.distanceToSquared(keyOffset) > 1e-6) { lastKey.copy(keyOffset); shadowDirty = true; }
+  }
   // Quality ladder, climbed down by the frame-time governor and back up when frames are cheap:
   // 0 full, 1 fewer pixels, 2 smaller shadows and no lantern shadow, 3 and 4 fewer pixels still.
   let quality = 0,
@@ -191,7 +202,7 @@ export function createCity(
       light.castShadow = i === 0 && tier !== 'low' && quality < 2;
     shadowFocus(sun.target.position.length() ? sun.target.position.clone() : undefined, sun.shadow.camera.right);
   }
-  function shadowFocus(center?: T.Vector3, radius = 30) {
+  function shadowFocus(center?: T.Vector3, radius = 34) {
     const base = shadowSizeFor();
     const resolution = center ? base * 2 : base;
     if (sun.shadow.mapSize.x !== resolution) {
@@ -200,7 +211,7 @@ export function createCity(
       sun.shadow.map = null;
     }
     sun.target.position.copy(center || new T.Vector3());
-    sun.position.copy(sun.target.position).add(sunOffset);
+    placeSun();
     Object.assign(sun.shadow.camera, {
       left: -radius,
       right: radius,
@@ -279,11 +290,13 @@ export function createCity(
     frameIndex = 0;
   // Colours used every frame, allocated once.
   const tint = {
-    sunDay: new T.Color('#fff1d6'),
+    sunDay: new T.Color('#ffe3bd'),
     sunWarm: new T.Color('#ffbe7a'),
     sunNight: new T.Color('#8daed0'),
-    skyDay: new T.Color('#f4f1e4'),
-    skyWarm: new T.Color('#f2d3c0'),
+    skyDay: new T.Color('#bcd4f2'),
+    skyWarm: new T.Color('#e9d3c4'),
+    groundDay: new T.Color('#7f8f44'),
+    groundNight: new T.Color('#1d2731'),
     skyRain: new T.Color('#cfd9dc'),
     fogDay: new T.Color('#d9e3dd'),
     fogNight: new T.Color('#101b20'),
@@ -403,6 +416,7 @@ export function createCity(
     camera.position.copy(controls.target).add(offset);
     camera.lookAt(controls.target);
     camera.updateProjectionMatrix();
+    placeSun();
   }
   align();
   controls.update();
@@ -602,9 +616,9 @@ export function createCity(
     night = T.MathUtils.lerp(night, targetNight, reduced ? 1 : blend * 0.45);
     model.materialLibrary.setNight(night);
     lighting.update(night, !!inspect);
-    sky.intensity = T.MathUtils.lerp(0.9, 0.3, night);
-    sun.intensity = T.MathUtils.lerp(3.0, 0.45, night);
-    scene.environmentIntensity = T.MathUtils.lerp(0.55, 0.08, night);
+    sky.intensity = T.MathUtils.lerp(0.85, 0.3, night);
+    sun.intensity = T.MathUtils.lerp(3.8, 0.45, night);
+    scene.environmentIntensity = T.MathUtils.lerp(0.25, 0.04, night);
     lamps.forEach(
       (l) =>
         ((l.material as T.MeshStandardMaterial).emissiveIntensity =
@@ -705,10 +719,11 @@ export function createCity(
       driftAngle = nextDrift;
       align();
     }
-    // The sun follows Glasgow's real sky; low sun turns warm, rain turns everything grey.
+    // The sun's warmth and the night follow Glasgow's real sky, but the key light stays high
+    // and turns with the camera (a stylised sun); rain turns everything grey.
     if (sunOffset.distanceToSquared(targetSunOffset) > 1e-4) {
       sunOffset.lerp(targetSunOffset, reduced ? 1 : Math.min(1, blend * 0.4));
-      sun.position.copy(sun.target.position).add(sunOffset);
+      placeSun();
     }
     sunWarmth = T.MathUtils.lerp(sunWarmth, targetWarmth, reduced ? 1 : blend);
     rain = T.MathUtils.lerp(rain, targetRain, reduced ? 1 : blend * 0.5);
@@ -723,6 +738,7 @@ export function createCity(
       .copy(tint.skyDay)
       .lerp(tint.skyWarm, sunWarmth * 0.6 * (1 - night))
       .lerp(tint.skyRain, rain * 0.5);
+    sky.groundColor.copy(tint.groundDay).lerp(tint.groundNight, night);
     fog.color
       .copy(tint.fogDay)
       .lerp(tint.fogNight, night)
@@ -730,11 +746,12 @@ export function createCity(
     weather.update(dt, rain, paused);
     gulls.object.visible = !inspect && night < 0.85;
     gulls.update(time);
-    water.update(time, night, camera, { rain, sun: sunOffset });
+    water.update(time, night, camera, { rain, sun: keyOffset });
     // Shadows refresh every other frame: moving things still get moving shadows,
-    // and the costliest pass runs half as often.
+    // and the costliest pass runs half as often. A turned key light refreshes at once.
     frameIndex++;
-    renderer.shadowMap.needsUpdate = paused ? frameIndex % 30 === 0 : frameIndex % 2 === 0;
+    renderer.shadowMap.needsUpdate = shadowDirty || (paused ? frameIndex % 30 === 0 : frameIndex % 2 === 0);
+    shadowDirty = false;
     // Governor: sustained slow frames step down the quality ladder; sustained cheap
     // frames step back up, slowly, so the picture settles where the device can hold it.
     frameCost = T.MathUtils.lerp(frameCost, dt, 0.04);
@@ -825,7 +842,7 @@ export function createCity(
         night = targetNight;
         sunWarmth = targetWarmth;
         sunOffset.copy(targetSunOffset);
-        sun.position.copy(sun.target.position).add(sunOffset);
+        placeSun();
       }
     },
     setRain(v) {
