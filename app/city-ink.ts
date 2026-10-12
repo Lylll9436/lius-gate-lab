@@ -39,6 +39,7 @@ export function createCityInk(
   const material = new T.ShaderMaterial({
     uniforms: {
       colour: { value: target.texture },
+      saturation: { value: 1 },
 
       selection: { value: target.texture },
       hasSelection: { value: 0 },
@@ -52,12 +53,16 @@ export function createCityInk(
       'varying vec2 vUv; void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
     fragmentShader: `
       uniform sampler2D colour;
+      uniform float saturation;
       uniform sampler2D selection; uniform float hasSelection; uniform vec2 selectionStep; uniform vec3 selectionColor;
       varying vec2 vUv;
       void main(){
         vec4 c=texture2D(colour,vUv);
         if(c.a<.00001){gl_FragColor=vec4(0.);return;}
         c.rgb/=c.a;
+        // Colour grade: one saturation dial for the whole town, applied in linear light
+        // before tone mapping, so sea, grass and buildings stay in proportion.
+        c.rgb=max(mix(vec3(dot(c.rgb,vec3(.2126,.7152,.0722))),c.rgb,saturation),0.);
         gl_FragColor=c;
         float vignette=smoothstep(.5,1.08,length((vUv-.5)*vec2(1.08,1.))*1.38);
         gl_FragColor.rgb*=1.-.08*vignette;
@@ -72,6 +77,10 @@ export function createCityInk(
   });
   const quad = new FullScreenQuad(material);
   return {
+    /** 1 keeps the palette as modelled; lower values mute every colour equally. */
+    setSaturation(value: number) {
+      material.uniforms.saturation.value = value;
+    },
     setSelection(objects: T.Object3D[]) {
       selected = objects;
     },

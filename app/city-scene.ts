@@ -116,6 +116,10 @@ export function createCity(
     model = buildTown();
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
   const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
+  // The palette is modelled at full Clash saturation; the grade mutes it to a calmer,
+  // contemporary look (sage lawns, grey-blue sea) while accents still read. One number.
+  const SATURATION = 0.72;
+  ink.setSaturation(SATURATION);
   scene.add(city);
   // Studio light: a pre-filtered room environment gives every surface soft fill and
   // a gentle highlight on rounded edges, the way a C4D/Octane clay render looks.
