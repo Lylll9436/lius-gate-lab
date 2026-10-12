@@ -18,6 +18,28 @@ export type SurfaceKind =
   | 'sand'
   | 'gravel';
 
+/** Ground surfaces: never contact-darkened, never overhangs; their shading comes from the ground itself. */
+export const GROUND_KINDS = new Set<SurfaceKind>(['grass', 'paving', 'asphalt', 'sand', 'soil', 'gravel', 'water']);
+
+/**
+ * Contact and eave darkening, shaped per fragment from the two linear distances batch() bakes
+ * into aBake (height above the ground, depth below an overhang; 0..1 over 4 units).
+ * Linear values interpolate exactly across a face, so the bands stay crisp at any tessellation.
+ */
+function bakeShader(m: T.MeshStandardMaterial) {
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aBake;\nvarying vec2 vBake;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * 4.;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vBake;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+   float contact = mix(.55, 1., smoothstep(0., .7, vBake.x)) * mix(.82, 1., smoothstep(0., .08, vBake.x)); // guide's 0.45 foot band
+   diffuseColor.rgb *= contact * mix(.7, 1., smoothstep(0., .45, vBake.y));`);
+  };
+  m.customProgramCacheKey = () => 'lius-bake-solid';
+}
+
 const fract = (n: number) => n - Math.floor(n);
 const hash = (x: number, y: number) =>
   fract(Math.sin(x * 127.1 + y * 311.7) * 43758.5453);
@@ -207,6 +229,7 @@ export function createCityMaterials() {
       m.color.set('#ffffff');
       m.vertexColors = true;
       m.side = side;
+      if (!GROUND_KINDS.has(source.userData.surfaceKind)) bakeShader(m);
       batches.set(key, m);
     }
     return batches.get(key)!;

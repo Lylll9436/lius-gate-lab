@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   createCityMaterials,
+  GROUND_KINDS,
   projectMaterialUV,
   type SurfaceKind,
 } from './city-materials';
@@ -48,6 +49,8 @@ export const palette = {
 };
 
 type Point = [number, number, number];
+/** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
+const BAKE_RANGE = 4;
 const unitBox = new T.BoxGeometry(1, 1, 1);
 /**
  * Soft, rendered-object edges: every box thicker than a slab gets a small rounded edge,
@@ -229,6 +232,9 @@ export function buildTown(
     mesh.rotation.y = Math.PI / 2;
     mesh.position.set(x - w / 2, y, z);
     mesh.castShadow = mesh.receiveShadow = true;
+    // An overhang for the eave bake, measured from the wall plate.
+    mesh.userData.roof = true;
+    mesh.userData.eaveY = y;
     g.add(mesh);
     if (opts.ridge !== false) {
       box(g, x, y + rise + 0.02, z, w + 0.04, 0.07, 0.16, palette.slateLight, 'slate');
@@ -1273,6 +1279,7 @@ export function buildTown(
       const dial = new T.Mesh(new T.CylinderGeometry(0.46, 0.46, 0.06, 24), material('#f4ecd8', 'glass'));
       dial.rotation.x = Math.PI / 2;
       dial.position.set(0, 7.95, tw / 2 + 0.04);
+      dial.userData.flatGlass = true; // an even cream face, not a window's gradient
       face.add(dial);
       const bezel = new T.Mesh(new T.TorusGeometry(0.47, 0.035, 6, 24), material(palette.ink, 'metal'));
       bezel.position.set(0, 7.95, tw / 2 + 0.07);
@@ -1523,6 +1530,8 @@ export function buildTown(
       saw.rotation.y = Math.PI / 2;
       saw.position.set(x - bayW / 2, 0.24 + h + 0.16, 0);
       saw.castShadow = saw.receiveShadow = true;
+      saw.userData.roof = true;
+      saw.userData.eaveY = 0.24 + h + 0.16;
       shell.add(saw);
       const glazing = new T.Group();
       glazing.position.set(x, 0.24 + h + 0.16, -(d + 0.2) / 2 + 0.1);
@@ -1684,12 +1693,43 @@ export function buildTown(
   /* ---------------------------------------------------------------- */
   /* Static batching by surface family                                 */
   /* ---------------------------------------------------------------- */
-  function batch(g: T.Object3D, opts: { groundShade?: number } = {}) {
+  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number } = {}) {
+    const mode = opts.contact ?? 'terrain',
+      localFloor = opts.localFloor ?? 0;
     g.updateMatrixWorld(true);
     const inv = g.matrixWorld.clone().invert(),
       groups = new Map<string, { mat: T.Material; cast: boolean; list: T.BufferGeometry[] }>(),
       old: T.Mesh[] = [];
-    const bounds = new T.Box3().setFromObject(g);
+    const kindOf = (o: T.Mesh) => (o.material as T.Material).userData?.surfaceKind as SurfaceKind;
+    // Pass 1: overhangs in g space (roofs and flat solid slabs, never foliage or ground), in a 4-unit grid.
+    type Cap = { id: number; box: T.Box3; top: number };
+    const caps = new Map<number, Cap[]>();
+    const cellOf = (x: number, z: number) => (Math.floor(x / 4) + 512) * 1024 + Math.floor(z / 4) + 512;
+    if (mode !== 'none')
+      g.traverse((o) => {
+        if (!(o instanceof T.Mesh) || lamps.includes(o)) return;
+        const k = kindOf(o);
+        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.softFoliage || o.userData.ground) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const toG = inv.clone().multiply(o.matrixWorld),
+          box = o.geometry.boundingBox!.clone().applyMatrix4(toG),
+          s = box.getSize(new T.Vector3());
+        if (!o.userData.roof && !(s.y <= 0.3 && s.y >= 0.03 && Math.min(s.x, s.z) >= 0.5)) return;
+        // A sloped roof's box drops below the wall plate, so roofs say where their eave is.
+        const top =
+          o.userData.eaveY !== undefined
+            ? new T.Vector3(0, o.userData.eaveY, 0).applyMatrix4(inv.clone().multiply(o.parent!.matrixWorld)).y
+            : box.min.y;
+        const cap = { id: o.id, box, top };
+        for (let cx = Math.floor(box.min.x / 4); cx <= Math.floor(box.max.x / 4); cx++)
+          for (let cz = Math.floor(box.min.z / 4); cz <= Math.floor(box.max.z / 4); cz++) {
+            const key = (cx + 512) * 1024 + cz + 512;
+            const list = caps.get(key);
+            if (list) list.push(cap);
+            else caps.set(key, [cap]);
+          }
+      });
+    const world = new T.Vector3();
     g.traverse((o) => {
       if (!(o instanceof T.Mesh)) return;
       if (lamps.includes(o)) return;
@@ -1711,27 +1751,73 @@ export function buildTown(
       geometry.applyMatrix4(inv.clone().multiply(o.matrixWorld));
       // Cast by size: glass volumes cast, flowers, trims and thin panes do not, water never does.
       geometry.computeBoundingBox();
-      const size = geometry.boundingBox!.getSize(new T.Vector3());
+      const bb = geometry.boundingBox!,
+        size = bb.getSize(new T.Vector3());
       const k = source.userData.surfaceKind as SurfaceKind;
       const cast = Math.max(size.x, size.y, size.z) >= 0.3 && k !== 'water'
         && !(k === 'glass' && Math.min(size.x, size.y, size.z) < 0.3) && !o.userData.noShadow;
       const key = mat.uuid + (cast ? '|c' : '|n');
       if (source.userData.surfaceKind === 'grass') projectMaterialUV(geometry, 'grass');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
       const count = geometry.getAttribute('position').count,
         previous = geometry.getAttribute('color'),
-        positions = geometry.getAttribute('position');
-      const colors = new Float32Array(count * 3);
+        positions = geometry.getAttribute('position'),
+        normals = geometry.getAttribute('normal'),
+        meshNormals = o.geometry.getAttribute('normal');
+      // Solids get the bake; ground surfaces and wafer-thin decals keep their own shading.
+      const solid = !GROUND_KINDS.has(k) && !o.userData.ground && size.y >= 0.03,
+        rounded = o.geometry instanceof RoundedBoxGeometry,
+        span = Math.max(1e-3, size.y);
+      const colors = new Float32Array(count * 3),
+        bake = new Uint8Array(count * 2);
       for (let i = 0; i < count; i++) {
-        let shade = 1;
-        if (opts.groundShade) {
-          const worldY = positions.getY(i) + g.position.y;
-          shade = 0.8 + 0.2 * T.MathUtils.clamp((worldY - bounds.min.y) / opts.groundShade, 0, 1);
+        let h = BAKE_RANGE,
+          eave = BAKE_RANGE,
+          shade = 1,
+          warm = 0;
+        if (solid) {
+          const px = positions.getX(i),
+            py = positions.getY(i),
+            pz = positions.getZ(i),
+            nx = normals.getX(i),
+            ny = normals.getY(i),
+            nz = normals.getZ(i);
+          // Contact: height above the ground; eave: depth below the nearest overhang.
+          if (mode !== 'none' && ny < 0.6) {
+            if (mode === 'local') h = py - localFloor;
+            else {
+              world.set(px, py, pz).applyMatrix4(g.matrixWorld);
+              h = world.y - plan.terrainHeight(world.x, world.z);
+            }
+            if (Math.abs(ny) < 0.6) {
+              const qx = px + nx * 0.08,
+                qz = pz + nz * 0.08;
+              for (const c of caps.get(cellOf(qx, qz)) ?? [])
+                if (c.id !== o.id && c.top > py - 0.06 && qx >= c.box.min.x && qx <= c.box.max.x && qz >= c.box.min.z && qz <= c.box.max.z)
+                  eave = Math.min(eave, Math.max(0, c.top - py));
+            }
+          }
+          // Bright tops, bevels that catch the light (mesh-local normals), glass that brightens upwards.
+          if (ny > 0.6) shade *= 1.04;
+          if (rounded) {
+            const e = 1 - Math.max(Math.abs(meshNormals.getX(i)), Math.abs(meshNormals.getY(i)), Math.abs(meshNormals.getZ(i)));
+            if (ny < -0.2) shade *= 1 - 0.35 * e;
+            else {
+              const lift = 0.35 * e * T.MathUtils.clamp(ny * 0.8 + 0.4, 0, 1);
+              shade *= 1 + lift;
+              warm = lift * 0.3;
+            }
+          }
+          if (k === 'glass' && !o.userData.flatGlass) shade *= T.MathUtils.lerp(0.7, 1.15, (py - bb.min.y) / span);
         }
-        colors[i * 3] = source.color.r * (previous ? previous.getX(i) : 1) * shade;
+        bake[i * 2] = Math.round(T.MathUtils.clamp(h / BAKE_RANGE, 0, 1) * 255);
+        bake[i * 2 + 1] = Math.round(T.MathUtils.clamp(eave / BAKE_RANGE, 0, 1) * 255);
+        colors[i * 3] = source.color.r * (previous ? previous.getX(i) : 1) * shade * (1 + warm);
         colors[i * 3 + 1] = source.color.g * (previous ? previous.getY(i) : 1) * shade;
-        colors[i * 3 + 2] = source.color.b * (previous ? previous.getZ(i) : 1) * shade;
+        colors[i * 3 + 2] = source.color.b * (previous ? previous.getZ(i) : 1) * shade * (1 - 0.6 * warm);
       }
       geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
+      geometry.setAttribute('aBake', new T.BufferAttribute(bake, 2, true));
       if (!groups.has(key)) groups.set(key, { mat, cast, list: [] });
       groups.get(key)!.list.push(geometry);
       old.push(o);
@@ -1741,7 +1827,7 @@ export function buildTown(
       const normalized = geometries.map((geo) => {
         const plain = geo.index ? geo.toNonIndexed() : geo;
         for (const name of Object.keys(plain.attributes))
-          if (!['position', 'normal', 'color', 'uv'].includes(name)) plain.deleteAttribute(name);
+          if (!['position', 'normal', 'color', 'uv', 'aBake'].includes(name)) plain.deleteAttribute(name);
         if (!plain.getAttribute('normal')) plain.computeVertexNormals();
         return plain;
       });
@@ -1764,20 +1850,20 @@ export function buildTown(
   batch(land);
   batch(parkGroup);
   // Buildings share the library's batch materials, so one night toggle lights every window.
-  for (const m of models.values()) batch(m.shell, { groundShade: 1.6 });
+  for (const m of models.values()) batch(m.shell);
   for (const walker of walkers)
     for (const part of walker.root.children) {
       const joints = part.children.filter((o) => o instanceof T.Group);
       for (const joint of joints) {
         part.remove(joint);
-        batch(joint as T.Group);
+        batch(joint as T.Group, { contact: 'none' });
       }
-      batch(part as T.Group);
+      batch(part as T.Group, { contact: 'none' });
       if (joints.length) part.add(...joints);
     }
-  batch(tram);
-  batch(boat);
-  for (const entry of animated) if (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)) batch(entry.object);
+  batch(tram, { contact: 'local', localFloor: 0 });
+  batch(boat, { contact: 'none' });
+  for (const entry of animated) if (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)) batch(entry.object, { contact: 'none' });
   city.updateMatrixWorld(true);
 
   // Sprinkle a soft "lit window" marker for night: glass materials are shared, so one toggle lights the town.
