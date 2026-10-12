@@ -1,6 +1,6 @@
 # Reference and attribution
 
-The slope-corrected depth contour in app/city-ink.ts, the animated water material in app/city-water.ts (from app/water-surface.ts), and the curved, tapering branch construction method in app/city-craft.ts are adapted from [xi4u](https://github.com/annac777/xi4u), by AC. Its MIT licence is reproduced below. The Glasgow buildings, terrace layout, slate geometry, local material maps and planting arrangements are authored for this project, informed by the user's reference images and the repository's construction methods. MODEL_STUDY.md documents the comparison.
+The depth-buffer composite in app/city-ink.ts (which began as xi4u's slope-corrected depth contour and now computes soft contact occlusion), the animated water material in app/city-water.ts (from app/water-surface.ts), and the curved, tapering branch construction method in app/city-craft.ts are adapted from [xi4u](https://github.com/annac777/xi4u), by AC. Its MIT licence is reproduced below. The Glasgow buildings, terrace layout, slate geometry, local material maps and planting arrangements are authored for this project, informed by the user's reference images and the repository's construction methods. MODEL_STUDY.md documents the comparison.
 
 MIT License
 

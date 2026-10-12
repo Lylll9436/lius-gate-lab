@@ -3,7 +3,12 @@ import { ArrowUpRight } from 'lucide-react';
 import { publicAsset } from './public-asset';
 import { buildings, type BuildingId, type Locale } from './city-data';
 import { personPhotos } from './people-photos';
-import { people, titleFor, destinations, type ContentId } from './lab-navigation';
+import {
+  people,
+  titleFor,
+  destinations,
+  type ContentId,
+} from './lab-navigation';
 import {
   getRecord,
   outputRecords,
@@ -13,6 +18,8 @@ import {
   eventRecords,
   peopleRecords,
   personContentId,
+  recentNews,
+  type NewsItem,
 } from './lab-records';
 import type {
   LabRecord,
@@ -95,7 +102,8 @@ export function PlaceGlyph({
     hall: 'M3 21h18M5 21V10h14v11M12 10V4l3 2M9 14h2v7M13 14h2v7M8 7h8',
     house: 'M3 11l9-7 9 7M5 9.5V21h14V9.5M10 21v-6h4v6M14 5V3h2v4',
     studio: 'M3 21h18M4 21V8h9v13M13 21V12h7v9M7 11h3M7 15h3M16 15h2',
-    archive: 'M3 21h18M4 21V9l4-3 4 3 4-3 4 3v12M7 13h2M11 13h2M15 13h2M9 21v-5h6v5',
+    archive:
+      'M3 21h18M4 21V9l4-3 4 3 4-3 4 3v12M7 13h2M11 13h2M15 13h2M9 21v-5h6v5',
     park: 'M3 21h18M8 21v-4M8 17c-3 0-4-2-4-4 0-3 2-5 4-6 2 1 4 3 4 6 0 2-1 4-4 4M16 21v-3M16 18c-2 0-3-1.5-3-3 0-2 1.5-4 3-5 1.5 1 3 3 3 5 0 1.5-1 3-3 3',
     people:
       'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6M16 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M2 20c0-3 2.5-5 6-5s6 2 6 5M14 20c0-2.5 1.5-4 4-4s4 1.5 4 4',
@@ -211,10 +219,128 @@ function PortraitImage({
 
 const typeLabel = (type: OutputRecord['type'], zh: boolean) =>
   zh
-    ? { paper: '论文', dataset: '数据集', software: '软件', report: '报告' }[type]
-    : { paper: 'Paper', dataset: 'Dataset', software: 'Software', report: 'Report' }[
+    ? { paper: '论文', dataset: '数据集', software: '软件', report: '报告' }[
         type
-      ];
+      ]
+    : {
+        paper: 'Paper',
+        dataset: 'Dataset',
+        software: 'Software',
+        report: 'Report',
+      }[type];
+
+const categoryLabel = (category: EventRecord['category'], zh: boolean) =>
+  zh
+    ? { 'group-photo': '合影', celebration: '庆祝', milestone: '里程碑' }[
+        category
+      ]
+    : {
+        'group-photo': 'Group photo',
+        celebration: 'Celebration',
+        milestone: 'Milestone',
+      }[category];
+
+/** Dates as people say them: "3 Oct 2026" / "2026年10月3日". Fixed to UTC so every visitor sees the same day. */
+function newsDate(date: string, zh: boolean) {
+  return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
+    day: 'numeric',
+    month: zh ? 'long' : 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(date + 'T00:00:00Z'));
+}
+
+function newsKindLabel(item: NewsItem, zh: boolean) {
+  if (item.kind === 'event') return categoryLabel(item.record.category, zh);
+  if (item.kind === 'output') return typeLabel(item.record.type, zh);
+  return zh ? '研究记录' : 'Research note';
+}
+
+/** The supervisor's address, taken from their catalogue record so it is maintained in one place. */
+function supervisorEmail() {
+  const link = peopleRecords
+    .find((p) => p.id === 'pengyuan-liu')
+    ?.links.find((l) => l.url.startsWith('mailto:'));
+  return link ? link.url.slice('mailto:'.length) : null;
+}
+
+/** Gate's News on the first screen: the latest few dated records, each opening in place. */
+export function NewsPreview({
+  locale,
+  onOpen,
+  limit = 3,
+}: {
+  locale: Locale;
+  onOpen: (id: ContentId) => void;
+  limit?: number;
+}) {
+  const zh = locale === 'zh',
+    items = recentNews(limit),
+    joinEmail = supervisorEmail();
+  if (!items.length && !joinEmail) return null;
+  return (
+    <aside className="hero-news" aria-labelledby="hero-news-title">
+      <header className="hero-news-head">
+        <span className="eyebrow">
+          <i aria-hidden="true" />
+          {zh ? '近期动态' : 'Latest'}
+        </span>
+        <h2 id="hero-news-title">{zh ? '刘家门快讯' : 'Gate’s News'}</h2>
+      </header>
+      <ol className="hero-news-list">
+        {items.map((item) => {
+          const image = item.kind === 'event' ? item.record.image : null;
+          return (
+            <li key={item.id}>
+              <button
+                type="button"
+                className={`hero-news-item${image ? ' has-image' : ''}`}
+                onClick={() => onOpen(item.id)}
+              >
+                {image && (
+                  // eslint-disable-next-line @next/next/no-img-element -- Pages has no image server.
+                  <img
+                    src={publicAsset(image)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                )}
+                <span className="hero-news-text">
+                  <span className="hero-news-meta">
+                    <time dateTime={item.record.date}>
+                      {newsDate(item.record.date, zh)}
+                    </time>
+                    <span aria-hidden="true">·</span>
+                    <span>{newsKindLabel(item, zh)}</span>
+                  </span>
+                  <strong>{item.record.title[locale]}</strong>
+                  <span className="hero-news-summary">
+                    {item.record.summary[locale]}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <button
+        type="button"
+        className="link-action hero-news-more"
+        onClick={() => onOpen('corner-park')}
+      >
+        {zh ? '查看师门生活' : 'More from life at the Gate'}
+        <ArrowUpRight size={14} />
+      </button>
+      {joinEmail && (
+        <footer className="hero-news-join">
+          <strong>{zh ? '加入我们！' : 'Join us!'}</strong>
+          <a href={'mailto:' + joinEmail}>{joinEmail}</a>
+        </footer>
+      )}
+    </aside>
+  );
+}
 
 function Pill({
   children,
@@ -464,7 +590,12 @@ export function PersonCard({
         {!!person.links.length && (
           <div className="record-links compact">
             {person.links.map((link) => (
-              <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+              <a
+                key={link.url}
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+              >
                 {link.label[locale]}
                 <ArrowUpRight size={13} />
               </a>
@@ -477,7 +608,10 @@ export function PersonCard({
             <ArrowUpRight size={14} />
           </button>
           {home && onVisit && (
-            <button className="link-action quiet" onClick={() => onVisit(home.id)}>
+            <button
+              className="link-action quiet"
+              onClick={() => onVisit(home.id)}
+            >
               <PlaceGlyph kind="house" size={15} />
               {zh ? `住所 · ${home.style.zh}` : `Home · ${home.style.en}`}
             </button>
@@ -541,8 +675,8 @@ export function LabContent({
       <div className="welcome">
         <p className="record-lead">
           {tr(
-            'Urban Intelligence Group, University of Glasgow. The site is organised as a small city; choose a building to read that part of the group’s record.',
-            '格拉斯哥大学城市智能研究组。本站按一座小城组织，选择一栋建筑阅读对应内容。',
+            'Liu’s Gate, University of Glasgow. The site is organised as a small city; choose a building to read that chapter.',
+            '格拉斯哥大学刘家门。本站按一座小城组织，选择一栋建筑阅读对应内容。',
           )}
         </p>
         <div className="address-list">
@@ -556,15 +690,14 @@ export function LabContent({
         </div>
       </div>
     );
-  if (id === 'people')
-    return <PeopleCards locale={locale} onOpen={onOpen} />;
+  if (id === 'people') return <PeopleCards locale={locale} onOpen={onOpen} />;
   if (id === 'corner-park')
     return (
       <div className="park">
         <p className="record-lead">
           {tr(
-            'Group photos, events and announcements are kept in the corner park.',
-            '研究组的合影、活动与公告保存在街角公园。',
+            'Photos, outings and announcements from Liu’s Gate are kept in the corner park.',
+            '刘家门的合影、活动与公告保存在街角公园。',
           )}
         </p>
         {eventRecords.length ? (

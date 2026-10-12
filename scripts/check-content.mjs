@@ -181,7 +181,7 @@ const nav = await import(
 const records = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
 );
-const { LabContent } = await import(
+const { LabContent, NewsPreview } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
 assert.equal(nav.people.length, 4);
@@ -264,6 +264,30 @@ const park = renderToStaticMarkup(
   }),
 );
 assert(park.includes('Test event') && !park.includes('No records yet'));
+// Gate's News: dated records from every collection, newest first, capped, bilingual.
+const news = records.recentNews(50);
+assert(news.length >= 3 && records.recentNews(2).length === 2 && !records.recentNews(0).length);
+for (let i = 1; i < news.length; i++)
+  assert(news[i - 1].record.date >= news[i].record.date, 'News must be newest first.');
+const sameDay = news.filter((n) => n.record.date === '2026-09-10').map((n) => n.id);
+assert.deepEqual(sameDay, ['output:test-output', 'event:test-event', 'note:test-note']);
+for (const n of news) assert(nav.isContentId(n.id), 'News must open a real record: ' + n.id);
+const newsEn = renderToStaticMarkup(
+  React.createElement(NewsPreview, { locale: 'en', onOpen() {}, limit: 50 }),
+);
+assert(newsEn.includes('Gate’s News') && newsEn.includes('Test output') && newsEn.includes('Paper'));
+assert(!/[\u3400-\u9fff]/.test(newsEn), 'English news contains Chinese.');
+assert(newsEn.includes('10 Sept 2026') || newsEn.includes('10 Sep 2026'), 'News dates read naturally.');
+const newsZh = renderToStaticMarkup(
+  React.createElement(NewsPreview, { locale: 'zh', onOpen() {} }),
+);
+assert(newsZh.includes('刘家门快讯') && (newsZh.match(/<li>/g) || []).length === 3);
+// Join us: the supervisor's email comes from their catalogue record.
+const supervisorMail = catalog.people
+  .find((p) => p.id === 'pengyuan-liu')
+  .links.find((l) => l.url.startsWith('mailto:')).url;
+assert(newsEn.includes('Join us!') && newsEn.includes('href="' + supervisorMail + '"'));
+assert(newsZh.includes('加入我们！'));
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');
 for (const dir of ['app', 'scripts', 'content'])
@@ -316,5 +340,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, Gate’s News order and rendering, v1 migration, properties, bilingual routes and scene targets.',
 );

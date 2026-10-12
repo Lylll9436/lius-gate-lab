@@ -41,7 +41,6 @@ export type StageController = {
   skyMode: SkyMode;
   rain: boolean;
   inspect: boolean;
-  interior: boolean;
   tour: number;
   plan: boolean;
   grid: boolean;
@@ -58,7 +57,6 @@ export type StageController = {
   togglePause: () => void;
   inspectBuilding: () => void;
   exitInspection: () => void;
-  setInterior: (v: boolean) => void;
   tourStop: (index: number) => void;
   closeTour: () => void;
   togglePanel: () => void;
@@ -87,12 +85,12 @@ export function CityStage({
   const caption = hoveredBuilding
     ? `${hoveredBuilding.name[locale]} · ${hoveredBuilding.category[locale]}`
     : ctl.hovered === 'corner-park'
-      ? tr('Corner park · Group life', '街角公园 · 研究组生活')
+      ? tr('Corner park · Life at the Gate', '街角公园 · 师门生活')
       : null;
   return (
     <div
       className={`city-stage ${explore ? 'is-explore' : 'is-reading'} ${ctl.inspect ? 'is-inspecting' : ''}`}
-      aria-label={tr('Interactive city of the research group', '研究组的交互小城')}
+      aria-label={tr('Interactive city of Liu’s Gate', '刘家门的交互小城')}
     >
       <div ref={mount} className="world" />
       {!ctl.ready && (
@@ -129,7 +127,7 @@ export function CityStage({
           aria-hidden="true"
         >
           <strong>{tr('Corner park', '街角公园')}</strong>
-          <span>{tr('Group life · Harbour', '研究组生活 · 港口')}</span>
+          <span>{tr('Life at the Gate · Harbour', '师门生活 · 港口')}</span>
         </div>
       </div>
 
@@ -273,16 +271,6 @@ export function CityStage({
                 <ArrowLeft size={14} />
                 {tr('Back to the city', '返回城市')}
               </button>
-              {b?.id !== 'lius-gate' && (
-                <div className="segmented">
-                  <button aria-pressed={!ctl.interior} onClick={() => ctl.setInterior(false)}>
-                    {tr('Exterior', '外观')}
-                  </button>
-                  <button aria-pressed={ctl.interior} onClick={() => ctl.setInterior(true)}>
-                    {tr('Cutaway', '剖面')}
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -305,7 +293,7 @@ export function CityStage({
               <button className="directory-row" onClick={ctl.openPark}>
                 <PlaceGlyph kind="park" size={16} />
                 <strong>{tr('Corner park', '街角公园')}</strong>
-                <span>{tr('Group life & memories', '生活与记忆')}</span>
+                <span>{tr('Life & memories', '生活与记忆')}</span>
                 <ArrowUpRight size={14} />
               </button>
             </section>

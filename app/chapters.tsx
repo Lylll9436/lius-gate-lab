@@ -2,7 +2,13 @@ import { memo } from 'react';
 import { ArrowDown, ArrowUpRight, Map } from 'lucide-react';
 import type { BuildingId, Locale } from './city-data';
 import type { ContentId } from './lab-navigation';
-import { LabContent, PeopleCards, PlaceGlyph, glyphFor } from './lab-content';
+import {
+  LabContent,
+  NewsPreview,
+  PeopleCards,
+  PlaceGlyph,
+  glyphFor,
+} from './lab-content';
 import { chapterMeta } from './site-chrome';
 import type { SkyState } from './city-atmosphere';
 import type { SkyMode } from './use-sky';
@@ -13,12 +19,14 @@ export const Hero = memo(function Hero({
   skyMode,
   onExplore,
   onRead,
+  onOpen,
 }: {
   locale: Locale;
   sky: SkyState;
   skyMode: SkyMode;
   onExplore: () => void;
   onRead: () => void;
+  onOpen: (id: ContentId) => void;
 }) {
   const zh = locale === 'zh';
   return (
@@ -26,8 +34,8 @@ export const Hero = memo(function Hero({
       <div className="hero-copy">
         <span className="eyebrow">
           {zh
-            ? '格拉斯哥大学 · 城市智能研究组'
-            : 'Urban Intelligence Group · University of Glasgow'}
+            ? '格拉斯哥大学 · 刘鹏远师门'
+            : 'University of Glasgow · Pengyuan Liu and students'}
         </span>
         <h1>
           <span className={zh ? 'hero-title hero-title-zh' : 'hero-title'}>
@@ -36,8 +44,8 @@ export const Hero = memo(function Hero({
         </h1>
         <p className="hero-lede">
           {zh
-            ? '城市智能研究组在格拉斯哥大学从事城市分析研究。本站做成了一座小城：每栋建筑对应研究组的一章内容。向下滚动阅读，或直接探索小城。'
-            : 'The Urban Intelligence Group works on urban analytics at the University of Glasgow. This site is built as a small city: each building holds one chapter about the group. Scroll to read, or explore the city directly.'}
+            ? '刘家门是格拉斯哥大学刘鹏远老师带领的师门，关注城市分析、GeoAI 与城市数字孪生。本站做成了一座小城：每栋建筑对应一章内容。向下滚动阅读，或直接探索小城。'
+            : 'Liu’s Gate is a small circle of PhD students supervised by Pengyuan Liu at the University of Glasgow, working on urban analytics, GeoAI and urban digital twins. This site is built as a small city: each building holds one chapter. Scroll to read, or explore the city directly.'}
         </p>
         <div className="hero-actions">
           <button className="button-primary" onClick={onRead}>
@@ -50,6 +58,7 @@ export const Hero = memo(function Hero({
           </button>
         </div>
       </div>
+      <NewsPreview locale={locale} onOpen={onOpen} />
       <div className="hero-foot">
         <span className="hero-hint">
           {zh

@@ -16,19 +16,17 @@ import { useGlasgowSky, effectiveNight, type SkyMode } from './use-sky';
 import { Masthead, SiteFooter } from './site-chrome';
 import { CityStage, type StageController } from './city-stage';
 import { Hero, Chapters } from './chapters';
+import { chapterBearings } from './town-plan';
+import { installLiquidGlass } from './liquid-glass';
+
+/** Controls and the news card refract at the rim; the long text panels stay frosted only. */
+const REFRACTING_GLASS =
+  '.hero-news, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .hud, .sky-chip, .hover-chip, .tour-control, .inspection-toolbar, .plan-legend';
 
 type View = { mode: BrowseMode; content: ContentId };
 const stops = buildings.map((b) => b.id);
-/** A different bearing for every chapter, so scrolling feels like walking. */
-const bearings: Record<string, number> = {
-  overview: Math.PI / 4,
-  'town-hall': Math.PI / 4 + 0.42,
-  people: Math.PI / 4 - 0.58,
-  'research-studio': Math.PI / 4 + 1.02,
-  'city-archive': Math.PI / 4 - 1.08,
-  'corner-park': Math.PI / 4 + 0.22,
-  'lius-gate': Math.PI / 4 - 0.18,
-};
+/** A different bearing for every chapter, each facing its subject's front. */
+const bearings = chapterBearings;
 const WIDE = '(min-width: 961px)';
 
 export default function Home() {
@@ -58,7 +56,6 @@ export default function Home() {
     [grid, setGrid] = useState(false),
     [plan, setPlan] = useState(false),
     [inspect, setInspect] = useState(false),
-    [interior, setInterior] = useState(false),
     [tour, setTour] = useState(-1),
     [panelOpen, setPanelOpen] = useState(true),
     [directory, setDirectory] = useState(false),
@@ -70,6 +67,7 @@ export default function Home() {
     explore = mode === 'city',
     zh = locale === 'zh',
     b = buildingForContent(content);
+  useEffect(() => installLiquidGlass(REFRACTING_GLASS), []);
   useEffect(() => {
     viewRef.current = view;
     wideRef.current = wide;
@@ -78,7 +76,6 @@ export default function Home() {
   function applyView(next: View, keepTour = false) {
     setView(next);
     setInspect(false);
-    setInterior(false);
     setPlan(false);
     setDirectory(false);
     if (!keepTour) setTour(-1);
@@ -161,7 +158,6 @@ export default function Home() {
   function togglePlan() {
     const next = !plan;
     setInspect(false);
-    setInterior(false);
     setPlan(next);
     api.current?.setPlan(next);
     if (!next && b) api.current?.select(b.id);
@@ -169,7 +165,6 @@ export default function Home() {
   function inspectBuilding() {
     if (!b) return;
     setInspect(true);
-    setInterior(false);
     setPlan(false);
     setDirectory(false);
     api.current?.setPlan(false);
@@ -177,7 +172,6 @@ export default function Home() {
   }
   function exitInspection() {
     setInspect(false);
-    setInterior(false);
     if (b) api.current?.select(b.id);
   }
 
@@ -353,15 +347,14 @@ export default function Home() {
   useEffect(() => {
     document.documentElement.lang = zh ? 'zh-CN' : 'en';
     document.title = zh
-      ? '刘家门 · 格拉斯哥大学城市智能研究组'
-      : 'LIU’S GATE · Urban Intelligence Group';
+      ? '刘家门 · 格拉斯哥大学'
+      : 'LIU’S GATE · University of Glasgow';
   }, [zh]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || mode !== 'city') return;
       if (inspect && b) {
         setInspect(false);
-        setInterior(false);
         api.current?.select(b.id);
       } else if (directory) setDirectory(false);
       else if (panelOpen) {
@@ -387,7 +380,6 @@ export default function Home() {
     skyMode,
     rain,
     inspect,
-    interior,
     tour,
     plan,
     grid,
@@ -405,10 +397,6 @@ export default function Home() {
     togglePause: () => setPaused((v) => !v),
     inspectBuilding,
     exitInspection,
-    setInterior: (v) => {
-      setInterior(v);
-      api.current?.setInterior(v);
-    },
     tourStop,
     closeTour: () => setTour(-1),
     togglePanel: () => setPanelOpen((v) => !v),
@@ -462,6 +450,7 @@ export default function Home() {
             skyMode={skyMode}
             onExplore={goExplore}
             onRead={startReading}
+            onOpen={goRead}
           />
           <Chapters
             locale={locale}

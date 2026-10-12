@@ -12,7 +12,7 @@ import * as plan from './town-plan';
 import type { XZ } from './town-plan';
 
 /**
- * The town itself: terrain, streets, seven buildings with rooms, trees,
+ * The town itself: terrain, streets, seven buildings, trees,
  * street furniture, the harbour, the lighthouse and the things that move.
  * Everything is procedural and merged into a few draw calls per surface family.
  */
@@ -20,8 +20,6 @@ import type { XZ } from './town-plan';
 export type Model = {
   root: T.Group;
   shell: T.Group;
-  roof: T.Group;
-  interior: T.Group;
   fade: T.MeshStandardMaterial[];
   center: T.Vector3;
   /** Invisible box for pointer picking, set by the scene. */
@@ -76,6 +74,21 @@ export const palette = {
 
 type Point = [number, number, number];
 const unitBox = new T.BoxGeometry(1, 1, 1);
+/**
+ * Soft, rendered-object edges: every box thicker than a slab gets a small rounded edge,
+ * so the environment light draws a highlight along it instead of a hard pixel step.
+ * Geometries are shared per size; batching bakes them into the merged meshes anyway.
+ */
+const roundedBoxes = new Map<string, RoundedBoxGeometry>();
+function roundedBox(w: number, h: number, d: number, radius: number, segments: number) {
+  const key = [w, h, d, radius, segments].map((n) => n.toFixed(4)).join('|');
+  let geometry = roundedBoxes.get(key);
+  if (!geometry) {
+    geometry = new RoundedBoxGeometry(w, h, d, segments, radius);
+    roundedBoxes.set(key, geometry);
+  }
+  return geometry;
+}
 const hash = plan.hash;
 function noise2(x: number, z: number) {
   const ix = Math.floor(x),
@@ -122,10 +135,12 @@ export function buildTown(
     opts: { bevel?: number; ry?: number; rx?: number; rz?: number } = {},
   ) {
     const mat = material(color, kind);
-    const bevel = opts.bevel ?? 0;
+    const thinnest = Math.min(w, h, d);
+    // Explicit bevels keep their look; everything else thicker than a slab gets a soft edge.
+    const bevel = opts.bevel ?? (thinnest >= 0.1 ? Math.min(0.045, thinnest * 0.22) : 0);
     const geometry =
       bevel > 0
-        ? new RoundedBoxGeometry(w, h, d, 2, Math.min(bevel, Math.min(w, h, d) * 0.32))
+        ? roundedBox(w, h, d, Math.min(bevel, thinnest * 0.32), opts.bevel ? 2 : 1)
         : unitBox;
     const m = new T.Mesh(geometry, mat);
     m.position.set(x, y, z);
@@ -149,7 +164,8 @@ export function buildTown(
     kind?: SurfaceKind,
     sides = 12,
   ) {
-    const m = new T.Mesh(new T.CylinderGeometry(rTop, rBottom, h, sides), material(color, kind));
+    const smooth = sides >= 5 ? Math.max(sides, 18) : sides;
+    const m = new T.Mesh(new T.CylinderGeometry(rTop, rBottom, h, smooth), material(color, kind));
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;
     g.add(m);
@@ -167,7 +183,8 @@ export function buildTown(
     sides = 4,
     ry = Math.PI / 4,
   ) {
-    const m = new T.Mesh(new T.ConeGeometry(r, h, sides), material(color, kind));
+    const smooth = sides >= 5 ? Math.max(sides, 18) : sides;
+    const m = new T.Mesh(new T.ConeGeometry(r, h, smooth), material(color, kind));
     m.position.set(x, y, z);
     m.rotation.y = ry;
     m.castShadow = m.receiveShadow = true;
@@ -184,7 +201,8 @@ export function buildTown(
     kind?: SurfaceKind,
     segments = 12,
   ) {
-    const m = new T.Mesh(new T.SphereGeometry(r, segments, Math.max(6, segments - 4)), material(color, kind));
+    const smooth = Math.max(segments, 18);
+    const m = new T.Mesh(new T.SphereGeometry(r, smooth, Math.round(smooth * 0.7)), material(color, kind));
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;
     g.add(m);
@@ -511,7 +529,15 @@ export function buildTown(
     const foam = new T.Mesh(foamGeometry, foamMaterial);
     foam.name = 'tide-foam';
     foam.renderOrder = 3;
+    foam.userData.keepSeparate = true;
     land.add(foam);
+    animated.push({
+      object: foam,
+      update(time, night) {
+        foamMaterial.emissiveIntensity = 0.35 * (1 - 0.7 * night);
+        foamMaterial.opacity = 0.44 + Math.sin(time * 0.7) * 0.08;
+      },
+    });
     // Boulders along the tide line and on the headland.
     for (let i = 0; i < n; i++) {
       if (hash(i) > 0.2) continue;
@@ -1118,114 +1144,6 @@ export function buildTown(
   /* ---------------------------------------------------------------- */
   /* Buildings                                                         */
   /* ---------------------------------------------------------------- */
-  function furnishRoom(interior: T.Group, w: number, d: number, kind: 'hall' | 'home' | 'studio' | 'archive', seed = 0) {
-    const floorColor = kind === 'archive' ? '#b8b7a6' : kind === 'home' ? '#c9ad84' : kind === 'studio' ? '#d7d2c4' : '#cbbb97';
-    box(interior, 0, 0.14, 0, w, 0.08, d, floorColor, 'wood');
-    const desk = (x: number, z: number, dw: number, dd: number, ry = 0, screen = true) => {
-      const p = new T.Group();
-      p.position.set(x, 0, z);
-      p.rotation.y = ry;
-      interior.add(p);
-      box(p, 0, 0.74, 0, dw, 0.06, dd, palette.wood, 'wood', { bevel: 0.01 });
-      for (const sx of [-dw * 0.42, dw * 0.42]) for (const sz of [-dd * 0.36, dd * 0.36]) box(p, sx, 0.45, sz, 0.04, 0.56, 0.04, palette.metal, 'metal');
-      if (screen) {
-        box(p, 0, 0.98, -dd * 0.2, Math.min(0.42, dw * 0.6), 0.26, 0.03, '#2e3f44', 'paint');
-        box(p, 0, 0.98, -dd * 0.2 + 0.02, Math.min(0.36, dw * 0.52), 0.2, 0.01, '#8fb7b2', 'glass');
-        box(p, 0, 0.84, -dd * 0.2, 0.03, 0.14, 0.03, '#2e3f44', 'paint');
-      }
-      return p;
-    };
-    const chair = (x: number, z: number, ry = 0, color = '#6d8676') => {
-      const p = new T.Group();
-      p.position.set(x, 0, z);
-      p.rotation.y = ry;
-      interior.add(p);
-      box(p, 0, 0.5, 0, 0.36, 0.06, 0.36, color, 'fabric', { bevel: 0.02 });
-      box(p, 0, 0.72, -0.16, 0.36, 0.4, 0.05, color, 'fabric', { bevel: 0.02 });
-      for (const sx of [-0.13, 0.13]) for (const sz of [-0.13, 0.13]) box(p, sx, 0.26, sz, 0.03, 0.44, 0.03, palette.metal, 'metal');
-    };
-    const shelf = (x: number, z: number, sw: number, ry = 0, empty = false) => {
-      const p = new T.Group();
-      p.position.set(x, 0, z);
-      p.rotation.y = ry;
-      interior.add(p);
-      for (const sx of [-sw / 2, sw / 2]) box(p, sx, 0.95, 0, 0.04, 1.7, 0.3, palette.woodDark, 'wood');
-      box(p, 0, 0.95, -0.14, sw, 1.7, 0.03, palette.wood, 'wood');
-      for (let r = 0; r < 4; r++) {
-        const y = 0.35 + r * 0.42;
-        box(p, 0, y, 0, sw, 0.03, 0.3, palette.wood, 'wood');
-        const count = empty ? 1 : Math.max(2, Math.floor(sw / 0.09));
-        for (let i = 0; i < count; i++)
-          box(p, -sw / 2 + 0.08 + (i * (sw - 0.16)) / Math.max(1, count - 1), y + 0.15, 0.02, empty ? 0.2 : 0.055, 0.26, 0.2, empty ? '#cdc3aa' : ['#6c8e87', '#bf9876', '#d1c19c', '#7d8062', '#a85c4e'][(i + r + seed) % 5], 'paint');
-      }
-    };
-    const plant = (x: number, z: number) => {
-      cylinder(interior, x, 0.33, z, 0.12, 0.09, 0.26, '#ad805e', 'paint', 10);
-      sphere(interior, x, 0.6, z, 0.2, palette.canopy[2], 'foliage', 8).userData.softFoliage = true;
-      sphere(interior, x + 0.08, 0.72, z - 0.05, 0.14, palette.canopy[1], 'foliage', 8).userData.softFoliage = true;
-    };
-    const rug = (x: number, z: number, rw: number, rd: number, color: string) => box(interior, x, 0.19, z, rw, 0.015, rd, color, 'fabric');
-    const sofa = (x: number, z: number, sw: number, ry = 0) => {
-      const p = new T.Group();
-      p.position.set(x, 0, z);
-      p.rotation.y = ry;
-      interior.add(p);
-      box(p, 0, 0.42, 0, sw, 0.28, 0.6, '#718475', 'fabric', { bevel: 0.05 });
-      box(p, 0, 0.7, -0.22, sw, 0.4, 0.16, '#60766a', 'fabric', { bevel: 0.05 });
-      for (const sx of [-sw / 2 + 0.08, sw / 2 - 0.08]) box(p, sx, 0.62, 0, 0.16, 0.3, 0.6, '#667d6e', 'fabric', { bevel: 0.05 });
-    };
-    if (kind === 'hall') {
-      rug(0, -0.3, w * 0.6, d * 0.5, '#7e9181');
-      desk(0, -d * 0.3, 2.0, 0.6, 0, true);
-      chair(0, -d * 0.3 - 0.5, Math.PI, '#698179');
-      for (const sx of [-w * 0.3, w * 0.3]) for (const sz of [0.3, 0.9, 1.5]) chair(sx, sz, 0, '#8a7f66');
-      shelf(-w / 2 + 0.2, -d * 0.1, 1.2, Math.PI / 2);
-      shelf(w / 2 - 0.2, -d * 0.1, 1.2, -Math.PI / 2);
-      plant(w * 0.4, d * 0.4);
-      plant(-w * 0.4, d * 0.4);
-      // A model of the city on a table, naturally.
-      const table = desk(0.0, 0.9, 1.1, 0.9, 0, false);
-      box(table, 0, 0.8, 0, 0.9, 0.04, 0.7, '#abb890', 'paint');
-      for (let i = 0; i < 7; i++) box(table, ((i % 3) - 1) * 0.26, 0.9 + (i % 2) * 0.04, (Math.floor(i / 3) - 1) * 0.22, 0.14, 0.14 + (i % 2) * 0.1, 0.16, i % 2 ? '#cbb28a' : '#8a9e8e', 'stone');
-    } else if (kind === 'home') {
-      rug(0, 0.6, w * 0.6, 1.4, ['#a86c5a', '#5f7d8c', '#8a9a6a'][seed % 3]);
-      sofa(0, 1.2, 1.2, Math.PI);
-      desk(-w * 0.25, -d * 0.3, 0.9, 0.5, 0, true);
-      chair(-w * 0.25, -d * 0.3 + 0.45, Math.PI, '#75836b');
-      shelf(w / 2 - 0.2, -d * 0.2, 1.0, -Math.PI / 2);
-      plant(w * 0.35, d * 0.38);
-      cylinder(interior, -w * 0.35, 0.4, d * 0.35, 0.2, 0.2, 0.05, palette.wood, 'wood', 12);
-      cylinder(interior, -w * 0.35, 0.3, d * 0.35, 0.03, 0.03, 0.22, palette.metal, 'metal', 8);
-      box(interior, -w * 0.35, 0.62, d * 0.35, 0.03, 0.4, 0.03, palette.bronze, 'metal');
-      cone(interior, -w * 0.35, 0.95, d * 0.35, 0.16, 0.2, '#ded0a7', 'fabric', 10, 0);
-    } else if (kind === 'studio') {
-      rug(0, 0, w * 0.7, d * 0.7, '#c9c4b2');
-      for (const [x, z] of [
-        [-w * 0.28, -d * 0.28],
-        [w * 0.28, -d * 0.28],
-        [-w * 0.28, 0.1],
-        [w * 0.28, 0.1],
-      ])
-        {
-          desk(x, z, 1.0, 0.55, 0, true);
-          chair(x, z + 0.5, Math.PI, '#6f8b85');
-        }
-      desk(0, d * 0.32, 1.6, 0.7, 0, false);
-      for (const sx of [-0.5, 0.5]) chair(sx, d * 0.32 + 0.55, Math.PI, '#a6af8e');
-      shelf(-w / 2 + 0.2, d * 0.25, 1.2, Math.PI / 2);
-      box(interior, w / 2 - 0.08, 1.1, -0.2, 0.04, 0.9, 1.6, '#eef0ea', 'paint');
-      plant(w * 0.4, d * 0.4);
-    } else {
-      for (const sx of [-w * 0.3, w * 0.3]) shelf(sx, -d * 0.15, 2.2, Math.PI / 2, false);
-      box(interior, 0, 0.55, -d * 0.35, 1.5, 0.75, 0.5, '#83978d', 'metal', { bevel: 0.01 });
-      for (let y = 0.3; y < 0.9; y += 0.14) box(interior, 0, y, -d * 0.35 + 0.26, 1.4, 0.015, 0.02, '#667b73', 'metal');
-      desk(0.2, d * 0.28, 1.1, 0.6, 0, false);
-      chair(-0.4, d * 0.28, Math.PI / 2, '#83978d');
-      plant(-w * 0.4, d * 0.4);
-    }
-    interior.userData.layout = kind;
-  }
-
   function buildGate(shell: T.Group) {
     const stone = palette.blonde,
       trim = palette.trim;
@@ -1279,7 +1197,7 @@ export function buildTown(
     shell.userData.openingWidth = opening * 2;
   }
 
-  function buildHall(shell: T.Group, roof: T.Group, interior: T.Group, site: plan.Site) {
+  function buildHall(shell: T.Group, site: plan.Site) {
     const w = site.w,
       d = site.d,
       h = 4.2,
@@ -1333,9 +1251,9 @@ export function buildTown(
     }
     box(shell, 0, 0.3 + h * 0.52, 0, w + 0.12, 0.09, d + 0.12, palette.trim, 'stone');
     box(shell, 0, 0.3 + h + 0.08, 0, w + 0.36, 0.2, d + 0.36, palette.trim, 'stone');
-    balustrade(roof, 0, 0.3 + h + 0.18, d / 2 + 0.1, w - 2.6);
-    pitchedRoof(roof, 0, 0.3 + h + 0.18, 0, w + 0.2, d + 0.2, 1.35);
-    gabledRoofEnds(roof, 0, 0.3 + h + 0.18, 0, w + 0.2, d + 0.2, 1.35, stone);
+    balustrade(shell, 0, 0.3 + h + 0.18, d / 2 + 0.1, w - 2.6);
+    pitchedRoof(shell, 0, 0.3 + h + 0.18, 0, w + 0.2, d + 0.2, 1.35);
+    gabledRoofEnds(shell, 0, 0.3 + h + 0.18, 0, w + 0.2, d + 0.2, 1.35, stone);
     // The tower: clock faces, belfry, spire, weather vane.
     const tx = 0,
       tz = 0.3,
@@ -1353,8 +1271,9 @@ export function buildTown(
       // The belfry opening.
       box(face, 0, 7.05, tw / 2 + 0.02, 0.5, 1.0, 0.06, '#3e4a48', 'metal');
       for (let i = 0; i < 4; i++) box(face, 0, 6.65 + i * 0.25, tw / 2 + 0.06, 0.54, 0.04, 0.06, palette.trim, 'stone');
-      // The clock: a cream dial, a dark bezel and hands that keep Glasgow time.
-      const dial = new T.Mesh(new T.CylinderGeometry(0.46, 0.46, 0.06, 20), material('#f4ecd8', 'paint'));
+      // The clock: a cream dial behind glass (lit after dusk like the windows), a dark bezel
+      // and hands that keep Glasgow time.
+      const dial = new T.Mesh(new T.CylinderGeometry(0.46, 0.46, 0.06, 24), material('#f4ecd8', 'glass'));
       dial.rotation.x = Math.PI / 2;
       dial.position.set(0, 7.95, tw / 2 + 0.04);
       face.add(dial);
@@ -1378,21 +1297,21 @@ export function buildTown(
       clocks.push({ hour, minute });
     }
     box(shell, tx, 0.3 + th + 0.1, tz, tw + 0.36, 0.2, tw + 0.36, palette.trim, 'stone');
-    balustrade(roof, tx, 0.3 + th + 0.2, tz + tw / 2 + 0.12, tw + 0.2);
-    balustrade(roof, tx, 0.3 + th + 0.2, tz - tw / 2 - 0.12, tw + 0.2);
-    balustrade(roof, tx + tw / 2 + 0.12, 0.3 + th + 0.2, tz, tw + 0.2, Math.PI / 2);
-    balustrade(roof, tx - tw / 2 - 0.12, 0.3 + th + 0.2, tz, tw + 0.2, Math.PI / 2);
+    balustrade(shell, tx, 0.3 + th + 0.2, tz + tw / 2 + 0.12, tw + 0.2);
+    balustrade(shell, tx, 0.3 + th + 0.2, tz - tw / 2 - 0.12, tw + 0.2);
+    balustrade(shell, tx + tw / 2 + 0.12, 0.3 + th + 0.2, tz, tw + 0.2, Math.PI / 2);
+    balustrade(shell, tx - tw / 2 - 0.12, 0.3 + th + 0.2, tz, tw + 0.2, Math.PI / 2);
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      cylinder(roof, tx + sx * (tw / 2 + 0.02), 0.3 + th + 0.55, tz + sz * (tw / 2 + 0.02), 0.08, 0.1, 0.5, stone, 'stone', 6);
-      cone(roof, tx + sx * (tw / 2 + 0.02), 0.3 + th + 1.0, tz + sz * (tw / 2 + 0.02), 0.14, 0.45, palette.slate, 'slate', 6, 0);
+      cylinder(shell, tx + sx * (tw / 2 + 0.02), 0.3 + th + 0.55, tz + sz * (tw / 2 + 0.02), 0.08, 0.1, 0.5, stone, 'stone', 6);
+      cone(shell, tx + sx * (tw / 2 + 0.02), 0.3 + th + 1.0, tz + sz * (tw / 2 + 0.02), 0.14, 0.45, palette.slate, 'slate', 6, 0);
     }
-    cone(roof, tx, 0.3 + th + 0.2 + 1.3, tz, 1.15, 2.6, palette.slate, 'slate', 4);
-    cylinder(roof, tx, 0.3 + th + 3.6, tz, 0.03, 0.05, 0.6, palette.bronze, 'metal', 6);
-    sphere(roof, tx, 0.3 + th + 3.9, tz, 0.09, palette.bronze, 'metal', 8);
+    cone(shell, tx, 0.3 + th + 0.2 + 1.3, tz, 1.15, 2.6, palette.slate, 'slate', 4);
+    cylinder(shell, tx, 0.3 + th + 3.6, tz, 0.03, 0.05, 0.6, palette.bronze, 'metal', 6);
+    sphere(shell, tx, 0.3 + th + 3.9, tz, 0.09, palette.bronze, 'metal', 8);
     const vane = new T.Group();
     vane.position.set(tx, 0.3 + th + 4.05, tz);
     vane.userData.keepSeparate = true;
-    roof.add(vane);
+    shell.add(vane);
     box(vane, 0, 0, 0, 0.5, 0.02, 0.02, palette.bronze, 'metal');
     cone(vane, 0.28, 0, 0, 0.05, 0.12, palette.bronze, 'metal', 4, 0).rotation.z = -Math.PI / 2;
     box(vane, -0.2, 0, 0, 0.12, 0.09, 0.015, palette.bronze, 'metal');
@@ -1402,10 +1321,9 @@ export function buildTown(
         vane.rotation.y = Math.sin(time * 0.3) * 0.8 + Math.sin(time * 0.07) * 1.5;
       },
     });
-    furnishRoom(interior, w - 0.4, d - 0.4, 'hall');
   }
 
-  function buildTerrace(shell: T.Group, roof: T.Group, interior: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
+  function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
     const w = site.w,
       d = site.d,
       h = 3.1;
@@ -1459,13 +1377,13 @@ export function buildTown(
     const roofY = 0.24 + h + 0.14,
       rise = 1.05;
     if (variant === 'gabled-house') {
-      pitchedRoof(roof, 0, roofY, 0, w + 0.24, d + 0.3, rise, palette.slateDark);
-      gabledRoofEnds(roof, 0, roofY, 0, w + 0.24, d + 0.3, rise, stone);
+      pitchedRoof(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, palette.slateDark);
+      gabledRoofEnds(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, stone);
       // A front-facing gable over the bay.
       const front = new T.Group();
       front.position.set(bayX, roofY, d / 2 - 0.55);
       front.rotation.y = Math.PI / 2;
-      roof.add(front);
+      shell.add(front);
       pitchedRoof(front, 0, 0, 0, 1.3, 1.4, 0.75, palette.slateDark);
       const gable = new T.Shape();
       gable.moveTo(-0.66, 0);
@@ -1475,30 +1393,29 @@ export function buildTown(
       const gableMesh = new T.Mesh(new T.ExtrudeGeometry(gable, { depth: 0.12, bevelEnabled: false }), material(stone, 'stone'));
       gableMesh.position.set(bayX, roofY, d / 2 + 0.08);
       gableMesh.castShadow = true;
-      roof.add(gableMesh);
-      windowAt(roof, bayX, roofY + 0.3, d / 2 + 0.2, 0.3, 0.36, { frame: trim, sill: false, bars: 1 });
+      shell.add(gableMesh);
+      windowAt(shell, bayX, roofY + 0.3, d / 2 + 0.2, 0.3, 0.36, { frame: trim, sill: false, bars: 1 });
     } else {
-      pitchedRoof(roof, 0, roofY, 0, w + 0.24, d + 0.3, rise, variant === 'red-tenement' ? palette.slateDark : palette.slate);
-      gabledRoofEnds(roof, 0, roofY, 0, w + 0.24, d + 0.3, rise, stone);
+      pitchedRoof(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, variant === 'red-tenement' ? palette.slateDark : palette.slate);
+      gabledRoofEnds(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, stone);
       const dormer = new T.Group();
       dormer.position.set(0.2, roofY + 0.32, d / 2 - 0.95);
-      roof.add(dormer);
+      shell.add(dormer);
       box(dormer, 0, 0.3, 0, 0.78, 0.62, 0.7, stone, 'stone');
       windowAt(dormer, 0, 0.3, 0.35, 0.36, 0.42, { frame: trim, sill: false, bars: 1 });
       pitchedRoof(dormer, 0, 0.62, 0, 0.9, 0.78, 0.3, palette.slate, { ridge: false });
     }
     const chimneyX = seed % 2 ? -w / 2 + 0.35 : w / 2 - 0.35;
-    box(roof, chimneyX, roofY + rise * 0.55 + 0.35, -0.2, 0.46, 1.3, 0.72, variant === 'red-tenement' ? '#a16e54' : '#c2a983', 'stone');
-    box(roof, chimneyX, roofY + rise * 0.55 + 1.02, -0.2, 0.56, 0.09, 0.82, trim, 'stone');
-    for (const dz of [-0.18, 0.18]) cylinder(roof, chimneyX, roofY + rise * 0.55 + 1.2, -0.2 + dz, 0.07, 0.08, 0.28, '#b06a4a', 'stone', 8);
+    box(shell, chimneyX, roofY + rise * 0.55 + 0.35, -0.2, 0.46, 1.3, 0.72, variant === 'red-tenement' ? '#a16e54' : '#c2a983', 'stone');
+    box(shell, chimneyX, roofY + rise * 0.55 + 1.02, -0.2, 0.56, 0.09, 0.82, trim, 'stone');
+    for (const dz of [-0.18, 0.18]) cylinder(shell, chimneyX, roofY + rise * 0.55 + 1.2, -0.2 + dz, 0.07, 0.08, 0.28, '#b06a4a', 'stone', 8);
     // Front garden: hedge, path, a splash of flowers.
     hedge(shell, -0.1, 0, d / 2 + 1.3, w - 0.5, 0, 0.42);
     box(shell, doorX, 0.03, d / 2 + 0.95, 0.8, 0.06, 1.0, palette.plaza, 'paving');
     flowerBed(shell, bayX, 0, d / 2 + 0.75, 1.0, 0.45, seed * 31);
-    furnishRoom(interior, w - 0.3, d - 0.3, 'home', seed);
   }
 
-  function buildStudio(shell: T.Group, roof: T.Group, interior: T.Group, site: plan.Site) {
+  function buildStudio(shell: T.Group, site: plan.Site) {
     const w = site.w,
       d = site.d;
     box(shell, 0, 0.12, 0, w + 0.4, 0.24, d + 0.4, palette.plinth, 'stone');
@@ -1533,24 +1450,23 @@ export function buildTown(
     for (let i = 0; i < 3; i++) bike(shell, bx + 0.2 + i * 0.5, 0.24, d / 2 + 0.7, 0.2, ['#c23a2e', '#2f5b4c', '#2e4b63'][i]);
     bench(shell, -w / 2 + 0.6, 0.24, d / 2 + 0.75, Math.PI);
     // Roofs: a green roof with panels and a deck on A, planters on B.
-    box(roof, ax, 0.24 + ah + 0.1, 0, aw + 0.3, 0.2, d + 0.3, '#c9d2c0', 'stone');
-    box(roof, ax - 0.2, 0.24 + ah + 0.26, 0.3, aw - 0.8, 0.14, d - 1.4, '#86a66a', 'foliage', { bevel: 0.05 });
+    box(shell, ax, 0.24 + ah + 0.1, 0, aw + 0.3, 0.2, d + 0.3, '#c9d2c0', 'stone');
+    box(shell, ax - 0.2, 0.24 + ah + 0.26, 0.3, aw - 0.8, 0.14, d - 1.4, '#86a66a', 'foliage', { bevel: 0.05 });
     for (let i = 0; i < 3; i++) {
-      const panel = box(roof, ax + 0.9, 0.24 + ah + 0.42, -d / 2 + 0.9 + i * 1.3, 1.0, 0.05, 0.75, '#2f4e66', 'glass');
+      const panel = box(shell, ax + 0.9, 0.24 + ah + 0.42, -d / 2 + 0.9 + i * 1.3, 1.0, 0.05, 0.75, '#2f4e66', 'metal');
       panel.rotation.x = 0.3;
-      box(roof, ax + 0.9, 0.24 + ah + 0.3, -d / 2 + 0.9 + i * 1.3, 1.04, 0.04, 0.3, palette.metal, 'metal');
+      box(shell, ax + 0.9, 0.24 + ah + 0.3, -d / 2 + 0.9 + i * 1.3, 1.04, 0.04, 0.3, palette.metal, 'metal');
     }
-    railing(roof, ax, 0.24 + ah + 0.2, d / 2 + 0.1, aw + 0.2, 0.5);
-    railing(roof, ax, 0.24 + ah + 0.2, -d / 2 - 0.1, aw + 0.2, 0.5);
-    box(roof, bx, 0.24 + bh + 0.06, 0.3, bw + 0.2, 0.12, d - 0.4, '#dcd8ca', 'stone');
+    railing(shell, ax, 0.24 + ah + 0.2, d / 2 + 0.1, aw + 0.2, 0.5);
+    railing(shell, ax, 0.24 + ah + 0.2, -d / 2 - 0.1, aw + 0.2, 0.5);
+    box(shell, bx, 0.24 + bh + 0.06, 0.3, bw + 0.2, 0.12, d - 0.4, '#dcd8ca', 'stone');
     for (const dz of [-1.2, 0.2, 1.4]) {
-      box(roof, bx + 0.4, 0.24 + bh + 0.3, dz, 0.8, 0.36, 0.5, '#b7ab93', 'stone', { bevel: 0.03 });
-      sphere(roof, bx + 0.4, 0.24 + bh + 0.6, dz, 0.28, palette.canopy[1], 'foliage', 8).userData.softFoliage = true;
+      box(shell, bx + 0.4, 0.24 + bh + 0.3, dz, 0.8, 0.36, 0.5, '#b7ab93', 'stone', { bevel: 0.03 });
+      sphere(shell, bx + 0.4, 0.24 + bh + 0.6, dz, 0.28, palette.canopy[1], 'foliage', 8).userData.softFoliage = true;
     }
-    furnishRoom(interior, w - 0.6, d - 0.6, 'studio');
   }
 
-  function buildArchive(shell: T.Group, roof: T.Group, interior: T.Group, site: plan.Site) {
+  function buildArchive(shell: T.Group, site: plan.Site) {
     const w = site.w,
       d = site.d,
       h = 3.3;
@@ -1610,20 +1526,19 @@ export function buildTown(
       saw.rotation.y = Math.PI / 2;
       saw.position.set(x - bayW / 2, 0.24 + h + 0.16, 0);
       saw.castShadow = saw.receiveShadow = true;
-      roof.add(saw);
+      shell.add(saw);
       const glazing = new T.Group();
       glazing.position.set(x, 0.24 + h + 0.16, -(d + 0.2) / 2 + 0.1);
       glazing.rotation.y = Math.PI;
       glazing.rotation.x = 0.3;
-      roof.add(glazing);
+      shell.add(glazing);
       box(glazing, 0, 0.45, 0, bayW - 0.2, 0.86, 0.05, palette.glass, 'glass');
       for (let k = -2; k <= 2; k++) box(glazing, (k * (bayW - 0.2)) / 5, 0.45, 0.03, 0.04, 0.86, 0.03, '#d9dfd6', 'paint');
-      box(roof, x, 0.24 + h + 0.16 + 0.97, -(d + 0.2) / 2 + 0.3, bayW + 0.04, 0.07, 0.1, palette.slateLight, 'slate');
+      box(shell, x, 0.24 + h + 0.16 + 0.97, -(d + 0.2) / 2 + 0.3, bayW + 0.04, 0.07, 0.1, palette.slateLight, 'slate');
     }
-    cylinder(roof, -w / 2 + 0.5, 0.24 + h + 2.2, -d / 2 + 0.5, 0.25, 0.3, 4.2, palette.brick, 'stone', 12);
-    cylinder(roof, -w / 2 + 0.5, 0.24 + h + 4.0, -d / 2 + 0.5, 0.32, 0.3, 0.3, palette.brickLight, 'stone', 12);
-    cylinder(roof, -w / 2 + 0.5, 0.24 + h + 4.3, -d / 2 + 0.5, 0.2, 0.28, 0.25, '#4b4f4a', 'metal', 12);
-    furnishRoom(interior, w - 0.4, d - 0.4, 'archive');
+    cylinder(shell, -w / 2 + 0.5, 0.24 + h + 2.2, -d / 2 + 0.5, 0.25, 0.3, 4.2, palette.brick, 'stone', 12);
+    cylinder(shell, -w / 2 + 0.5, 0.24 + h + 4.0, -d / 2 + 0.5, 0.32, 0.3, 0.3, palette.brickLight, 'stone', 12);
+    cylinder(shell, -w / 2 + 0.5, 0.24 + h + 4.3, -d / 2 + 0.5, 0.2, 0.28, 0.25, '#4b4f4a', 'metal', 12);
   }
 
   function buildCottage(g: T.Object3D, c: (typeof plan.cottages)[number], index: number) {
@@ -1736,21 +1651,19 @@ export function buildTown(
   for (const b of buildings) {
     const site = plan.sites[b.id];
     const root = new T.Group(),
-      shell = new T.Group(),
-      roof = new T.Group(),
-      interior = new T.Group();
-    root.add(interior, shell, roof);
+      shell = new T.Group();
+    root.add(shell);
     root.position.set(site.x, 0, site.z);
     root.rotation.y = site.rotation;
     root.userData.buildingId = b.id;
     root.name = 'building-' + b.id;
     city.add(root);
     if (b.model === 'gate') buildGate(shell);
-    else if (b.model === 'hall') buildHall(shell, roof, interior, site);
-    else if (b.model === 'studio') buildStudio(shell, roof, interior, site);
-    else if (b.model === 'archive') buildArchive(shell, roof, interior, site);
-    else buildTerrace(shell, roof, interior, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
-    models.set(b.id, { root, shell, roof, interior, fade: [], center: new T.Vector3(site.x, 0, site.z) });
+    else if (b.model === 'hall') buildHall(shell, site);
+    else if (b.model === 'studio') buildStudio(shell, site);
+    else if (b.model === 'archive') buildArchive(shell, site);
+    else buildTerrace(shell, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
+    models.set(b.id, { root, shell, fade: [], center: new T.Vector3(site.x, 0, site.z) });
   }
 
   // People: seven residents on the pavements of the ring.
@@ -1790,7 +1703,7 @@ export function buildTown(
       }
       const source = o.material as T.MeshStandardMaterial;
       if (!(source instanceof T.MeshStandardMaterial)) return;
-      const mat = library.batchMaterial(source, !!g.userData.layout || source.side === T.DoubleSide);
+      const mat = library.batchMaterial(source, source.side === T.DoubleSide);
       const geometry = o.geometry.clone();
       if (!geometry.userData.longitudinalUV) {
         const local = geometry.clone().scale(o.scale.x, o.scale.y, o.scale.z);
@@ -1846,13 +1759,8 @@ export function buildTown(
   city.updateMatrixWorld(true);
   batch(land);
   batch(parkGroup);
-  // Buildings share the library's batch materials, so one night toggle lights every window;
-  // the cutaway clones what it clips.
-  for (const m of models.values()) {
-    batch(m.shell, { groundShade: 1.6 });
-    batch(m.roof);
-    batch(m.interior);
-  }
+  // Buildings share the library's batch materials, so one night toggle lights every window.
+  for (const m of models.values()) batch(m.shell, { groundShade: 1.6 });
   for (const walker of walkers)
     for (const part of walker.root.children) {
       const joints = part.children.filter((o) => o instanceof T.Group);

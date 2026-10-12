@@ -259,5 +259,5 @@ assert(
   'The label must not intercept clicks or trigger hover loops.',
 );
 console.log(
-  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, interior, touch selection, and five viewport shapes.',
+  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection, and five viewport shapes.',
 );

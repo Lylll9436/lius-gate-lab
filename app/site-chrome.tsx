@@ -14,7 +14,7 @@ export const chapterMeta: ChapterMeta[] = [
   {
     id: 'town-hall',
     label: { en: 'About', zh: '关于' },
-    title: { en: 'About the group', zh: '关于研究组' },
+    title: { en: 'About Liu’s Gate', zh: '关于刘家门' },
     place: { en: 'Town Hall · Civic quarter', zh: '市政厅 · 公共文化区' },
   },
   {
@@ -37,8 +37,8 @@ export const chapterMeta: ChapterMeta[] = [
   },
   {
     id: 'corner-park',
-    label: { en: 'Group life', zh: '生活' },
-    title: { en: 'Group life', zh: '研究组生活' },
+    label: { en: 'Life', zh: '生活' },
+    title: { en: 'Life at the Gate', zh: '师门生活' },
     place: { en: 'Corner park · Harbour', zh: '街角公园 · 港口' },
   },
   {
@@ -134,9 +134,7 @@ export function SiteFooter({
         <div>
           <strong>{zh ? '刘家门' : 'LIU’S GATE'}</strong>
           <span>
-            {zh
-              ? '格拉斯哥大学 · 城市智能研究组'
-              : 'Urban Intelligence Group · University of Glasgow'}
+            {zh ? '格拉斯哥大学 · 刘鹏远师门' : 'University of Glasgow · Pengyuan Liu and students'}
           </span>
         </div>
       </div>

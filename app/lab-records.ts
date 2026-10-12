@@ -2,8 +2,11 @@ import raw from '../content/lab.json' with { type: 'json' };
 import {
   assertCatalog,
   migrateCatalog,
+  type EventRecord,
   type LabCatalog,
   type LabRecord,
+  type NoteRecord,
+  type OutputRecord,
   type PersonRecord,
 } from './content-schema';
 const loaded = migrateCatalog(raw);
@@ -25,6 +28,42 @@ export const noteRecords = catalog.notes
   .filter((p) => p.visibility === 'published')
   .sort((a, b) => b.date.localeCompare(a.date) || a.order - b.order);
 export type RecordKind = 'person' | 'research' | 'event' | 'output' | 'note';
+export type NewsItem =
+  | { id: string; kind: 'event'; record: EventRecord }
+  | { id: string; kind: 'output'; record: OutputRecord }
+  | { id: string; kind: 'note'; record: NoteRecord };
+/**
+ * Gate's News: the latest dated records from life at the Gate, outputs and research notes,
+ * newest first. Nothing extra to maintain: publishing a dated record is the news.
+ */
+export function recentNews(limit = 3): NewsItem[] {
+  const rank = { output: 0, event: 1, note: 2 };
+  const items: NewsItem[] = [
+    ...eventRecords.map((record) => ({
+      id: 'event:' + record.id,
+      kind: 'event' as const,
+      record,
+    })),
+    ...outputRecords.map((record) => ({
+      id: 'output:' + record.id,
+      kind: 'output' as const,
+      record,
+    })),
+    ...noteRecords.map((record) => ({
+      id: 'note:' + record.id,
+      kind: 'note' as const,
+      record,
+    })),
+  ];
+  return items
+    .sort(
+      (a, b) =>
+        b.record.date.localeCompare(a.record.date) ||
+        rank[a.kind] - rank[b.kind] ||
+        a.record.order - b.record.order,
+    )
+    .slice(0, Math.max(0, limit));
+}
 export function personContentId(p: PersonRecord): string {
   return ['pengyuan-liu', 'yunlong-liu', 'qin-li'].includes(p.id)
     ? p.id

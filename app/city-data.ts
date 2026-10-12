@@ -36,8 +36,8 @@ const places: Building[] = [
     short: t("LIU'S GATE", '刘家门'),
     category: t('CENTRAL LANDMARK', '中央地标'),
     summary: t(
-      'The gate gives the group’s name a place at the centre of the city. The avenues to the other districts start here.',
-      '拱门把研究组的名字放在小城中央，通往各区的大道由此出发。',
+      'The gate puts the name Liu’s Gate at the centre of the city. The avenues to the other districts start here.',
+      '拱门把「刘家门」这个名字放在小城中央，通往各区的大道由此出发。',
     ),
     style: t('Sandstone arch', '砂岩拱门'),
     architecture: t(
@@ -55,22 +55,22 @@ const places: Building[] = [
       {
         heading: t('The name', '名字'),
         body: t(
-          'Pengyuan Liu named the group LIU’S GATE. The arch at the centre of the city stands for that name, and the rest of the city is arranged around it.',
-          'Pengyuan Liu 为研究组取名「刘家门」。小城中央的拱门代表这个名字，其余部分都围绕它布置。',
+          'Pengyuan Liu chose the name LIU’S GATE. The arch at the centre of the city stands for that name, and the rest of the city is arranged around it.',
+          '刘鹏远老师为自己的师门取名「刘家门」。小城中央的拱门代表这个名字，其余部分都围绕它布置。',
         ),
       },
       {
         heading: t('Layout', '布局'),
         body: t(
-          'The Town Hall (about the group) stands north of the plaza. The crescent of homes (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',
-          '广场北侧是市政厅（研究组介绍），西侧是新月联排（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。',
+          'The Town Hall (about Liu’s Gate) stands north of the plaza. The crescent of homes (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',
+          '广场北侧是市政厅（关于刘家门），西侧是新月联排（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。',
         ),
       },
       {
         heading: t('How to use the site', '使用方式'),
         body: t(
-          'Scroll to read the chapters in order, or switch to the city view to click on buildings, follow the tour and open the cutaway views.',
-          '向下滚动按顺序阅读各章，或切换到小城视图点击建筑、跟随导览、查看建筑剖面。',
+          'Scroll to read the chapters in order, or switch to the city view to click on buildings, follow the tour and look at each building up close.',
+          '向下滚动按顺序阅读各章，或切换到小城视图点击建筑、跟随导览、近看每栋建筑。',
         ),
       },
     ],
@@ -80,10 +80,10 @@ const places: Building[] = [
     id: 'town-hall',
     name: t('Town Hall', '市政厅'),
     short: t('About', '关于'),
-    category: t('ABOUT THE GROUP', '关于研究组'),
+    category: t('ABOUT LIU’S GATE', '关于刘家门'),
     summary: t(
-      'The Urban Intelligence Group is a research group in urban analytics at the University of Glasgow, led by Pengyuan Liu.',
-      '城市智能研究组是格拉斯哥大学一个从事城市分析的研究组，由 Pengyuan Liu 领导。',
+      'Liu’s Gate is a small circle of PhD students supervised by Pengyuan Liu at the University of Glasgow, working on urban analytics, GeoAI and urban digital twins.',
+      '刘家门是格拉斯哥大学刘鹏远老师带领的师门，关注城市分析、GeoAI 与城市数字孪生。',
     ),
     style: t('Gothic Revival', '哥特复兴'),
     architecture: t(
@@ -99,10 +99,10 @@ const places: Building[] = [
     color: '#c8b18a',
     sections: [
       {
-        heading: t('The group', '研究组'),
+        heading: t('Who we are', '我们是谁'),
         body: t(
-          'The group brings together Pengyuan Liu and the research students Yunlong Liu and Qin Li. It is based at the University of Glasgow and works on urban analytics.',
-          '研究组由导师 Pengyuan Liu 与研究生 Yunlong Liu、Qin Li 组成，隶属格拉斯哥大学，研究方向为城市分析。',
+          'Liu’s Gate is Pengyuan Liu and the PhD students at the University of Glasgow.',
+          '刘家门由刘鹏远老师和格拉斯哥大学的博士生们组成。',
         ),
       },
       {
@@ -127,10 +127,10 @@ const places: Building[] = [
       {
         id: 'pengyuan-liu',
         name: 'Pengyuan Liu',
-        role: t('GROUP SUPERVISOR', '研究组导师'),
+        role: t('SUPERVISOR', '导师'),
         summary: t(
-          'Group supervisor at the University of Glasgow.',
-          '格拉斯哥大学，研究组导师。',
+          'Supervisor at the University of Glasgow.',
+          '格拉斯哥大学，导师。',
         ),
         x: 1,
         z: 5,
@@ -227,8 +227,8 @@ const places: Building[] = [
     short: t('Research', '研究'),
     category: t('CURRENT RESEARCH', '进行中的研究'),
     summary: t(
-      'Current research projects of the group: their questions, methods, data and people.',
-      '研究组进行中的项目：研究问题、方法、数据与参与成员。',
+      'Current research projects at Liu’s Gate: their questions, methods, data and people.',
+      '刘家门进行中的项目：研究问题、方法、数据与参与成员。',
     ),
     style: t('Contemporary campus', '当代校园建筑'),
     architecture: t(
@@ -266,8 +266,8 @@ const places: Building[] = [
     short: t('Publications', '成果'),
     category: t('PUBLICATIONS & RESOURCES', '成果与资源'),
     summary: t(
-      'Completed projects, publications, datasets and software from the group.',
-      '研究组已完成的项目、论文、数据集与软件。',
+      'Completed projects, publications, datasets and software from Liu’s Gate.',
+      '刘家门已完成的项目、论文、数据集与软件。',
     ),
     style: t('Industrial heritage', '工业遗产改造'),
     architecture: t(
@@ -292,8 +292,8 @@ const places: Building[] = [
       {
         heading: t('Open resources', '开放资源'),
         body: t(
-          'Datasets and software released by the group will be listed here with their licences and links.',
-          '研究组发布的数据集与软件将在此列出，并附许可证与链接。',
+          'Datasets and software released by Liu’s Gate will be listed here with their licences and links.',
+          '刘家门发布的数据集与软件将在此列出，并附许可证与链接。',
         ),
       },
     ],

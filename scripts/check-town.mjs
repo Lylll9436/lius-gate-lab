@@ -5,8 +5,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import * as T from 'three';
 
-// Build the town in Node and check what a visitor relies on: seven places with
-// rooms, finite geometry, a sane triangle budget, hover targets, water and night.
+// Build the town in Node and check what a visitor relies on: seven places, finite geometry, a sane triangle budget, hover targets, water and night.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work', 'town-check');
 await fs.mkdir(output, { recursive: true });
@@ -51,11 +50,18 @@ const { buildings } = await load('city-data');
 const { districts } = await load('city-districts');
 const plan = await load('town-plan');
 const { buildCityModel } = await load('city-scene');
-const { roofDock, fitStudy } = await load('city-inspection');
+const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
 
 assert.equal(new Set(buildings.map((b) => b.id)).size, 7);
+// Every reading chapter sees its subject's front, not its back wall.
+for (const [chapter, ids] of Object.entries(plan.chapterSubjects))
+  for (const id of ids) {
+    const d = (plan.chapterBearings[chapter] - plan.sites[id].rotation) % (Math.PI * 2),
+      off = Math.abs(d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d);
+    assert(off < Math.PI / 3, `${chapter} sees ${id} ${Math.round((off * 180) / Math.PI)} degrees off its front`);
+  }
 assert.equal(districts.length, 4);
 for (const b of buildings) {
   assert(plan.sites[b.id], 'Every building needs a site: ' + b.id);
@@ -146,34 +152,25 @@ for (const [id, m] of models) {
   const bounds = new T.Box3().setFromObject(m.root);
   assert(!bounds.isEmpty());
   assert(bounds.max.y < 14 && bounds.min.y >= -0.3, `Invalid building height: ${id}`);
-  if (id !== 'lius-gate') {
-    assert(
-      new T.Box3().setFromObject(m.interior).getSize(new T.Vector3()).length() > 1,
-      'Rooms are furnished: ' + id,
-    );
-    assert(m.roof.children.some((o) => o.isMesh), 'Roofs are separate for the cutaway: ' + id);
-    // The cutaway fits every room in the usual canvas shapes.
-    m.root.updateMatrixWorld(true);
-    const inverse = m.root.matrixWorld.clone().invert();
-    const exterior = new T.Box3().setFromObject(m.root).applyMatrix4(inverse);
-    const body = new T.Box3().setFromObject(m.interior).applyMatrix4(inverse);
-    const roof = new T.Box3().setFromObject(m.roof).applyMatrix4(inverse);
-    for (const [width, height] of [
-      [390, 844],
-      [1024, 768],
-      [1440, 900],
-    ]) {
-      const aspect = width / height,
-        vertical = Math.max(46, 65 / aspect);
-      const camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, 0.1, 180);
-      camera.position.set(Math.sin(0.8) * 38, 35, Math.cos(0.8) * 38);
-      camera.lookAt(0, 0, 0);
-      camera.updateMatrixWorld(true);
-      const outer = fitStudy(exterior, camera, aspect);
-      assert(Number.isFinite(outer.zoom) && outer.zoom > 0);
-      const dock = roofDock(body, roof, camera, aspect);
-      assert(Number.isFinite(dock.zoom) && dock.offset.toArray().every(Number.isFinite));
-    }
+  // One batched shell per building: walls and roof together, no rooms inside.
+  assert.deepEqual(m.root.children, [m.shell], 'A building is a single shell: ' + id);
+  assert(m.shell.children.some((o) => o.isMesh), 'The shell has geometry: ' + id);
+  // Inspecting a building frames the whole exterior in the usual canvas shapes.
+  m.root.updateMatrixWorld(true);
+  const exterior = bounds.clone().translate(m.root.position.clone().negate());
+  for (const [width, height] of [
+    [390, 844],
+    [1024, 768],
+    [1440, 900],
+  ]) {
+    const aspect = width / height,
+      vertical = Math.max(46, 65 / aspect);
+    const camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, 0.1, 180);
+    camera.position.set(Math.sin(0.8) * 38, 35, Math.cos(0.8) * 38);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    const fit = fitStudy(exterior, camera, aspect);
+    assert(Number.isFinite(fit.zoom) && fit.zoom > 0 && fit.focus.toArray().every(Number.isFinite), 'Inspection fit: ' + id);
   }
 }
 // The pointer can find every building and the park.
@@ -231,5 +228,5 @@ assert(lighting.lights.every((l) => l.intensity === 0));
 assert(!scene.children.includes(lighting.lights[0]), 'Spotlights leave the scene by day.');
 lighting.dispose();
 console.log(
-  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms, furnished rooms with separate roofs, clickable buildings, open sea and lit windows at night.`,
+  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms, one shell per building with a fitted close-up, clickable buildings, open sea and lit windows at night.`,
 );

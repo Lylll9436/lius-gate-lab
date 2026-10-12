@@ -43,8 +43,8 @@ export function titleFor(id: ContentId, locale: Locale) {
         overview: { en: 'LIU’S GATE', zh: '刘家门' },
         people: { en: 'People', zh: '成员' },
         'corner-park': {
-          en: 'Corner park · Group life',
-          zh: '街角公园 · 研究组生活',
+          en: 'Corner park · Life at the Gate',
+          zh: '街角公园 · 师门生活',
         },
       } as Record<string, Record<Locale, string>>
     )[id]?.[locale] ??

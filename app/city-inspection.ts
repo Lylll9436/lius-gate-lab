@@ -35,29 +35,3 @@ export function fitStudy(bounds: T.Box3, camera: T.Camera, aspect: number) {
     ),
   };
 }
-export function roofDock(
-  body: T.Box3,
-  roof: T.Box3,
-  camera: T.Camera,
-  aspect: number,
-) {
-  camera.updateMatrixWorld(true);
-  const right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0),
-    up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
-    scale = 0.48,
-    smallRoof = new T.Box3(
-      roof.min.clone().multiplyScalar(scale),
-      roof.max.clone().multiplyScalar(scale),
-    ),
-    b = projectedBounds(body, right, up),
-    r = projectedBounds(smallRoof, right, up),
-    gap = Math.max(0.4, (b.maxX - b.minX) * 0.09),
-    dx = b.maxX + gap - r.minX,
-    dy = (b.minY + b.maxY - r.minY - r.maxY) / 2,
-    offset = right.clone().multiplyScalar(dx).addScaledVector(up, dy),
-    visible = aspect >= 1.25;
-  const union = visible
-    ? body.clone().union(smallRoof.clone().translate(offset))
-    : body;
-  return { offset, scale, visible, ...fitStudy(union, camera, aspect) };
-}

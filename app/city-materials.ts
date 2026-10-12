@@ -107,15 +107,14 @@ function surfaceMaps(kind: SurfaceKind) {
         height = 0.5 + wave * 0.18 + Math.sin((u * 7 + v * 9) * 6.283) * 0.035;
       } else if (kind === 'grass' || kind === 'soil') {
         // Three octaves: meadow drifts, mown patches and blade-level grain.
+        // Broad drifts only: blade-level grain reads as pixels in a soft render.
         const patch =
-          noise(u * 2.3 + 3.1, v * 2.3 + 7.7) * 0.42 +
-          noise(u * 5.7 + 8.2, v * 5.7 - 2.4) * 0.3 +
-          noise(u * 13.3 - 5, v * 13.3 + 9) * 0.18 +
-          noise(u * 29, v * 29) * 0.1;
+          noise(u * 2.3 + 3.1, v * 2.3 + 7.7) * 0.5 +
+          noise(u * 5.7 + 8.2, v * 5.7 - 2.4) * 0.34 +
+          noise(u * 13.3 - 5, v * 13.3 + 9) * 0.16;
         level =
-          (kind === 'grass' ? 0.78 : 0.83) +
-          patch * (kind === 'grass' ? 0.3 : 0.22) +
-          (grain - 0.5) * 0.07;
+          (kind === 'grass' ? 0.82 : 0.86) +
+          patch * (kind === 'grass' ? 0.2 : 0.14);
         height = 0.45 + (grain - 0.5) * 0.32;
       } else if (kind === 'sand' || kind === 'gravel') {
         const ripple = Math.sin((v * 9 + Math.sin(u * 6.283) * 0.18) * 6.283);
@@ -180,49 +179,49 @@ export function createCityMaterials() {
   let night = 0;
   const cache = new Map<string, T.MeshStandardMaterial>();
   const maps = new Map<SurfaceKind, ReturnType<typeof surfaceMaps>>();
+  /**
+   * A studio render, not a texture atlas: clean matte clay for masonry, satin paint,
+   * soft plastic foliage, glossy glass. The room environment does the shading;
+   * only meadows keep a broad colour drift.
+   */
+  const finish: Partial<Record<SurfaceKind, { roughness: number; metalness?: number }>> = {
+    stone: { roughness: 0.7 },
+    slate: { roughness: 0.52 },
+    wood: { roughness: 0.6 },
+    bark: { roughness: 0.78 },
+    metal: { roughness: 0.32, metalness: 0.55 },
+    glass: { roughness: 0.07, metalness: 0.12 },
+    foliage: { roughness: 0.6 },
+    grass: { roughness: 0.82 },
+    paving: { roughness: 0.74 },
+    asphalt: { roughness: 0.8 },
+    soil: { roughness: 0.88 },
+    fabric: { roughness: 0.86 },
+    paint: { roughness: 0.42 },
+    water: { roughness: 0.2, metalness: 0.1 },
+    sand: { roughness: 0.86 },
+    gravel: { roughness: 0.86 },
+  };
   function material(colour: string, kind = surfaceForColour(colour)) {
     const key = `${kind}:${colour}`;
     if (!cache.has(key)) {
+      const look = finish[kind] ?? { roughness: 0.7 };
       const m = new T.MeshStandardMaterial({
         color: colour,
-        roughness: 0.84,
+        roughness: look.roughness,
+        metalness: look.metalness ?? 0,
         flatShading: false,
       });
       m.name = `city-${kind}`;
       m.userData.surfaceKind = kind;
       if (kind === 'glass') {
-        m.roughness = 0.16;
-        m.metalness = 0.22;
         m.emissive.set('#ffd29a');
         m.emissiveIntensity = night * 0.72;
-      } else if (kind === 'metal') {
-        m.roughness = 0.38;
-        m.metalness = 0.65;
-      } else if (kind === 'paint') {
-        m.roughness = 0.55;
-        m.metalness = 0.06;
       } else if (kind === 'foliage') {
-        m.roughness = 0.78;
         m.side = T.DoubleSide;
-      } else {
+      } else if (kind === 'grass' || kind === 'soil') {
         if (!maps.has(kind)) maps.set(kind, surfaceMaps(kind));
-        const tx = maps.get(kind)!;
-        m.map = tx.map;
-        m.bumpMap = tx.bump;
-        m.bumpScale =
-          kind === 'bark'
-            ? 0.012
-            : kind === 'paving'
-              ? 0.009
-              : kind === 'stone'
-                ? 0.003
-                : 0.0018;
-        m.roughness = kind === 'wood' ? 0.64 : kind === 'slate' ? 0.74 : 0.92;
-        if (kind === 'water') {
-          m.roughness = 0.27;
-          m.metalness = 0.14;
-          m.bumpScale = 0.012;
-        }
+        m.map = maps.get(kind)!.map;
       }
       cache.set(key, m);
     }

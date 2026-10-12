@@ -217,6 +217,30 @@ export const sites: Record<BuildingId, Site> = {
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
 };
 export const siteList = Object.values(sites);
+
+/**
+ * Reading-mode camera bearings per chapter. The camera sits along (sin b, cos b) from its
+ * target and a building's front faces (sin r, cos r), so |b - r| is how far off-front the
+ * subject is seen. Each chapter shows its subject's front from 15-50 degrees: a three-quarter
+ * view of the doors, porches and bay windows rather than the back wall.
+ */
+export const chapterBearings: Record<string, number> = {
+  overview: Math.PI / 4,
+  'town-hall': 0.9,
+  people: 1.3,
+  'research-studio': -0.7,
+  'city-archive': -0.97,
+  'corner-park': Math.PI / 4 + 0.22,
+  'lius-gate': Math.PI / 4 - 0.18,
+};
+/** The buildings whose fronts each chapter is about (checked against the bearings above). */
+export const chapterSubjects: Record<string, BuildingId[]> = {
+  'town-hall': ['town-hall'],
+  people: ['pengyuan-liu', 'yunlong-liu', 'qin-li'],
+  'research-studio': ['research-studio'],
+  'city-archive': ['city-archive'],
+  'lius-gate': ['lius-gate'],
+};
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
 export const cottages: { x: number; z: number; rotation: number; color: string }[] = [

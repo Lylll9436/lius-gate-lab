@@ -47,10 +47,10 @@ pnpm content remove events example-event
 ## 小城模型
 
 - `app/town-plan.ts` 是唯一的规划来源：岛屿轮廓（`islandRadius`，含东南港湾与西北岬角）、山丘（`terrainHeight`）、广场半径、环路与大道、七个建筑位置（`sites`，含朝向）、公园、预留地块、背景小屋、码头与船只航线、灯塔礁石，以及树木与路灯的生成规则。
-- `app/town-build.ts` 读取规划生成几何：地形与海岸、街道（路面、人行道、路缘、斑马线）、倒影池广场、七栋建筑（外壳、屋顶、室内三个分组，供剖面查看）、树木、街具、塔吊、码头、灯塔、热气球、电车、小船与行人。所有静态几何按材质家族合批；需要动画的部件标记 `userData.keepSeparate`。
+- `app/town-build.ts` 读取规划生成几何：地形与海岸、街道（路面、人行道、路缘、斑马线）、倒影池广场、七栋建筑（墙体与屋顶在同一分组内合批）、树木、街具、塔吊、码头、灯塔、热气球、电车、小船与行人。所有静态几何按材质家族合批；需要动画的部件标记 `userData.keepSeparate`。
 - 几何约定：同一高度的面不能重叠（否则闪烁）。路面 0.02、人行道与广场 0.06，装饰件至少高出 0.004；门与山墙封板须凸出墙面 / 屋顶端面 0.02 以上。
-- 新增建筑：在 `town-plan.ts` 增加 `sites` 条目并保证不压到街道，在 `town-build.ts` 写对应的 `build*` 函数并调用 `furnishRoom`，然后在 `city-data.ts` 与 `content-schema.ts` 的 `buildingIds` 中登记。
-- `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移、真实日照（`setSky`）、雨、悬停射线与标签、剖面查看、设备分级与帧率调节。`createCity` 的 API 由 `app/page.tsx` 调用。
+- 新增建筑：在 `town-plan.ts` 增加 `sites` 条目并保证不压到街道，在 `town-build.ts` 写对应的 `build*` 函数，然后在 `city-data.ts` 与 `content-schema.ts` 的 `buildingIds` 中登记。
+- `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移、真实日照（`setSky`）、雨、悬停射线与标签、单栋建筑近看、设备分级与帧率调节。`createCity` 的 API 由 `app/page.tsx` 调用。
 
 ## 交付前检查
 
@@ -60,7 +60,7 @@ pnpm check
 pnpm build:pages
 ```
 
-`check-town` 在 Node 中生成整座小城，验证建筑位置、树木与街道的关系、船只航线、三角面预算、室内与屋顶分组、可点击性、水面着色器和夜间窗灯；`check-navigation`、`check-hover`、`check-content` 验证地址解析、悬停行为和内容增删改。这些检查不代替在目标设备上的视觉验收。
+`check-town` 在 Node 中生成整座小城，验证建筑位置、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器和夜间窗灯；`check-navigation`、`check-hover`、`check-content` 验证地址解析、悬停行为和内容增删改。这些检查不代替在目标设备上的视觉验收。
 
 ## GitHub Pages 发布
 

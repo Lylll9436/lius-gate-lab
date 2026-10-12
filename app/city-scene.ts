@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildTown, type Model } from './town-build';
 import * as plan from './town-plan';
 import { createCityInk } from './city-ink';
@@ -19,7 +20,7 @@ import {
   hoverAllowed,
   labelPosition,
 } from './city-hover';
-import { fitStudy, roofDock } from './city-inspection';
+import { fitStudy } from './city-inspection';
 import { buildings, type BuildingId } from './city-data';
 import { districts, type DistrictId } from './city-districts';
 
@@ -41,7 +42,6 @@ export type CityAPI = {
   focusDistrict: (id: DistrictId) => void;
   focusPark: () => void;
   focusBuildings: (ids: BuildingId[]) => void;
-  setInterior: (v: boolean) => void;
   /** Real sky: night amount 0..1 plus solar elevation/azimuth in radians. */
   setSky: (sky: { night: number; elevation: number; azimuth: number }) => void;
   setRain: (v: boolean) => void;
@@ -87,34 +87,43 @@ export function createCity(
     premultipliedAlpha: false,
     powerPreference: 'high-performance',
   });
-  // 1.5x pixels is where extra sharpness stops being visible and starts costing frames.
+  // A soft render needs clean edges: full Retina resolution on capable machines;
+  // the frame-time governor still steps down if a device cannot hold it.
   const baseRatio = Math.min(
     window.devicePixelRatio || 1,
-    tier === 'low' ? 1.25 : 1.5,
+    tier === 'low' ? 1.5 : 2,
   );
   renderer.setPixelRatio(baseRatio);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = T.PCFShadowMap;
+  // Smoothly filtered soft shadows. (A wide PCF radius ghosts thin posts into several copies.)
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
   // Shadow maps are refreshed on a cadence from the frame loop, not every frame.
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;
   renderer.outputColorSpace = T.SRGBColorSpace;
-  renderer.toneMapping = T.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
-  renderer.localClippingEnabled = true;
+  // Khronos PBR Neutral keeps the palette's hues (ACES pushed them towards grey-orange).
+  renderer.toneMapping = T.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.0;
   renderer.setClearColor(0, 0);
   renderer.domElement.setAttribute('role', 'img');
   renderer.domElement.setAttribute(
     'aria-label',
-    "LIU'S GATE: a small city standing for the research group. Every chapter is readable on the page.",
+    "LIU'S GATE: a small city standing for Liu's Gate. Every chapter is readable on the page.",
   );
   container.appendChild(renderer.domElement);
   const scene = new T.Scene(),
     camera = new T.OrthographicCamera(-24, 24, 24, -24, 0.1, 180),
     model = buildTown();
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
-  const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 0 : 2);
+  const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
   scene.add(city);
+  // Studio light: a pre-filtered room environment gives every surface soft fill and
+  // a gentle highlight on rounded edges, the way a C4D/Octane clay render looks.
+  const pmrem = new T.PMREMGenerator(renderer);
+  const studio = pmrem.fromScene(new RoomEnvironment(), 0.04);
+  pmrem.dispose();
+  scene.environment = studio.texture;
+  scene.environmentIntensity = 0.55;
   const fog = new T.Fog('#d9e3dd', 72, 150);
   scene.fog = fog;
   const water = createIslandWater(model.waterLevel, -0.5);
@@ -142,13 +151,13 @@ export function createCity(
     city.add(hit);
     m.hit = hit;
   }
-  const sky = new T.HemisphereLight('#f4f1e4', '#6e8986', 1.6);
+  const sky = new T.HemisphereLight('#f4f1e4', '#6e8986', 0.9);
   scene.add(sky);
   const sunOffset = new T.Vector3(-16, 32, 20),
     targetSunOffset = sunOffset.clone();
   let sunWarmth = 0,
     targetWarmth = 0;
-  const sun = new T.DirectionalLight('#fff0d5', 3.2);
+  const sun = new T.DirectionalLight('#fff0d5', 3.0);
   sun.position.copy(sunOffset);
   sun.castShadow = true;
   const shadowBase = tier === 'low' ? 1024 : 2048;
@@ -251,9 +260,6 @@ export function createCity(
     gridEnabled = false,
     inViewport = true,
     inspect: T.Group | null = null,
-    inspectId: BuildingId | null = null,
-    interior = false,
-    openAmount = 0,
     inspectionAutoFit = true,
     tramDistance = 0,
     rain = 0,
@@ -266,6 +272,7 @@ export function createCity(
     accentId: BuildingId | null = null,
     skyKnown = false,
     frameCost = 0.016,
+    refresh = 1 / 60,
     lastGovern = 0,
     clockChecked = -1e9,
     hoverSignature = '',
@@ -286,8 +293,6 @@ export function createCity(
   const weather = createRain(tier === 'low' ? 900 : 1700),
     gulls = createGulls();
   scene.add(weather.object, gulls.object);
-  const sectionPlane = new T.Plane(new T.Vector3(0, -1, 0), 100);
-  const inspectionMaterials: T.Material[] = [];
   const target = new T.Vector3(),
     offset = new T.Vector3();
   const tramLength = plan.polylineLength(plan.tramLoop, true);
@@ -408,11 +413,6 @@ export function createCity(
       scene.remove(inspect);
       inspect = null;
     }
-    inspectId = null;
-    inspectionMaterials.forEach((m) => m.dispose());
-    inspectionMaterials.length = 0;
-    interior = false;
-    openAmount = 0;
     city.visible = true;
     grid.visible = gridEnabled;
     zones.visible = planMode;
@@ -567,12 +567,21 @@ export function createCity(
       clock.minute.rotation.z = -((hours % 1) * Math.PI * 2);
     }
   }
+  // Recent frame intervals: their 10th percentile is the display's refresh interval, so the
+  // governor's thresholds work the same on 60, 90 and 120 Hz screens.
+  const intervals = new Float32Array(120);
+  let intervalCount = 0;
   function frame(now: number) {
     if (disposed) return;
     raf = requestAnimationFrame(frame);
+    step(now, false);
+  }
+  /** One update and render. `force` runs it even in a hidden tab (debug ticking only). */
+  function step(now: number, force: boolean) {
     const dt = last ? Math.min((now - last) / 1000, 0.05) : 0;
     last = now;
-    if (document.hidden || !inViewport) return;
+    if (!force && (document.hidden || !inViewport)) return;
+    if (dt > 0 && dt < 0.05) intervals[intervalCount++ % intervals.length] = dt;
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
     if (!paused) time += dt;
     if (Math.abs(targetYaw - yaw) > 0.0001) {
@@ -593,65 +602,23 @@ export function createCity(
     night = T.MathUtils.lerp(night, targetNight, reduced ? 1 : blend * 0.45);
     model.materialLibrary.setNight(night);
     lighting.update(night, !!inspect);
-    for (const m of inspectionMaterials)
-      if (
-        m instanceof T.MeshStandardMaterial &&
-        m.userData.surfaceKind === 'glass'
-      )
-        m.emissiveIntensity = night * 0.72;
-    sky.intensity = T.MathUtils.lerp(1.6, 0.42, night);
-    sun.intensity = T.MathUtils.lerp(3.2, 0.45, night);
+    sky.intensity = T.MathUtils.lerp(0.9, 0.3, night);
+    sun.intensity = T.MathUtils.lerp(3.0, 0.45, night);
+    scene.environmentIntensity = T.MathUtils.lerp(0.55, 0.08, night);
     lamps.forEach(
       (l) =>
         ((l.material as T.MeshStandardMaterial).emissiveIntensity =
           night * 2.7),
     );
-    if (inspect) {
-      openAmount = reduced
-        ? interior
-          ? 1
-          : 0
-        : T.MathUtils.lerp(openAmount, interior ? 1 : 0, blend * 0.75);
-      const site = plan.sites[inspectId!];
-      const roof = inspect.children[2];
-      if (inspectId === 'lius-gate' && inspectionAutoFit) {
-        const fit = fitStudy(
-          inspect.userData.exteriorBounds,
-          camera,
-          width / height,
-        );
-        target.copy(inspect.position).add(fit.focus);
-        targetZoom = fit.zoom;
-        tween = true;
-      }
-      if (inspectId !== 'lius-gate') {
-        const dock = roofDock(
-          inspect.userData.bodyBounds,
-          inspect.userData.roofBounds,
-          camera,
-          width / height,
-        );
-        // The dock offset is a world-space vector; the roof moves in its parent's frame.
-        roof.position
-          .copy(dock.offset)
-          .applyQuaternion(inspect.quaternion.clone().invert())
-          .multiplyScalar(openAmount);
-        roof.scale.setScalar(1 + (dock.scale - 1) * openAmount);
-        roof.visible = dock.visible || openAmount < 0.015;
-        if (inspectionAutoFit) {
-          const outer = fitStudy(
-            inspect.userData.exteriorBounds,
-            camera,
-            width / height,
-          );
-          target
-            .copy(inspect.position)
-            .add(outer.focus.lerp(dock.focus, openAmount));
-          targetZoom = T.MathUtils.lerp(outer.zoom, dock.zoom, openAmount);
-          tween = true;
-        }
-      }
-      sectionPlane.constant = T.MathUtils.lerp(site.height + 3, 1.25, openAmount);
+    if (inspect && inspectionAutoFit) {
+      const fit = fitStudy(
+        inspect.userData.exteriorBounds,
+        camera,
+        width / height,
+      );
+      target.copy(inspect.position).add(fit.focus);
+      targetZoom = fit.zoom;
+      tween = true;
     }
     // People on the pavements, the tram on the ring, the boat in the harbour.
     for (const walker of walkers) {
@@ -772,35 +739,30 @@ export function createCity(
     // frames step back up, slowly, so the picture settles where the device can hold it.
     frameCost = T.MathUtils.lerp(frameCost, dt, 0.04);
     if (now - lastGovern > 2500) {
-      if (frameCost > 0.034 && quality < 4) {
+      if (intervalCount >= 30) {
+        const filled = Array.from(intervals.subarray(0, Math.min(intervalCount, intervals.length))).sort((a, b) => a - b);
+        refresh = T.MathUtils.clamp(filled[Math.floor(filled.length * 0.1)], 1 / 165, 1 / 30);
+      }
+      // Step down when frames take about twice the refresh interval (never chase more than 33 fps
+      // with resolution); step back up once frames have held close to the refresh rate.
+      if (frameCost > Math.max(refresh * 1.9, 0.03) && quality < 4) {
         quality++;
         qualityChanged = now;
         lastGovern = now;
-        frameCost = 0.016;
+        frameCost = refresh;
         applyQuality();
-      } else if (frameCost < 0.011 && quality > 0 && now - qualityChanged > 12000) {
+      } else if (frameCost < refresh * 1.12 && quality > 0 && now - qualityChanged > 12000) {
         quality--;
         qualityChanged = now;
         lastGovern = now;
-        frameCost = 0.016;
+        frameCost = refresh;
         applyQuality();
       }
     }
   }
   setClocks();
   raf = requestAnimationFrame(frame);
-  // `?debug` exposes the renderer so frame costs can be inspected from the console.
-  if (new URLSearchParams(window.location.search).has('debug'))
-    (window as unknown as { __city: unknown }).__city = {
-      renderer,
-      scene,
-      camera,
-      ink,
-      model,
-      frameCost: () => frameCost,
-      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality }),
-    };
-  return {
+  const api: CityAPI = {
     select,
     enter(id) {
       exitInspection();
@@ -809,35 +771,13 @@ export function createCity(
       m.root.getWorldPosition(inspect.position);
       inspect.rotation.copy(m.root.rotation);
       m.root.updateMatrixWorld(true);
-      // Bounds in world orientation, relative to the building's position: the fit and the
-      // roof docking reason in camera space, so a rotated building must not fool them.
+      // Bounds in world orientation, relative to the building's position: the fit reasons
+      // in camera space, so a rotated building must not fool it.
       const shift = inspect.position.clone().negate();
-      inspect.userData.bodyBounds = new T.Box3()
-        .setFromObject(m.interior)
-        .translate(shift);
-      inspect.userData.roofBounds = new T.Box3()
-        .setFromObject(m.roof)
-        .translate(shift);
       inspect.userData.exteriorBounds = new T.Box3()
         .setFromObject(m.root)
         .translate(shift);
       inspectionAutoFit = true;
-      if (id !== 'lius-gate')
-        inspect.children[1].traverse((o) => {
-          if (o instanceof T.Mesh) {
-            const copy = (original: T.Material) => {
-              const mat = original.clone();
-              mat.clippingPlanes = [sectionPlane];
-              mat.clipShadows = true;
-              inspectionMaterials.push(mat);
-              return mat;
-            };
-            o.material = Array.isArray(o.material)
-              ? o.material.map(copy)
-              : copy(o.material);
-          }
-        });
-      sectionPlane.constant = 100;
       scene.add(inspect);
       const studyBounds = new T.Box3().setFromObject(inspect);
       const studySize = studyBounds.getSize(new T.Vector3());
@@ -845,7 +785,6 @@ export function createCity(
         studyBounds.getCenter(new T.Vector3()),
         Math.max(7, studySize.length() * 0.85),
       );
-      inspectId = id;
       controls.maxZoom = 8;
       city.visible = false;
       zones.visible = false;
@@ -858,10 +797,6 @@ export function createCity(
       target.copy(inspect.position).add(fit.focus);
       targetZoom = fit.zoom;
       tween = true;
-    },
-    setInterior(v) {
-      interior = v;
-      inspectionAutoFit = true;
     },
     reset,
     rotate() {
@@ -980,9 +915,29 @@ export function createCity(
       weather.dispose();
       gulls.dispose();
       ink.dispose();
+      studio.dispose();
       model.disposeMaterials();
       renderer.dispose();
       renderer.domElement.remove();
     },
   };
+  // `?debug` exposes the renderer, the API and a ticker, so frame costs can be inspected
+  // and views rendered from the console, even in a background tab that gets no frames.
+  if (new URLSearchParams(window.location.search).has('debug'))
+    (window as unknown as { __city: unknown }).__city = {
+      renderer,
+      scene,
+      camera,
+      ink,
+      model,
+      api,
+      frameCost: () => frameCost,
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality }),
+      /** Advance n frames of ~16.7 ms, updating and rendering regardless of visibility. */
+      tick(frames = 1) {
+        let t = last || performance.now();
+        for (let i = 0; i < frames; i++) step((t += 1000 / 60), true);
+      },
+    };
+  return api;
 }
