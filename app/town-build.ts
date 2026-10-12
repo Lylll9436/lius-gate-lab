@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   createCityMaterials,
+  GROUND_HEIGHT_RANGE,
   GROUND_KINDS,
   projectMaterialUV,
   type SurfaceKind,
@@ -81,6 +82,159 @@ function noise2(x: number, z: number) {
     T.MathUtils.lerp(h(ix, iz + 1), h(ix + 1, iz + 1), u),
     v,
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout shared by the town and its ground masks                      */
+/* ------------------------------------------------------------------ */
+
+/** The plaza's reflecting pool ring, cut by four causeways. */
+const POOL = { inner: 2.0, outer: 3.65 },
+  POOL_GAP = Math.asin(1.05 / ((POOL.inner + POOL.outer) / 2));
+/** One planter per pool sector, between the pool and the plaza rim; its long side runs radially. */
+const PLANTER = { radius: 4.45, w: 1.1, d: 0.5 };
+const plazaPlanters = () =>
+  [0, 1, 2, 3].map((i) => {
+    const a = (Math.PI / 2) * i + POOL_GAP + (Math.PI / 2 - POOL_GAP * 2) / 2;
+    return { a, x: Math.cos(a) * PLANTER.radius, z: Math.sin(a) * PLANTER.radius };
+  });
+/** The park's bandstand stands just behind the park centre. */
+const bandstandAt = (): XZ => [plan.park.x, plan.park.z - 0.3];
+const CRANE_BASE = 1.4,
+  HOARDING_THICKNESS = 0.06;
+/** The hoarding round the reserved plot: offset from the plot centre, length, rotation. */
+const hoardingWalls = (plot: typeof plan.reservedPlot) =>
+  [
+    [0, -plot.d / 2, plot.w, 0],
+    [0, plot.d / 2, plot.w, 0],
+    [-plot.w / 2, 0, plot.d, Math.PI / 2],
+    [plot.w / 2, 0, plot.d, Math.PI / 2],
+  ] as const;
+
+/* ------------------------------------------------------------------ */
+/* Ground masks                                                        */
+/* ------------------------------------------------------------------ */
+
+/** One RGBA8 grid over ±MASK_EXTENT (0.34 units per texel); texel i runs along x, row j along z. */
+export const MASK_EXTENT = 44,
+  MASK_SIZE = 256;
+/** Separable box blur along rows or columns, with a running sum and clamped edges. */
+function boxBlur(src: Float32Array, dst: Float32Array, alongX: boolean, radius = 2) {
+  const N = MASK_SIZE,
+    width = radius * 2 + 1;
+  for (let line = 0; line < N; line++) {
+    const at = (k: number) => {
+      const c = Math.min(N - 1, Math.max(0, k));
+      return alongX ? line * N + c : c * N + line;
+    };
+    let sum = 0;
+    for (let k = -radius; k <= radius; k++) sum += src[at(k)];
+    for (let k = 0; k < N; k++) {
+      dst[at(k)] = sum / width;
+      sum += src[at(k + radius + 1)] - src[at(k - radius)];
+    }
+  }
+}
+/**
+ * Baked ground masks, all from plan data so later layout changes stay in sync.
+ * R: ground darkening (footprint pads, canopy and trunk discs, lamp feet, the grass lip by the pavements).
+ * G: the shallow-water ring round the coast and the lighthouse rock.
+ * B: the mown town lawn (plan.lawnCore). A: terrain height over GROUND_HEIGHT_RANGE.
+ */
+export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpec[]) {
+  const N = MASK_SIZE,
+    E = MASK_EXTENT,
+    texel = (2 * E) / N,
+    centre = (i: number) => -E + (i + 0.5) * texel,
+    ao = new Float32Array(N * N);
+  const range = (lo: number, hi: number) =>
+    [Math.max(0, Math.floor((lo + E) / texel)), Math.min(N - 1, Math.ceil((hi + E) / texel))] as const;
+  /** Max-combine value(dx, dz) into every texel within `reach` of (cx, cz). */
+  const stamp = (cx: number, cz: number, reach: number, value: (dx: number, dz: number) => number) => {
+    const [i0, i1] = range(cx - reach, cx + reach),
+      [j0, j1] = range(cz - reach, cz + reach);
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const v = value(centre(i) - cx, centre(j) - cz);
+        if (v > ao[j * N + i]) ao[j * N + i] = v;
+      }
+  };
+  /** A w×d rectangle turned by ry (as rotation.y), full strength inside, fading over `margin` outside. */
+  const rect = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => {
+    const c = Math.cos(ry),
+      s = Math.sin(ry);
+    stamp(cx, cz, Math.hypot(w, d) / 2 + margin, (dx, dz) => {
+      const lx = dx * c - dz * s,
+        lz = dx * s + dz * c,
+        out = Math.hypot(Math.max(0, Math.abs(lx) - w / 2), Math.max(0, Math.abs(lz) - d / 2));
+      return strength * (1 - T.MathUtils.smoothstep(out, 0, margin));
+    });
+  };
+  const disc = (cx: number, cz: number, r: number, strength: number, feather: number) =>
+    stamp(cx, cz, r + feather, (dx, dz) => strength * (1 - T.MathUtils.smoothstep(Math.hypot(dx, dz) - r, 0, feather)));
+
+  for (const s of plan.siteList) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
+  for (const c of plan.cottages) rect(c.x, c.z, 3.0, 2.6, c.rotation, 1, 0.5);
+  const plot = plan.reservedPlot;
+  rect(plot.x, plot.z, CRANE_BASE, CRANE_BASE, 0, 0.9, 0.4);
+  for (const [dx, dz, l, ry] of hoardingWalls(plot)) rect(plot.x + dx, plot.z + dz, l, HOARDING_THICKNESS, ry, 0.5, 0.3);
+  for (const p of plazaPlanters()) rect(p.x, p.z, PLANTER.w, PLANTER.d, -p.a, 0.7, 0.35);
+  const [bx, bz] = bandstandAt();
+  disc(bx, bz, 2.1, 1, 0.5);
+  for (const t of trees) {
+    disc(t.x, t.z, 1.0 * t.size, 0.45, 0.5);
+    disc(t.x, t.z, 0.3 * t.size, 0.85, 0.3);
+  }
+  const scratch = new Float32Array(N * N);
+  for (let pass = 0; pass < 2; pass++) {
+    boxBlur(ao, scratch, true);
+    boxBlur(scratch, ao, false);
+  }
+  // Features about a texel wide go in after the blur, which would flatten them to nothing;
+  // their own falloffs and the texture's linear filtering keep them soft.
+  for (const l of lampSpecs) disc(l.x, l.z, 0.25, 0.5, 0.2);
+  // A darker grass lip along the pavements and the plaza rim; only texels near the ring can have one.
+  // The 0.4-unit ramp is barely wider than a texel, so it starts half a texel out: the first grass
+  // texel then always carries the full 0.35, wherever the edge falls between texel centres.
+  const { ring } = plan,
+    [li0, li1] = range(-ring.hw - 3, ring.hw + 3),
+    [lj0, lj1] = range(ring.cz - ring.hd - 3, ring.cz + ring.hd + 3);
+  for (let j = lj0; j <= lj1; j++)
+    for (let i = li0; i <= li1; i++) {
+      const x = centre(i),
+        z = centre(j),
+        pd = Math.min(plan.distanceToStreets(x, z) - plan.PAVEMENT_WIDTH, Math.hypot(x, z) - plan.PLAZA_RADIUS);
+      const lip = pd > 0 ? 0.35 * (1 - Math.max(0, pd - texel / 2) / 0.4) : 0;
+      if (lip > ao[j * N + i]) ao[j * N + i] = lip;
+    }
+
+  const data = new Uint8Array(N * N * 4),
+    [rockX, rockZ] = plan.lighthouseRock,
+    byte = (v: number) => Math.round(T.MathUtils.clamp(v, 0, 1) * 255);
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++) {
+      const x = centre(i),
+        z = centre(j),
+        k = (j * N + i) * 4,
+        offshore = Math.hypot(x, z) - plan.islandRadius(Math.atan2(z, x));
+      const shallow = Math.max(
+        1 - T.MathUtils.smoothstep(offshore, 2.6, 7.5),
+        1 - T.MathUtils.smoothstep(Math.hypot(x - rockX, z - rockZ), 1.5, 4),
+      );
+      data[k] = byte(ao[j * N + i]);
+      data[k + 1] = byte(shallow);
+      data[k + 2] = byte(plan.lawnCore(x, z));
+      data[k + 3] = byte(plan.terrainHeight(x, z) / GROUND_HEIGHT_RANGE);
+    }
+  const texture = new T.DataTexture(data, N, N, T.RGBAFormat, T.UnsignedByteType);
+  texture.colorSpace = T.NoColorSpace;
+  texture.minFilter = texture.magFilter = T.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.wrapS = texture.wrapT = T.ClampToEdgeWrapping;
+  texture.flipY = false;
+  texture.name = 'ground-masks';
+  texture.needsUpdate = true;
+  return texture;
 }
 
 export function buildTown(
@@ -672,9 +826,9 @@ export function buildTown(
     }
     // The plaza: an inner island for the gate, a reflecting pool ring with four causeways,
     // and an outer paved ring. Pieces meet at shared edges; nothing is stacked.
-    const poolInner = 2.0,
-      poolOuter = 3.65,
-      gapAngle = Math.asin(1.05 / ((poolInner + poolOuter) / 2));
+    const poolInner = POOL.inner,
+      poolOuter = POOL.outer,
+      gapAngle = POOL_GAP;
     const flat = (geometry: T.BufferGeometry, color: string, kind: SurfaceKind, y: number) => {
       const mesh = new T.Mesh(geometry, material(color, kind));
       mesh.rotation.x = -Math.PI / 2;
@@ -746,10 +900,8 @@ export function buildTown(
           box(land, Math.cos(a) * r, plan.levels.plaza + 0.03, Math.sin(a) * r, wide, 0.26, 0.04, palette.trim, 'stone', { ry: -a });
       }
       // Between the pool and the rim: a planter with a clipped hedge and flowers, two benches facing the water.
-      const a = start + span / 2;
-      const px = Math.cos(a) * 4.45,
-        pz = Math.sin(a) * 4.45;
-      box(land, px, plan.levels.plaza + 0.18, pz, 1.1, 0.36, 0.5, palette.stoneDark, 'stone', { bevel: 0.03, ry: -a });
+      const { a, x: px, z: pz } = plazaPlanters()[i];
+      box(land, px, plan.levels.plaza + 0.18, pz, PLANTER.w, 0.36, PLANTER.d, palette.stoneDark, 'stone', { bevel: 0.03, ry: -a });
       box(land, px, plan.levels.plaza + 0.5, pz, 0.95, 0.3, 0.36, palette.canopy[1], 'foliage', { bevel: 0.1, ry: -a });
       for (let f = 0; f < 6; f++) {
         const t = -0.4 + (0.8 * f) / 5;
@@ -943,7 +1095,7 @@ export function buildTown(
     const base = new T.Group();
     base.position.set(x, 0, z);
     g.add(base);
-    box(base, 0, 0.12, 0, 1.4, 0.24, 1.4, '#9b9a90', 'stone');
+    box(base, 0, 0.12, 0, CRANE_BASE, 0.24, CRANE_BASE, '#9b9a90', 'stone');
     const mastH = 7.5;
     for (const sx of [-0.28, 0.28])
       for (const sz of [-0.28, 0.28]) box(base, sx, mastH / 2 + 0.24, sz, 0.07, mastH, 0.07, palette.gold, 'metal');
@@ -980,13 +1132,8 @@ export function buildTown(
     });
     // Hoarding and materials on the plot.
     const plot = plan.reservedPlot;
-    for (const [dx, dz, l, ry] of [
-      [0, -plot.d / 2, plot.w, 0],
-      [0, plot.d / 2, plot.w, 0],
-      [-plot.w / 2, 0, plot.d, Math.PI / 2],
-      [plot.w / 2, 0, plot.d, Math.PI / 2],
-    ] as const)
-      box(g, plot.x + dx, 0.45, plot.z + dz, l, 0.9, 0.06, '#d9d4c5', 'paint', { ry });
+    for (const [dx, dz, l, ry] of hoardingWalls(plot))
+      box(g, plot.x + dx, 0.45, plot.z + dz, l, 0.9, HOARDING_THICKNESS, '#d9d4c5', 'paint', { ry });
     box(g, plot.x - 1.4, 0.3, plot.z + 1.3, 1.2, 0.6, 0.8, '#b4a58b', 'wood');
     box(g, plot.x + 1.2, 0.25, plot.z + 1.4, 0.9, 0.5, 0.9, '#9a8f7c', 'stone');
     box(g, plot.x + 1.3, 0.2, plot.z - 1.5, 1.6, 0.4, 0.7, '#c2b8a4', 'stone');
@@ -1619,8 +1766,12 @@ export function buildTown(
   /* ---------------------------------------------------------------- */
   buildTerrain();
   buildStreets();
-  for (const spec of plan.lampPlan()) lamp(land, spec.x, spec.z);
+  const lampSpecs = plan.lampPlan();
+  for (const spec of lampSpecs) lamp(land, spec.x, spec.z);
   const trees = plan.plantingPlan();
+  // Ground shade, shallows and the town lawn, shared by every ground material (and later the sea).
+  const groundMasks = buildGroundMasks(trees, lampSpecs);
+  library.bakeUniforms.groundMasks.value = groundMasks;
   const parkGroup = new T.Group();
   parkGroup.name = 'corner-park';
   parkGroup.userData.parkSelection = true;
@@ -1632,7 +1783,7 @@ export function buildTown(
   // The corner park: a lawn, a pavilion, benches, flowers and the memory board.
   box(parkGroup, plan.park.x, 0.02, plan.park.z, plan.park.w, 0.04, plan.park.d, palette.grassLight, 'grass');
   box(parkGroup, plan.park.x, 0.045, plan.park.z + plan.park.d / 2 - 0.6, plan.park.w, 0.02, 0.8, palette.plaza, 'paving');
-  pavilion(parkGroup, plan.park.x, 0.04, plan.park.z - 0.3);
+  pavilion(parkGroup, bandstandAt()[0], 0.04, bandstandAt()[1]);
   memoryBoard(parkGroup, plan.park.x + plan.park.w / 2 - 1.0, 0.04, plan.park.z + 1.6, -0.6);
   bench(parkGroup, plan.park.x - 2.6, 0.04, plan.park.z + 1.9, Math.PI);
   bench(parkGroup, plan.park.x + 1.4, 0.04, plan.park.z + 1.9, Math.PI);
@@ -1885,6 +2036,7 @@ export function buildTown(
     parkGroup,
     parkHit,
     waterLevel: WATER,
+    groundMasks,
     materialLibrary: library,
     disposeMaterials: options.library ? () => {} : library.dispose,
   };

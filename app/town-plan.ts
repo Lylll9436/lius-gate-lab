@@ -180,6 +180,8 @@ export function distanceToStreets(x: number, z: number) {
     d = Math.min(d, distanceToSegment(p, a.from, a.to) - ROAD_WIDTH / 2);
   return d;
 }
+/** 1 inside the ring, its pavements and the crescent gardens (the mown town lawn), fading to 0 over 2.5 units. */
+export function lawnCore(x:number,z:number){const rr=(cx:number,cz:number,hx:number,hz:number,r:number)=>{const qx=Math.abs(x-cx)-hx+r,qz=Math.abs(z-cz)-hz+r;return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-r;};const d=Math.min(rr(0,ring.cz,ring.hw+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.hd+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.radius+2),rr(-22,1,5,7,2.5));const t=Math.min(1,Math.max(0,d/2.5));return 1-t*t*(3-2*t);}
 
 /* ------------------------------------------------------------------ */
 /* Sites                                                               */

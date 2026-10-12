@@ -40,6 +40,43 @@ function bakeShader(m: T.MeshStandardMaterial) {
   m.customProgramCacheKey = () => 'lius-bake-solid';
 }
 
+/** The ground masks' A channel stores terrain height over this range (units). */
+export const GROUND_HEIGHT_RANGE = 2;
+/** Ground surfaces that read the baked ground masks (water reads them in city-water). */
+const MASKED_GROUND = new Set<SurfaceKind>(['grass', 'soil', 'paving', 'asphalt', 'sand', 'gravel']);
+type BakeUniforms = { groundMasks: { value: T.Texture }; maskExtent: { value: number } };
+/**
+ * Ground shade from the baked mask grid, sampled by world XZ: R darkens footprint pads,
+ * canopy discs, lamp feet and the grass lip by the pavements (tinted, never grey), B is the
+ * mown town lawn that carries a soft 1.5-unit checker, A the terrain height (so only
+ * surfaces lying on the ground are shaded, not roof lawns or raised floors).
+ * Paving gets offset flags whose joints fade out once a flag is too small on screen.
+ */
+function groundShader(m: T.MeshStandardMaterial, kind: SurfaceKind, uniforms: BakeUniforms) {
+  const tint = kind === 'grass' || kind === 'soil' ? 'vec3(.52, .60, .40)' : 'vec3(.62, .58, .50)';
+  const lawn = `vec2 q=vGroundP.xz/1.5;vec2 tri=abs(fract(q*.5)*2.-1.);vec2 fw=fwidth(q)+1e-4;vec2 e=smoothstep(.5-fw,.5+fw,tri);float ch=e.x+e.y-2.*e.x*e.y;
+diffuseColor.rgb*=mix(vec3(.93,.95,.90),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
+  const flags = `vec2 tq=vGroundP.xz/.9;tq.x+=.5*step(1.,mod(floor(tq.y),2.));float th=fract(sin(dot(floor(tq),vec2(127.1,311.7)))*43758.5453);vec2 f=fract(tq);vec2 fj=fwidth(tq);float jn=1.-smoothstep(0.,.06+fj.x,min(min(f.x,1.-f.x),min(f.y,1.-f.y)));float jnear=1.-smoothstep(.03,.06,max(fj.x,fj.y));
+diffuseColor.rgb*=(.96+.08*th)*(1.-.18*jn*jnear);`;
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.groundMasks = uniforms.groundMasks;
+    shader.uniforms.maskExtent = uniforms.maskExtent;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundP = (modelMatrix * vec4(transformed, 1.)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{
+vec4 gs=texture2D(groundMasks,vGroundP.xz/(2.*maskExtent)+.5);
+float nearGround=1.-smoothstep(.2,.5,vGroundP.y-gs.a*${GROUND_HEIGHT_RANGE.toFixed(1)});
+${kind === 'grass' ? lawn : kind === 'paving' ? flags : ''}
+diffuseColor.rgb*=mix(vec3(1.),${tint},gs.r*nearGround);
+}`);
+  };
+  m.customProgramCacheKey = () => 'lius-ground-' + kind;
+}
+
 const fract = (n: number) => n - Math.floor(n);
 const hash = (x: number, y: number) =>
   fract(Math.sin(x * 127.1 + y * 311.7) * 43758.5453);
@@ -93,9 +130,8 @@ function surfaceMaps(kind: SurfaceKind) {
           noise(u * 2.3 + 3.1, v * 2.3 + 7.7) * 0.5 +
           noise(u * 5.7 + 8.2, v * 5.7 - 2.4) * 0.34 +
           noise(u * 13.3 - 5, v * 13.3 + 9) * 0.16;
-        level =
-          (kind === 'grass' ? 0.82 : 0.86) +
-          patch * (kind === 'grass' ? 0.2 : 0.14);
+        // Grass drifts stay within about 5% (linear 0.90-1.0); the ground shader does the rest.
+        level = kind === 'grass' ? 0.955 + patch * 0.045 : 0.86 + patch * 0.14;
         height = 0.45 + (grain - 0.5) * 0.32;
       } else if (kind === 'sand' || kind === 'gravel') {
         const ripple = Math.sin((v * 9 + Math.sin(u * 6.283) * 0.18) * 6.283);
@@ -160,6 +196,10 @@ export function createCityMaterials() {
   let night = 0;
   const cache = new Map<string, T.MeshStandardMaterial>();
   const maps = new Map<SurfaceKind, ReturnType<typeof surfaceMaps>>();
+  // The ground masks are baked by buildTown; until then a black texel leaves the ground untouched.
+  const blank = new T.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
+  blank.needsUpdate = true;
+  const bakeUniforms: BakeUniforms = { groundMasks: { value: blank }, maskExtent: { value: 44 } };
   /**
    * A studio render, not a texture atlas: clean matte clay for masonry, satin paint,
    * soft plastic foliage, satin glass. The room environment does the shading;
@@ -229,12 +269,16 @@ export function createCityMaterials() {
       m.color.set('#ffffff');
       m.vertexColors = true;
       m.side = side;
-      if (!GROUND_KINDS.has(source.userData.surfaceKind)) bakeShader(m);
+      const kind = source.userData.surfaceKind as SurfaceKind;
+      if (MASKED_GROUND.has(kind)) groundShader(m, kind, bakeUniforms);
+      else if (!GROUND_KINDS.has(kind)) bakeShader(m);
       batches.set(key, m);
     }
     return batches.get(key)!;
   }
   function dispose() {
+    bakeUniforms.groundMasks.value.dispose();
+    blank.dispose();
     for (const { map, bump } of maps.values()) {
       map.dispose();
       bump.dispose();
@@ -249,7 +293,7 @@ export function createCityMaterials() {
       if (m.userData.surfaceKind === 'glass')
         m.emissiveIntensity = night * 0.72;
   }
-  return { material, batchMaterial, dispose, setNight };
+  return { material, batchMaterial, dispose, setNight, bakeUniforms };
 }
 
 /** UVs use physical dimensions, not one identical stretched texture per box. */
