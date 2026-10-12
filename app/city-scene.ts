@@ -126,7 +126,7 @@ export function createCity(
   scene.environmentIntensity = 0.25;
   const fog = new T.Fog('#d9e3dd', 72, 150);
   scene.fog = fog;
-  const water = createIslandWater(model.waterLevel, -0.5);
+  const water = createIslandWater(model.waterLevel, -0.5, model.groundMasks);
   city.add(water.bottom, water.mesh);
   // Only the lanterns around the plaza carry real spotlights (after dusk); the rest glow.
   const litLanterns = lamps
@@ -220,15 +220,6 @@ export function createCity(
     });
     sun.shadow.camera.updateProjectionMatrix();
   }
-  // The island's shadow on the sea bed: only as large as the island and its harbour.
-  const shadow = new T.Mesh(
-    new T.PlaneGeometry(100, 100),
-    new T.ShadowMaterial({ color: '#2f4a44', opacity: 0.14, depthWrite: false }),
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = -0.62;
-  shadow.receiveShadow = true;
-  scene.add(shadow);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableRotate = false;
   controls.enableDamping = true;

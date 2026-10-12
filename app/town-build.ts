@@ -608,16 +608,29 @@ export function buildTown(
     ground.name = 'island-ground';
     land.add(ground);
 
-    // The shore: grassy lip, dry sand, wet sand, waterline, a pale shelf, the drop.
+    // The shore: a crisp darker turf lip, dry sand, wet sand, the waterline, a pale shelf, the drop.
+    // The shelf colours sit under the sea's translucent turquoise shallows.
     const profile = [
-      { width: 0, height: 0, color: '#aebf86' },
-      { width: 0.9, height: -0.004, color: '#d0c29e' },
-      { width: 1.9, height: -0.012, color: palette.sand },
-      { width: 2.7, height: -0.022, color: palette.sandWet },
-      { width: 3.2, height: -0.038, color: '#b1a98a' },
-      { width: 4.6, height: -0.17, color: '#8db4a9' },
-      { width: 7.2, height: -0.48, color: '#5c8c8d' },
+      { width: 0, height: 0, color: '#98b74a' },
+      { width: 0.22, height: -0.004, color: palette.lawnEdge },
+      { width: 0.32, height: -0.008, color: '#efd9a4' },
+      { width: 1.9, height: -0.014, color: palette.sand },
+      { width: 2.5, height: -0.02, color: '#d6ba86' },
+      { width: 2.85, height: -0.026, color: palette.sandWet },
+      { width: 3.3, height: -0.05, color: '#a8d8cf' },
+      { width: 4.6, height: -0.17, color: '#5fb8c8' },
+      { width: 7.2, height: -0.48, color: '#2f8fb6' },
     ];
+    /** The shore surface height at a given width out from the outline. */
+    const shoreHeight = (width: number) => {
+      for (let j = 1; j < profile.length; j++)
+        if (width <= profile[j].width) {
+          const a = profile[j - 1],
+            b = profile[j];
+          return T.MathUtils.lerp(a.height, b.height, (width - a.width) / (b.width - a.width));
+        }
+      return profile[profile.length - 1].height;
+    };
     const n = plan.OUTLINE_SAMPLES;
     const shorePoint = (i: number, width: number, height: number): Point => {
       // Offset along the outline normal, smoothed over two neighbours each side.
@@ -655,34 +668,40 @@ export function buildTown(
     beach.receiveShadow = true;
     beach.name = 'shore';
     land.add(beach);
-    // Foam at the tide line.
+    // Foam: a bright wobbling band on the tide line and a fainter, straight one just beyond it.
+    // RGBA vertex colours (itemSize 4) carry each band's alpha.
     const fp: number[] = [],
       fc: number[] = [],
       fi: number[] = [];
-    for (let i = 0; i < n; i++) {
-      const wobble = 0.12 * Math.sin(i * 1.7) + 0.08 * Math.sin(i * 4.3);
-      fp.push(...shorePoint(i, 2.95 + wobble, WATER + 0.006), ...shorePoint(i, 3.35 + wobble * 0.6, WATER + 0.006));
-      const strength = 0.55 + 0.45 * Math.sin(i * 0.61 + Math.sin(i * 0.17) * 3);
-      const lit = new T.Color(palette.white).multiplyScalar(0.72 + 0.28 * strength);
-      fc.push(lit.r, lit.g, lit.b, lit.r, lit.g, lit.b);
-    }
-    for (let i = 0; i < n; i++) {
-      const a = i * 2,
-        b = ((i + 1) % n) * 2;
-      fi.push(a, b, b + 1, a, b + 1, a + 1);
-    }
+    const foamColour = new T.Color('#eaf6f2');
+    const foamBands = [
+      { from: 2.8, to: 3.0, wobble: 0.5, alpha: 0.9 },
+      { from: 3.3, to: 3.46, wobble: 0, alpha: 0.45 },
+    ];
+    foamBands.forEach((band, b) => {
+      for (let i = 0; i < n; i++) {
+        const wobble = (0.12 * Math.sin(i * 1.7) + 0.08 * Math.sin(i * 4.3)) * band.wobble;
+        fp.push(...shorePoint(i, band.from + wobble, WATER + 0.006), ...shorePoint(i, band.to + wobble, WATER + 0.006));
+        for (let k = 0; k < 2; k++) fc.push(foamColour.r, foamColour.g, foamColour.b, band.alpha);
+      }
+      for (let i = 0; i < n; i++) {
+        const a = (b * n + i) * 2,
+          c = (b * n + ((i + 1) % n)) * 2;
+        fi.push(a, c, c + 1, a, c + 1, a + 1);
+      }
+    });
     const foamGeometry = new T.BufferGeometry();
     foamGeometry.setAttribute('position', new T.Float32BufferAttribute(fp, 3));
-    foamGeometry.setAttribute('color', new T.Float32BufferAttribute(fc, 3));
+    foamGeometry.setAttribute('color', new T.Float32BufferAttribute(fc, 4));
     foamGeometry.setIndex(fi);
     foamGeometry.computeVertexNormals();
     const foamMaterial = material('#ffffff', 'paint').clone();
     foamMaterial.vertexColors = true;
     foamMaterial.transparent = true;
-    foamMaterial.opacity = 0.5;
+    foamMaterial.opacity = 0.92;
     foamMaterial.depthWrite = false;
     foamMaterial.emissive.set('#ffffff');
-    foamMaterial.emissiveIntensity = 0.35;
+    foamMaterial.emissiveIntensity = 0.2;
     const foam = new T.Mesh(foamGeometry, foamMaterial);
     foam.name = 'tide-foam';
     foam.renderOrder = 3;
@@ -691,19 +710,31 @@ export function buildTown(
     animated.push({
       object: foam,
       update(time, night) {
-        foamMaterial.emissiveIntensity = 0.35 * (1 - 0.7 * night);
-        foamMaterial.opacity = 0.44 + Math.sin(time * 0.7) * 0.08;
+        foamMaterial.emissiveIntensity = 0.2 * (1 - 0.7 * night);
+        foamMaterial.opacity = 0.92 + Math.sin(time * 0.7) * 0.06;
       },
     });
-    // Boulders along the tide line and on the headland.
+    // A few chunky, rounded boulders on the beach. They only turn about y, so their tops stay flat,
+    // and brighten upwards; the batch's contact bake darkens their feet.
     for (let i = 0; i < n; i++) {
-      if (hash(i) > 0.2) continue;
-      const p = shorePoint(i, 0.5 + 0.5 * (1 + Math.sin(i * 8.3)), -0.02),
-        r = 0.1 + 0.09 * (0.5 + 0.5 * Math.sin(i * 17.1));
-      const stone = new T.Mesh(new T.DodecahedronGeometry(r, 0), material(i % 2 ? '#8c9789' : '#aaa991', 'stone'));
-      stone.position.set(p[0], p[1], p[2]);
-      stone.scale.set(1.7, 0.6, 1.1);
-      stone.rotation.set(i * 0.71, i * 0.93, 0);
+      if (hash(i) >= 0.07) continue;
+      const width = 0.6 + 1.6 * hash(i * 3 + 1),
+        r = 0.26 + 0.18 * (0.5 + 0.5 * Math.sin(i * 17.1)),
+        p = shorePoint(i, width, shoreHeight(width)),
+        geometry = new T.IcosahedronGeometry(r, 1),
+        position = geometry.getAttribute('position'),
+        tint = new T.Color(i % 2 ? '#b9b6a2' : '#9da394'),
+        tone = new Float32Array(position.count * 3);
+      for (let k = 0; k < position.count; k++) {
+        const v = 0.9 + 0.15 * T.MathUtils.smoothstep(position.getY(k), -r, r);
+        tone.set([tint.r * v, tint.g * v, tint.b * v], k * 3);
+      }
+      geometry.setAttribute('color', new T.BufferAttribute(tone, 3));
+      const stone = new T.Mesh(geometry, material('#ffffff', 'stone'));
+      // Resting on the sand, then sunk by 35% of its half-height.
+      stone.position.set(p[0], p[1] + 0.62 * r * (1 - 0.35), p[2]);
+      stone.scale.set(1.35, 0.62, 1.05);
+      stone.rotation.y = i * 0.93;
       stone.castShadow = stone.receiveShadow = true;
       land.add(stone);
     }

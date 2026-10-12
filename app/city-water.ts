@@ -2,6 +2,9 @@
 import * as T from 'three';
 
 function createCreekMaterial() {
+  // Until the town's ground masks arrive, every texel reads as deep water (G = 0).
+  const blankMasks = new T.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  blankMasks.needsUpdate = true;
   const uniforms = {
     time: { value: 0 },
     night: { value: 0 },
@@ -10,10 +13,12 @@ function createCreekMaterial() {
     eyeDirection: { value: new T.Vector3(0.46, 0.55, 0.69) },
     moonPosition: { value: new T.Vector3(-160, 320, 200) },
     sunPosition: { value: new T.Vector3(-160, 320, 200) },
+    groundMasks: { value: blankMasks as T.Texture },
+    maskExtent: { value: 44 },
   };
   // Local lamps illuminate the bank; their specular lobes do not become glowing water pillars.
   const material = new T.MeshPhysicalMaterial({
-    color: '#77aead',
+    color: '#2f93ba',
     roughness: 0.85,
     metalness: 0,
     specularIntensity: 0,
@@ -39,6 +44,7 @@ function createCreekMaterial() {
     );
     shader.fragmentShader =
       `varying vec3 creekWorldP; uniform float time; uniform float night; uniform float rain; uniform float cloud; uniform vec3 eyeDirection; uniform vec3 moonPosition; uniform vec3 sunPosition;
+   uniform sampler2D groundMasks; uniform float maskExtent;
    float creekHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
    float creekNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(creekHash(i),creekHash(i+vec2(1.,0.)),f.x),mix(creekHash(i+vec2(0.,1.)),creekHash(i+vec2(1.,1.)),f.x),f.y);}
    vec3 creekNormal(vec2 p){
@@ -51,13 +57,14 @@ function createCreekMaterial() {
       '#include <color_fragment>',
       `#include <color_fragment>
    vec2 waterP=creekWorldP.xz;
+   float shallow=texture2D(groundMasks,waterP/(2.*maskExtent)+.5).g; diffuseColor.rgb=mix(vec3(.0137,.159,.296),vec3(.122,.527,.658),shallow*shallow);
    vec3 waveNormal=creekNormal(waterP);
    float flow=creekNoise(waterP*3.2+vec2(time*.06,-time*.16));
    float fine=creekNoise(waterP*11.7+vec2(-time*.17,time*.23));
    float smallRipple=smoothstep(.62,.87,flow)*smoothstep(.59,.78,fine);
    diffuseColor.rgb*=mix(vec3(.93,1.,1.),vec3(.38,.62,.82),night);
    diffuseColor.rgb+=vec3(.025,.065,.06)*smallRipple*(1.-night*.8);
-   diffuseColor.a=.61+smallRipple*.045;`,
+   diffuseColor.a=mix(.9,.58,shallow)+smallRipple*.045;`,
     );
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <normal_fragment_maps>',
@@ -84,11 +91,13 @@ function createCreekMaterial() {
   `,
     );
   };
-  return { material, uniforms };
+  return { material, uniforms, blankMasks };
 }
 
-export function createIslandWater(level = 0.0725, bedLevel = -0.38) {
-  const { material, uniforms } = createCreekMaterial();
+/** The sea: deep blue offshore, turquoise where the ground masks' G channel marks the shallows. */
+export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Texture) {
+  const { material, uniforms, blankMasks } = createCreekMaterial();
+  if (masks) uniforms.groundMasks.value = masks;
   const geometry = new T.PlaneGeometry(320, 320, 1, 1);
   geometry.rotateX(-Math.PI / 2);
   // Wave shape is in the fragment normals; a flat ocean mesh avoids coarse waves at the horizon.
@@ -106,16 +115,18 @@ export function createIslandWater(level = 0.0725, bedLevel = -0.38) {
   mesh.renderOrder = 2;
   mesh.castShadow = false;
   mesh.frustumCulled = false;
+  // The unlit bed shows through the deep water's 10% transparency. Its colours match how the lit,
+  // outermost shore shelf (#2f8fb6) renders by day and by night, so no seam shows where the shelf ends.
   const bottom = new T.Mesh(
     new T.PlaneGeometry(320, 320),
-    new T.MeshBasicMaterial({ color: '#659998', depthWrite: false }),
+    new T.MeshBasicMaterial({ color: '#4da7c0', depthWrite: false }),
   );
   bottom.rotation.x = -Math.PI / 2;
   bottom.position.y = bedLevel;
   bottom.name = 'sea-colour-bed';
   bottom.renderOrder = -2;
-  const dayBed = new T.Color('#659998'),
-    nightBed = new T.Color('#172f42');
+  const dayBed = new T.Color('#4da7c0'),
+    nightBed = new T.Color('#143e59');
   return {
     mesh,
     bottom,
@@ -136,6 +147,7 @@ export function createIslandWater(level = 0.0725, bedLevel = -0.38) {
     dispose() {
       geometry.dispose();
       material.dispose();
+      blankMasks.dispose();
       bottom.geometry.dispose();
       bottom.material.dispose();
     },
