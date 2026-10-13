@@ -483,10 +483,11 @@ export function createCity(
     const size = bounds.getSize(new T.Vector3());
     const spanX = (size.x + size.z) * 0.707,
       spanY = (size.x + size.z) * 0.48 + size.y * 0.75;
+    // A frame drop (a phone's sheet or bars below) leaves only part of the height in view.
     targetZoom = T.MathUtils.clamp(
       Math.min(
         ((camera.right - camera.left) * 0.62) / spanX,
-        ((camera.top - camera.bottom) * 0.65) / spanY,
+        ((camera.top - camera.bottom) * 0.65 * (1 - 2 * Math.abs(frameDrop))) / spanY,
       ),
       1.3,
       3.4,
@@ -557,13 +558,15 @@ export function createCity(
     zones.visible = planMode;
     controls.maxZoom = 4;
   }
-  /** Inspect's framing: the building fitted to the camera's frustum, beside the panel. */
+  /** Inspect's framing: the building fitted to the camera's frustum, beside the panel or
+   *  above the sheet. */
   function frameStudy() {
     if (!inspect) return;
     const fit = fitStudy(
       inspect.userData.exteriorBounds,
       camera,
       1 - 2 * Math.abs(frameShift),
+      1 - 2 * Math.abs(frameDrop),
     );
     target.copy(inspect.position).add(fit.focus).add(shiftApplied);
     targetZoom = fit.zoom;
@@ -1043,7 +1046,8 @@ export function createCity(
     setFrameShift(fraction, down = 0) {
       frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
       frameDrop = T.MathUtils.clamp(down, -0.35, 0.35);
-      if (overviewFit) fitOverview();
+      // A framing the camera chose itself (the overview, a pick) is fitted again.
+      if (autoFocus) fitFocused();
     },
     setAccent(id) {
       accentId = id;

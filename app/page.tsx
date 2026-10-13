@@ -55,19 +55,44 @@ const readingChapter = (id: ContentId) =>
 const facing = (id: ContentId) =>
   bearings[chapterFor(sceneTarget(id).building ?? id)] ?? bearings.overview;
 /**
- * City mode's subject offset (a share of the stage width): the subject moves to the middle
- * of the space left of the open file, with a 16 px gutter before the file.
+ * City mode's subject offset, read from where the file and the controls actually are.
+ * A side panel moves the subject left (a share of the stage width) to the middle of the
+ * space left of the file, with a 16 px gutter. A bottom sheet (phones and tablets), or a
+ * phone's own row of sky and camera bars, lifts it (a share of the stage height) to the
+ * middle of the band between the masthead and the sheet or bars. `sheet` says the file is
+ * a bottom sheet.
  */
-function fileShift(stage: HTMLElement | null) {
-  const file = document.querySelector<HTMLElement>('.dossier');
-  if (!stage || !file || file.hidden) return 0;
-  const frame = stage.getBoundingClientRect(),
-    left = file.getBoundingClientRect().left;
-  if (frame.width <= 0) return 0;
-  return Math.min(
-    0.3,
-    Math.max(0, (frame.right - left + 16) / (2 * frame.width)),
-  );
+function fileFrame(stage: HTMLElement | null) {
+  const none = { shift: 0, drop: 0, sheet: false };
+  if (!stage) return none;
+  const frame = stage.getBoundingClientRect();
+  if (frame.width <= 0 || frame.height <= 0) return none;
+  const file = document.querySelector<HTMLElement>('.dossier'),
+    box = file && !file.hidden ? file.getBoundingClientRect() : null,
+    open = !!box && box.height > 0,
+    side = open && box.width < frame.width / 2,
+    sheet = open && !side,
+    shift = side
+      ? Math.min(0.3, Math.max(0, (frame.right - box.left + 16) / (2 * frame.width)))
+      : 0;
+  let bottom = sheet ? box.top : frame.bottom;
+  // The bars only form a row of their own on phones; elsewhere they sit in the corners.
+  const row = document.querySelector<HTMLElement>('.hud-row');
+  if (row && getComputedStyle(row).display !== 'contents')
+    bottom = Math.min(bottom, row.getBoundingClientRect().top);
+  if (bottom >= frame.bottom) return { ...none, shift };
+  const masthead =
+      document.querySelector<HTMLElement>('.masthead')?.getBoundingClientRect()
+        .bottom ?? frame.top,
+    centre = (Math.max(frame.top, masthead) + bottom) / 2;
+  return {
+    shift,
+    sheet,
+    drop: Math.min(
+      0,
+      Math.max(-0.35, (centre - (frame.top + frame.bottom) / 2) / frame.height),
+    ),
+  };
 }
 
 export default function Home() {
@@ -77,7 +102,9 @@ export default function Home() {
     // instead of visiting every chapter the scroll passes on the way.
     scrollLock = useRef<{ chapter: ContentId; until: number } | null>(null),
     viewRef = useRef<View>({ mode: 'reading', content: 'overview' }),
-    wideRef = useRef(true);
+    wideRef = useRef(true),
+    // On a narrow screen the Directory takes the file's place; closing it brings the file back.
+    fileBeforeDirectory = useRef(false);
   const [locale, setLocale] = useState<Locale>(() =>
     typeof navigator !== 'undefined' && /^zh/i.test(navigator.language)
       ? 'zh'
@@ -102,6 +129,8 @@ export default function Home() {
     [inspect, setInspect] = useState(false),
     [tour, setTour] = useState(-1),
     [panelOpen, setPanelOpen] = useState(true),
+    // Phones: the file opens as a short sheet (title and actions); this shows all of it.
+    [sheetFull, setSheetFull] = useState(false),
     [directory, setDirectory] = useState(false),
     [hovered, setHovered] = useState<HoverTarget>(null),
     [wide, setWide] = useState(true);
@@ -122,9 +151,40 @@ export default function Home() {
     setInspect(false);
     setPlan(false);
     setDirectory(false);
+    fileBeforeDirectory.current = false;
     if (!keepTour) setTour(-1);
-    // Every place picked in the city opens its file, even if the file was hidden.
-    if (next.mode === 'city') setPanelOpen(true);
+    // Every place picked in the city opens its file, even if the file was hidden; on a
+    // phone it opens short, so the place itself stays in view above it.
+    if (next.mode === 'city') {
+      setPanelOpen(true);
+      setSheetFull(false);
+    }
+  }
+  /** The file and the Directory: side by side on wide screens, one at a time otherwise. */
+  function togglePanel() {
+    const next = !panelOpen;
+    setPanelOpen(next);
+    setSheetFull(false);
+    if (next && !wide) {
+      setDirectory(false);
+      fileBeforeDirectory.current = false;
+    }
+  }
+  function closeDirectory() {
+    setDirectory(false);
+    if (fileBeforeDirectory.current) {
+      setPanelOpen(true);
+      setSheetFull(false);
+    }
+    fileBeforeDirectory.current = false;
+  }
+  function toggleDirectory() {
+    if (directory) return closeDirectory();
+    setDirectory(true);
+    if (!wide) {
+      fileBeforeDirectory.current = panelOpen;
+      setPanelOpen(false);
+    }
   }
   /** Scroll the reading page to a chapter or card, and send the camera straight there.
    *  `instant` jumps without the smooth glide (a page opened at an address). */
@@ -224,6 +284,7 @@ export default function Home() {
     setInspect(true);
     setPlan(false);
     setDirectory(false);
+    fileBeforeDirectory.current = false;
     api.current?.setPlan(false);
     api.current?.enter(b.id);
   }
@@ -318,17 +379,26 @@ export default function Home() {
     });
     return () => cancelAnimationFrame(frame);
   }, [mode, content, ready]);
-  // Explore mode: the dossier takes the right-hand side, so the subject moves left.
+  // Explore mode: the subject moves out from under the file, wherever the file is: left of a
+  // side panel, above a phone's sheet. A sheet pulled up to read in full, or the Directory
+  // standing in for the file on a narrow screen, leaves the camera where the file put it.
   useEffect(() => {
     if (mode !== 'city') return;
-    const place = () =>
-      api.current?.setFrameShift(
-        panelOpen && wide ? fileShift(mount.current) : 0,
-      );
+    const place = () => {
+      const at = fileFrame(mount.current);
+      if ((at.sheet && sheetFull) || (directory && !wide)) return;
+      api.current?.setFrameShift(at.shift, at.drop);
+    };
     place();
+    const file = document.querySelector<HTMLElement>('.dossier'),
+      watch = new ResizeObserver(place);
+    if (file) watch.observe(file);
     window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
-  }, [mode, panelOpen, wide, ready]);
+    return () => {
+      watch.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [mode, panelOpen, sheetFull, directory, wide, ready]);
 
   // Reading mode: the chapter under the reading line drives the camera.
   useEffect(() => {
@@ -463,7 +533,8 @@ export default function Home() {
       if (inspect && b) {
         setInspect(false);
         api.current?.select(b.id);
-      } else if (directory) setDirectory(false);
+      } else if (directory) closeDirectory();
+      else if (sheetFull) setSheetFull(false);
       else if (panelOpen) {
         setPanelOpen(false);
         document
@@ -473,7 +544,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [mode, inspect, b, panelOpen, directory]);
+  }, [mode, inspect, b, panelOpen, sheetFull, directory]);
 
   const ctl: StageController = {
     locale,
@@ -492,6 +563,7 @@ export default function Home() {
     grid,
     paused,
     panelOpen,
+    sheetFull,
     directory,
     zoom: (f) => api.current?.zoom(f),
     rotate: () => api.current?.rotate(),
@@ -507,8 +579,9 @@ export default function Home() {
     exitInspection,
     tourStop,
     closeTour: () => setTour(-1),
-    togglePanel: () => setPanelOpen((v) => !v),
-    toggleDirectory: () => setDirectory((v) => !v),
+    togglePanel,
+    toggleSheet: () => setSheetFull((v) => !v),
+    toggleDirectory,
     select,
     openPark,
     navigate: (m, c) => navigate(m, c),

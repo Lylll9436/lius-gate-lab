@@ -586,6 +586,10 @@ body:has(.mode-explore),
   background: var(--ink);
   color: var(--bg);
 }
+/* The sky and camera bars sit in the stage's corners; the row only lays them out on phones. */
+.hud-row {
+  display: contents;
+}
 .hud-camera {
   right: 16px;
   bottom: 16px;
@@ -764,6 +768,10 @@ body:has(.mode-explore),
 }
 .dossier-head h2:focus {
   outline: none;
+}
+/* Only a phone's sheet has a handle. */
+.sheet-handle {
+  display: none;
 }
 .dossier-body {
   flex: 1;
@@ -1803,6 +1811,252 @@ body:has(.mode-explore),
   .record-props > div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+}
+/* City mode below the wide layout: the panels that come and go stack in rows under the sky
+   chip (the tour first, then Inspect's way back or the plan key), clear of the file. */
+@media (max-width: 960px) {
+  .is-explore .plan-legend {
+    top: calc(var(--masthead) + 46px);
+    bottom: auto;
+    left: 12px;
+  }
+  .is-explore .inspection-toolbar {
+    top: calc(var(--masthead) + 46px);
+    left: 12px;
+  }
+  .is-explore.is-touring .plan-legend,
+  .is-explore.is-touring .inspection-toolbar {
+    top: calc(var(--masthead) + 104px);
+  }
+  /* A long stop name gives way before the tour's buttons do. */
+  .is-explore .tour-control {
+    gap: 10px;
+  }
+  .is-explore .tour-control strong {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .is-explore .tour-control .eyebrow,
+  .is-explore .tour-control > div {
+    flex-shrink: 0;
+  }
+  /* The building's name is on the file; the chip stays for screen readers only. */
+  .is-explore .stage-caption .hover-chip {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+/* Phones in City mode: no control sits on another, and the town keeps most of the screen.
+   Portrait, from the bottom up: the explore bar on its own full-width row, the sky and camera
+   bars on the row above it, then the file as a short sheet (title and actions; its head pulls
+   it up to full) or the Directory in its place. The zoom buttons go: pinch zooms. The portrait
+   layout runs to 740px: below that the three bars of the wider layout run into each other. */
+@media (max-width: 740px) and (min-height: 501px), (max-width: 960px) and (max-height: 500px) {
+  .city-stage.is-explore {
+    --hud-btn: 44px;
+    --hud-pad: 3px;
+    --hud-edge: 12px;
+    --hud-gap: 8px;
+    /* A bar's height: the buttons, its padding and its (transparent) 1px border. */
+    --hud-h: calc(var(--hud-btn) + 2 * var(--hud-pad) + 2px);
+  }
+  .is-explore .hud {
+    gap: 0;
+    padding: var(--hud-pad);
+  }
+  .is-explore .hud button {
+    min-width: var(--hud-btn);
+    height: var(--hud-btn);
+  }
+  .is-explore .hud-zoom {
+    display: none;
+  }
+  .is-explore .hud-explore {
+    left: var(--hud-edge);
+    bottom: var(--hud-edge);
+    transform: none;
+  }
+  .is-explore .hud-row {
+    position: absolute;
+    z-index: 3;
+    left: var(--hud-edge);
+    bottom: calc(var(--hud-edge) + var(--hud-h) + var(--hud-gap));
+    display: flex;
+    gap: var(--hud-gap);
+    pointer-events: none;
+  }
+  .is-explore .hud-row > .hud {
+    position: relative;
+    inset: auto;
+  }
+  /* The plan key lies across the top, in as few lines as fit. */
+  .is-explore .plan-legend {
+    left: var(--hud-edge);
+    right: var(--hud-edge);
+    flex-direction: row;
+    flex-wrap: wrap;
+    column-gap: 14px;
+  }
+  .is-explore .inspection-toolbar {
+    left: var(--hud-edge);
+  }
+}
+@media (max-width: 740px) and (min-height: 501px) {
+  .city-stage.is-explore {
+    /* Where the sheet starts: above both rows of bars. */
+    --sheet-bottom: calc(var(--hud-edge) + 2 * (var(--hud-h) + var(--hud-gap)));
+    /* How high a full sheet may reach: below whatever sits under the sky chip. */
+    --top-clear: calc(var(--masthead) + 104px);
+  }
+  .city-stage.is-explore.is-touring {
+    --top-clear: calc(var(--masthead) + 162px);
+  }
+  .city-stage.is-explore.has-plan {
+    --top-clear: calc(var(--masthead) + 134px);
+  }
+  .city-stage.is-explore.is-touring.has-plan {
+    --top-clear: calc(var(--masthead) + 192px);
+  }
+  .is-explore .hud-explore {
+    right: var(--hud-edge);
+  }
+  .is-explore .hud-explore button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 6px;
+  }
+  .is-explore .hud-row {
+    right: var(--hud-edge);
+    justify-content: space-between;
+  }
+  .mode-explore .dossier,
+  .mode-explore .directory {
+    top: auto;
+    left: var(--hud-edge);
+    right: var(--hud-edge);
+    bottom: var(--sheet-bottom);
+    width: auto;
+    max-height: min(64svh, calc(100svh - var(--sheet-bottom) - var(--top-clear)));
+  }
+  .mode-explore .dossier-head {
+    position: relative;
+    padding: 14px 52px 8px 18px;
+  }
+  .mode-explore .dossier-head h2 {
+    margin-top: 4px;
+  }
+  .mode-explore .dossier-foot {
+    padding: 6px 10px;
+  }
+  .mode-explore .dossier.is-peek .dossier-head {
+    border-bottom: 0;
+  }
+  .mode-explore .dossier.is-peek .dossier-head h2 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .mode-explore .dossier.is-peek .dossier-body {
+    display: none;
+  }
+  .mode-explore .sheet-handle {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border-radius: var(--radius) var(--radius) 0 0;
+    color: var(--ink-3);
+  }
+  .mode-explore .sheet-handle:focus-visible {
+    outline-offset: -3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .mode-explore .sheet-handle::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--line-strong);
+  }
+  .mode-explore .sheet-handle svg {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    margin-top: -9px;
+    transition: transform 0.2s ease;
+  }
+  .mode-explore .dossier.is-full .sheet-handle svg {
+    transform: rotate(180deg);
+  }
+}
+/* The smallest phones: slimmer bars, so both still fit one row. */
+@media (max-width: 359px) and (min-height: 501px) {
+  .city-stage.is-explore {
+    --hud-btn: 40px;
+    --hud-edge: 8px;
+  }
+}
+/* Landscape phones: the file and the Directory share a side panel on the right, with the
+   bars in two rows at the bottom left and the tour and plan key at the top left. */
+@media (max-width: 960px) and (max-height: 500px) {
+  .city-stage.is-explore {
+    --side: min(340px, 42vw);
+    /* The right inset that keeps a bar clear of the side panel. */
+    --beside: calc(var(--side) + 2 * var(--hud-edge));
+  }
+  .is-explore.has-side .hud-explore,
+  .is-explore.has-side .hud-row,
+  .is-explore.has-side .tour-control {
+    max-width: calc(100% - var(--beside) - var(--hud-edge));
+  }
+  .is-explore .hud-explore button {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .is-explore .hud-row {
+    flex-wrap: wrap-reverse;
+  }
+  .is-explore .tour-control {
+    right: auto;
+  }
+  .is-explore.has-side .plan-legend {
+    right: var(--beside);
+  }
+  .mode-explore .dossier,
+  .mode-explore .directory {
+    top: calc(var(--masthead) + 8px);
+    right: var(--hud-edge);
+    bottom: var(--hud-edge);
+    left: auto;
+    width: var(--side);
+    max-height: none;
+  }
+  .mode-explore .dossier-head {
+    padding: 12px 16px 8px;
+  }
+  .mode-explore .dossier-head h2 {
+    font-size: 20px;
+    margin-top: 4px;
+  }
+  .mode-explore .dossier-body {
+    padding: 12px 16px 14px;
+  }
+  .mode-explore .dossier-foot {
+    padding: 6px 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

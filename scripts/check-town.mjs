@@ -172,11 +172,14 @@ for (const [id, m] of models) {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld(true);
     const fit = fitStudy(exterior, camera),
-      beside = fitStudy(exterior, camera, 0.66);
-    for (const f of [fit, beside])
+      beside = fitStudy(exterior, camera, 0.66),
+      above = fitStudy(exterior, camera, 1, 0.7);
+    for (const f of [fit, beside, above])
       assert(Number.isFinite(f.zoom) && f.zoom > 0 && f.focus.toArray().every(Number.isFinite), 'Inspection fit: ' + id);
-    // Beside the open file the building gets the narrower frame, never a closer one.
+    // Beside the open file (or above a phone's sheet) the building gets the narrower frame,
+    // never a closer one.
     assert(beside.zoom <= fit.zoom + 1e-9, 'Inspection beside the file: ' + id);
+    assert(above.zoom <= fit.zoom + 1e-9, 'Inspection above the sheet: ' + id);
   }
 }
 // The pointer can find every building and the park.

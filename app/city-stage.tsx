@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   BookOpen,
   Box,
+  ChevronUp,
   CloudRain,
   Grid2X2,
   Layers,
@@ -46,6 +47,8 @@ export type StageController = {
   grid: boolean;
   paused: boolean;
   panelOpen: boolean;
+  /** Phones: the file shows in full, not just its title and actions. */
+  sheetFull: boolean;
   directory: boolean;
   zoom: (factor: number) => void;
   rotate: () => void;
@@ -60,6 +63,7 @@ export type StageController = {
   tourStop: (index: number) => void;
   closeTour: () => void;
   togglePanel: () => void;
+  toggleSheet: () => void;
   toggleDirectory: () => void;
   select: (id: BuildingId) => void;
   openPark: () => void;
@@ -89,7 +93,17 @@ export function CityStage({
       : null;
   return (
     <div
-      className={`city-stage ${explore ? 'is-explore' : 'is-reading'} ${ctl.inspect ? 'is-inspecting' : ''}`}
+      className={[
+        'city-stage',
+        explore ? 'is-explore' : 'is-reading',
+        ctl.inspect && 'is-inspecting',
+        // Which floating panels are up, so the phone layouts can keep them apart.
+        explore && (ctl.panelOpen || ctl.directory) && 'has-side',
+        explore && ctl.tour >= 0 && 'is-touring',
+        explore && ctl.plan && 'has-plan',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       aria-label={tr('Interactive city of Liu’s Gate', '刘家门的交互小城')}
     >
       <div ref={mount} className="world" />
@@ -145,62 +159,68 @@ export function CityStage({
         )}
       </div>
 
-      {/* Bottom-right: camera. */}
-      <div className="hud hud-camera" aria-label={tr('Camera', '镜头')}>
-        <button onClick={() => ctl.zoom(1.25)} aria-label={tr('Zoom in', '放大')}>
-          <Plus size={16} />
-        </button>
-        <button onClick={() => ctl.zoom(1 / 1.25)} aria-label={tr('Zoom out', '缩小')}>
-          <Minus size={16} />
-        </button>
-        <button onClick={ctl.rotate} aria-label={tr('Rotate', '旋转')}>
-          <RotateCcw size={15} />
-        </button>
-        <button onClick={ctl.reset} aria-label={tr('Reset view', '恢复全景')}>
-          <Maximize2 size={15} />
-        </button>
-      </div>
-
-      {/* Bottom-left: weather and time. */}
-      <div className="hud hud-sky" aria-label={tr('Sky', '天空')}>
-        <button
-          onClick={ctl.cycleSky}
-          aria-label={tr('Day and night: auto, day, night', '昼夜：自动、白天、夜晚')}
-          title={tr('Follows Glasgow time unless you override it', '默认跟随格拉斯哥时间')}
-        >
-          {ctl.skyMode === 'auto' ? (
-            <SunMoon size={15} />
-          ) : ctl.skyMode === 'day' ? (
-            <Sun size={15} />
-          ) : (
-            <Moon size={15} />
+      {/* The sky and camera bars; on phones in City mode they share one row. */}
+      <div className="hud-row">
+        {/* Bottom-left: weather and time. */}
+        <div className="hud hud-sky" aria-label={tr('Sky', '天空')}>
+          <button
+            onClick={ctl.cycleSky}
+            aria-label={tr('Day and night: auto, day, night', '昼夜：自动、白天、夜晚')}
+            title={tr('Follows Glasgow time unless you override it', '默认跟随格拉斯哥时间')}
+          >
+            {ctl.skyMode === 'auto' ? (
+              <SunMoon size={15} />
+            ) : ctl.skyMode === 'day' ? (
+              <Sun size={15} />
+            ) : (
+              <Moon size={15} />
+            )}
+          </button>
+          <button
+            onClick={ctl.toggleRain}
+            aria-pressed={ctl.rain}
+            aria-label={tr('Glasgow rain', '格拉斯哥的雨')}
+            title={tr('It is Glasgow. Let it rain.', '这里是格拉斯哥，下点雨吧。')}
+          >
+            <CloudRain size={15} />
+          </button>
+          <button
+            onClick={ctl.togglePause}
+            aria-pressed={ctl.paused}
+            aria-label={ctl.paused ? tr('Resume', '继续') : tr('Pause', '暂停')}
+          >
+            {ctl.paused ? <Play size={14} /> : <Pause size={14} />}
+          </button>
+          {explore && (
+            <>
+              <button onClick={ctl.togglePlan} aria-pressed={ctl.plan} aria-label={tr('Plan view', '规划视图')}>
+                <Layers size={15} />
+              </button>
+              <button onClick={ctl.toggleGrid} aria-pressed={ctl.grid} aria-label={tr('Grid', '网格')}>
+                <Grid2X2 size={15} />
+              </button>
+            </>
           )}
-        </button>
-        <button
-          onClick={ctl.toggleRain}
-          aria-pressed={ctl.rain}
-          aria-label={tr('Glasgow rain', '格拉斯哥的雨')}
-          title={tr('It is Glasgow. Let it rain.', '这里是格拉斯哥，下点雨吧。')}
-        >
-          <CloudRain size={15} />
-        </button>
-        <button
-          onClick={ctl.togglePause}
-          aria-pressed={ctl.paused}
-          aria-label={ctl.paused ? tr('Resume', '继续') : tr('Pause', '暂停')}
-        >
-          {ctl.paused ? <Play size={14} /> : <Pause size={14} />}
-        </button>
-        {explore && (
-          <>
-            <button onClick={ctl.togglePlan} aria-pressed={ctl.plan} aria-label={tr('Plan view', '规划视图')}>
-              <Layers size={15} />
-            </button>
-            <button onClick={ctl.toggleGrid} aria-pressed={ctl.grid} aria-label={tr('Grid', '网格')}>
-              <Grid2X2 size={15} />
-            </button>
-          </>
-        )}
+        </div>
+        {/* Bottom-right: camera. City mode on a phone drops the zoom buttons: pinch zooms. */}
+        <div className="hud hud-camera" aria-label={tr('Camera', '镜头')}>
+          <button className="hud-zoom" onClick={() => ctl.zoom(1.25)} aria-label={tr('Zoom in', '放大')}>
+            <Plus size={16} />
+          </button>
+          <button
+            className="hud-zoom"
+            onClick={() => ctl.zoom(1 / 1.25)}
+            aria-label={tr('Zoom out', '缩小')}
+          >
+            <Minus size={16} />
+          </button>
+          <button onClick={ctl.rotate} aria-label={tr('Rotate', '旋转')}>
+            <RotateCcw size={15} />
+          </button>
+          <button onClick={ctl.reset} aria-label={tr('Reset view', '恢复全景')}>
+            <Maximize2 size={15} />
+          </button>
+        </div>
       </div>
 
       {explore && (
@@ -300,7 +320,7 @@ export function CityStage({
           )}
 
           <aside
-            className="dossier"
+            className={`dossier ${ctl.sheetFull ? 'is-full' : 'is-peek'}`}
             hidden={!ctl.panelOpen}
             aria-label={tr('Selected place', '当前地点')}
           >
@@ -318,8 +338,22 @@ export function CityStage({
               <h2 id="dossier-title" tabIndex={-1}>
                 {titleFor(ctl.content, locale)}
               </h2>
+              {/* Phones: the whole head is the sheet's handle. */}
+              <button
+                className="sheet-handle"
+                onClick={ctl.toggleSheet}
+                aria-expanded={ctl.sheetFull}
+                aria-controls="dossier-body"
+                aria-label={
+                  ctl.sheetFull
+                    ? tr('Show less of the file', '收起资料正文')
+                    : tr('Show the whole file', '展开完整资料')
+                }
+              >
+                <ChevronUp size={18} aria-hidden="true" />
+              </button>
             </div>
-            <div className="dossier-body">
+            <div className="dossier-body" id="dossier-body">
               <LabContent
                 id={ctl.content}
                 locale={locale}
