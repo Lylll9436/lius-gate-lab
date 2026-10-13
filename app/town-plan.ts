@@ -300,7 +300,7 @@ export const paddock = { x: -11.6, z: 20.9, w: 5.2, d: 3.4, wall: 0.34, gate: { 
  */
 export type HerdMember = { id: string; x: number; z: number; heading: number; scale: number; eating: boolean; phase: number };
 export const herd: HerdMember[] = [
-  { id: 'cow-a', x: -12.4, z: 20.75, heading: -Math.PI / 2, scale: 1, eating: true, phase: 1.2 },
+  { id: 'cow-a', x: -12.35, z: 20.75, heading: -Math.PI / 2, scale: 1, eating: true, phase: 1.2 },
   { id: 'cow-b', x: -10.4, z: 21.25, heading: -0.75, scale: 1, eating: false, phase: -Math.PI / 2 },
   { id: 'calf', x: -11.0, z: 20.1, heading: 0.9, scale: 0.62, eating: false, phase: 1.9 },
 ];

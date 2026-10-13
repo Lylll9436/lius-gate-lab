@@ -202,7 +202,7 @@ for (const animal of plan.herd) {
   // Nose (head up) to tail tuft, and the barrel's half-width, at the animal's scale.
   const fx = Math.sin(animal.heading),
     fz = Math.cos(animal.heading);
-  for (const [along, across] of [[1.02, 0.2], [1.02, -0.2], [0.6, 0.36], [0.6, -0.36], [-0.7, 0.36], [-0.7, -0.36]]) {
+  for (const [along, across] of [[1.02, 0.2], [1.02, -0.2], [0.6, 0.38], [0.6, -0.38], [-0.7, 0.38], [-0.7, -0.38]]) {
     const x = animal.x + (fx * along + fz * across) * animal.scale,
       z = animal.z + (fz * along - fx * across) * animal.scale;
     assert(inPaddock(x, z) >= 0.25, `${animal.id} leans into the dyke at ${x.toFixed(2)}, ${z.toFixed(2)}`);
