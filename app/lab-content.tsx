@@ -20,6 +20,7 @@ import {
   peopleRecords,
   personContentId,
   recentNews,
+  supervisorEmail,
   type NewsItem,
 } from './lab-records';
 import type {
@@ -255,14 +256,6 @@ function newsKindLabel(item: NewsItem, zh: boolean) {
   if (item.kind === 'event') return categoryLabel(item.record.category, zh);
   if (item.kind === 'output') return typeLabel(item.record.type, zh);
   return zh ? '研究记录' : 'Research note';
-}
-
-/** The supervisor's address, taken from their catalogue record so it is maintained in one place. */
-function supervisorEmail() {
-  const link = peopleRecords
-    .find((p) => p.id === 'pengyuan-liu')
-    ?.links.find((l) => l.url.startsWith('mailto:'));
-  return link ? link.url.slice('mailto:'.length) : null;
 }
 
 /** Gate's News on the first screen: the latest few dated records, each opening in place. */

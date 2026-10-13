@@ -1,7 +1,8 @@
-import { ArrowUpRight, Map, BookOpen } from 'lucide-react';
+import { ArrowUpRight, Map, BookOpen, Mail } from 'lucide-react';
 import type { Locale } from './city-data';
 import type { BrowseMode, ContentId } from './lab-navigation';
 import { GateMark } from './lab-content';
+import { supervisorEmail } from './lab-records';
 
 export type ChapterMeta = {
   id: ContentId;
@@ -126,7 +127,8 @@ export function SiteFooter({
   locale: Locale;
   onNavigate: (mode: BrowseMode, id: ContentId) => void;
 }) {
-  const zh = locale === 'zh';
+  const zh = locale === 'zh',
+    joinEmail = supervisorEmail();
   return (
     <footer className="site-footer">
       <div className="footer-brand">
@@ -144,6 +146,17 @@ export function SiteFooter({
           : 'The city keeps Glasgow time: the lamps come on at dusk, and the gulls fly whatever the weather.'}
       </p>
       <nav className="footer-links">
+        {joinEmail && (
+          <a
+            className="footer-join"
+            href={'mailto:' + joinEmail}
+            aria-label={(zh ? '加入我们：发邮件给刘鹏远老师 ' : 'Join us: email Pengyuan Liu at ') + joinEmail}
+            title={joinEmail}
+          >
+            {zh ? '加入我们！' : 'Join us!'}
+            <Mail size={13} />
+          </a>
+        )}
         <button className="link-action" onClick={() => onNavigate('city', 'overview')}>
           {zh ? '小城视图' : 'City view'}
           <ArrowUpRight size={13} />

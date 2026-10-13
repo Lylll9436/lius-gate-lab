@@ -27,6 +27,13 @@ export const outputRecords = catalog.outputs
 export const noteRecords = catalog.notes
   .filter((p) => p.visibility === 'published')
   .sort((a, b) => b.date.localeCompare(a.date) || a.order - b.order);
+/** The supervisor's address, taken from their catalogue record so it is maintained in one place. */
+export function supervisorEmail() {
+  const link = peopleRecords
+    .find((p) => p.id === 'pengyuan-liu')
+    ?.links.find((l) => l.url.startsWith('mailto:'));
+  return link ? link.url.slice('mailto:'.length).split('?')[0] : null;
+}
 export type RecordKind = 'person' | 'research' | 'event' | 'output' | 'note';
 export type NewsItem =
   | { id: string; kind: 'event'; record: EventRecord }

@@ -1451,6 +1451,9 @@ img {
 .footer-links a:hover {
   color: var(--accent);
 }
+.footer-links .footer-join {
+  color: var(--accent);
+}
 .scene-fallback {
   position: fixed;
   z-index: 41;
