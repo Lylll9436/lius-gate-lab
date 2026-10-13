@@ -432,17 +432,38 @@ export async function createCity(
     },
   ];
   // The People chapter's name tags: each is pinned 0.3 above the top of its home (the
-  // chimney pots), over the middle of the house.
+  // chimney pots), over the middle of the house. The chimney stands at one end or at the
+  // back, so `pots` (0.3 above the pots themselves) keeps the tag clear of it on screen.
   const homeTags = Array.from(
     container.parentElement!.querySelectorAll<HTMLElement>('[data-home-tag]'),
     (element) => {
       const root = models.get(element.dataset.homeTag as BuildingId)?.root,
-        anchor = new T.Vector3();
+        anchor = new T.Vector3(),
+        pots = new T.Vector3();
       if (root) {
+        root.updateWorldMatrix(true, true);
+        const top = new T.Box3().setFromObject(root).max.y;
         root.getWorldPosition(anchor);
-        anchor.y = new T.Box3().setFromObject(root).max.y + 0.3;
+        anchor.y = top + 0.3;
+        // The middle of the highest vertices: the tops of the chimney pots.
+        const vertex = new T.Vector3();
+        let count = 0;
+        root.traverse((object) => {
+          if (!(object instanceof T.Mesh)) return;
+          const position = object.geometry.getAttribute('position');
+          for (let i = 0; i < position.count; i++) {
+            vertex.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld);
+            if (vertex.y > top - 0.01) {
+              pots.add(vertex);
+              count++;
+            }
+          }
+        });
+        if (count) pots.divideScalar(count);
+        else pots.copy(anchor);
+        pots.y = top + 0.3;
       }
-      return { element, anchor, found: !!root, shown: false, placed: '' };
+      return { element, anchor, pots, found: !!root, shown: false, placed: '' };
     },
   ).filter((tag) => tag.found);
   const tagPoint = new T.Vector3();
@@ -791,7 +812,8 @@ export async function createCity(
   }
   /**
    * Keep each name tag over its roof: the anchor is projected with the frame just rendered,
-   * and the tag's bottom centre is put there. A roof outside the frame hides its tag.
+   * and the tag's bottom centre is put there, or higher if the chimney pots stand higher on
+   * screen (a chimney towards the back or the far end). A roof outside the frame hides its tag.
    */
   function placeHomeTags() {
     const on = tagsOn && !inspect && !planMode;
@@ -799,8 +821,10 @@ export async function createCity(
       let show = on;
       if (on) {
         tagPoint.copy(tag.anchor).project(camera);
-        const x = ((tagPoint.x + 1) / 2) * width,
-          y = ((1 - tagPoint.y) / 2) * height;
+        const x = ((tagPoint.x + 1) / 2) * width;
+        let y = ((1 - tagPoint.y) / 2) * height;
+        tagPoint.copy(tag.pots).project(camera);
+        y = Math.min(y, ((1 - tagPoint.y) / 2) * height);
         show = x > 0 && x < width && y > 0 && y < height;
         const placed = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
         if (show && placed !== tag.placed) {
