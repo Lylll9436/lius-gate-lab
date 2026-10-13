@@ -164,14 +164,19 @@ for (const [id, m] of models) {
     [1024, 768],
     [1440, 900],
   ]) {
+    // The frustum city-scene's resize() gives the canvas: Inspect fits that, not a guess.
     const aspect = width / height,
-      vertical = Math.max(46, 65 / aspect);
+      vertical = Math.max(53, 76 / aspect);
     const camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, 0.1, 180);
     camera.position.set(Math.sin(0.8) * 38, 35, Math.cos(0.8) * 38);
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld(true);
-    const fit = fitStudy(exterior, camera, aspect);
-    assert(Number.isFinite(fit.zoom) && fit.zoom > 0 && fit.focus.toArray().every(Number.isFinite), 'Inspection fit: ' + id);
+    const fit = fitStudy(exterior, camera),
+      beside = fitStudy(exterior, camera, 0.66);
+    for (const f of [fit, beside])
+      assert(Number.isFinite(f.zoom) && f.zoom > 0 && f.focus.toArray().every(Number.isFinite), 'Inspection fit: ' + id);
+    // Beside the open file the building gets the narrower frame, never a closer one.
+    assert(beside.zoom <= fit.zoom + 1e-9, 'Inspection beside the file: ' + id);
   }
 }
 // The pointer can find every building and the park.

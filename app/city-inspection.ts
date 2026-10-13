@@ -17,19 +17,27 @@ function projectedBounds(bounds: T.Box3, right: T.Vector3, up: T.Vector3) {
       }
   return { minX, maxX, minY, maxY };
 }
-export function fitStudy(bounds: T.Box3, camera: T.Camera, aspect: number) {
+/**
+ * Frame a building for Inspect: `focus` is the offset from its position to the view centre,
+ * `zoom` fits it to the camera's own frustum. `free` is the share of the frame's width left
+ * beside a side panel (1 when nothing covers the frame); the caller adds the panel offset.
+ */
+export function fitStudy(bounds: T.Box3, camera: T.OrthographicCamera, free = 1) {
   camera.updateMatrixWorld(true);
   const right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0),
     up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
     p = projectedBounds(bounds, right, up);
-  const vertical = Math.max(46, 65 / aspect);
+  const frameWidth = (camera.right - camera.left) * T.MathUtils.clamp(free, 0.3, 1),
+    frameHeight = camera.top - camera.bottom;
   return {
     focus: right
       .multiplyScalar((p.minX + p.maxX) / 2)
       .addScaledVector(up, (p.minY + p.maxY) / 2),
     zoom: T.MathUtils.clamp(
-      vertical /
-        Math.max((p.maxY - p.minY) / 0.7, (p.maxX - p.minX) / aspect / 0.84),
+      Math.min(
+        (frameHeight * 0.7) / Math.max(p.maxY - p.minY, 1e-3),
+        (frameWidth * 0.84) / Math.max(p.maxX - p.minX, 1e-3),
+      ),
       0.7,
       8,
     ),

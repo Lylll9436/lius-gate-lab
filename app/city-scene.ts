@@ -33,6 +33,12 @@ export type CityAPI = {
   select: (id: BuildingId) => void;
   enter: (id: BuildingId) => void;
   reset: () => void;
+  /**
+   * The whole island, fitted to the part of the frame a side panel and the page chrome leave
+   * free. Camera only: the selection stays unless `clearSelection`. In Inspect it re-frames
+   * the building instead.
+   */
+  overview: (clearSelection?: boolean) => void;
   rotate: () => void;
   zoom: (factor: number) => void;
   setNight: (v: boolean) => void;
@@ -230,8 +236,13 @@ export function createCity(
   controls.enableRotate = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.09;
-  controls.minZoom = 0.7;
+  // Far enough out for the whole island beside the file on a 1024-1280 px wide screen.
+  controls.minZoom = 0.5;
   controls.maxZoom = 4;
+  // Panning stops before the view leaves the island for open sea: the subject point (the
+  // view centre less the panel offset) stays within this radius of the island's centre.
+  const PAN_RADIUS = 30;
+  controls.maxTargetRadius = PAN_RADIUS;
   controls.screenSpacePanning = true;
   controls.mouseButtons.LEFT = T.MOUSE.PAN;
   controls.mouseButtons.RIGHT = T.MOUSE.PAN;
@@ -263,12 +274,15 @@ export function createCity(
     last = 0,
     time = 0,
     targetZoom = 1,
+    shownZoom = 1,
     tween = true,
     planMode = false,
     gridEnabled = false,
     inViewport = true,
     inspect: T.Group | null = null,
     inspectionAutoFit = true,
+    inspectYaw = yaw,
+    overviewFit = false,
     tramDistance = 0,
     rain = 0,
     targetRain = 0,
@@ -349,7 +363,77 @@ export function createCity(
   let focusedIds: BuildingId[] = [],
     parkSelected = false,
     autoFocus = false;
+  // What the overview must show: the sand out to the waterline (3.3 past the outline), the
+  // trees along the shore and the lighthouse on its rock.
+  const [rockX, rockZ] = plan.lighthouseRock;
+  const islandMarks = [
+    ...plan.islandOutline.flatMap(([x, z]) => {
+      const out = 1 + 3.3 / Math.hypot(x, z);
+      return [new T.Vector3(x * out, 0, z * out), new T.Vector3(x, 3, z)];
+    }),
+    new T.Vector3(rockX, 0, rockZ),
+    new T.Vector3(rockX, 5.5, rockZ),
+  ];
+  /** The camera's offset from its target at a bearing: the same elevation from every side. */
+  function viewOffset(bearing: number, out: T.Vector3) {
+    return out.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
+  }
+  /**
+   * The panel offset: the view centre sits this far right of the subject, so the subject
+   * stays in the middle of the space a side panel leaves free, at any zoom.
+   */
+  function panelOffset(out: T.Vector3) {
+    return out
+      .set(Math.cos(targetYaw), 0, -Math.sin(targetYaw))
+      .multiplyScalar(
+        (frameShift * (camera.right - camera.left)) / Math.max(targetZoom, 0.1),
+      );
+  }
+  /**
+   * The whole island in the part of the frame left free: beside a side panel (the frame
+   * shift), below the masthead and above the bottom controls (about 76 px each). Never
+   * closer than the plain overview's zoom of 1.
+   */
+  function fitOverview() {
+    const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
+      right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
+      up = new T.Vector3().crossVectors(back, right);
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    for (const point of islandMarks) {
+      const sx = point.dot(right),
+        sy = point.dot(up);
+      minX = Math.min(minX, sx);
+      maxX = Math.max(maxX, sx);
+      minY = Math.min(minY, sy);
+      maxY = Math.max(maxY, sy);
+    }
+    const freeWidth = Math.max(1, Math.max(0.3, 1 - 2 * Math.abs(frameShift)) * width - 48),
+      freeHeight = Math.max(height * 0.6, height - 152);
+    targetZoom = T.MathUtils.clamp(
+      Math.min(
+        ((freeWidth / width) * (camera.right - camera.left)) / (maxX - minX),
+        ((freeHeight / height) * (camera.top - camera.bottom)) / (maxY - minY),
+      ),
+      controls.minZoom,
+      1,
+    );
+    // Centre the outline, not the plaza, and keep the target on the ground.
+    target
+      .copy(right)
+      .multiplyScalar((minX + maxX) / 2)
+      .addScaledVector(up, (minY + maxY) / 2);
+    target.addScaledVector(back, -target.y / back.y);
+    shiftApplied.set(0, 0, 0);
+    tween = true;
+  }
   function fitFocused() {
+    if (overviewFit) {
+      fitOverview();
+      return;
+    }
     const roots = focusedIds
       .map((id) => models.get(id)?.root)
       .filter((r): r is T.Group => !!r);
@@ -377,6 +461,7 @@ export function createCity(
     focusedIds = [...new Set(ids)];
     parkSelected = false;
     autoFocus = true;
+    overviewFit = false;
     fitFocused();
   }
   function resize() {
@@ -408,8 +493,7 @@ export function createCity(
   visibilityObserver.observe(container);
   resize();
   function align() {
-    const bearing = yaw + driftAngle;
-    offset.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
+    viewOffset(yaw + driftAngle, offset);
     camera.position.copy(controls.target).add(offset);
     camera.lookAt(controls.target);
     camera.updateProjectionMatrix();
@@ -417,17 +501,36 @@ export function createCity(
   }
   align();
   controls.update();
+  // Inspect stands the building on a soft shadow: a disc that shows only the shadow it catches.
+  const studyGround = new T.Mesh(
+    new T.CircleGeometry(1, 64),
+    new T.ShadowMaterial({ color: '#1d2a26', opacity: 0.22, fog: false }),
+  );
+  studyGround.rotation.x = -Math.PI / 2;
+  studyGround.receiveShadow = true;
   function exitInspection() {
     shadowFocus();
     clearHover();
     if (inspect) {
-      scene.remove(inspect);
+      scene.remove(inspect, studyGround);
       inspect = null;
     }
     city.visible = true;
     grid.visible = gridEnabled;
     zones.visible = planMode;
     controls.maxZoom = 4;
+  }
+  /** Inspect's framing: the building fitted to the camera's frustum, beside the panel. */
+  function frameStudy() {
+    if (!inspect) return;
+    const fit = fitStudy(
+      inspect.userData.exteriorBounds,
+      camera,
+      1 - 2 * Math.abs(frameShift),
+    );
+    target.copy(inspect.position).add(fit.focus).add(shiftApplied);
+    targetZoom = fit.zoom;
+    tween = true;
   }
   function select(id: BuildingId) {
     exitInspection();
@@ -437,6 +540,7 @@ export function createCity(
     focusedIds = [id];
     parkSelected = false;
     autoFocus = true;
+    overviewFit = false;
     fitFocused();
     tween = true;
   }
@@ -445,15 +549,34 @@ export function createCity(
     focusedIds = [];
     parkSelected = false;
     autoFocus = false;
+    overviewFit = false;
     target.set(0, 0, 0);
     shiftApplied.set(0, 0, 0);
     targetZoom = 1;
     targetYaw = yaw + shortestAngle(yaw, Math.PI / 4);
     tween = true;
   }
+  function overview(clearSelection = false) {
+    if (inspect && !clearSelection) {
+      // Inspect's own reset: the bearing it opened at, the building framed again.
+      targetYaw = yaw + shortestAngle(yaw, inspectYaw);
+      inspectionAutoFit = true;
+      return;
+    }
+    exitInspection();
+    if (clearSelection) {
+      focusedIds = [];
+      parkSelected = false;
+    }
+    autoFocus = true;
+    overviewFit = true;
+    targetYaw = yaw + shortestAngle(yaw, Math.PI / 4);
+    fitOverview();
+  }
   function cancel() {
     clearHover();
     autoFocus = false;
+    overviewFit = false;
     inspectionAutoFit = false;
     tween = false;
     targetZoom = camera.zoom;
@@ -603,6 +726,15 @@ export function createCity(
       yaw += shortestAngle(yaw, targetYaw) * blend;
       align();
     }
+    // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
+    // to keep, so a later re-fit cannot spring back; the subject beside the panel stays put.
+    if (!tween && camera.zoom !== shownZoom) {
+      targetZoom = camera.zoom;
+      const next = panelOffset(new T.Vector3());
+      controls.target.add(next).sub(shiftApplied);
+      shiftApplied.copy(next);
+      align();
+    }
     if (tween) {
       controls.target.lerp(target, blend);
       camera.zoom = T.MathUtils.lerp(camera.zoom, targetZoom, blend);
@@ -613,7 +745,14 @@ export function createCity(
       )
         tween = false;
     }
+    // The limit is the visitor's; the camera's own moves (a panel offset can reach past it
+    // on narrow wide screens) are never clamped.
+    controls.cursor.copy(shiftApplied);
+    controls.maxTargetRadius = tween ? Infinity : PAN_RADIUS;
     controls.update();
+    // Whatever the visitor panned to is where the next panel offset starts from.
+    if (!tween) target.copy(controls.target);
+    shownZoom = camera.zoom;
     night = T.MathUtils.lerp(night, targetNight, reduced ? 1 : blend * 0.45);
     model.materialLibrary.setNight(night);
     lighting.update(night, !!inspect);
@@ -625,16 +764,7 @@ export function createCity(
         ((l.material as T.MeshStandardMaterial).emissiveIntensity =
           night * 2.7),
     );
-    if (inspect && inspectionAutoFit) {
-      const fit = fitStudy(
-        inspect.userData.exteriorBounds,
-        camera,
-        width / height,
-      );
-      target.copy(inspect.position).add(fit.focus);
-      targetZoom = fit.zoom;
-      tween = true;
-    }
+    if (inspect && inspectionAutoFit) frameStudy();
     // People on the pavements, the tram on the ring, the boat in the harbour.
     for (const walker of walkers) {
       const before = plan.samplePolyline(walker.loop, walker.distance, true);
@@ -694,20 +824,12 @@ export function createCity(
     ink.setSelection(
       inspect ? [] : parkSelected ? [parkGroup] : [...ringed],
     );
-    // Reading-panel framing: keep the subject beside the panel, not behind it.
-    if (!inspect) {
-      const wanted = new T.Vector3(
-        Math.cos(targetYaw),
-        0,
-        -Math.sin(targetYaw),
-      ).multiplyScalar(
-        (frameShift * (camera.right - camera.left)) / Math.max(targetZoom, 0.1),
-      );
-      if (wanted.distanceToSquared(shiftApplied) > 1e-6) {
-        target.sub(shiftApplied).add(wanted);
-        shiftApplied.copy(wanted);
-        tween = true;
-      }
+    // Panel framing: keep the subject (Inspect's building too) beside the panel, not behind it.
+    const wanted = panelOffset(new T.Vector3());
+    if (wanted.distanceToSquared(shiftApplied) > 1e-6) {
+      target.sub(shiftApplied).add(wanted);
+      shiftApplied.copy(wanted);
+      tween = true;
     }
     // Idle drift: a slow, breathing turn that stops the moment the visitor acts.
     const idle =
@@ -796,36 +918,42 @@ export function createCity(
         .setFromObject(m.root)
         .translate(shift);
       inspectionAutoFit = true;
+      inspectYaw = targetYaw;
+      autoFocus = false;
+      overviewFit = false;
       scene.add(inspect);
       const studyBounds = new T.Box3().setFromObject(inspect);
-      const studySize = studyBounds.getSize(new T.Vector3());
-      shadowFocus(
-        studyBounds.getCenter(new T.Vector3()),
-        Math.max(7, studySize.length() * 0.85),
+      const studySize = studyBounds.getSize(new T.Vector3()),
+        studyCentre = studyBounds.getCenter(new T.Vector3());
+      shadowFocus(studyCentre, Math.max(7, studySize.length() * 0.85));
+      // Wide enough to catch the whole shadow, so its edge never shows.
+      studyGround.scale.setScalar(
+        Math.max(studySize.x, studySize.z) / 2 + studySize.y + 1,
       );
+      studyGround.position.set(studyCentre.x, studyBounds.min.y - 0.01, studyCentre.z);
+      scene.add(studyGround);
       controls.maxZoom = 8;
       city.visible = false;
       zones.visible = false;
       grid.visible = false;
-      const fit = fitStudy(
-        inspect.userData.exteriorBounds,
-        camera,
-        width / height,
-      );
-      target.copy(inspect.position).add(fit.focus);
-      targetZoom = fit.zoom;
-      tween = true;
+      frameStudy();
     },
     reset,
+    overview,
     rotate() {
       targetYaw += Math.PI / 2;
       inspectionAutoFit = true;
+      if (overviewFit) fitOverview();
       lastInteraction = performance.now();
     },
     zoom(f) {
       inspectionAutoFit = false;
-      targetZoom = T.MathUtils.clamp(camera.zoom * f, 0.7, inspect ? 8 : 4);
-      target.copy(controls.target);
+      autoFocus = false;
+      overviewFit = false;
+      targetZoom = T.MathUtils.clamp(camera.zoom * f, controls.minZoom, controls.maxZoom);
+      // Zoom about the subject beside the panel: take the panel offset out of the current
+      // view centre; the frame loop adds it back for the new zoom.
+      target.copy(controls.target).sub(shiftApplied);
       shiftApplied.set(0, 0, 0);
       tween = true;
       lastInteraction = performance.now();
@@ -855,9 +983,11 @@ export function createCity(
     setYaw(angle) {
       targetYaw = yaw + shortestAngle(yaw, angle);
       inspectionAutoFit = true;
+      if (overviewFit) fitOverview();
     },
     setFrameShift(fraction) {
       frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
+      if (overviewFit) fitOverview();
     },
     setAccent(id) {
       accentId = id;
@@ -872,11 +1002,13 @@ export function createCity(
     setPlan(v) {
       planMode = v;
       zones.visible = v;
-      if (v) reset();
+      if (v) overview(true);
     },
     focusBuildings,
     focusDistrict(id) {
       exitInspection();
+      autoFocus = false;
+      overviewFit = false;
       const d = districts.find((d) => d.id === id)!;
       target.set(d.center[0], 0, d.center[1]);
       shiftApplied.set(0, 0, 0);
@@ -894,6 +1026,7 @@ export function createCity(
       focusedIds = [];
       parkSelected = true;
       autoFocus = false;
+      overviewFit = false;
       target.set(plan.park.x, 0, plan.park.z);
       shiftApplied.set(0, 0, 0);
       targetZoom = 2.2;
@@ -934,6 +1067,8 @@ export function createCity(
       gulls.dispose();
       ink.dispose();
       studio.dispose();
+      studyGround.geometry.dispose();
+      studyGround.material.dispose();
       model.disposeMaterials();
       renderer.dispose();
       renderer.domElement.remove();

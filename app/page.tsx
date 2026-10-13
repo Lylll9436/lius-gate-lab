@@ -31,6 +31,24 @@ const WIDE = '(min-width: 961px)';
 /** The reading page's chapter for an address: the hero for the overview. */
 const readingChapter = (id: ContentId) =>
   id === 'overview' ? 'overview' : chapterFor(id);
+/** The bearing that shows a place from the front: its chapter's, as in reading mode. */
+const facing = (id: ContentId) =>
+  bearings[chapterFor(sceneTarget(id).building ?? id)] ?? bearings.overview;
+/**
+ * City mode's subject offset (a share of the stage width): the subject moves to the middle
+ * of the space left of the open file, with a 16 px gutter before the file.
+ */
+function fileShift(stage: HTMLElement | null) {
+  const file = document.querySelector<HTMLElement>('.dossier');
+  if (!stage || !file || file.hidden) return 0;
+  const frame = stage.getBoundingClientRect(),
+    left = file.getBoundingClientRect().left;
+  if (frame.width <= 0) return 0;
+  return Math.min(
+    0.3,
+    Math.max(0, (frame.right - left + 16) / (2 * frame.width)),
+  );
+}
 
 export default function Home() {
   const mount = useRef<HTMLDivElement>(null),
@@ -81,6 +99,8 @@ export default function Home() {
     setPlan(false);
     setDirectory(false);
     if (!keepTour) setTour(-1);
+    // Every place picked in the city opens its file, even if the file was hidden.
+    if (next.mode === 'city') setPanelOpen(true);
   }
   /** Scroll the reading page to a chapter or card, and send the camera straight there.
    *  `instant` jumps without the smooth glide (a page opened at an address). */
@@ -166,7 +186,10 @@ export default function Home() {
     setInspect(false);
     setPlan(next);
     api.current?.setPlan(next);
-    if (!next && b) api.current?.select(b.id);
+    if (!next && b) {
+      api.current?.setYaw(facing(content));
+      api.current?.select(b.id);
+    }
   }
   function inspectBuilding() {
     if (!b) return;
@@ -242,18 +265,20 @@ export default function Home() {
     };
   }, []);
 
-  // Explore mode: the address decides what the camera looks at.
+  // Explore mode: the address decides what the camera looks at. A pick turns the camera
+  // (the shortest way) to its subject's front; the bare city is the whole island.
   useEffect(() => {
     const engine = api.current;
     if (mode !== 'city') return;
     if (engine) {
       engine.setPlan(false);
-      engine.reset();
       const destination = sceneTarget(content);
+      engine.setYaw(facing(content));
       if (destination.district)
         engine.focusBuildings(selectionForContent(content));
       else if (destination.park) engine.focusPark();
       else if (destination.building) engine.select(destination.building);
+      else engine.overview(true);
     }
     const frame = requestAnimationFrame(() => {
       window.scrollTo({ top: 0, behavior: 'auto' });
@@ -263,8 +288,14 @@ export default function Home() {
   }, [mode, content, ready]);
   // Explore mode: the dossier takes the right-hand side, so the subject moves left.
   useEffect(() => {
-    if (mode === 'city')
-      api.current?.setFrameShift(panelOpen && wide ? 0.17 : 0);
+    if (mode !== 'city') return;
+    const place = () =>
+      api.current?.setFrameShift(
+        panelOpen && wide ? fileShift(mount.current) : 0,
+      );
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
   }, [mode, panelOpen, wide, ready]);
 
   // Reading mode: the chapter under the reading line drives the camera.
@@ -407,7 +438,8 @@ export default function Home() {
     directory,
     zoom: (f) => api.current?.zoom(f),
     rotate: () => api.current?.rotate(),
-    reset: () => (explore ? navigate('city', 'overview') : api.current?.reset()),
+    // Camera only: in the city the open file stays open.
+    reset: () => (explore ? api.current?.overview() : api.current?.reset()),
     cycleSky: () =>
       setSkyMode((m) => (m === 'auto' ? 'day' : m === 'day' ? 'night' : 'auto')),
     toggleRain: () => setRain((v) => !v),
