@@ -110,6 +110,58 @@ for (const c of plan.cottages) {
     assert(Math.abs(plan.angleDiff(c.rotation, Math.PI / 2)) > 0.3, `Cottage facing the street like the terrace: ${c.x}, ${c.z}`);
   }
 }
+// Plan view's districts lie on the flat island above every paving level, cover the places
+// they describe, keep clear of one another and say what they are in both languages.
+const { buildDistrictZones, DISTRICT_LIFT } = await load('city-scene');
+assert(DISTRICT_LIFT > Math.max(...Object.values(plan.levels)), 'Districts under the paving.');
+const inside = (outline, x, z) => {
+  let within = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const [xi, zi] = outline[i],
+      [xj, zj] = outline[j];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) within = !within;
+  }
+  return within;
+};
+const covers = {
+  civic: [[plan.sites['lius-gate'].x, plan.sites['lius-gate'].z]],
+  residential: [],
+  research: [[plan.reservedPlot.x, plan.reservedPlot.z]],
+  waterfront: [[plan.park.x, plan.park.z]],
+};
+for (const d of districts) {
+  for (const locale of ['en', 'zh']) assert(d.name[locale] && d.description[locale]);
+  assert(!/[㐀-鿿]/.test(d.name.en + d.description.en), 'Chinese in English: ' + d.id);
+  for (const id of d.buildings)
+    covers[d.id].push([plan.sites[id].x, plan.sites[id].z]);
+  for (const [x, z] of covers[d.id])
+    assert(inside(d.outline, x, z), `${d.id} leaves out ${x}, ${z}`);
+  for (let i = 0; i < d.outline.length; i++) {
+    const [ax, az] = d.outline[i],
+      [bx, bz] = d.outline[(i + 1) % d.outline.length];
+    for (let t = 0; t <= 1; t += 0.05)
+      assert(plan.onIsland(ax + (bx - ax) * t, az + (bz - az) * t, 0.8), `${d.id} reaches the shore`);
+  }
+  const xs = d.outline.map(([x]) => x),
+    zs = d.outline.map(([, z]) => z);
+  for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.5)
+    for (let z = Math.min(...zs); z <= Math.max(...zs); z += 0.5)
+      if (inside(d.outline, x, z))
+        assert(plan.terrainHeight(x, z) < 0.01, `${d.id} runs up a hill at ${x}, ${z}`);
+  for (const other of districts)
+    if (other !== d)
+      for (const [x, z] of other.outline)
+        assert(!inside(d.outline, x, z), `${d.id} overlaps ${other.id}`);
+}
+const zones = buildDistrictZones();
+assert.equal(zones.visible, false, 'Plan view starts off.');
+assert.equal(zones.children.length, districts.length * 2);
+for (const part of zones.children) {
+  const position = part.geometry.getAttribute('position');
+  for (let i = 0; i < position.count; i++)
+    assert(Math.abs(position.getY(i) - DISTRICT_LIFT) < 1e-6, `${part.userData.district} is not flat`);
+  assert(part.material.transparent && !part.material.depthWrite);
+}
 // Trees stay off the streets and sites; the harbour boat stays in the water.
 const trees = plan.plantingPlan();
 assert(trees.length > 60, 'Too few trees: ' + trees.length);
@@ -341,5 +393,5 @@ assert.equal(lowSun(rad(15)), 0);
 assert.equal(lowSun(rad(2)), 1);
 assert.equal(lowSun(rad(-10)), 0);
 console.log(
-  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

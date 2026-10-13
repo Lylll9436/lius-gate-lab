@@ -96,6 +96,11 @@ export function contentForBuilding(id: BuildingId) {
       ? 'place:' + id
       : id;
 }
+/** The City tour: every place in the Directory's order, ending in the corner park. */
+export const tourStops: ContentId[] = [
+  ...buildings.map((b) => contentForBuilding(b.id)),
+  'corner-park',
+];
 export function parseLocation(hash: string): {
   mode: BrowseMode;
   content: ContentId;

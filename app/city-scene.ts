@@ -49,10 +49,11 @@ export type CityAPI = {
   rotate: () => void;
   zoom: (factor: number) => void;
   setNight: (v: boolean) => void;
-  setGrid: (v: boolean) => void;
   setPaused: (v: boolean) => void;
+  /** Plan view: the four districts tinted on the ground, the whole island in view. */
   setPlan: (v: boolean) => void;
-  focusDistrict: (id: DistrictId) => void;
+  /** Plan view: frame one district and bring its tint forward; null shows them all again. */
+  focusDistrict: (id: DistrictId | null) => void;
   focusPark: () => void;
   focusBuildings: (ids: BuildingId[]) => void;
   /** Real sky: night amount 0..1 plus solar elevation/azimuth in radians. */
@@ -73,8 +74,8 @@ export type CityAPI = {
    * frame whose top part is hidden.
    */
   setFrameShift: (fraction: number, down?: number) => void;
-  /** Ring one building from the page (hovering a person card, for example). */
-  setAccent: (id: BuildingId | null) => void;
+  /** Ring one place from the page (hovering a person card or a Directory row, for example). */
+  setAccent: (id: HoverTarget) => void;
   /**
    * The People chapter: pin a name tag above each member's home, and ring only the home
    * whose card is hovered instead of the whole row.
@@ -97,6 +98,117 @@ const YAW_RATE = 2.5,
 /** Build the town model only, all at once: used by the checks. */
 export function buildCityModel() {
   return buildTown();
+}
+
+/**
+ * Plan view's districts lie this far above the flat ground: over the kerbs (plan.levels.kerb,
+ * the highest paving), so the roads and pavements cannot hide them. Buildings, trees and
+ * lamps still stand in front.
+ */
+export const DISTRICT_LIFT = plan.levels.kerb + 0.04;
+/** Fill and edge opacity: all shown alike, the one in focus, and the others meanwhile. */
+const DISTRICT_LOOK = {
+  all: { fill: 0.42, edge: 0.95 },
+  focus: { fill: 0.5, edge: 1 },
+  rest: { fill: 0.12, edge: 0.3 },
+};
+const DISTRICT_EDGE = 0.22,
+  DISTRICT_CORNER = 1.1;
+/** A district's outline with rounded corners, sampled in x/z. */
+function roundedOutline(points: [number, number][], radius: number, steps = 6) {
+  const out: T.Vector2[] = [];
+  points.forEach((p, i) => {
+    const corner = new T.Vector2(...p),
+      toPrevious = new T.Vector2(...points[(i + points.length - 1) % points.length]).sub(corner),
+      toNext = new T.Vector2(...points[(i + 1) % points.length]).sub(corner),
+      r = Math.min(radius, toPrevious.length() / 2, toNext.length() / 2),
+      from = corner.clone().addScaledVector(toPrevious.normalize(), r),
+      to = corner.clone().addScaledVector(toNext.normalize(), r);
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      out.push(
+        new T.Vector2()
+          .addScaledVector(from, (1 - t) ** 2)
+          .addScaledVector(corner, 2 * (1 - t) * t)
+          .addScaledVector(to, t * t),
+      );
+    }
+  });
+  return out;
+}
+/**
+ * Plan view's districts: for each, a translucent tint over its ground and a crisp edge just
+ * inside its outline, drawn without depth writes. Unlit, so each keeps its own hue in the sun;
+ * shadeDistricts dims them with the night. Hidden until Plan view is on.
+ */
+export function buildDistrictZones() {
+  const group = new T.Group();
+  group.name = 'districts';
+  group.visible = false;
+  for (const d of districts) {
+    const outline = roundedOutline(d.outline, DISTRICT_CORNER);
+    const look = (opacity: number) =>
+      new T.MeshBasicMaterial({
+        color: d.color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        side: T.DoubleSide,
+      });
+    // The tint: the outline in the ground plane (shape y is -z, so it faces up once laid flat).
+    const fill = new T.Mesh(
+      new T.ShapeGeometry(new T.Shape(outline.map((p) => new T.Vector2(p.x, -p.y))))
+        .rotateX(-Math.PI / 2)
+        .translate(0, DISTRICT_LIFT, 0),
+      look(DISTRICT_LOOK.all.fill),
+    );
+    // The edge: a band from the outline to DISTRICT_EDGE inside it (the outlines are convex).
+    let area = 0;
+    outline.forEach((p, i) => (area += p.cross(outline[(i + 1) % outline.length])));
+    const inward = Math.sign(area),
+      positions: number[] = [],
+      index: number[] = [];
+    outline.forEach((p, i) => {
+      const tangent = outline[(i + 1) % outline.length]
+        .clone()
+        .sub(outline[(i + outline.length - 1) % outline.length])
+        .normalize();
+      const inner = p.clone().add(new T.Vector2(-tangent.y, tangent.x).multiplyScalar(inward * DISTRICT_EDGE));
+      positions.push(p.x, DISTRICT_LIFT, p.y, inner.x, DISTRICT_LIFT, inner.y);
+      const a = 2 * i,
+        b = (2 * (i + 1)) % (2 * outline.length);
+      index.push(a, b, a + 1, a + 1, b, b + 1);
+    });
+    const edgeGeometry = new T.BufferGeometry();
+    edgeGeometry.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    edgeGeometry.setIndex(index);
+    const edge = new T.Mesh(edgeGeometry, look(DISTRICT_LOOK.all.edge));
+    edge.renderOrder = 1;
+    for (const part of [fill, edge]) {
+      part.userData.district = d.id;
+      part.userData.part = part === fill ? 'fill' : 'edge';
+      part.userData.color = new T.Color(d.color);
+      group.add(part);
+    }
+  }
+  return group;
+}
+type DistrictPart = T.Mesh<T.BufferGeometry, T.MeshBasicMaterial>;
+/** Plan view's emphasis: every district alike (null), or one brought forward. */
+function emphasiseDistrict(zones: T.Group, focus: DistrictId | null) {
+  for (const part of zones.children as DistrictPart[]) {
+    const look = !focus
+      ? DISTRICT_LOOK.all
+      : part.userData.district === focus
+        ? DISTRICT_LOOK.focus
+        : DISTRICT_LOOK.rest;
+    part.material.opacity = part.userData.part === 'fill' ? look.fill : look.edge;
+  }
+}
+/** The districts darken with the town at night (night 0..1), as lit ground would. */
+function shadeDistricts(zones: T.Group, night: number) {
+  for (const part of zones.children as DistrictPart[])
+    part.material.color.copy(part.userData.color).multiplyScalar(1 - 0.62 * night);
 }
 
 /**
@@ -353,7 +465,6 @@ export async function createCity(
     shownZoom = 1,
     tween = true,
     planMode = false,
-    gridEnabled = false,
     inViewport = true,
     inspect: T.Group | null = null,
     inspectionAutoFit = true,
@@ -368,7 +479,7 @@ export async function createCity(
     frameDrop = 0,
     lastInteraction = -1e9,
     lastHover: HoverTarget = null,
-    accentId: BuildingId | null = null,
+    accentId: HoverTarget = null,
     skyKnown = false,
     frameCost = 0.016,
     refresh = 1 / 60,
@@ -399,31 +510,8 @@ export async function createCity(
   const target = new T.Vector3(),
     offset = new T.Vector3();
   const tramLength = plan.polylineLength(plan.tramLoop, true);
-  const grid = new T.GridHelper(60, 30, '#81937e', '#a9b6a0');
-  (Array.isArray(grid.material) ? grid.material : [grid.material]).forEach(
-    (m) => (m.depthWrite = false),
-  );
-  grid.position.y = 0.09;
-  grid.visible = false;
-  scene.add(grid);
-  const zones = new T.Group();
-  zones.visible = false;
+  const zones = buildDistrictZones();
   scene.add(zones);
-  for (const d of districts) {
-    const m = new T.Mesh(
-      new T.PlaneGeometry(...d.size),
-      new T.MeshBasicMaterial({
-        color: d.color,
-        transparent: true,
-        opacity: 0.2,
-        depthWrite: false,
-      }),
-    );
-    m.rotation.x = -Math.PI / 2;
-    m.position.set(d.center[0], 0.095, d.center[1]);
-    m.userData.district = d.id;
-    zones.add(m);
-  }
   const hover = hoverPointer();
   const labels = [
     ...buildings.map((b) => ({
@@ -639,7 +727,6 @@ export async function createCity(
       inspect = null;
     }
     city.visible = true;
-    grid.visible = gridEnabled;
     zones.visible = planMode;
     controls.maxZoom = 4;
   }
@@ -934,6 +1021,7 @@ export async function createCity(
         ((l.material as T.MeshStandardMaterial).emissiveIntensity =
           night * 2.7),
     );
+    if (zones.visible) shadeDistricts(zones, night);
     if (inspect && inspectionAutoFit) frameStudy();
     // People on the pavements, the tram on the ring, the boat in the harbour.
     for (const walker of walkers) {
@@ -991,14 +1079,18 @@ export async function createCity(
         ? []
         : focusedIds.map((id) => models.get(id)!.root),
     );
+    // What the pointer is on, or else what the page points at (a person card, a Directory
+    // row). The park is ringed only from the page: on the model it keeps just its label.
     const extra = hover.id && hover.id !== 'corner-park' ? hover.id : accentId;
-    if (extra && !inspect) {
-      const root = models.get(extra as BuildingId)?.root;
-      if (root) ringed.add(root);
-    }
-    ink.setSelection(
-      inspect ? [] : parkSelected ? [parkGroup] : [...ringed],
-    );
+    const extraRoot =
+      extra === 'corner-park'
+        ? parkGroup
+        : extra
+          ? models.get(extra as BuildingId)?.root
+          : undefined;
+    const shown = new Set<T.Object3D>(parkSelected ? [parkGroup] : ringed);
+    if (extraRoot) shown.add(extraRoot);
+    ink.setSelection(inspect ? [] : [...shown]);
     // Panel framing: keep the subject (Inspect's building too) beside the panel, not behind it.
     const wanted = panelOffset(new T.Vector3());
     if (wanted.distanceToSquared(shiftApplied) > 1e-6) {
@@ -1119,7 +1211,6 @@ export async function createCity(
       controls.maxZoom = 8;
       city.visible = false;
       zones.visible = false;
-      grid.visible = false;
       frameStudy();
     },
     reset,
@@ -1186,34 +1277,46 @@ export async function createCity(
       // Put away at once: the next frame may be a while off (the stage scrolled out of view).
       if (!on) placeHomeTags();
     },
-    setGrid(v) {
-      gridEnabled = v;
-      grid.visible = v && !inspect;
-    },
     setPaused(v) {
       paused = v;
     },
     setPlan(v) {
       planMode = v;
-      zones.visible = v;
+      zones.visible = v && !inspect;
+      emphasiseDistrict(zones, null);
       if (v) overview(true);
     },
     focusBuildings,
     focusDistrict(id) {
+      emphasiseDistrict(zones, id);
+      const d = districts.find((d) => d.id === id);
+      if (!d) {
+        overview(true);
+        return;
+      }
       exitInspection();
       autoFocus = false;
       overviewFit = false;
-      const d = districts.find((d) => d.id === id)!;
-      target.set(d.center[0], 0, d.center[1]);
-      shiftApplied.set(0, 0, 0);
-      targetZoom = 1.3;
-      tween = true;
-      zones.children.forEach(
-        (o) =>
-          ((
-            o as T.Mesh<T.PlaneGeometry, T.MeshBasicMaterial>
-          ).material.opacity = o.userData.district === id ? 0.35 : 0.09),
+      // Framed like a pick: the district's ground plan plus a few storeys standing on it.
+      const xs = d.outline.map(([x]) => x),
+        zs = d.outline.map(([, z]) => z),
+        across = Math.max(...xs) - Math.min(...xs) + Math.max(...zs) - Math.min(...zs);
+      target.set(
+        (Math.min(...xs) + Math.max(...xs)) / 2,
+        0,
+        (Math.min(...zs) + Math.max(...zs)) / 2,
       );
+      shiftApplied.set(0, 0, 0);
+      targetZoom = T.MathUtils.clamp(
+        Math.min(
+          ((camera.right - camera.left) * 0.62) / (across * 0.707),
+          ((camera.top - camera.bottom) * 0.65 * (1 - 2 * Math.abs(frameDrop))) /
+            (across * 0.48 + 3.5),
+        ),
+        1,
+        2.6,
+      );
+      tween = true;
     },
     focusPark() {
       exitInspection();

@@ -659,22 +659,50 @@ body:has(.mode-explore),
 .plan-legend {
   left: 16px;
   bottom: 68px;
+  width: min(320px, calc(100% - 32px));
+  padding: 6px;
+}
+.plan-legend-list {
   display: flex;
   flex-direction: column;
-  padding: 8px 10px;
+  gap: 2px;
 }
+/* Each district: its colour, its name and, under it, what is in it. */
 .plan-legend button {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 32px;
-  font-size: 13px;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-align: left;
   color: var(--ink-2);
+  transition: background-color 0.15s ease;
+}
+.plan-legend button:hover,
+.plan-legend button[aria-pressed='true'] {
+  background: var(--accent-soft);
 }
 .plan-legend i {
-  width: 9px;
-  height: 9px;
+  grid-row: span 2;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
   border-radius: 3px;
+}
+.plan-legend strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.plan-legend button[aria-pressed='true'] strong {
+  font-weight: 600;
+}
+.plan-legend small {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-3);
 }
 .tour-control {
   left: 50%;
@@ -754,10 +782,10 @@ body:has(.mode-explore),
 .directory-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 20px 1fr auto 16px;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
   align-items: center;
   gap: 10px;
-  padding: 10px 8px;
+  padding: 8px;
   border-radius: 10px;
   text-align: left;
   color: var(--ink-2);
@@ -766,12 +794,29 @@ body:has(.mode-explore),
   background: var(--accent-soft);
   color: var(--ink);
 }
+/* The place whose file is open. */
+.directory-row[aria-current] {
+  background: var(--accent-soft);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.directory-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1.3;
+}
 .directory-row strong {
   font-weight: 500;
   color: var(--ink);
 }
-.directory-row span {
-  font-size: 12px;
+/* What the place holds, in the file's eyebrow style. */
+.directory-text > span {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink-3);
 }
 
@@ -1895,7 +1940,8 @@ body:has(.mode-explore),
   }
 }
 /* City mode below the wide layout: the panels that come and go stack in rows under the sky
-   chip (the tour first, then Inspect's way back or the plan key), clear of the file. */
+   chip (the tour first, then Inspect's way back; or the plan key, which ends a tour), clear of
+   the file. */
 @media (max-width: 960px) {
   .is-explore .plan-legend {
     top: calc(var(--masthead) + 46px);
@@ -1906,7 +1952,6 @@ body:has(.mode-explore),
     top: calc(var(--masthead) + 46px);
     left: 12px;
   }
-  .is-explore.is-touring .plan-legend,
   .is-explore.is-touring .inspection-toolbar {
     top: calc(var(--masthead) + 104px);
   }
@@ -1979,13 +2024,31 @@ body:has(.mode-explore),
     position: relative;
     inset: auto;
   }
-  /* The plan key lies across the top, in as few lines as fit. */
+  /* The plan key lies across the top: one row of districts, scrolled sideways, the next one
+     showing at the edge. */
   .is-explore .plan-legend {
     left: var(--hud-edge);
     right: var(--hud-edge);
+    width: auto;
+  }
+  .is-explore .plan-legend-list {
     flex-direction: row;
-    flex-wrap: wrap;
-    column-gap: 14px;
+    gap: 4px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    border-radius: 10px;
+  }
+  .is-explore .plan-legend-list::-webkit-scrollbar {
+    display: none;
+  }
+  .is-explore .plan-legend button {
+    flex: 0 0 min(216px, 72%);
+    scroll-snap-align: start;
+  }
+  .is-explore .plan-legend small {
+    font-size: 11.5px;
   }
   .is-explore .inspection-toolbar {
     left: var(--hud-edge);
@@ -2001,11 +2064,9 @@ body:has(.mode-explore),
   .city-stage.is-explore.is-touring {
     --top-clear: calc(var(--masthead) + 162px);
   }
+  /* The plan key's row of districts is about 100px tall. (Plan view ends a tour.) */
   .city-stage.is-explore.has-plan {
-    --top-clear: calc(var(--masthead) + 134px);
-  }
-  .city-stage.is-explore.is-touring.has-plan {
-    --top-clear: calc(var(--masthead) + 192px);
+    --top-clear: calc(var(--masthead) + 156px);
   }
   .is-explore .hud-explore {
     right: var(--hud-edge);
@@ -2092,7 +2153,7 @@ body:has(.mode-explore),
   }
 }
 /* Landscape phones: the file and the Directory share a side panel on the right, with the
-   bars in two rows at the bottom left and the tour and plan key at the top left. */
+   bars in two rows at the bottom left and the tour or the plan key at the top left. */
 @media (max-width: 960px) and (max-height: 500px) {
   .city-stage.is-explore {
     --side: min(340px, 42vw);
@@ -2116,17 +2177,6 @@ body:has(.mode-explore),
   }
   .is-explore.has-side .plan-legend {
     right: var(--beside);
-  }
-  /* The plan key keeps to one line here (it scrolls sideways if it must): two lines would
-     reach the bars on a phone held sideways in a browser, under the tour. */
-  .is-explore .plan-legend {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
-  .is-explore .plan-legend button {
-    flex-shrink: 0;
-    white-space: nowrap;
   }
   .mode-explore .dossier,
   .mode-explore .directory {

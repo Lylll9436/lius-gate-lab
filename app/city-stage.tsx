@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,7 +7,6 @@ import {
   Box,
   ChevronUp,
   CloudRain,
-  Grid2X2,
   Layers,
   List,
   Maximize2,
@@ -23,8 +22,15 @@ import {
   X,
 } from 'lucide-react';
 import { buildings, type Building, type BuildingId, type Locale } from './city-data';
-import { districts } from './city-districts';
-import { people, titleFor, type BrowseMode, type ContentId } from './lab-navigation';
+import { districts, type DistrictId } from './city-districts';
+import {
+  people,
+  sceneTarget,
+  titleFor,
+  tourStops,
+  type BrowseMode,
+  type ContentId,
+} from './lab-navigation';
 import type { HoverTarget } from './city-scene';
 import type { SkyState } from './glasgow-sun';
 import { LabContent, PlaceGlyph, glyphFor } from './lab-content';
@@ -44,7 +50,8 @@ export type StageController = {
   inspect: boolean;
   tour: number;
   plan: boolean;
-  grid: boolean;
+  /** Plan view: the district in focus, or null for all four alike. */
+  district: DistrictId | null;
   paused: boolean;
   panelOpen: boolean;
   /** Phones: the file shows in full, not just its title and actions. */
@@ -56,7 +63,6 @@ export type StageController = {
   cycleSky: () => void;
   toggleRain: () => void;
   togglePlan: () => void;
-  toggleGrid: () => void;
   togglePause: () => void;
   inspectBuilding: () => void;
   exitInspection: () => void;
@@ -68,10 +74,10 @@ export type StageController = {
   select: (id: BuildingId) => void;
   openPark: () => void;
   navigate: (mode: BrowseMode, content: ContentId) => void;
-  focusDistrict: (id: (typeof districts)[number]['id']) => void;
+  focusDistrict: (id: DistrictId) => void;
+  /** Ring a place on the model while its Directory row is pointed at or focused. */
+  accent: (id: HoverTarget) => void;
 };
-
-const stops = buildings.map((b) => b.id);
 
 export function CityStage({
   mount,
@@ -86,6 +92,21 @@ export function CityStage({
     explore = ctl.mode === 'city',
     b = ctl.building;
   const hoveredBuilding = buildings.find((item) => item.id === ctl.hovered);
+  // The tour moves focus to Next as it starts, and back to its own button once it ends.
+  const touring = explore && ctl.tour >= 0,
+    wasTouring = useRef(touring),
+    tourButton = useRef<HTMLButtonElement>(null),
+    nextButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (touring && !wasTouring.current) nextButton.current?.focus();
+    else if (!touring && wasTouring.current) {
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (lost) tourButton.current?.focus();
+    }
+    wasTouring.current = touring;
+  }, [touring]);
+  const lastStop = tourStops.length - 1,
+    onPark = !b && !!sceneTarget(ctl.content).park;
   const caption = hoveredBuilding
     ? `${hoveredBuilding.name[locale]} · ${hoveredBuilding.category[locale]}`
     : ctl.hovered === 'corner-park'
@@ -207,14 +228,14 @@ export function CityStage({
             {ctl.paused ? <Play size={14} /> : <Pause size={14} />}
           </button>
           {explore && (
-            <>
-              <button onClick={ctl.togglePlan} aria-pressed={ctl.plan} aria-label={tr('Plan view', '规划视图')}>
-                <Layers size={15} />
-              </button>
-              <button onClick={ctl.toggleGrid} aria-pressed={ctl.grid} aria-label={tr('Grid', '网格')}>
-                <Grid2X2 size={15} />
-              </button>
-            </>
+            <button
+              onClick={ctl.togglePlan}
+              aria-pressed={ctl.plan}
+              aria-label={tr('Plan view', '规划视图')}
+              title={tr('The town’s four districts', '小城的四个分区')}
+            >
+              <Layers size={15} />
+            </button>
           )}
         </div>
         {/* Bottom-right: camera. City mode on a phone drops the zoom buttons: pinch zooms. */}
@@ -243,6 +264,7 @@ export function CityStage({
           {/* Explore-only: the tour, the directory and the dossier. */}
           <div className="hud hud-explore">
             <button
+              ref={tourButton}
               onClick={() => ctl.tourStop(0)}
               disabled={!ctl.ready}
               aria-pressed={ctl.tour >= 0}
@@ -260,37 +282,59 @@ export function CityStage({
             </button>
           </div>
 
+          {/* Plan view's key: each district's colour, name and what is in it. Picking one
+              frames it; picking it again shows all four. */}
           {ctl.plan && (
-            <div className="plan-legend">
-              {districts.map((d) => (
-                <button key={d.id} onClick={() => ctl.focusDistrict(d.id)}>
-                  <i style={{ background: d.color }} />
-                  {d.name[locale]}
-                </button>
-              ))}
-            </div>
+            <section className="plan-legend" aria-label={tr('Districts', '分区')}>
+              <div className="plan-legend-list">
+                {districts.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => ctl.focusDistrict(d.id)}
+                    aria-pressed={ctl.district === d.id}
+                    aria-describedby={`district-${d.id}`}
+                  >
+                    <i style={{ background: d.color }} aria-hidden="true" />
+                    <strong>{d.name[locale]}</strong>
+                    {/* Read as the button's description, after its name. */}
+                    <small id={`district-${d.id}`} aria-hidden="true">
+                      {d.description[locale]}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
 
-          {ctl.tour >= 0 && (
+          {touring && (
             <div className="tour-control">
               <span className="eyebrow">
-                {tr('Tour', '导览')} {ctl.tour + 1}/{stops.length}
+                {tr('Tour', '导览')} {ctl.tour + 1}/{tourStops.length}
               </span>
-              <strong>{b?.name[locale]}</strong>
+              <strong id="tour-stop" aria-live="polite">
+                {b ? b.name[locale] : onPark ? tr('Corner park', '街角公园') : titleFor(ctl.content, locale)}
+              </strong>
               <div>
                 <button
-                  onClick={() => ctl.tourStop(Math.max(0, ctl.tour - 1))}
+                  onClick={() => {
+                    const previous = Math.max(0, ctl.tour - 1);
+                    // The first stop has no Previous: keep the focus on the tour.
+                    if (previous === 0) nextButton.current?.focus();
+                    ctl.tourStop(previous);
+                  }}
                   disabled={ctl.tour === 0}
                   aria-label={tr('Previous stop', '上一站')}
                 >
                   <ArrowLeft size={15} />
                 </button>
                 <button
+                  ref={nextButton}
+                  aria-describedby="tour-stop"
                   onClick={() =>
-                    ctl.tour === stops.length - 1 ? ctl.closeTour() : ctl.tourStop(ctl.tour + 1)
+                    ctl.tour === lastStop ? ctl.closeTour() : ctl.tourStop(ctl.tour + 1)
                   }
                 >
-                  {ctl.tour === stops.length - 1 ? tr('Finish', '结束') : tr('Next', '下一站')}
+                  {ctl.tour === lastStop ? tr('Finish', '结束') : tr('Next', '下一站')}
                   <ArrowRight size={14} />
                 </button>
                 <button onClick={ctl.closeTour} aria-label={tr('Close tour', '关闭导览')}>
@@ -317,18 +361,40 @@ export function CityStage({
                   <X size={14} />
                 </button>
               </div>
+              {/* Each place with what it holds; pointing at a row rings the place on the model. */}
               {buildings.map((item) => (
-                <button key={item.id} className="directory-row" onClick={() => ctl.select(item.id)}>
+                <button
+                  key={item.id}
+                  className="directory-row"
+                  onClick={() => ctl.select(item.id)}
+                  aria-current={b?.id === item.id ? 'location' : undefined}
+                  onPointerEnter={() => ctl.accent(item.id)}
+                  onPointerLeave={() => ctl.accent(null)}
+                  onFocus={() => ctl.accent(item.id)}
+                  onBlur={() => ctl.accent(null)}
+                >
                   <PlaceGlyph kind={glyphFor(item.id)} size={16} />
-                  <strong>{item.name[locale]}</strong>
-                  <span>{item.style[locale]}</span>
+                  <span className="directory-text">
+                    <strong>{item.name[locale]}</strong>{' '}
+                    <span>{item.category[locale]}</span>
+                  </span>
                   <ArrowUpRight size={14} />
                 </button>
               ))}
-              <button className="directory-row" onClick={ctl.openPark}>
+              <button
+                className="directory-row"
+                onClick={ctl.openPark}
+                aria-current={onPark ? 'location' : undefined}
+                onPointerEnter={() => ctl.accent('corner-park')}
+                onPointerLeave={() => ctl.accent(null)}
+                onFocus={() => ctl.accent('corner-park')}
+                onBlur={() => ctl.accent(null)}
+              >
                 <PlaceGlyph kind="park" size={16} />
-                <strong>{tr('Corner park', '街角公园')}</strong>
-                <span>{tr('Life & memories', '生活与记忆')}</span>
+                <span className="directory-text">
+                  <strong>{tr('Corner park', '街角公园')}</strong>{' '}
+                  <span>{tr('Life at the Gate', '师门生活')}</span>
+                </span>
                 <ArrowUpRight size={14} />
               </button>
             </section>

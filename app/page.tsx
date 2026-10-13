@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { buildings, type BuildingId, type Locale } from './city-data';
+import type { BuildingId, Locale } from './city-data';
+import type { DistrictId } from './city-districts';
 import {
   chapterFor,
   parseLocation,
@@ -8,6 +9,7 @@ import {
   sceneTarget,
   selectionForContent,
   contentForBuilding,
+  tourStops,
   type ContentId,
   type BrowseMode,
 } from './lab-navigation';
@@ -24,7 +26,6 @@ const REFRACTING_GLASS =
   '.hero-news, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .hud, .sky-chip, .hover-chip, .tour-control, .inspection-toolbar, .plan-legend';
 
 type View = { mode: BrowseMode; content: ContentId };
-const stops = buildings.map((b) => b.id);
 /** A different bearing for every chapter, each facing its subject's front. */
 const bearings = chapterBearings;
 const WIDE = '(min-width: 961px)';
@@ -64,6 +65,16 @@ const readingChapter = (id: ContentId) =>
 /** The bearing that shows a place from the front: its chapter's, as in reading mode. */
 const facing = (id: ContentId) =>
   bearings[chapterFor(sceneTarget(id).building ?? id)] ?? bearings.overview;
+/** City mode's camera for an address, Plan view off: the place from its front, or the island. */
+function frameCity(engine: CityAPI, content: ContentId) {
+  engine.setPlan(false);
+  const destination = sceneTarget(content);
+  engine.setYaw(facing(content));
+  if (destination.district) engine.focusBuildings(selectionForContent(content));
+  else if (destination.park) engine.focusPark();
+  else if (destination.building) engine.select(destination.building);
+  else engine.overview(true);
+}
 /**
  * City mode's subject offset, read from where the file and the controls actually are.
  * A side panel moves the subject left (a share of the stage width) to the middle of the
@@ -134,8 +145,9 @@ export default function Home() {
     [skyMode, setSkyMode] = useState<SkyMode>('auto'),
     [rain, setRain] = useState(false),
     [paused, setPaused] = useState(false),
-    [grid, setGrid] = useState(false),
     [plan, setPlan] = useState(false),
+    // Plan view: the district in focus, or null for all four alike.
+    [district, setDistrict] = useState<DistrictId | null>(null),
     [inspect, setInspect] = useState(false),
     [tour, setTour] = useState(-1),
     [panelOpen, setPanelOpen] = useState(true),
@@ -190,6 +202,8 @@ export default function Home() {
   }
   function toggleDirectory() {
     if (directory) return closeDirectory();
+    // The Directory and Plan view's key are two ways through the town: one at a time.
+    if (plan) leavePlan();
     setDirectory(true);
     if (!wide) {
       fileBeforeDirectory.current = panelOpen;
@@ -268,26 +282,40 @@ export default function Home() {
     api.current?.select(id);
     api.current?.setFrameShift(wideRef.current ? 0.21 : 0);
   }, []);
-  const accentBuilding = useCallback(
-    (id: BuildingId | null) => api.current?.setAccent(id),
+  const accentPlace = useCallback(
+    (id: HoverTarget) => api.current?.setAccent(id),
     [],
   );
   const select = (id: BuildingId) =>
     navigate(viewRef.current.mode, contentForBuilding(id));
   const openPark = () => navigate(viewRef.current.mode, 'corner-park');
+  /** The tour: its first stop is one step in the history, the rest replace it, so Back
+   *  leaves the tour for wherever it started. */
   function tourStop(index: number) {
+    const touring = tour >= 0;
     setTour(index);
-    navigate('city', contentForBuilding(stops[index]), { keepTour: true });
+    navigate('city', tourStops[index], { keepTour: true, replace: touring });
   }
   function togglePlan() {
-    const next = !plan;
+    if (plan) return leavePlan();
     setInspect(false);
-    setPlan(next);
-    api.current?.setPlan(next);
-    if (!next && b) {
-      api.current?.setYaw(facing(content));
-      api.current?.select(b.id);
-    }
+    // Plan view shows the whole town: it ends a tour, and takes the Directory's place.
+    setTour(-1);
+    if (directory) closeDirectory();
+    setPlan(true);
+    setDistrict(null);
+    api.current?.setPlan(true);
+  }
+  /** Plan view off: the camera goes back to the open place, as a pick would frame it. */
+  function leavePlan() {
+    setPlan(false);
+    if (api.current) frameCity(api.current, content);
+  }
+  function focusDistrict(id: DistrictId) {
+    // Picking the district in focus again shows all four.
+    const next = district === id ? null : id;
+    setDistrict(next);
+    api.current?.focusDistrict(next);
   }
   function inspectBuilding() {
     if (!b) return;
@@ -385,22 +413,20 @@ export default function Home() {
   useEffect(() => {
     const engine = api.current;
     if (mode !== 'city') return;
-    if (engine) {
-      engine.setPlan(false);
-      const destination = sceneTarget(content);
-      engine.setYaw(facing(content));
-      if (destination.district)
-        engine.focusBuildings(selectionForContent(content));
-      else if (destination.park) engine.focusPark();
-      else if (destination.building) engine.select(destination.building);
-      else engine.overview(true);
-    }
+    if (engine) frameCity(engine, content);
     const frame = requestAnimationFrame(() => {
       window.scrollTo({ top: 0, behavior: 'auto' });
+      // The tour keeps focus on its own buttons, so Next stays under the finger; the stop's
+      // name is announced from the tour bar instead.
+      if (document.activeElement?.closest('.tour-control')) return;
       document.getElementById('dossier-title')?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
   }, [mode, content, ready]);
+  // A Directory row rings its place while pointed at; nothing stays ringed once it closes.
+  useEffect(() => {
+    if (!directory) api.current?.setAccent(null);
+  }, [directory]);
   // A screen that narrows with both open (a tablet turned upright) keeps the Directory and
   // puts the file away, as opening the Directory there would; closing it brings the file back.
   useEffect(() => {
@@ -549,9 +575,6 @@ export default function Home() {
   useEffect(() => {
     api.current?.setPaused(paused);
   }, [paused, ready]);
-  useEffect(() => {
-    api.current?.setGrid(grid);
-  }, [grid, ready]);
   // The tab names the chapter being read (in the city, the open place's chapter).
   const titleChapter = explore
     ? content === 'overview'
@@ -600,7 +623,7 @@ export default function Home() {
     inspect,
     tour,
     plan,
-    grid,
+    district,
     paused,
     panelOpen,
     sheetFull,
@@ -613,7 +636,6 @@ export default function Home() {
       setSkyMode((m) => (m === 'auto' ? 'day' : m === 'day' ? 'night' : 'auto')),
     toggleRain: () => setRain((v) => !v),
     togglePlan,
-    toggleGrid: () => setGrid((v) => !v),
     togglePause: () => setPaused((v) => !v),
     inspectBuilding,
     exitInspection,
@@ -625,7 +647,8 @@ export default function Home() {
     select,
     openPark,
     navigate: (m, c) => navigate(m, c),
-    focusDistrict: (id) => api.current?.focusDistrict(id),
+    focusDistrict,
+    accent: accentPlace,
   };
 
   return (
@@ -677,7 +700,7 @@ export default function Home() {
             locale={locale}
             onOpen={goRead}
             onVisit={visitHome}
-            onHoverBuilding={accentBuilding}
+            onHoverBuilding={accentPlace}
             onExplore={goCity}
           />
         </div>

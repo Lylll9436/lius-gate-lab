@@ -1,5 +1,4 @@
 import type { BuildingId } from './city-data';
-import type { DistrictId } from './city-districts';
 
 /**
  * The plan of the town: one island, one plaza around the gate, a ring road,
@@ -480,10 +479,3 @@ export function walkFloor(x: number, z: number) {
   );
 }
 export const tramLoop = ringLine;
-
-export const districtAnchors: Record<DistrictId, { center: XZ; size: XZ }> = {
-  civic: { center: [0, -8.5], size: [13, 9] },
-  residential: { center: [-21.5, 1], size: [10, 14] },
-  research: { center: [12.5, -5], size: [13, 11] },
-  waterfront: { center: [4, 12.5], size: [26, 9] },
-};

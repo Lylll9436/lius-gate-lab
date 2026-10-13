@@ -76,6 +76,14 @@ for (const content of ids) {
     'Changing modes must preserve the selected record.',
   );
 }
+// The City tour visits every place once, in the Directory's order, and ends in the park.
+assert.deepEqual(nav.tourStops, [
+  ...buildings.map((b) => nav.contentForBuilding(b.id)),
+  'corner-park',
+]);
+assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
+for (const stop of nav.tourStops)
+  assert.deepEqual(nav.parseLocation(`#city/${stop}`), { mode: 'city', content: stop });
 for (const [old, content] of Object.entries({
   about: 'town-hall',
   people: 'people',
@@ -243,5 +251,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, 3 portrait slots, hidden/visible camera resizing.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing.`,
 );
