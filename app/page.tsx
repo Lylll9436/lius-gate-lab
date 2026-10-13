@@ -379,6 +379,19 @@ export default function Home() {
     });
     return () => cancelAnimationFrame(frame);
   }, [mode, content, ready]);
+  // A screen that narrows with both open (a tablet turned upright) keeps the Directory and
+  // puts the file away, as opening the Directory there would; closing it brings the file back.
+  useEffect(() => {
+    if (!directory || !panelOpen) return;
+    const media = window.matchMedia(WIDE),
+      narrowed = () => {
+        if (media.matches) return;
+        fileBeforeDirectory.current = true;
+        setPanelOpen(false);
+      };
+    media.addEventListener('change', narrowed);
+    return () => media.removeEventListener('change', narrowed);
+  }, [directory, panelOpen]);
   // Explore mode: the subject moves out from under the file, wherever the file is: left of a
   // side panel, above a phone's sheet. A sheet pulled up to read in full, or the Directory
   // standing in for the file on a narrow screen, leaves the camera where the file put it.
