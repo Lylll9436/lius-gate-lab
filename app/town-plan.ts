@@ -290,6 +290,11 @@ export const cottages: { x: number; z: number; rotation: number; color: string }
  * built with the herd. The heather, thistles and other Scottish props keep 1.0 clear of it.
  */
 export const paddockReserve = { x: -11.6, z: 20.9, w: 5.2, d: 3.4 };
+/**
+ * A ring of standing stones (stone centre lines) at the tip of the north-west headland: flat
+ * ground about 2.2 inside the coast, clear of the canopies and far from every chapter's view.
+ */
+export const stoneRing = { x: -23.75, z: -23.25, r: 1.15 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
@@ -540,6 +545,7 @@ export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] 
     if (insideRect(x, z, reservedPlot, 1.5 + reach)) continue;
     if (thistles.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < 0.5 + reach)) continue;
     if (flock.some((s) => Math.hypot(s.x - x, s.z - z) < 0.8 + reach)) continue;
+    if (Math.hypot(x - stoneRing.x, z - stoneRing.z) < stoneRing.r + 2.2) continue;
     if (drifts.some((o) => Math.hypot(o.x - x, o.z - z) < 2.2)) continue;
     drifts.push(drift);
   }
@@ -565,4 +571,29 @@ export function sheepFeet(s: SheepSpec): XZ[] {
   const c = Math.cos(s.heading),
     n = Math.sin(s.heading);
   return [[-0.1, 0.18], [0.1, 0.18], [-0.1, -0.18], [0.1, -0.18]].map(([lx, lz]) => [s.x + lx * c + lz * n, s.z - lx * n + lz * c]);
+}
+
+export type StandingStone = { x: number; z: number; ry: number; w: number; h: number; recumbent: boolean };
+/**
+ * The ring's stones: seven on eight slots, one long gone. As in the recumbent circles of
+ * Aberdeenshire, a long stone lies on its side in the south-south-west between the two tallest.
+ * `ry` (rotation.y) turns each stone's broad face to the centre and its length along the ring.
+ */
+export function standingStones(): StandingStone[] {
+  const stones: StandingStone[] = [];
+  for (let k = 0; k < 8; k++) {
+    if (k === 6) continue;
+    const a = (k * Math.PI) / 4 + 0.3,
+      recumbent = k === 2,
+      flanker = k === 1 || k === 3;
+    stones.push({
+      x: stoneRing.x + Math.cos(a) * stoneRing.r,
+      z: stoneRing.z + Math.sin(a) * stoneRing.r,
+      ry: Math.PI / 2 - a,
+      recumbent,
+      w: recumbent ? 1.0 : 0.38 + 0.12 * hash(k * 3 + 1),
+      h: recumbent ? 0.3 : flanker ? 1.18 + 0.07 * hash(k * 3 + 2) : 0.75 + 0.3 * hash(k * 3 + 2),
+    });
+  }
+  return stones;
 }

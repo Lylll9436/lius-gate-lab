@@ -304,6 +304,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
     disc(t.x, t.z, 0.3 * t.size, 0.85, 0.3);
   }
   for (const s of plan.flock) disc(s.x, s.z, 0.3, 0.4, 0.3); // a soft trodden patch under each sheep
+  for (const s of plan.standingStones()) disc(s.x, s.z, 0.3, 0.6, 0.25);
   const scratch = new Float32Array(N * N);
   for (let pass = 0; pass < 2; pass++) {
     boxBlur(ao, scratch, true);
@@ -2366,6 +2367,28 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     }
     return root;
   }
+  /**
+   * The standing-stone ring: grey slabs a little askew, broad faces to the centre, slightly
+   * tapered, buried 0.08, paler and lichen-tinted towards the top; the recumbent lies on its side.
+   */
+  function standingStoneRing(g: T.Object3D) {
+    const greys = ['#8f9a92', '#868f86', '#9aa196'],
+      lichen = '#a9ad8c';
+    plan.standingStones().forEach((s, k) => {
+      const y = groundY(s.x, s.z),
+        colour = greys[k % 3];
+      const m = s.recumbent
+        ? box(g, s.x, y + s.h / 2 - 0.05, s.z, s.w, s.h, 0.38, '#ffffff', 'stone', { bevel: 0.08, ry: s.ry, rz: 0.03 })
+        : box(g, s.x, y + s.h / 2 - 0.08, s.z, s.w, s.h, 0.26, '#ffffff', 'stone', {
+            bevel: 0.08,
+            taper: 0.04,
+            ry: s.ry,
+            rz: (hash(k * 5 + 3) - 0.5) * 0.12,
+            rx: (hash(k * 5 + 4) - 0.5) * 0.08,
+          });
+      bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
+    });
+  }
 
   /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
@@ -2435,6 +2458,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   lighthouse(land);
   moorland(land, trees);
   plan.flock.forEach((spec, i) => blackfaceSheep(land, spec, i));
+  standingStoneRing(land);
   hotAirBalloon(city);
   yield 'park, harbour and landmarks';
 

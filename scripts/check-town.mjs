@@ -411,6 +411,16 @@ for (const s of plan.flock) {
     assert(above > -0.15, `${s.id} has a hoof sunk ${(-above).toFixed(3)} into the hill`);
   }
 }
+// The standing stones ring the north-west headland on flat grass, clear of the canopies; seven
+// stones on eight slots, one of them recumbent.
+const stones = plan.standingStones();
+assert.equal(stones.length, 7, 'Seven standing stones');
+assert.equal(stones.filter((s) => s.recumbent).length, 1, 'One recumbent stone');
+for (const s of stones) {
+  assert(plan.onIsland(s.x, s.z, 0.8), `A standing stone on the beach at ${s.x.toFixed(2)}, ${s.z.toFixed(2)}`);
+  assert(plan.terrainHeight(s.x, s.z) < 0.01, 'The stone ring stands on flat ground');
+  for (const t of trees) assert(Math.hypot(t.x - s.x, t.z - s.z) - 0.9 * t.size > 0.6, `A standing stone under ${t.id}`);
+}
 // Heather keeps its own season in muted colours: a mauve bloom in late summer and autumn only.
 const { heatherLook } = await load('town-build');
 const hsv = (hex) => {
