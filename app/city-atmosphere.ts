@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /**
  * Weather, birds and the real Glasgow sun.
@@ -135,41 +136,61 @@ export function createRain(count = 1700, radius = 50, ceiling = 30) {
   };
 }
 
-/** A few gulls circling the harbour; wings flap, then glide. */
+/**
+ * A few gulls circling the harbour and the lighthouse; wings flap, then glide in a shallow V.
+ * Each bird is a chunky body (head, beak, tail) and two wings, all sharing one vertex-coloured
+ * material. Beaks point along local +x, which the update turns along the direction of travel.
+ */
 export function createGulls(count = 5) {
   const group = new T.Group();
   group.name = 'gulls';
-  const body = new T.MeshStandardMaterial({ color: '#f1f0ea', roughness: 0.9 }),
-    tip = new T.MeshStandardMaterial({ color: '#5d6366', roughness: 0.9 });
+  const feathers = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+  const tint = (geo: T.BufferGeometry, hex: string) => {
+    const c = new T.Color(hex),
+      n = geo.getAttribute('position').count,
+      a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3);
+    geo.setAttribute('color', new T.BufferAttribute(a, 3));
+    return geo;
+  };
+  const bodyGeo = mergeGeometries([
+    tint(new T.SphereGeometry(1, 10, 7).scale(0.26, 0.09, 0.1), '#f5efe0'),
+    tint(new T.SphereGeometry(0.075, 10, 7).translate(0.2, 0.05, 0), '#f5efe0'),
+    tint(new T.ConeGeometry(0.03, 0.1, 6).rotateZ(-Math.PI / 2).translate(0.3, 0.04, 0), '#f6c63f'),
+    tint(new T.BoxGeometry(0.12, 0.025, 0.14).translate(-0.27, 0.01, 0), '#f5efe0'),
+  ])!;
+  const wingGeo = (side: number) =>
+    mergeGeometries([
+      tint(new T.BoxGeometry(0.22, 0.03, 0.36).translate(0, 0, side * 0.18), '#f5efe0'),
+      tint(new T.BoxGeometry(0.16, 0.032, 0.12).translate(-0.02, 0, side * 0.42), '#4b545b'),
+    ])!;
+  const wing = { [-1]: wingGeo(-1), [1]: wingGeo(1) } as Record<number, T.BufferGeometry>;
+  // Circle centres and radii: three over the harbour and pier, two round the lighthouse rock.
+  const roosts: [number, number, number][] = [
+    [15, 22, 4.5],
+    [14, 20, 6.2],
+    [17, 24, 3.6],
+    [-8, 30.5, 3.4],
+    [-7, 29, 5.2],
+  ];
   const birds = Array.from({ length: count }, (_, i) => {
     const bird = new T.Group();
-    const torso = new T.Mesh(new T.BoxGeometry(0.34, 0.07, 0.11), body);
-    torso.castShadow = true;
-    bird.add(torso);
+    bird.rotation.order = 'YXZ'; // heading first, then the bank about the beak axis
+    const body = new T.Mesh(bodyGeo, feathers);
+    body.castShadow = true;
+    bird.add(body);
     const wings = [-1, 1].map((side) => {
       const pivot = new T.Group();
-      pivot.position.set(0, 0.02, side * 0.05);
-      const wing = new T.Mesh(new T.BoxGeometry(0.16, 0.014, 0.42), body);
-      wing.position.z = side * 0.21;
-      wing.castShadow = true;
-      const black = new T.Mesh(new T.BoxGeometry(0.1, 0.016, 0.1), tip);
-      black.position.z = side * 0.38;
-      pivot.add(wing, black);
+      pivot.position.set(0, 0.03, side * 0.07);
+      pivot.add(new T.Mesh(wing[side], feathers));
       bird.add(pivot);
       return { pivot, side };
     });
     group.add(bird);
-    const phase = i * 1.37;
-    return {
-      bird,
-      wings,
-      phase,
-      cx: Math.sin(phase * 2.1) * 9 - 6,
-      cz: Math.cos(phase * 1.3) * 7 + 9,
-      r: 7 + (i % 3) * 2.2,
-      h: 10.5 + (i % 4) * 1.1,
-      w: 0.16 + (i % 2) * 0.05,
-    };
+    const phase = i * 1.37,
+      [cx, cz, r] = roosts[i % roosts.length];
+    // 8.6-10.4: above the lighthouse lantern, well below the balloon's basket.
+    return { bird, wings, phase, cx, cz, r, h: 8.6 + (i % 3) * 0.9, w: 0.16 + (i % 2) * 0.05 };
   });
   return {
     object: group,
@@ -178,22 +199,21 @@ export function createGulls(count = 5) {
         const a = g.phase + time * g.w;
         g.bird.position.set(
           g.cx + Math.cos(a) * g.r,
-          g.h + Math.sin(time * 0.9 + g.phase) * 0.35,
+          g.h + Math.sin(time * 0.9 + g.phase) * 0.3,
           g.cz + Math.sin(a) * g.r,
         );
-        g.bird.rotation.y = -a;
+        g.bird.rotation.y = -a - Math.PI / 2; // local +x (beak) along the velocity (-sin a, 0, cos a)
+        g.bird.rotation.x = 0.22; // bank: local +z points at the circle centre and dips
         const gliding = Math.sin(time * 0.23 + g.phase) > 0.35;
-        const flap = gliding ? 0.08 : Math.sin(time * 9 + g.phase) * 0.55;
-        for (const { pivot, side } of g.wings)
-          pivot.rotation.x = side * (flap + 0.12);
+        const flap = gliding ? -0.15 : Math.sin(time * 9 + g.phase) * 0.55;
+        for (const { pivot, side } of g.wings) pivot.rotation.x = side * flap; // glide in a shallow V
       }
     },
     dispose() {
-      group.traverse((o) => {
-        if (o instanceof T.Mesh) o.geometry.dispose();
-      });
-      body.dispose();
-      tip.dispose();
+      bodyGeo.dispose();
+      wing[-1].dispose();
+      wing[1].dispose();
+      feathers.dispose();
     },
   };
 }

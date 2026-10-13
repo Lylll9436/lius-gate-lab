@@ -401,6 +401,14 @@ export function buildTown(
     g.add(m);
     return m;
   }
+  /** A round rod of radius r from a to b (ropes, stays). */
+  function strut(g: T.Object3D, a: T.Vector3, b: T.Vector3, r: number, colour: string, kind: SurfaceKind) {
+    const d = b.clone().sub(a),
+      m = cylinder(g, 0, 0, 0, r, r, d.length(), colour, kind, 8);
+    m.position.copy(a).addScaledVector(d, 0.5);
+    m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
+    return m;
+  }
   function cone(
     g: T.Object3D,
     x: number,
@@ -1540,25 +1548,39 @@ export function buildTown(
   function hotAirBalloon(g: T.Object3D) {
     const b = new T.Group();
     g.add(b);
-    const envelope = sphere(b, 0, 2.4, 0, 1.4, palette.balloon, 'fabric', 16);
-    envelope.scale.set(1, 1.18, 1);
-    const band = new T.Mesh(new T.TorusGeometry(1.38, 0.12, 8, 24), material(palette.balloonBand, 'fabric'));
-    band.rotation.x = Math.PI / 2;
-    band.position.y = 2.4;
-    b.add(band);
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      box(b, Math.cos(a) * 1.3, 2.4, Math.sin(a) * 1.3, 0.06, 2.4, 0.06, palette.balloonBand, 'fabric', { ry: -a });
+    // A teardrop envelope lathed from the mouth (y 0) to the crown (y 4.1), with 12 crisp gores.
+    const prof = [[0, 0], [0.3, 0.02], [0.42, 0.3], [0.75, 0.9], [1.25, 1.6], [1.55, 2.3], [1.6, 2.75], [1.48, 3.25], [1.15, 3.7], [0.62, 4.0], [0, 4.1]].map(
+      ([r, y]) => new T.Vector2(r, y),
+    );
+    const lathe = new T.LatheGeometry(prof, 24).toNonIndexed(),
+      pos = lathe.getAttribute('position'),
+      col = new Float32Array(pos.count * 3),
+      stripe = [new T.Color(palette.balloon), new T.Color(palette.balloonBand)];
+    for (let i = 0; i < pos.count; i += 3) {
+      const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3,
+        cz = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+      const c = stripe[Math.floor(((Math.atan2(cx, cz) + Math.PI) / (Math.PI * 2)) * 12) % 2];
+      for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
     }
-    cone(b, 0, 0.92, 0, 0.7, 0.9, palette.balloon, 'fabric', 10, 0).rotation.x = Math.PI;
-    box(b, 0, 0.0, 0, 0.6, 0.45, 0.6, palette.wood, 'wood', { bevel: 0.04 });
-    for (const sx of [-0.25, 0.25]) for (const sz of [-0.25, 0.25]) box(b, sx, 0.4, sz, 0.015, 0.5, 0.015, palette.metal, 'metal');
+    lathe.setAttribute('color', new T.BufferAttribute(col, 3));
+    const envelope = new T.Mesh(lathe, material('#ffffff', 'fabric'));
+    envelope.position.y = 0.95;
+    envelope.castShadow = envelope.receiveShadow = true;
+    b.add(envelope);
+    cylinder(b, 0, 5.0, 0, 0.5, 0.62, 0.12, palette.gold, 'fabric', 18); // crown cap
+    box(b, 0, 0.2, 0, 0.7, 0.5, 0.7, palette.wood, 'wood'); // basket
+    box(b, 0, 0.47, 0, 0.8, 0.1, 0.8, palette.woodDark, 'wood'); // rim
+    // Rope tops end inside the mouth (r 0.32 there).
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1])
+        strut(b, new T.Vector3(sx * 0.32, 0.5, sz * 0.32), new T.Vector3(sx * 0.17, 1.02, sz * 0.17), 0.035, palette.woodDark, 'wood');
     b.userData.keepSeparate = true;
     animated.push({
       object: b,
       update(time) {
         const a = time * 0.025 + 1.2;
-        b.position.set(4 + Math.cos(a) * 19, 13.5 + Math.sin(time * 0.4) * 0.5, -2 + Math.sin(a) * 15);
+        // The crown stays at about 17.9; the gulls fly below 10.7.
+        b.position.set(4 + Math.cos(a) * 19, 12.8 + Math.sin(time * 0.4) * 0.5, -2 + Math.sin(a) * 15);
         b.rotation.y = -a;
         b.rotation.z = Math.sin(time * 0.6) * 0.03;
       },
