@@ -109,8 +109,8 @@ function nextTask() {
 }
 
 /**
- * The town and its renderer. The work is split into tasks (each phase of the town, then the
- * renderer, then the studio light and the rest), so the page keeps scrolling and answering
+ * The town and its renderer. The work is split into tasks (the renderer, each phase of the
+ * town, then the studio light and the rest), so the page keeps scrolling and answering
  * while the town goes up instead of freezing for the whole build.
  */
 export async function createCity(
@@ -119,13 +119,6 @@ export async function createCity(
   onPark: () => void = () => {},
   options: CityOptions = {},
 ): Promise<CityAPI> {
-  const phases = buildTownInPhases();
-  let phase = phases.next();
-  while (!phase.done) {
-    await nextTask();
-    phase = phases.next();
-  }
-  const model: Town = phase.value;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Two quality tiers up front, then a frame-time governor that lowers resolution if needed.
   const cores = navigator.hardwareConcurrency || 4,
@@ -164,6 +157,15 @@ export async function createCity(
     'aria-label',
     "LIU'S GATE: a small city standing for Liu's Gate. Every chapter is readable on the page.",
   );
+  // The renderer comes first: a browser without WebGL fails here at once, before any of the
+  // town is built for nothing.
+  const phases = buildTownInPhases();
+  let phase = phases.next();
+  while (!phase.done) {
+    await nextTask();
+    phase = phases.next();
+  }
+  const model: Town = phase.value;
   container.appendChild(renderer.domElement);
   const scene = new T.Scene(),
     // A negative near plane: on tall (phone) frames the bottom edge of an orthographic view
