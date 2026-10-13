@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import './fonts.css';
 import './globals.css';
 import { publicAsset } from './public-asset';
 export const metadata: Metadata = {

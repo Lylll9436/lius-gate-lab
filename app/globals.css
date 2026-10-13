@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* The fonts are self-hosted from app/fonts.css, which the entries import just before
+   this file. Do not @import them here: Tailwind's production pass re-parses this file
+   and the fonts' relative url()s would no longer resolve. */
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
@@ -37,8 +39,8 @@
   --stage-a: #dde6e0;
   --stage-b: #c9d6cf;
   --shadow: 0 30px 60px -32px rgba(10, 20, 18, 0.35);
-  --font-display: 'Fraunces', 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
-  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  --font-display: 'Fraunces Variable', 'Fraunces', 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
+  --font-sans: 'Inter Variable', 'Inter', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --radius: 22px;
   /* Backdrop blur re-filters the live canvas every frame: keep it small, and only on chips. */

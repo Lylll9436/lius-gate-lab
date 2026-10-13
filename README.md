@@ -33,6 +33,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/chapters.tsx` `app/site-chrome.tsx` `app/city-stage.tsx` | 首屏与章节、页眉页脚、舞台与 HUD |
 | `app/lab-content.tsx` | 人员、研究、成果、活动等共用的内容组件 |
 | `app/globals.css` | 设计系统：字体、昼夜主题、布局与响应式 |
+| `app/fonts.css` | 自托管字体（Fontsource 的 Fraunces、Inter、IBM Plex Mono），不依赖 Google Fonts；不要在 globals.css 里 @import（check-pages 会校验） |
 | `app/town-plan.ts` | 小城规划：岛屿轮廓、山丘、街道、建筑位置、港口、植栽与路灯布置 |
 | `app/town-build.ts` | 程序化建模：地形、街道、建筑、树木、街具、车船、灯塔、热气球 |
 | `app/city-scene.ts` | 渲染器、镜头、光照、昼夜 / 天气、悬停与点击、单栋建筑近看 |

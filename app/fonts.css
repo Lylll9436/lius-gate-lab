@@ -1,0 +1,10 @@
+/* Self-hosted fonts (Fontsource), so the page never waits on Google Fonts, which is
+   blocked or slow in mainland China. Roman styles only: no italics are used. Fraunces
+   carries the opsz axis for the hero; Fraunces and Inter fetch only the subsets a page
+   needs (unicode-range); IBM Plex Mono is the latin subset at 400 and 500.
+   Keep this file free of Tailwind at-rules, so Tailwind skips it and Vite resolves the
+   fonts' url()s next to each package's CSS. The family names are in globals.css. */
+@import '@fontsource-variable/fraunces/opsz.css';
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
