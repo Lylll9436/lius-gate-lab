@@ -1043,6 +1043,9 @@ export function buildTown(
     // The archive's loading path: from the south avenue's pavement edge (x 1.95) to the dock front
     // (x 5.95), centred on the hoist door (z 9.2), its top 0.02 under the pavement's.
     slab(land, [[1.95, 8.6], [5.95, 8.6]], [[1.95, 9.8], [5.95, 9.8]], 0.08, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
+    // The studio's path: from the east avenue's pavement edge (z -1.95) along the plinth front
+    // (x 7.35) to the entrance apron (z -4.5), its top 0.02 under the pavement's.
+    slab(land, [[6.1, -4.6], [6.1, -1.95]], [[7.3, -4.6], [7.3, -1.95]], 0.08, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
     // The plaza: an inner island for the gate, a reflecting pool ring with four causeways,
     // an outer paved ring and a darker border band under a lathed kerb. Pieces meet at shared edges.
     const poolInner = POOL.inner,
@@ -1295,23 +1298,6 @@ export function buildTown(
   function bin(g: T.Object3D, x: number, y: number, z: number) {
     cylinder(g, x, y + 0.3, z, 0.17, 0.15, 0.6, palette.metal, 'metal', 8);
     cylinder(g, x, y + 0.62, z, 0.19, 0.19, 0.05, '#2d3838', 'metal', 8);
-  }
-  function bike(g: T.Object3D, x: number, y: number, z: number, ry: number, color: string) {
-    const b = new T.Group();
-    b.position.set(x, y, z);
-    b.rotation.y = ry;
-    g.add(b);
-    for (const dx of [-0.32, 0.32]) {
-      const wheel = new T.Mesh(new T.TorusGeometry(0.17, 0.022, 6, 16), material(palette.metal, 'metal'));
-      wheel.position.set(dx, 0.19, 0);
-      wheel.castShadow = true;
-      b.add(wheel);
-    }
-    box(b, 0, 0.3, 0, 0.5, 0.03, 0.03, color, 'paint', { rz: 0.35 });
-    box(b, 0.1, 0.38, 0, 0.03, 0.36, 0.03, color, 'paint', { rz: -0.3 });
-    box(b, -0.2, 0.45, 0, 0.03, 0.3, 0.03, color, 'paint', { rz: 0.2 });
-    box(b, -0.22, 0.62, 0, 0.06, 0.03, 0.34, palette.metal, 'metal');
-    box(b, 0.12, 0.58, 0, 0.16, 0.04, 0.08, palette.woodDark, 'wood');
   }
   function pavilion(g: T.Object3D, x: number, y: number, z: number) {
     const p = new T.Group();
@@ -1790,53 +1776,62 @@ export function buildTown(
 
   function buildStudio(shell: T.Group, site: plan.Site) {
     const w = site.w,
-      d = site.d;
-    box(shell, 0, 0.12, 0, w + 0.4, 0.24, d + 0.4, palette.plinth, 'stone');
-    // Volume A: the glass block. Volume B: the rendered block with ribbon windows.
+      d = site.d,
+      white = '#eef0ea';
+    // A low kerb-stone plinth under two volumes. A: a glass box in a chunky white frame (corner
+    // posts, two bands, sharp mullions) under a green roof slab. B: a rendered block 0.3 behind A's
+    // front with metal-framed ribbon windows on its front and on the +x face seen at overview.
+    plinth(shell, w, d, palette.kerb, { height: 0.35 });
     const aw = 3.4,
-      ah = 4.3,
+      ah = 4.0,
       ax = -1.1;
-    box(shell, ax, 0.24 + ah / 2, 0, aw, ah, d, palette.glass, 'glass');
-    for (const z of [-d / 2, d / 2]) {
-      for (let x = -aw / 2; x <= aw / 2 + 0.01; x += aw / 6) box(shell, ax + x, 0.24 + ah / 2, z, 0.06, ah, 0.08, palette.frame, 'paint');
-      for (let y = 0.24; y <= 0.24 + ah + 0.01; y += ah / 4) box(shell, ax, y, z, aw + 0.04, 0.08, 0.1, palette.frame, 'paint');
+    box(shell, ax, 2.35, 0, aw - 0.24, ah, d - 0.24, palette.studioGlass, 'glass');
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) box(shell, ax + sx * (aw / 2 - 0.11), 2.35, sz * (d / 2 - 0.11), 0.22, ah, 0.22, white, 'paint');
+    // The front bands stop at the door surround (0.83 either side of it) instead of crossing the door.
+    const run = aw / 2 - 0.83;
+    for (const yb of [0.46, 2.35]) {
+      box(shell, ax, yb, -(d / 2 - 0.11), aw, 0.22, 0.22, white, 'paint');
+      for (const sx of [-1, 1]) box(shell, ax + sx * (aw / 2 - run / 2), yb, d / 2 - 0.11, run, 0.22, 0.22, white, 'paint');
+      box(shell, ax - aw / 2 + 0.11, yb, 0, 0.22, 0.22, d, white, 'paint');
     }
-    for (const x of [ax - aw / 2, ax + aw / 2]) {
-      for (let z = -d / 2; z <= d / 2 + 0.01; z += d / 6) box(shell, x, 0.24 + ah / 2, z, 0.08, ah, 0.06, palette.frame, 'paint');
-      for (let y = 0.24; y <= 0.24 + ah + 0.01; y += ah / 4) box(shell, x, y, 0, 0.1, 0.08, d + 0.04, palette.frame, 'paint');
+    for (const sz of [-1, 1]) for (const mx of [-aw / 6, aw / 6]) box(shell, ax + mx, 2.35, sz * (d / 2 - 0.11), 0.14, ah, 0.14, white, 'paint', { bevel: 0 });
+    box(shell, ax - aw / 2 + 0.11, 2.35, 0, 0.14, ah, 0.14, white, 'paint', { bevel: 0 });
+    box(shell, 1.6, 1.85, 0, 2.4, 3.0, d - 0.6, palette.render, 'paint');
+    const side = new T.Group();
+    side.position.x = 2.8;
+    side.rotation.y = Math.PI / 2;
+    shell.add(side);
+    for (const y of [1.25, 2.5]) {
+      windowAt(shell, 1.6, y, (d - 0.6) / 2, 1.9, 0.72, { frame: palette.metal, lintel: false });
+      windowAt(side, 0, y, 0, 3.6, 0.72, { frame: palette.metal, lintel: false });
     }
-    const bw = 2.2,
-      bh = 3.1,
-      bx = 1.6;
-    box(shell, bx, 0.24 + bh / 2, 0.3, bw, bh, d - 0.6, palette.render, 'paint');
-    for (const y of [1.3, 2.5]) {
-      box(shell, bx, y, d / 2 - 0.3 + 0.02, bw - 0.4, 0.55, 0.05, palette.glassDark, 'glass');
-      box(shell, bx + bw / 2 + 0.02, y, 0.3, 0.05, 0.55, d - 1.2, palette.glassDark, 'glass');
-      box(shell, bx, y - 0.32, d / 2 - 0.3 + 0.05, bw - 0.3, 0.06, 0.1, '#d5d0c0', 'stone');
+    // The green roof slab: a white coping, a lawn 0.17 proud, three shrub lumps and two tilted panels.
+    box(shell, ax, 4.5, 0, aw + 0.3, 0.3, d + 0.3, white, 'paint');
+    box(shell, ax, 4.71, 0, aw - 0.2, 0.22, d - 0.2, palette.canopy[1], 'grass');
+    for (const [x, y, z] of [[ax - 0.9, 4.95, -1.3], [ax - 1.0, 4.95, 0.6], [ax + 0.8, 4.92, 1.7]]) {
+      const lump = new T.Mesh(new T.IcosahedronGeometry(0.32, 1), material(palette.hedge, 'foliage'));
+      lump.position.set(x, y, z);
+      lump.castShadow = lump.receiveShadow = true;
+      shell.add(lump);
     }
-    // Entrance canopy on the front, bikes and a bench beside it.
-    box(shell, ax, 2.55, d / 2 + 0.55, 2.4, 0.1, 1.1, palette.frame, 'paint');
-    for (const sx of [-1.0, 1.0]) cylinder(shell, ax + sx, 1.4, d / 2 + 0.95, 0.04, 0.04, 2.3, palette.metal, 'metal', 8);
-    box(shell, ax, 1.1, d / 2 + 0.02, 1.1, 2.2, 0.06, '#5e7f7f', 'glass');
-    box(shell, ax, 1.1, d / 2 + 0.05, 0.05, 2.2, 0.08, palette.frame, 'paint');
-    box(shell, ax, 0.22, d / 2 + 0.8, 2.0, 0.06, 1.3, palette.plaza, 'paving');
-    for (let i = 0; i < 3; i++) bike(shell, bx + 0.2 + i * 0.5, 0.24, d / 2 + 0.7, 0.2, ['#c23a2e', '#2f5b4c', '#2e4b63'][i]);
-    bench(shell, -w / 2 + 0.6, 0.24, d / 2 + 0.75, Math.PI);
-    // Roofs: a green roof with panels and a deck on A, planters on B.
-    box(shell, ax, 0.24 + ah + 0.1, 0, aw + 0.3, 0.2, d + 0.3, '#c9d2c0', 'stone');
-    box(shell, ax - 0.2, 0.24 + ah + 0.26, 0.3, aw - 0.8, 0.14, d - 1.4, palette.canopy[1], 'foliage', { bevel: 0.05 });
-    for (let i = 0; i < 3; i++) {
-      const panel = box(shell, ax + 0.9, 0.24 + ah + 0.42, -d / 2 + 0.9 + i * 1.3, 1.0, 0.05, 0.75, '#2f4e66', 'metal');
-      panel.rotation.x = 0.3;
-      box(shell, ax + 0.9, 0.24 + ah + 0.3, -d / 2 + 0.9 + i * 1.3, 1.04, 0.04, 0.3, palette.metal, 'metal');
+    for (let i = 0; i < 2; i++) {
+      box(shell, ax + 0.85, 4.89, -1.4 + i * 1.3, 0.9, 0.14, 0.2, palette.metal, 'metal');
+      box(shell, ax + 0.85, 4.98, -1.4 + i * 1.3, 1.1, 0.08, 0.8, '#2f4e66', 'metal', { rx: 0.35 });
     }
-    railing(shell, ax, 0.24 + ah + 0.2, d / 2 + 0.1, aw + 0.2, 0.5);
-    railing(shell, ax, 0.24 + ah + 0.2, -d / 2 - 0.1, aw + 0.2, 0.5);
-    box(shell, bx, 0.24 + bh + 0.06, 0.3, bw + 0.2, 0.12, d - 0.4, '#dcd8ca', 'stone');
-    for (const dz of [-1.2, 0.2, 1.4]) {
-      box(shell, bx + 0.4, 0.24 + bh + 0.3, dz, 0.8, 0.36, 0.5, '#b7ab93', 'stone', { bevel: 0.03 });
-      sphere(shell, bx + 0.4, 0.24 + bh + 0.6, dz, 0.28, palette.canopy[1], 'foliage', 8).userData.softFoliage = true;
+    // B's coping (top 3.59) with two planters of clipped topiary.
+    box(shell, 1.6, 3.47, 0, 2.6, 0.24, d - 0.4, white, 'paint');
+    for (const dz of [-1.2, 1.2]) {
+      box(shell, 2.0, 3.77, dz, 0.8, 0.36, 0.5, '#b7ab93', 'stone');
+      topiary(shell, 2.0, 4.05, dz, 0.34, 1, 1.15, 0.75, 0.85);
     }
+    // The entrance: a white canopy on posts from the ground, a blue door with steps down from the
+    // plinth, and a grounded apron with a bench.
+    box(shell, ax, 2.7, d / 2 + 0.6, 2.6, 0.22, 1.2, white, 'paint');
+    for (const sx of [-1, 1]) cylinder(shell, ax + sx * 1.1, 1.3, d / 2 + 1.05, 0.08, 0.08, 2.6, palette.metal, 'metal');
+    door(shell, ax, 0.35, d / 2 - 0.12, 1.3, 2.1, '#3f6f8f', { surround: palette.metal, landing: 0.37, width: 2.0 });
+    box(shell, ax, 0.03, d / 2 + 1.2, 3.2, 0.06, 1.8, palette.pavement, 'paving'); // from the plinth foot, like the path
+    bench(shell, ax - 0.85, 0.06, d / 2 + 1.85);
   }
 
   function buildArchive(shell: T.Group, site: plan.Site) {
