@@ -12,6 +12,7 @@ import { createResident } from './city-people';
 import { buildings, type BuildingId } from './city-data';
 import * as plan from './town-plan';
 import type { XZ } from './town-plan';
+import type { Season } from './glasgow-sun';
 
 /**
  * The town itself: terrain, streets, seven buildings, trees,
@@ -48,6 +49,12 @@ export const palette = {
   white: '#f5efe0', lantern: '#ffd48a', tram: '#2f6b4a', tramOrange: '#e07a2c', tramCream: '#efe2c2',
   boat: '#c9412f', balloon: '#c9412f', balloonBand: '#efe2c2',
 };
+
+/**
+ * The balloon's ring: centred on the island, out over the shore and the sea, so it stays out
+ * of every chapter's subject. `turn` is radians per second (a lap in about seven minutes).
+ */
+export const BALLOON = { radius: 32, turn: 0.014 };
 
 type Point = [number, number, number];
 /** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
@@ -94,8 +101,20 @@ const TREE = {
   autumn:  { tones: [palette.autumn[0], palette.autumn[1]], top: '#f2c862', under: '#99582a' },
   blossom: { tones: [palette.blossom[0], palette.blossom[1]], top: '#fdd9e3', under: '#bf7590' },
   pine:    { tones: [palette.pine[0], palette.pine[1]], top: '#74b155', under: '#22503a' },
+  winter:  { tones: ['#6a8f45', '#78994c'], top: '#aab87e', under: '#2f5238' },
   trunk: palette.bark, pineTrunk: palette.pineBark,
 };
+/**
+ * The season on the round trees. The accent trees (the plan's 'autumn' kind and every 23rd
+ * round tree) blossom in spring and turn in autumn; in summer every canopy is green, and in
+ * winter a muted, darker green.
+ */
+export function treeLook(spec: plan.TreeSpec, index: number, season: Season) {
+  const accent = spec.kind === 'autumn' || (index * 7) % 23 === 0;
+  if (season === 'winter') return TREE.winter;
+  if (!accent || season === 'summer') return TREE.round;
+  return season === 'spring' ? TREE.blossom : TREE.autumn;
+}
 const sstep = T.MathUtils.smoothstep, mix = T.MathUtils.lerp;
 /** Bake colour × value(y) into vertex colours, e.g. a trunk that darkens up into its canopy. */
 function paintByHeight(geo: T.BufferGeometry, colour: string, value: (y: number) => number) {
@@ -322,7 +341,11 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   return texture;
 }
 
-type TownOptions = { library?: ReturnType<typeof createCityMaterials> };
+type TownOptions = {
+  library?: ReturnType<typeof createCityMaterials>;
+  /** Which season the trees wear (blossom, autumn tones); summer, all green, by default. */
+  season?: Season;
+};
 export type Town = ReturnType<typeof buildTown>;
 
 /** The whole town at once (the checks, and anything that cannot wait). */
@@ -341,6 +364,7 @@ export function buildTown(options: TownOptions = {}) {
  */
 export function* buildTownInPhases(options: TownOptions = {}) {
   const library = options.library || createCityMaterials();
+  const season = options.season ?? 'summer';
   const material = library.material;
   const city = new T.Group(),
     land = new T.Group();
@@ -1221,8 +1245,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     if (spec.kind === 'pine') return pine(t, s, index, add);
     // A thick flared trunk (about 30% shows below the canopy; the batch bake darkens its base)
     // under a fat main lump and two or three side lumps, painted two-tone in tree space.
-    const blossom = spec.kind === 'round' && (index * 7) % 23 === 0;
-    const look = spec.kind === 'autumn' ? TREE.autumn : blossom ? TREE.blossom : TREE.round;
+    const look = treeLook(spec, index, season);
     const trunk = new T.CylinderGeometry(0.12*s, 0.16*s, 1.15*s, 10, 2, true).translate(0, 0.575*s, 0);
     const flare = new T.CylinderGeometry(0.16*s, 0.25*s, 0.14*s, 10, 1, true).translate(0, 0.07*s, 0);
     const wood = mergeGeometries([trunk, flare])!;
@@ -1673,9 +1696,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     animated.push({
       object: b,
       update(time) {
-        const a = time * 0.025 + 1.2;
+        // Round the whole island over the shore and the sea, so it never drifts across a
+        // chapter's subject, turning slowly enough to keep a calm pace on the wide ring.
+        const a = time * BALLOON.turn + 1.2;
         // The crown stays at about 17.9; the gulls fly below 10.7.
-        b.position.set(4 + Math.cos(a) * 19, 12.8 + Math.sin(time * 0.4) * 0.5, -2 + Math.sin(a) * 15);
+        b.position.set(Math.cos(a) * BALLOON.radius, 12.8 + Math.sin(time * 0.4) * 0.5, Math.sin(a) * BALLOON.radius);
         b.rotation.y = -a;
         b.rotation.z = Math.sin(time * 0.6) * 0.03;
       },

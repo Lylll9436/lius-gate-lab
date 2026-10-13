@@ -290,6 +290,53 @@ lighting.update(0, false);
 assert(lighting.lights.every((l) => l.intensity === 0));
 assert(!scene.children.includes(lighting.lights[0]), 'Spotlights leave the scene by day.');
 lighting.dispose();
+// The balloon rounds the island out over the shore and the sea, above the gulls, and never
+// drifts over a building a chapter is about.
+const balloon = model.animated.find((e) => {
+  e.update(10, 0);
+  return e.object.position.y > 11;
+});
+assert(balloon, 'The town has a balloon.');
+for (let i = 0; i < 720; i++) {
+  balloon.update(i * 0.7, 0);
+  const { x, y, z } = balloon.object.position;
+  assert(Math.hypot(x, z) > 30, `The balloon drifts over the town at t=${(i * 0.7).toFixed(1)}`);
+  assert(y > 11.5, 'The balloon flies above the gulls.');
+  for (const site of plan.siteList)
+    assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
+}
+// The season shows on the trees: blossom only in spring, autumn tones only in autumn.
+const { glasgowSeason } = await load('glasgow-sun');
+const { treeLook } = await load('town-build');
+for (const [when, season] of [
+  ['2026-01-10T12:00:00Z', 'winter'],
+  ['2026-03-01T09:00:00Z', 'spring'],
+  ['2026-05-31T23:30:00Z', 'summer'], // already 1 June in Glasgow (BST)
+  ['2026-10-13T12:00:00Z', 'autumn'],
+  ['2026-12-01T00:30:00Z', 'winter'],
+])
+  assert.equal(glasgowSeason(new Date(when)), season, 'Glasgow season on ' + when);
+assert.equal(glasgowSeason(new Date('2026-10-13T12:00:00Z'), '?debug&season=spring'), 'spring', '?season= previews a season.');
+assert.equal(glasgowSeason(new Date('2026-10-13T12:00:00Z'), '?season=monsoon'), 'autumn', 'An unknown ?season= is ignored.');
+// Indexed as the build plants them (pines keep their own look).
+const looks = (season) => new Set(trees.flatMap((t, i) => (t.kind === 'pine' ? [] : [treeLook(t, i, season).top])));
+const blossomTop = '#fdd9e3',
+  autumnTop = '#f2c862';
+assert(looks('spring').has(blossomTop) && !looks('spring').has(autumnTop), 'Spring blossoms and does not turn.');
+assert(looks('autumn').has(autumnTop) && !looks('autumn').has(blossomTop), 'Autumn turns and does not blossom.');
+for (const season of ['summer', 'winter'])
+  assert(!looks(season).has(blossomTop) && !looks(season).has(autumnTop), season + ' trees stay green.');
+// The key light stays high all day, comes down to about 40 degrees at dawn and golden hour, and
+// goes back up for the night light.
+const { sunOffsetFor, lowSun } = await load('city-atmosphere');
+const degrees = (v) => (Math.atan2(v.y, Math.hypot(v.x, v.z)) * 180) / Math.PI,
+  rad = (d) => (d * Math.PI) / 180;
+assert(degrees(sunOffsetFor(rad(30), Math.PI)) > 50, 'A high key light by day.');
+assert(Math.abs(degrees(sunOffsetFor(rad(2), Math.PI * 1.5)) - 40) < 1.5, 'A low key light at golden hour.');
+assert(degrees(sunOffsetFor(rad(-12), Math.PI * 1.6)) > 49, 'The night light stays high.');
+assert.equal(lowSun(rad(15)), 0);
+assert.equal(lowSun(rad(2)), 1);
+assert.equal(lowSun(rad(-10)), 0);
 console.log(
-  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it and lit windows at night.`,
+  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

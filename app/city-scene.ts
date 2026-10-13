@@ -15,7 +15,9 @@ import {
   createRain,
   createGulls,
   sunOffsetFor,
+  lowSun,
   glasgowSky,
+  glasgowSeason,
 } from './city-atmosphere';
 import { animateResident } from './city-people';
 import {
@@ -164,7 +166,9 @@ export async function createCity(
   );
   // The renderer comes first: a browser without WebGL fails here at once, before any of the
   // town is built for nothing.
-  const phases = buildTownInPhases();
+  // The trees wear Glasgow's season (`?season=` previews another).
+  const season = glasgowSeason(new Date(), window.location.search);
+  const phases = buildTownInPhases({ season });
   let phase = phases.next();
   while (!phase.done) {
     await nextTask();
@@ -223,7 +227,9 @@ export async function createCity(
   const sunOffset = new T.Vector3(-16, 32, 20),
     targetSunOffset = sunOffset.clone();
   let sunWarmth = 0,
-    targetWarmth = 0;
+    targetWarmth = 0,
+    golden = 0,
+    targetGolden = 0;
   const sun = new T.DirectionalLight('#ffe3bd', 3.8);
   sun.castShadow = true;
   const shadowBase = tier === 'low' ? 1024 : 1536;
@@ -374,6 +380,7 @@ export async function createCity(
   const tint = {
     sunDay: new T.Color('#ffe3bd'),
     sunWarm: new T.Color('#ffbe7a'),
+    sunGolden: new T.Color('#ff9f57'),
     sunNight: new T.Color('#8daed0'),
     skyDay: new T.Color('#bcd4f2'),
     skyWarm: new T.Color('#e9d3c4'),
@@ -383,6 +390,7 @@ export async function createCity(
     fogDay: new T.Color('#d9e3dd'),
     fogNight: new T.Color('#101b20'),
     fogRain: new T.Color('#c3ced0'),
+    fogGolden: new T.Color('#ecc9a4'),
   };
   const shiftApplied = new T.Vector3();
   const weather = createRain(tier === 'low' ? 900 : 1700),
@@ -1016,13 +1024,20 @@ export async function createCity(
       placeSun();
     }
     sunWarmth = T.MathUtils.lerp(sunWarmth, targetWarmth, reduced ? 1 : blend);
+    golden = T.MathUtils.lerp(golden, targetGolden, reduced ? 1 : blend);
     rain = T.MathUtils.lerp(rain, targetRain, reduced ? 1 : blend * 0.5);
-    const overcast = 1 - rain * 0.42;
+    const overcast = 1 - rain * 0.42,
+      // Dawn and golden hour: a low, warmer key light and a warm haze, strong enough to read
+      // through the saturation grade; cloud mutes it.
+      glow = golden * (1 - night) * (1 - rain * 0.7);
     sun.color
       .copy(tint.sunDay)
       .lerp(tint.sunWarm, sunWarmth * (1 - night))
+      .lerp(tint.sunGolden, glow * 0.75)
       .lerp(tint.sunNight, night);
     sun.intensity *= overcast;
+    // Rain: soft, grey shadows under a cloudy sky.
+    sun.shadow.intensity = T.MathUtils.lerp(1, 0.35, rain);
     sky.intensity *= 1 - rain * 0.18;
     sky.color
       .copy(tint.skyDay)
@@ -1032,9 +1047,11 @@ export async function createCity(
     fog.color
       .copy(tint.fogDay)
       .lerp(tint.fogNight, night)
-      .lerp(tint.fogRain, rain * 0.45 * (1 - night));
+      .lerp(tint.fogRain, rain * 0.45 * (1 - night))
+      .lerp(tint.fogGolden, glow * 0.6);
     weather.update(dt, rain, paused);
-    gulls.object.visible = !inspect && night < 0.85;
+    // Gulls sit out the night and the heavy rain.
+    gulls.object.visible = !inspect && night < 0.85 && rain < 0.5;
     gulls.update(time);
     water.update(time, night, camera, { rain, sun: keyOffset });
     // Shadows refresh every other frame: moving things still get moving shadows,
@@ -1132,11 +1149,13 @@ export async function createCity(
       targetNight = T.MathUtils.clamp(amount, 0, 1);
       targetSunOffset.copy(sunOffsetFor(elevation, azimuth));
       targetWarmth = T.MathUtils.clamp((0.5 - elevation) / 0.42, 0, 1);
+      targetGolden = lowSun(elevation);
       // The first sky arrives before the first frame: no flash of noon at midnight.
       if (!skyKnown) {
         skyKnown = true;
         night = targetNight;
         sunWarmth = targetWarmth;
+        golden = targetGolden;
         sunOffset.copy(targetSunOffset);
         placeSun();
       }
@@ -1260,7 +1279,7 @@ export async function createCity(
       model,
       api,
       frameCost: () => frameCost,
-      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality }),
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain }),
       /** Advance n frames of ~16.7 ms, updating and rendering regardless of visibility. */
       tick(frames = 1) {
         let t = last || performance.now();

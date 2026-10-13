@@ -6,16 +6,34 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  * Everything here is decorative: no colliders, no pavement, no physics.
  */
 
-export { glasgowSky, type SkyState } from './glasgow-sun';
+export { glasgowSky, glasgowSeason, type SkyState, type Season } from './glasgow-sun';
+
+const DEG = Math.PI / 180;
+
+/**
+ * How low the sun is, 0..1: 0 from about 12 degrees of real elevation up, 1 from about 3 degrees
+ * down to the horizon (dawn and golden hour), fading back to 0 through civil twilight, where the
+ * night light takes over. Lowers and warms the key light.
+ */
+export function lowSun(elevation: number) {
+  return (
+    (1 - T.MathUtils.smoothstep(elevation, 3 * DEG, 12 * DEG)) *
+    T.MathUtils.smoothstep(elevation, -8 * DEG, -2 * DEG)
+  );
+}
 
 /**
  * Stylised key-light offset for the overview bearing (the scene turns it with the camera yaw).
- * The real sun only nudges it: elevation is lifted to 50-57 degrees and the sideways swing
- * is capped at +-35 degrees around the founding light (-16, 32, 20), so tops stay brightest
- * and the +z fronts stay lit all year.
+ * The real sun only nudges it: elevation is lifted to 50-57 degrees (lowered to 40 at dawn and
+ * golden hour, for longer shadows) and the sideways swing is capped at +-35 degrees around the
+ * founding light (-16, 32, 20), so tops stay brightest and the +z fronts stay lit all year.
  */
 export function sunOffsetFor(elevation: number, azimuth: number, distance = 41) {
-  const lifted = T.MathUtils.lerp(0.87, 1.0, T.MathUtils.smoothstep(elevation, 0, 0.6)); // 50-57 degrees
+  const lifted = T.MathUtils.lerp(
+    T.MathUtils.lerp(0.87, 1.0, T.MathUtils.smoothstep(elevation, 0, 0.6)), // 50-57 degrees
+    40 * DEG,
+    lowSun(elevation),
+  );
   const swing = T.MathUtils.clamp(azimuth - Math.PI, -2.2, 2.2) * 0.28; // at most +-35 degrees
   const bearing = Math.atan2(-16, 20) + swing;
   return new T.Vector3(Math.cos(lifted) * Math.sin(bearing) * distance, Math.sin(lifted) * distance, Math.cos(lifted) * Math.cos(bearing) * distance);
@@ -41,8 +59,9 @@ export function createRain(count = 1700, radius = 50, ceiling = 30) {
   }
   const geometry = new T.BufferGeometry();
   geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
+  // Darker than the sky: pale streaks vanish against the lawns and the sand.
   const material = new T.LineBasicMaterial({
-    color: '#aebfcc',
+    color: '#7f8f9c',
     transparent: true,
     opacity: 0,
     depthWrite: false,

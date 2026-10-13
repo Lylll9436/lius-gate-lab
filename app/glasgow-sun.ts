@@ -23,6 +23,30 @@ export type SkyState = {
   clock: string;
 };
 
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export const SEASONS: readonly Season[] = ['spring', 'summer', 'autumn', 'winter'];
+
+/**
+ * The season in Glasgow, by meteorological month (March to May is spring), so the trees can
+ * blossom or turn. `?season=spring|summer|autumn|winter` in the search string previews one.
+ * Summer is the default when the month cannot be read.
+ */
+export function glasgowSeason(date = new Date(), search = ''): Season {
+  const asked = new URLSearchParams(search).get('season');
+  if (SEASONS.includes(asked as Season)) return asked as Season;
+  const month = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', month: 'numeric' }).format(date),
+  );
+  if (!(month >= 1 && month <= 12)) return 'summer';
+  return month >= 3 && month <= 5
+    ? 'spring'
+    : month >= 6 && month <= 8
+      ? 'summer'
+      : month >= 9 && month <= 11
+        ? 'autumn'
+        : 'winter';
+}
+
 /** Approximate solar position for Glasgow at a given instant. */
 export function glasgowSky(date = new Date()): SkyState {
   const parts = Object.fromEntries(
