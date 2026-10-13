@@ -428,7 +428,10 @@ export function buildTown(
     g.add(m);
     return m;
   }
-  /** A pitched roof along the local x axis, with gable ends and a ridge cap. */
+  /**
+   * A pitched roof along the local x axis: a pentagon profile with a short fascia at the eaves,
+   * bevelled ends and a fat ridge cap. For small roofs (hut, dormers); buildings use slabRoof.
+   */
   function pitchedRoof(
     g: T.Object3D,
     x: number,
@@ -438,31 +441,61 @@ export function buildTown(
     d: number,
     rise: number,
     color = palette.slate,
-    opts: { ridge?: boolean; thickness?: number } = {},
+    opts: { ridge?: boolean; ridgeColor?: string } = {},
   ) {
+    const f = Math.min(0.16, 0.3 * rise),
+      b = 0.03;
     const shape = new T.Shape();
     shape.moveTo(-d / 2, 0);
     shape.lineTo(d / 2, 0);
+    shape.lineTo(d / 2, f);
     shape.lineTo(0, rise);
+    shape.lineTo(-d / 2, f);
     shape.closePath();
     const mesh = new T.Mesh(
-      new T.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false }),
+      new T.ExtrudeGeometry(shape, {
+        depth: w - 2 * b,
+        bevelEnabled: true,
+        bevelThickness: b,
+        bevelSize: b,
+        bevelOffset: -b,
+        bevelSegments: 1,
+      }),
       material(color, 'slate'),
     );
     mesh.rotation.y = Math.PI / 2;
-    mesh.position.set(x - w / 2, y, z);
+    mesh.position.set(x - w / 2 + b, y, z);
     mesh.castShadow = mesh.receiveShadow = true;
     // An overhang for the eave bake, measured from the wall plate.
     mesh.userData.roof = true;
     mesh.userData.eaveY = y;
     g.add(mesh);
-    if (opts.ridge !== false) {
-      box(g, x, y + rise + 0.02, z, w + 0.04, 0.07, 0.16, palette.slateLight, 'slate');
-    }
-    // Eaves boards along the long sides.
-    for (const side of [-1, 1])
-      box(g, x, y + 0.02, z + (side * d) / 2, w + 0.04, 0.09, 0.08, palette.trim, 'wood');
+    if (opts.ridge !== false) box(g, x, y + rise - 0.01, z, w + 0.04, 0.12, 0.2, opts.ridgeColor ?? palette.slateLight, 'slate');
     return mesh;
+  }
+  /** Two rounded 0.2 slabs on the plate edges (+-d/2 at y), eave/verge overhang, 0.16x0.26 ridge, stone gables tucked under. Ridge along x. Returns ridge top. */
+  // oxlint-disable-next-line no-unused-vars -- the building rebuilds (Steps 14-19) call it
+  function slabRoof(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, rise: number, color: string, opts: { eave?: number; verge?: number; thick?: number; ridge?: string; gable?: string; inset?: number } = {}) {
+    const e = opts.eave ?? 0.4, v = opts.verge ?? 0.25, t = opts.thick ?? 0.2, half = d / 2;
+    const a = Math.atan2(rise, half), s = Math.sin(a), c = Math.cos(a);
+    const len = (half + e + t * s) / c, zc = (half + e) / 2;
+    const yc = y + rise - ((half + e - t * s) / 2) * Math.tan(a) + (c * t) / 2;
+    for (const side of [-1, 1]) {
+      const plate = box(g, x, yc, z + side * zc, w + 2 * v, t, len, color, 'slate', { rx: side * a });
+      // A sloped slab's box drops below the wall top, so it says where its eave is (Step 5 bake).
+      plate.userData.roof = true;
+      plate.userData.eaveY = y;
+    }
+    const top = y + rise + t / c;
+    box(g, x, top - 0.03, z, w + 2 * v + 0.06, 0.16, 0.26, opts.ridge ?? palette.slateLight, 'slate');
+    if (opts.gable) {
+      const inner = half - (opts.inset ?? 0.15), k = (half - inner) * Math.tan(a) - 0.02;
+      const sh = new T.Shape(); sh.moveTo(-inner, 0); sh.lineTo(inner, 0);
+      if (k > 0.01) sh.lineTo(inner, k); sh.lineTo(0, rise - 0.02); if (k > 0.01) sh.lineTo(-inner, k); sh.closePath();
+      const geo = new T.ExtrudeGeometry(sh, { depth: 0.16, bevelEnabled: false });
+      for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, 'stone')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
+    }
+    return top;
   }
   function gabledRoofEnds(
     g: T.Object3D,
@@ -491,7 +524,37 @@ export function buildTown(
       g.add(mesh);
     }
   }
-  /** A window: dark glass set into a light frame, sill and lintel. Faces local +z. */
+  /**
+   * A bevelled frame ring, extruded `deep` out of the wall face at z: rectangular or arched,
+   * closed (a window) or open at the foot (an arched doorway). Returns the ring outline maker.
+   */
+  function frameRing(
+    g: T.Object3D,
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    h: number,
+    f: number,
+    deep: number,
+    color: string,
+    kind: SurfaceKind,
+    arched = false,
+    open = false,
+  ) {
+    const r=w/2, s=new T.Shape();
+    const ring=(grow:number)=>{ const p=new T.Shape(); p.moveTo(-r-grow,-h/2-grow); p.lineTo(r+grow,-h/2-grow); if(arched){p.lineTo(r+grow,h/2); p.absarc(0,h/2,r+grow,0,Math.PI,false);} else {p.lineTo(r+grow,h/2+grow); p.lineTo(-r-grow,h/2+grow);} p.closePath(); return p; };
+    let outline=s;
+    if(open){ s.moveTo(-r-f,-h/2); s.lineTo(-r,-h/2); s.lineTo(-r,h/2); if(arched) s.absarc(0,h/2,r,Math.PI,0,true); else s.lineTo(r,h/2); s.lineTo(r,-h/2); s.lineTo(r+f,-h/2); if(arched){ s.lineTo(r+f,h/2); s.absarc(0,h/2,r+f,0,Math.PI,false);} else { s.lineTo(r+f,h/2+f); s.lineTo(-r-f,h/2+f);} s.closePath(); }
+    else { outline=ring(f); outline.holes.push(ring(0)); }
+    const b=0.02, m=new T.Mesh(new T.ExtrudeGeometry(outline,{depth:deep-2*b,bevelEnabled:true,bevelThickness:b,bevelSize:b,bevelOffset:-b,bevelSegments:1,curveSegments:8}),material(color,kind));
+    m.position.set(x,y,z+b); m.castShadow=m.receiveShadow=true; g.add(m); return ring;
+  }
+  /**
+   * A window: one chunky bevelled frame proud of the wall face at z, glass recessed 0.1 behind
+   * the frame face, a chunky sill and lintel (a keystone on arched ones). Faces local +z.
+   * `bars` is accepted for old callers and ignored: no glazing bars.
+   */
   function windowAt(
     g: T.Object3D,
     x: number,
@@ -499,41 +562,21 @@ export function buildTown(
     z: number,
     w: number,
     h: number,
-    opts: { arched?: boolean; frame?: string; sill?: boolean; bars?: number } = {},
+    opts: { arched?: boolean; frame?: string; dress?: string; sill?: boolean; lintel?: boolean; mullion?: boolean; glass?: string; bars?: number } = {},
   ) {
-    const frame = opts.frame ?? palette.trim;
-    box(g, x, y, z + 0.015, w, h, 0.05, palette.glassDark, 'glass');
-    const t = 0.045;
-    box(g, x - w / 2, y, z + 0.035, t, h + t, 0.07, frame, 'paint');
-    box(g, x + w / 2, y, z + 0.035, t, h + t, 0.07, frame, 'paint');
-    box(g, x, y - h / 2, z + 0.035, w + t, t, 0.07, frame, 'paint');
-    if (!opts.arched) box(g, x, y + h / 2, z + 0.035, w + t, t, 0.07, frame, 'paint');
-    const bars = opts.bars ?? 1;
-    for (let i = 1; i <= bars; i++)
-      box(g, x, y - h / 2 + (h * i) / (bars + 1), z + 0.04, w, 0.025, 0.03, frame, 'paint');
-    box(g, x, y, z + 0.04, 0.025, h, 0.03, frame, 'paint');
-    if (opts.sill !== false)
-      box(g, x, y - h / 2 - 0.05, z + 0.07, w + 0.2, 0.07, 0.16, palette.trim, 'stone');
-    if (opts.arched) {
-      const arch = new T.Mesh(
-        new T.CylinderGeometry(w / 2, w / 2, 0.05, 14, 1, false, Math.PI / 2, Math.PI),
-        material(palette.glassDark, 'glass'),
-      );
-      arch.rotation.x = Math.PI / 2;
-      arch.position.set(x, y + h / 2, z + 0.015);
-      arch.castShadow = true;
-      g.add(arch);
-      const ring = new T.Mesh(
-        new T.TorusGeometry(w / 2 + 0.01, 0.028, 6, 16, Math.PI),
-        material(frame, 'paint'),
-      );
-      ring.position.set(x, y + h / 2, z + 0.04);
-      g.add(ring);
-      box(g, x, y + h / 2 + w / 2 + 0.03, z + 0.06, 0.12, 0.14, 0.1, palette.trim, 'stone');
-    } else {
-      box(g, x, y + h / 2 + 0.07, z + 0.06, w + 0.22, 0.09, 0.12, palette.trim, 'stone');
-    }
+    const f=0.11, r=w/2, frame=opts.frame??palette.trim, dress=opts.dress??palette.trim;
+    const ring=frameRing(g,x,y,z,w,h,f,0.16,frame,'paint',opts.arched);
+    const glass=new T.Mesh(new T.ShapeGeometry(ring(0.01),8),material(opts.glass??palette.glass,'glass'));
+    glass.position.set(x,y,z+0.06); g.add(glass); // 0.1 behind the frame face
+    if(opts.mullion) box(g,x,y,z+0.08,0.08,h,0.06,frame,'paint');
+    if(opts.sill!==false) box(g,x,y-h/2-f-0.05,z+0.11,w+2*f+0.16,0.1,0.22,dress,'stone');
+    if(opts.lintel!==false){ if(opts.arched) box(g,x,y+h/2+r+f+0.1,z+0.1,0.24,0.32,0.2,dress,'stone'); else box(g,x,y+h/2+f+0.09,z+0.09,w+2*f+0.2,0.18,0.18,dress,'stone'); }
   }
+  /**
+   * A door on the wall face at z: one leaf with a raised rim (the centre reads recessed), a gold
+   * knob, a 0.18 stone surround and, when the sill y is above the ground, nested 0.14 risers that
+   * stand on y=0. `fanlight` is accepted for old callers and ignored; `arched` is the arched variant.
+   */
   function door(
     g: T.Object3D,
     x: number,
@@ -542,50 +585,21 @@ export function buildTown(
     w: number,
     h: number,
     color: string,
-    opts: { fanlight?: boolean; steps?: number; surround?: string; width?: number } = {},
+    opts: { arched?: boolean; fanlight?: boolean; surround?: string; width?: number; landing?: number; steps?: boolean | number } = {},
   ) {
-    const surround = opts.surround ?? palette.trim;
-    // The leaf stands proud of the wall face at z; the surround frames it.
-    box(g, x, y + h / 2, z + 0.02, w, h, 0.08, color, 'paint');
-    for (const dx of [-w * 0.26, w * 0.26])
-      for (const dy of [h * 0.3, h * 0.62])
-        box(g, x + dx, y + dy, z + 0.07, w * 0.34, h * 0.22, 0.02, color, 'paint', { bevel: 0.01 });
-    box(g, x + w * 0.3, y + h * 0.47, z + 0.085, 0.035, 0.035, 0.035, palette.bronze, 'metal');
-    for (const side of [-1, 1])
-      box(g, x + side * (w / 2 + 0.07), y + h / 2 + 0.1, z + 0.02, 0.14, h + 0.2, 0.16, surround, 'stone');
-    if (opts.fanlight) {
-      const fan = new T.Mesh(
-        new T.CylinderGeometry(w / 2, w / 2, 0.06, 14, 1, false, Math.PI / 2, Math.PI),
-        material(palette.glass, 'glass'),
-      );
-      fan.rotation.x = Math.PI / 2;
-      fan.position.set(x, y + h, z + 0.03);
-      g.add(fan);
-      const rim = new T.Mesh(
-        new T.TorusGeometry(w / 2 + 0.02, 0.035, 6, 16, Math.PI),
-        material(surround, 'stone'),
-      );
-      rim.position.set(x, y + h, z + 0.06);
-      g.add(rim);
-      box(g, x, y + h + w / 2 + 0.08, z + 0.03, w + 0.34, 0.12, 0.18, surround, 'stone');
-    } else {
-      box(g, x, y + h + 0.1, z + 0.03, w + 0.34, 0.16, 0.2, surround, 'stone');
-    }
-    const steps = opts.steps ?? 2;
-    for (let s = 0; s < steps; s++) {
-      const depth = 0.34 + s * 0.2;
-      box(
-        g,
-        x,
-        y - 0.07 - s * 0.09,
-        z + depth / 2 + 0.02,
-        (opts.width ?? w + 0.6) + s * 0.16,
-        0.09,
-        depth,
-        palette.stoneDark,
-        'stone',
-      );
-    }
+    const s=opts.surround??palette.trim, f=0.18;
+    box(g,x,y+h/2,z+0.05,w,h,0.1,color,'paint');
+    for(const sx of [-1,1]) box(g,x+sx*(w/2-0.08),y+h/2,z+0.12,0.16,h,0.04,color,'paint');
+    for(const ry of [0.08,h-0.08]) box(g,x,y+ry,z+0.12,w-0.32,0.16,0.04,color,'paint'); // centre reads 0.04 recessed
+    box(g,x+w*0.3,y+h*0.5,z+0.17,0.08,0.08,0.06,palette.gold,'metal');
+    if(opts.arched){ const fan=new T.Shape(); fan.absarc(0,0,w/2,0,Math.PI,false); fan.closePath();
+      const gl=new T.Mesh(new T.ShapeGeometry(fan,8),material(palette.glass,'glass')); gl.position.set(x,y+h,z+0.06); g.add(gl);
+      frameRing(g,x,y+h/2,z,w,h,0.2,0.24,s,'stone',true,true); box(g,x,y+h+w/2+0.2,z+0.12,0.28,0.36,0.24,s,'stone'); }
+    else { for(const sx of [-1,1]) box(g,x+sx*(w/2+f/2),y+(h+f)/2,z+0.1,f,h+f,0.2,s,'stone'); box(g,x,y+h+0.11,z+0.12,w+2*f+0.16,0.22,0.24,s,'stone'); }
+    if(opts.steps===false) return;
+    const landing=opts.landing??0, n=y>0.05?Math.max(1,Math.round(y/0.14)):0;
+    for(let i=landing>0?1:0;i<n;i++){ const tread=y-(i*y)/n, front=landing+(landing>0?i:i+1)*0.3;
+      box(g,x,tread/2,z+(front-0.05)/2,(opts.width??w+0.5)+i*0.08,tread,front+0.05,palette.plinth,'stone'); }
   }
   function railing(g: T.Object3D, x: number, y: number, z: number, length: number, height: number, ry = 0) {
     const r = new T.Group();
@@ -613,14 +627,29 @@ export function buildTown(
     box(r, 0, 0.03, 0, length + 0.1, 0.06, 0.14, color, 'stone');
     return r;
   }
-  function quoins(g: T.Object3D, w: number, d: number, h: number, color: string, y0 = 0.1) {
-    for (const sx of [-1, 1])
-      for (const sz of [-1, 1])
-        for (let y = y0 + 0.2; y < h - 0.2; y += 0.52) {
-          const long = Math.round(y * 10) % 2 === 0;
-          box(g, (sx * w) / 2, y, (sz * d) / 2, long ? 0.34 : 0.22, 0.24, long ? 0.22 : 0.34, color, 'stone');
-        }
+  /**
+   * Corner quoins from y0 to y1: 0.45-tall blocks alternating long and short by index, tucked into
+   * the wall corner so only 0.06 stands proud. `front` caps the block length on the front face;
+   * `corners: 'front'` dresses the two front corners only.
+   */
+  function quoins(g: T.Object3D, w: number, d: number, y0: number, y1: number, color: string, opts: { front?: number; corners?: 'all' | 'front' } = {}) {
+    const proud=0.06, tall=0.45, n=Math.max(2,Math.floor((y1-y0+0.07)/(tall+0.07))), step=(y1-y0-tall)/(n-1);
+    for(const sx of [-1,1]) for(const sz of opts.corners==='front'?[1]:[-1,1]) for(let i=0;i<n;i++){
+      const long=i%2===0, lx=Math.min(long?0.45:0.3,opts.front??0.45), lz=long?0.3:0.45;
+      box(g,sx*(w/2+proud-lx/2),y0+tall/2+i*step,sz*(d/2+proud-lz/2),lx,tall,lz,color,'stone'); }
   }
+  /** A battered, grounded base (6 degree batter) w x d plus `proud` all round, with an optional rusticated block row. Returns its height. */
+  // oxlint-disable-next-line no-unused-vars -- the building rebuilds (Steps 14-19) call it
+  function plinth(g: T.Object3D, w: number, d: number, color: string, opts: { x?: number; z?: number; height?: number; proud?: number; blocks?: boolean } = {}) {
+    const ph=opts.height??0.42, p=opts.proud??0.25, x=opts.x??0, z=opts.z??0;
+    box(g,x,ph/2,z,w+2*p,ph,d+2*p,color,'stone',{taper:ph*0.105}); // 6 degree batter
+    if(opts.blocks){ const run=w+2*p-0.1, n=Math.max(2,Math.round(run/0.65)), len=run/n;
+      for(const sz of [-1,1]) for(let i=0;i<n;i++) box(g,x-run/2+len*(i+0.5),ph*0.42,z+sz*(d/2+p-0.02),len-0.05,ph*0.72,0.12,i%2?color:'#b89c6c','stone'); }
+    return ph;
+  }
+  /** A fat chimney stack from y0 to top with a cap and `pots` pantile pots. */
+  // oxlint-disable-next-line no-unused-vars -- the building rebuilds (Steps 14-19) call it
+  function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'stone'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'stone',18); }
 
   /* ---------------------------------------------------------------- */
   /* Terrain                                                           */
@@ -1591,7 +1620,7 @@ export function buildTown(
       stone = palette.blonde;
     box(shell, 0, 0.15, 0, w + 0.3, 0.3, d + 0.3, palette.plinth, 'stone');
     box(shell, 0, 0.3 + h / 2, 0, w, h, d, stone, 'stone');
-    quoins(shell, w, d, h + 0.3, palette.trim);
+    quoins(shell, w, d, 0.3, 4.5, palette.trim);
     // Pilasters and arched windows on the front, plain windows elsewhere.
     for (let i = 0; i < 7; i++) {
       const x = -w / 2 + 0.55 + (i * (w - 1.1)) / 6;
@@ -1719,7 +1748,7 @@ export function buildTown(
     const doorColor = variant === 'villa' ? palette.greenDoor : variant === 'red-tenement' ? palette.blueDoor : palette.redDoor;
     box(shell, 0, 0.12, 0, w + 0.2, 0.24, d + 0.2, variant === 'red-tenement' ? palette.plinthRed : palette.plinth, 'stone');
     box(shell, 0, 0.24 + h / 2, 0, w, h, d, stone, 'stone');
-    quoins(shell, w, d, h + 0.24, trim, 0.24);
+    quoins(shell, w, d, 0.24, 3.34, trim, { front: 0.25, corners: 'front' });
     box(shell, 0, 0.24 + h * 0.5, 0, w + 0.08, 0.07, d + 0.08, trim, 'stone');
     box(shell, 0, 0.24 + h + 0.06, 0, w + 0.3, 0.16, d + 0.3, trim, 'stone');
     // Ground floor: a bay window and the front door; first floor: two sashes.
@@ -1739,10 +1768,12 @@ export function buildTown(
       bay.add(face);
       windowAt(face, 0, 1.0, 0.0, 0.26, 0.95, { frame: trim, sill: false, bars: 1 });
     }
-    door(shell, doorX, 0.24, d / 2 + 0.02, 0.74, 1.95, doorColor, { fanlight: true, steps: 2, width: 1.1 });
+    // Until the Step 14 rebuild the door sits under the right first-floor window: 1.75 tall, its head
+    // stands in for that window's sill, so the two never share a face.
+    door(shell, doorX, 0.24, d / 2 + 0.02, 0.74, 1.75, doorColor, { fanlight: true, steps: 2, width: 1.1 });
     railing(shell, doorX - 0.6, 0.24, d / 2 + 0.5, 0.7, 0.8, Math.PI / 2);
     railing(shell, doorX + 0.6, 0.24, d / 2 + 0.5, 0.7, 0.8, Math.PI / 2);
-    for (const x of [-0.65, 0.65]) windowAt(shell, x, 0.24 + h * 0.76, d / 2, 0.58, 0.95, { frame: trim });
+    for (const x of [-0.65, 0.65]) windowAt(shell, x, 0.24 + h * 0.76, d / 2, 0.58, 0.95, { frame: trim, sill: x < 0 });
     // Rear windows and a garden door.
     const rear = new T.Group();
     rear.position.z = -d / 2;
@@ -1859,7 +1890,7 @@ export function buildTown(
       h = 3.3;
     box(shell, 0, 0.12, 0, w + 0.3, 0.24, d + 0.3, palette.plinth, 'stone');
     box(shell, 0, 0.24 + h / 2, 0, w, h, d, palette.brick, 'stone');
-    quoins(shell, w, d, h + 0.24, palette.brickLight, 0.24);
+    quoins(shell, w, d, 0.24, 3.54, palette.brickLight);
     for (let i = 0; i < 5; i++) {
       const x = -w / 2 + 0.6 + (i * (w - 1.2)) / 4;
       box(shell, x, 0.24 + h / 2, d / 2 + 0.05, 0.28, h, 0.1, palette.brickLight, 'stone');
