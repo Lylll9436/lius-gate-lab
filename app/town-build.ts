@@ -2330,23 +2330,37 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     tail.name = spec.id + '-tail';
     tail.position.set(0, 0.8, -0.6);
     cow.add(tail);
-    box(tail, 0, -0.21, 0, 0.07, 0.42, 0.07, tone, 'fabric'); // strand
+    box(tail, 0, -0.21, 0, 0.07, 0.42, 0.07, tone, 'fabric').userData.noShadow = true; // strand: like the tuft it casts no shadow, so a tail is one mesh
     coat(paintByHeight(new T.IcosahedronGeometry(0.09, 1).scale(1, 1.4, 1), COAT.dark, () => 1), tail).position.y = -0.45; // tuft
-    herdPose(spec, head, tail, 0);
+    headPose(spec, head, 0);
+    tailPose(spec, tail, 0);
+    // Five small animated meshes in all: each head, and each adult's tail (the calf's stays still).
+    head.userData.keepSeparate = true;
+    head.userData.herdPart = 'head';
+    animated.push({ object: head, update: (time) => headPose(spec, head, time) });
+    if (!calf) {
+      tail.userData.keepSeparate = true;
+      tail.userData.herdPart = 'tail';
+      animated.push({ object: tail, update: (time) => tailPose(spec, tail, time) });
+    }
     return { cow, head, tail };
   }
   /**
-   * The herd's idle at `time`: a slow graze cycle (about 40 s, with long holds) that lowers the
-   * head to the grass, or for the cow at the rack only to the hay; a chewing bob while it is
-   * down, a look about while it is up, a rare ear-flick twitch and bursts of tail swishing.
+   * A head's idle at `time`: a slow graze cycle (about 40 s, with long holds) that lowers it to
+   * the grass, or for the cow at the rack only to the hay; a chewing bob while it is down, a
+   * look about while it is up and a rare ear-flick twitch. Reduced motion holds time 0.
    */
-  function herdPose(spec: plan.HerdMember, head: T.Object3D, tail: T.Object3D, time: number) {
+  function headPose(spec: plan.HerdMember, head: T.Object3D, time: number) {
     const { phase } = spec,
       s = sstep(0.5 + 0.5 * Math.sin(time * 0.16 + phase), 0.2, 0.8);
     head.rotation.x = (spec.eating ? mix(-0.06, 0.12, s) : mix(-0.08, 0.6, s)) + 0.03 * s * Math.sin(time * 5 + phase);
-    head.rotation.y = 0.15 * (1 - s) * Math.sin(time * 0.23 + phase);
-    head.rotation.z = 0.07 * Math.max(0, Math.sin(time * 0.9 + phase * 3)) ** 16;
-    // Swishes come in bursts; at time 0 (and so with reduced motion) every tail hangs still.
+    // Both start from rest, so the held pose looks straight ahead along the body.
+    head.rotation.y = 0.15 * (1 - s) * Math.cos(time * 0.23 + phase);
+    head.rotation.z = 0.07 * Math.max(0, Math.sin(time * 0.9 + phase * 3 + 1)) ** 16;
+  }
+  /** A tail swishes in bursts; at time 0 (and so with reduced motion) every tail hangs still. */
+  function tailPose(spec: plan.HerdMember, tail: T.Object3D, time: number) {
+    const { phase } = spec;
     tail.rotation.z = 0.35 * Math.sin(time * 2.4 + phase) * sstep(Math.sin(time * 0.31 + phase * 1.7 + Math.PI), 0.55, 0.9);
   }
   /**

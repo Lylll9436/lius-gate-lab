@@ -392,6 +392,20 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
+// The herd idles with five small animated meshes (three heads, two adult tails). At time 0, the
+// pose reduced motion holds, cow-b looks up at the Life camera, cow-a feeds at the rack, the
+// calf grazes and every tail hangs still.
+const herdParts = model.animated.filter((e) => e.object.userData.herdPart);
+assert.deepEqual(herdParts.map((e) => e.object.name).sort(), ['calf-head', 'cow-a-head', 'cow-a-tail', 'cow-b-head', 'cow-b-tail']);
+for (const e of herdParts) e.update(0, 0);
+const part = (name) => herdParts.find((e) => e.object.name === name).object;
+assert(part('cow-b-head').rotation.x < 0, 'cow-b holds its head up.');
+for (const name of ['cow-a-head', 'cow-b-head', 'calf-head'])
+  assert(Math.abs(part(name).rotation.y) < 0.01 && Math.abs(part(name).rotation.z) < 0.01, name + ' looks straight ahead.');
+assert(part('cow-a-head').rotation.x > 0.1 && part('cow-a-head').rotation.x < 0.25, 'cow-a feeds at the hay.');
+assert(part('calf-head').rotation.x > 0.4, 'The calf grazes.');
+for (const name of ['cow-a-tail', 'cow-b-tail']) assert(Math.abs(part(name).rotation.z) < 1e-9, name + ' hangs still.');
+for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.children.every((c) => c.isMesh), 'Batched: ' + e.object.name);
 // The season shows on the trees: blossom only in spring, autumn tones only in autumn.
 const { glasgowSeason } = await load('glasgow-sun');
 const { treeLook } = await load('town-build');
