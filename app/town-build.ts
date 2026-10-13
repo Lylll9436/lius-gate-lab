@@ -2205,8 +2205,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     ).normalize();
   }
   /**
-   * A heather drift: three low, knobbly lumps, each laid along the slope and sunk by a quarter of
-   * its height, green-brown on the sides and mottled with the season's bloom on top. No shadow.
+   * A heather drift: three low, knobbly lumps, each laid along the slope and sunk by about a
+   * quarter of its height, green-brown on the sides under a crown of the season's bloom. No shadow.
    */
   function heatherDrift(g: T.Object3D, drift: plan.HeatherDrift, index: number) {
     const look = heatherLook(season),
@@ -2232,7 +2232,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       }
       geo.rotateY(hash(index * 5 + k) * Math.PI);
       geo.scale(1, 0.66, 1);
-      geo.translate(0, 0.3 * l.r, 0); // 1.2r tall, a quarter of it under the ground
+      geo.translate(0, 0.3 * l.r, 0); // 1.32r tall, 0.36r of it under the ground
       geo.applyQuaternion(new T.Quaternion().setFromUnitVectors(up, terrainNormal(l.x, l.z)));
       geo.translate(l.x, plan.terrainHeight(l.x, l.z), l.z);
       geo.computeVertexNormals();
