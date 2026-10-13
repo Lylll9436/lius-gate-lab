@@ -288,20 +288,20 @@ assert(
   study.includes('Test research') && !study.includes('started recently'),
   'Real projects replace the Research chapter’s note for visitors.',
 );
-// Chapters with nothing published yet speak to visitors: no notes for the maintainer,
-// and every English text free of Chinese.
-for (const b of buildings)
-  for (const { en, zh } of [
-    b.summary,
-    b.architecture,
-    ...b.sections.flatMap((s) => [s.heading, s.body]),
-  ]) {
+// Chapters with nothing published yet speak to visitors: no notes for the maintainer in the
+// site's own place copy, and every English text free of Chinese. A resident's summary and
+// profile are their own words from their record, so a bio may say "records" or "维护".
+for (const b of buildings) {
+  const texts = [b.summary, b.architecture, ...b.sections.flatMap((s) => [s.heading, s.body])];
+  const resident = records.peopleRecords.some((p) => p.buildingId === b.id);
+  for (const { en, zh } of resident ? [b.architecture] : texts)
     assert(
       !/catalog|repositor|\brecords?\b|maintain/i.test(en) && !/目录|记录|维护/.test(zh),
       'Visitors see no maintainer wording in ' + b.id + ': ' + en,
     );
+  for (const { en } of texts)
     assert(!/[\u3400-\u9fff]/.test(en), 'English place text contains Chinese: ' + en);
-  }
+}
 const studio = buildings.find((b) => b.id === 'research-studio'),
   archive = buildings.find((b) => b.id === 'city-archive');
 assert.deepEqual(
@@ -311,7 +311,7 @@ assert.deepEqual(
 );
 for (const b of [studio, archive])
   assert(
-    !/^No /.test(b.sections[0].body.en) && !/^目前尚未/.test(b.sections[0].body.zh),
+    !b.sections[0].body.en.startsWith('No ') && !b.sections[0].body.zh.startsWith('目前尚未'),
     'Empty chapters say what is coming, not that nothing exists: ' + b.id,
   );
 const park = renderToStaticMarkup(
