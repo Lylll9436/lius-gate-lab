@@ -447,6 +447,26 @@ export function lampPlan(): LampSpec[] {
 export function walkLoop(offset: number): XZ[] {
   return offsetPolyline(ringLine, offset);
 }
+/**
+ * Height of the surface under a walker: the pavement, except where an avenue opens into the
+ * ring. There the inner walkers step onto the avenue's kerb (0.85-1.03 from its centre line)
+ * and down to the zebra at road level, and back up on the far side.
+ */
+export function walkFloor(x: number, z: number) {
+  let d = Infinity;
+  for (const a of avenues) if (a.crossing) d = Math.min(d, distanceToSegment([x, z], a.from, a.to));
+  const step = (from: number, to: number) => {
+    const t = Math.min(1, Math.max(0, (d - from) / (to - from)));
+    return t * t * (3 - 2 * t);
+  };
+  const edge = ROAD_WIDTH / 2;
+  return (
+    terrainHeight(x, z) +
+    levels.road +
+    (levels.kerb - levels.road) * step(edge - 0.08, edge + 0.02) -
+    (levels.kerb - levels.pavement) * step(edge + 0.14, edge + 0.22)
+  );
+}
 export const tramLoop = ringLine;
 
 export const districtAnchors: Record<DistrictId, { center: XZ; size: XZ }> = {

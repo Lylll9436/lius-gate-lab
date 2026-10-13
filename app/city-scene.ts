@@ -642,7 +642,7 @@ export function createCity(
       );
       walker.root.position.set(
         pose.x,
-        plan.levels.pavement + plan.terrainHeight(pose.x, pose.z) - walker.root.userData.sole,
+        plan.walkFloor(pose.x, pose.z) - walker.root.userData.sole,
         pose.z,
       );
       walker.root.rotation.y = pose.heading + (walker.speed < 0 ? Math.PI : 0);
