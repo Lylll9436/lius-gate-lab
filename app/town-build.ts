@@ -217,6 +217,25 @@ const hoardingWalls = (plot: typeof plan.reservedPlot) =>
     [-plot.w / 2, 0, plot.d, Math.PI / 2],
     [plot.w / 2, 0, plot.d, Math.PI / 2],
   ] as const;
+/**
+ * The paddock's dry-stone dykes as straight runs on the plan's centre lines: centre x, z,
+ * length and rotation. The north and south runs reach over the corners; the field gate cuts the north one.
+ */
+const paddockRuns = (): (readonly [number, number, number, number])[] => {
+  const P = plan.paddock,
+    x0 = P.x - P.w / 2 - P.wall / 2,
+    x1 = P.x + P.w / 2 + P.wall / 2,
+    g0 = P.gate.x - P.gate.width / 2,
+    g1 = P.gate.x + P.gate.width / 2,
+    north = P.z - P.d / 2;
+  return [
+    [(x0 + g0) / 2, north, g0 - x0, 0],
+    [(g1 + x1) / 2, north, x1 - g1, 0],
+    [P.x, P.z + P.d / 2, x1 - x0, 0],
+    [P.x - P.w / 2, P.z, P.d - P.wall, Math.PI / 2],
+    [P.x + P.w / 2, P.z, P.d - P.wall, Math.PI / 2],
+  ];
+};
 
 /* ------------------------------------------------------------------ */
 /* Ground masks                                                        */
@@ -292,6 +311,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
     disc(t.x, t.z, 1.0 * t.size, 0.45, 0.5);
     disc(t.x, t.z, 0.3 * t.size, 0.85, 0.3);
   }
+  paddockMasks(rect);
   const scratch = new Float32Array(N * N);
   for (let pass = 0; pass < 2; pass++) {
     boxBlur(ao, scratch, true);
@@ -342,6 +362,12 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   texture.name = 'ground-masks';
   texture.needsUpdate = true;
   return texture;
+}
+type RectStamp = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => void;
+/** The paddock's ground shade (stamped before the blur): a soft band under every dyke run and a pad under the hay rack. */
+function paddockMasks(rect: RectStamp) {
+  for (const [x, z, length, ry] of paddockRuns()) rect(x, z, length, plan.paddock.wall, ry, 0.5, 0.3);
+  rect(plan.hayRack.x, plan.hayRack.z, 0.5, 1.0, 0, 0.6, 0.3);
 }
 
 type TownOptions = {
@@ -2170,6 +2196,86 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Highland herd                                                     */
+  /* ---------------------------------------------------------------- */
+  /**
+   * The paddock's own colours, judged after the 0.72 grade: the dyke takes the beach boulders'
+   * greys and the hay a pale straw (HSV s 0.44).
+   */
+  const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#d8bd7a' };
+  /** The paddock, its gate and hay rack. */
+  function highlandPaddock(g: T.Object3D) {
+    dyke(g);
+    fieldGate(g);
+    hayRack(g);
+  }
+  /**
+   * Dry-stone dykes: battered, rounded blocks about 0.7 long in the two greys (jittered in
+   * height and turn), under a close row of cope stones set on edge. The top is about 0.5, so
+   * the cows read over it.
+   */
+  function dyke(g: T.Object3D) {
+    const wall = plan.paddock.wall;
+    paddockRuns().forEach(([x, z, length, ry], r) => {
+      const run = new T.Group();
+      run.position.set(x, plan.terrainHeight(x, z), z);
+      run.rotation.y = ry;
+      g.add(run);
+      const blocks = Math.max(1, Math.round(length / 0.7)),
+        block = length / blocks,
+        tops: number[] = [];
+      for (let i = 0; i < blocks; i++) {
+        const k = r * 17 + i,
+          top = 0.35 + (hash(k * 3 + 1) - 0.5) * 0.06;
+        tops.push(top);
+        box(run, -length / 2 + (i + 0.5) * block, top / 2, 0, block, top, wall, PADDOCK.stone[hash(k * 3 + 3) < 0.5 ? 0 : 1], 'stone', { bevel: 0.06, taper: 0.035, ry: (hash(k * 3 + 2) - 0.5) * 0.06 });
+      }
+      // Copes stand close on the block under them, sunk 0.02 so a tilted one never shows a gap.
+      const copes = Math.round(length / 0.12),
+        pitch = length / copes;
+      for (let i = 0; i < copes; i++) {
+        const along = -length / 2 + (i + 0.5) * pitch,
+          h = 0.12 + 0.05 * hash(r * 101 + i * 7 + 1),
+          top = tops[Math.min(blocks - 1, Math.floor((along + length / 2) / block))];
+        box(run, along, top + h / 2 - 0.02, 0, 0.095, h, wall - 0.04, PADDOCK.cope, 'stone', { rz: (hash(r * 101 + i * 7) - 0.5) * 0.24 });
+      }
+    });
+  }
+  /** A field gate across the gateway: posts at the two wall ends, three rails and a brace on the paddock side. */
+  function fieldGate(g: T.Object3D) {
+    const P = plan.paddock,
+      { x, width } = P.gate,
+      z = P.z - P.d / 2;
+    const gate = new T.Group();
+    gate.position.set(x, plan.terrainHeight(x, z), z);
+    g.add(gate);
+    for (const s of [-1, 1]) box(gate, (s * width) / 2, 0.4, 0, 0.16, 0.8, 0.16, palette.woodDark, 'wood'); // posts take the wall ends
+    for (const y of [0.2, 0.4, 0.6]) box(gate, 0, y, 0, width - 0.1, 0.08, 0.06, palette.wood, 'wood'); // rails, 0.03 into each post
+    const run = width - 0.3,
+      rise = 0.4;
+    box(gate, 0, 0.4, 0.06, Math.hypot(run, rise), 0.07, 0.05, palette.wood, 'wood', { rz: Math.atan2(rise, run) }); // brace, clear of the rails' faces
+  }
+  /** The hay rack against the west wall: a trough of hay on four legs, under a small pantile hat on two back posts. */
+  function hayRack(g: T.Object3D) {
+    const { x, z } = plan.hayRack;
+    const rack = new T.Group();
+    rack.position.set(x, plan.terrainHeight(x, z), z);
+    rack.rotation.y = Math.PI / 2; // local x runs along the wall (world z); local +z, the feeding side, faces the paddock
+    g.add(rack);
+    for (const sx of [-0.42, 0.42]) for (const sz of [-0.18, 0.18]) box(rack, sx, 0.275, sz, 0.1, 0.55, 0.1, palette.woodDark, 'wood');
+    box(rack, 0, 0.42, 0, 1.0, 0.28, 0.5, palette.wood, 'wood'); // trough 0.28-0.56
+    const hay = new T.IcosahedronGeometry(0.42, 1).scale(1.15, 0.5, 0.55);
+    paintByHeight(hay, PADDOCK.hay, (y) => mix(0.84, 1.04, sstep(y, -0.21, 0.21)));
+    const mound = new T.Mesh(hay, material('#ffffff', 'foliage'));
+    mound.position.y = 0.62;
+    mound.userData.noShadow = true;
+    mound.receiveShadow = true;
+    rack.add(mound);
+    for (const sx of [-0.5, 0.5]) box(rack, sx, 0.5, -0.32, 0.08, 1.0, 0.08, palette.woodDark, 'wood'); // back posts, just inside the wall
+    pitchedRoof(rack, 0, 1.0, 0, 1.2, 0.8, 0.3, palette.pantile, { ridgeColor: palette.pantileLight });
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
   buildTerrain();
@@ -2238,6 +2344,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   pierAndHarbour(land);
   lighthouse(land);
   hotAirBalloon(city);
+  highlandPaddock(land);
   yield 'park, harbour and landmarks';
 
   const models = new Map<BuildingId, Model>();
