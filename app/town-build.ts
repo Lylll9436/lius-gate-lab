@@ -305,6 +305,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   }
   for (const s of plan.flock) disc(s.x, s.z, 0.3, 0.4, 0.3); // a soft trodden patch under each sheep
   for (const s of plan.standingStones()) disc(s.x, s.z, 0.3, 0.6, 0.25);
+  disc(plan.statueSpot[0], plan.statueSpot[1], 1.6, 0.6, 0.5); // the statue's pad
   const scratch = new Float32Array(N * N);
   for (let pass = 0; pass < 2; pass++) {
     boxBlur(ao, scratch, true);
@@ -2438,6 +2439,68 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(hamper, 0, 0.33, 0, 0.24, 0.06, 0.03, palette.woodDark, 'wood');
     return rug;
   }
+  /**
+   * The Duke of Wellington as Glasgow knows him: a dark bronze rider on a standing horse, an
+   * orange traffic cone on his head, on a plain stone plinth (a base course, a battered die and a
+   * cornice; no inscription) over a 12-sided paved pad. About 3.6 to the cone's tip.
+   */
+  function wellington(g: T.Object3D) {
+    const [x, z] = plan.statueSpot,
+      bronze = '#7a6a52';
+    const root = new T.Group();
+    root.position.set(x, 0, z);
+    root.rotation.y = plan.statueHeading;
+    g.add(root);
+    const pad = new T.Mesh(new T.CylinderGeometry(1.6, 1.6, 0.1, 12), material(palette.plazaDark, 'paving'));
+    pad.position.y = 0.05;
+    pad.receiveShadow = true;
+    root.add(pad);
+    box(root, 0, 0.21, 0, 1.5, 0.22, 2.3, palette.plinth, 'stone'); // base course 0.10..0.32
+    box(root, 0, 0.795, 0, 1.2, 0.95, 2.0, palette.blonde, 'stone', { taper: 0.05 }); // die 0.32..1.27
+    box(root, 0, 1.35, 0, 1.38, 0.16, 2.18, palette.trim, 'stone'); // cornice 1.27..1.43
+    const y0 = 1.43;
+    // The horse, nose to the plaza, the near foreleg stepping forward.
+    for (const sx of [-0.15, 0.15])
+      for (const sz of [-0.4, 0.4]) {
+        const step = sx > 0 && sz > 0 ? 0.18 : 0;
+        box(root, sx, y0 + 0.29, sz + step * 0.25, 0.13, 0.6, 0.14, bronze, 'metal', { rx: -step }); // leg; finish: brass
+      }
+    box(root, 0, y0 + 0.8, 0, 0.5, 0.48, 1.12, bronze, 'metal', { bevel: 0.15 }); // barrel; finish: brass
+    const neck = new T.Group();
+    neck.position.set(0, y0 + 1.12, 0.5);
+    neck.rotation.x = 0.5;
+    root.add(neck);
+    box(neck, 0, 0, 0, 0.34, 0.62, 0.36, bronze, 'metal'); // finish: brass
+    box(neck, 0, 0.04, -0.19, 0.08, 0.56, 0.08, bronze, 'metal'); // mane; finish: brass
+    const head = new T.Group();
+    head.position.set(0, y0 + 1.44, 0.76);
+    head.rotation.x = 0.75;
+    root.add(head);
+    box(head, 0, 0, 0, 0.21, 0.23, 0.46, bronze, 'metal'); // head, nose down; finish: brass
+    for (const s of [-1, 1]) box(head, s * 0.06, 0.14, -0.16, 0.05, 0.12, 0.05, bronze, 'metal'); // ear; finish: brass
+    const tail = new T.Group();
+    tail.position.set(0, y0 + 0.98, -0.56);
+    tail.rotation.x = -0.3;
+    root.add(tail);
+    box(tail, 0, -0.22, 0, 0.1, 0.45, 0.12, bronze, 'metal'); // finish: brass
+    // The rider: saddle cloth, legs down the flanks, torso, arms forward to the reins, head.
+    box(root, 0, y0 + 1.05, -0.05, 0.62, 0.04, 0.5, bronze, 'metal'); // finish: brass
+    for (const s of [-1, 1]) {
+      box(root, s * 0.3, y0 + 0.86, 0.04, 0.14, 0.42, 0.18, bronze, 'metal'); // leg; finish: brass
+      box(root, s * 0.22, y0 + 1.36, 0.06, 0.1, 0.36, 0.12, bronze, 'metal', { rx: -0.6 }); // arm, hands forward to the reins; finish: brass
+    }
+    box(root, 0, y0 + 1.32, -0.05, 0.36, 0.52, 0.26, bronze, 'metal'); // torso; finish: brass
+    sphere(root, 0, y0 + 1.72, -0.03, 0.15, bronze, 'metal'); // finish: brass
+    // The cone, knocked a little askew: a square foot, the cone and its white band.
+    const hat = new T.Group();
+    hat.position.set(0, y0 + 1.84, -0.03);
+    hat.rotation.z = 0.15;
+    root.add(hat);
+    box(hat, 0, 0.015, 0, 0.28, 0.03, 0.28, palette.tramOrange, 'paint'); // finish: enamel
+    cone(hat, 0, 0.21, 0, 0.15, 0.36, palette.tramOrange, 'paint', 12, 0); // finish: enamel
+    cylinder(hat, 0, 0.03 + 0.4 * 0.36, 0, 0.105, 0.105, 0.06, palette.white, 'paint', 12); // finish: enamel
+    return root;
+  }
 
   /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
@@ -2509,6 +2572,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   moorland(land, trees);
   plan.flock.forEach((spec, i) => blackfaceSheep(land, spec, i));
   standingStoneRing(land);
+  wellington(land);
   hotAirBalloon(city);
   yield 'park, harbour and landmarks';
 

@@ -421,6 +421,22 @@ for (const s of stones) {
   assert(plan.terrainHeight(s.x, s.z) < 0.01, 'The stone ring stands on flat ground');
   for (const t of trees) assert(Math.hypot(t.x - s.x, t.z - s.z) - 0.9 * t.size > 0.6, `A standing stone under ${t.id}`);
 }
+// The Duke of Wellington stands on the civic lawn on flat ground: his 1.6 pad stays off the streets
+// and the canopies, well clear of the hall, never in front of it and never on the plaza.
+{
+  const [x, z] = plan.statueSpot,
+    hall = plan.sites['town-hall'],
+    pad = 1.6;
+  assert(plan.distanceToStreets(x, z) > pad + 2, 'The statue crowds a street');
+  assert(Math.hypot(x, z) > plan.PLAZA_RADIUS + 5, 'The statue crowds the plaza');
+  for (const [dx, dz] of [[0, 0], [pad, 0], [-pad, 0], [0, pad], [0, -pad]])
+    assert(plan.terrainHeight(x + dx, z + dz) < 0.01, 'The statue stands on a slope');
+  const outX = Math.max(0, Math.abs(x - hall.x) - hall.w / 2),
+    outZ = Math.max(0, Math.abs(z - hall.z) - hall.d / 2);
+  assert(Math.hypot(outX, outZ) > 5, 'The statue crowds the Town Hall');
+  assert(Math.abs(x - hall.x) > hall.w / 2 + pad + 2, 'The statue stands in front of the Town Hall');
+  for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) - 0.9 * t.size > pad + 0.3, `The statue under ${t.id}`);
+}
 // Heather keeps its own season in muted colours: a mauve bloom in late summer and autumn only.
 const { heatherLook } = await load('town-build');
 const hsv = (hex) => {
