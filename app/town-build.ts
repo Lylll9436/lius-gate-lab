@@ -2280,7 +2280,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     return m;
   }
   /**
-   * A Highland cow (local +z is the nose, 1.65 nose to tail, 0.85 at the withers): a shaggy
+   * A Highland cow (local +z is the nose, about 1.65 nose to tail and 0.95 at the withers): a shaggy
    * barrel with shoulder and rump lumps on short legs, a head with a fringe over the eyes, a
    * dark muzzle and long upswept horns (nubs on a calf), and a tufted tail. Every part is
    * 'fabric'. The head and tail hang from their own pivots, so they can move.
@@ -2334,7 +2334,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     coat(paintByHeight(new T.IcosahedronGeometry(0.09, 1).scale(1, 1.4, 1), COAT.dark, () => 1), tail).position.y = -0.45; // tuft
     headPose(spec, head, 0);
     tailPose(spec, tail, 0);
-    // Five small animated meshes in all: each head, and each adult's tail (the calf's stays still).
+    // Five animated pivots in all: each head, and each adult's tail (the calf's stays still).
     head.userData.keepSeparate = true;
     head.userData.herdPart = 'head';
     animated.push({ object: head, update: (time) => headPose(spec, head, time) });
@@ -2343,7 +2343,6 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       tail.userData.herdPart = 'tail';
       animated.push({ object: tail, update: (time) => tailPose(spec, tail, time) });
     }
-    return { cow, head, tail };
   }
   /**
    * A head's idle at `time`: a slow graze cycle (about 40 s, with long holds) that lowers it to
@@ -2358,6 +2357,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     head.rotation.y = 0.15 * (1 - s) * Math.cos(time * 0.23 + phase);
     head.rotation.z = 0.07 * Math.max(0, Math.sin(time * 0.9 + phase * 3 + 1)) ** 16;
   }
+  /** A tail swishes in bursts; at time 0 (and so with reduced motion) every tail hangs still. */
+  function tailPose(spec: plan.HerdMember, tail: T.Object3D, time: number) {
+    const { phase } = spec;
+    tail.rotation.z = 0.35 * Math.sin(time * 2.4 + phase) * sstep(Math.sin(time * 0.31 + phase * 1.7 + Math.PI), 0.55, 0.9);
+  }
   /**
    * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
    * the Highland-cow outing lives) through an invisible box under the park's own hit box. The
@@ -2370,11 +2374,6 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     hit.position.set(P.x - parkHit.position.x, 0.8 - parkHit.position.y, P.z - parkHit.position.z);
     hit.userData.placeId = 'corner-park';
     parkHit.add(hit);
-  }
-  /** A tail swishes in bursts; at time 0 (and so with reduced motion) every tail hangs still. */
-  function tailPose(spec: plan.HerdMember, tail: T.Object3D, time: number) {
-    const { phase } = spec;
-    tail.rotation.z = 0.35 * Math.sin(time * 2.4 + phase) * sstep(Math.sin(time * 0.31 + phase * 1.7 + Math.PI), 0.55, 0.9);
   }
   /**
    * Dry-stone dykes: battered, rounded blocks about 0.7 long in the two greys (jittered in
