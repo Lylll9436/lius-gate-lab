@@ -1807,7 +1807,11 @@ export function buildTown(
       windowAt(side, 0, y, 0, 3.6, 0.72, { frame: palette.metal, lintel: false });
     }
     // The green roof slab: a white coping, a lawn 0.17 proud, three shrub lumps and two tilted panels.
-    box(shell, ax, 4.5, 0, aw + 0.3, 0.3, d + 0.3, white, 'paint');
+    // The coping is an eave for the glass box. At exactly 0.3 thick its float bounds miss the bake's
+    // flat-slab test (<= 0.3), so it says where its underside is.
+    const coping = box(shell, ax, 4.5, 0, aw + 0.3, 0.3, d + 0.3, white, 'paint');
+    coping.userData.roof = true;
+    coping.userData.eaveY = 4.35;
     box(shell, ax, 4.71, 0, aw - 0.2, 0.22, d - 0.2, palette.canopy[1], 'grass');
     for (const [x, y, z] of [[ax - 0.9, 4.95, -1.3], [ax - 1.0, 4.95, 0.6], [ax + 0.8, 4.92, 1.7]]) {
       const lump = new T.Mesh(new T.IcosahedronGeometry(0.32, 1), material(palette.hedge, 'foliage'));
