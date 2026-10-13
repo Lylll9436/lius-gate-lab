@@ -29,7 +29,7 @@
   --panel-solid: #fbfaf7;
   --ink: #15181a;
   --ink-2: #474c4f;
-  --ink-3: #7b8084;
+  --ink-3: #5f6468;
   --line: rgba(21, 24, 26, 0.12);
   --line-strong: rgba(21, 24, 26, 0.3);
   --accent: #145c48;
@@ -965,17 +965,18 @@ body:has(.mode-explore),
   margin: 14px 0 20px;
   line-height: 0.92;
 }
+/* The title scales with the height too, so a short laptop screen keeps more of the town. */
 .hero-title {
   display: block;
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: clamp(60px, 10.5vw, 148px);
+  font-size: clamp(56px, min(10.5vw, 17vh), 148px);
   letter-spacing: -0.035em;
   font-variation-settings: 'opsz' 144;
   color: var(--ink);
 }
 .hero-title.hero-title-zh {
-  font-size: clamp(56px, 9vw, 128px);
+  font-size: clamp(56px, min(9vw, 15vh), 128px);
   letter-spacing: 0.08em;
   font-weight: 400;
   line-height: 1.1;
@@ -984,7 +985,6 @@ body:has(.mode-explore),
   max-width: 540px;
   font-size: clamp(16px, 1.3vw, 19px);
   line-height: 1.55;
-  color: var(--ink-2);
 }
 .hero-actions {
   display: flex;
@@ -998,8 +998,23 @@ body:has(.mode-explore),
 .hero-hint {
   font-family: var(--font-mono);
   font-size: 11.5px;
+  font-weight: 500;
   letter-spacing: 0.04em;
+}
+/* In daylight the hero's text lies straight on the bright island and the mid-tone sea, where
+   only the darkest ink stays legible. Colour alone: no wash, glow or shadow behind the text.
+   At night the quieter inks stand out against the dark town. */
+.hero-copy .eyebrow,
+.hero-lede,
+.hero-hint {
+  color: var(--ink);
+}
+:root[data-theme='night'] .hero-copy .eyebrow,
+:root[data-theme='night'] .hero-hint {
   color: var(--ink-3);
+}
+:root[data-theme='night'] .hero-lede {
+  color: var(--ink-2);
 }
 .chapter {
   min-height: 100svh;
@@ -1682,8 +1697,20 @@ body:has(.mode-explore),
     padding: 26px 16px 18px;
     background: var(--bg);
   }
+  /* Here the hero sits on the page below the stage, not over the town: the title sizes by
+     width alone and the small text keeps the page's quieter inks. */
   .hero-title {
     font-size: clamp(52px, 15vw, 84px);
+  }
+  .hero-title.hero-title-zh {
+    font-size: clamp(56px, 9vw, 128px);
+  }
+  .hero-copy .eyebrow,
+  .hero-hint {
+    color: var(--ink-3);
+  }
+  .hero-lede {
+    color: var(--ink-2);
   }
   .hero-news {
     position: relative;
