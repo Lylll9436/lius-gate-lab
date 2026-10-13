@@ -27,22 +27,42 @@ export const GROUND_KINDS = new Set<SurfaceKind>(['grass', 'paving', 'asphalt', 
 /** Metal finishes: their boxes get a tighter bevel. */
 export const METAL_KINDS = new Set<SurfaceKind>(['iron', 'brass']);
 
-/** One shared uniform object per surface kind: scales that kind's reflections of the studio room. */
-type SpecUniform = { value: number };
-/** A surface kind's finish: `spec` scales its studio reflections (1 when absent). */
-type Finish = { roughness: number; metalness?: number; spec?: number; clearcoat?: number; clearcoatRoughness?: number };
+/**
+ * One shared uniform object per surface kind, scaling that kind's reflections of the studio
+ * room: x where a reflection looks up (the room's lights and ceiling), y where it looks down
+ * (its floor).
+ */
+type SpecUniform = { value: T.Vector2 };
+/**
+ * A surface kind's finish. `spec` scales its studio reflections (1 when absent); `specFloor`
+ * scales the ones that look down at the room's floor instead (`spec` when absent).
+ */
+type Finish = {
+  roughness: number;
+  metalness?: number;
+  spec?: number;
+  specFloor?: number;
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+};
 /**
  * Only the studio room's reflections (the specular IBL, and the clear coat's) are scaled, after
  * three has gathered them. The diffuse fill, the night dimming and the turn with the view all
  * stay global (scene.environment), so no material carries its own environment map.
+ * Every vertical face reflects the room's floor (the camera looks down at 42.6 degrees), so a
+ * kind can keep its upward reflections (tops, rounded edges) and leave its walls their colour.
  */
-const SPEC_UNIFORM = '#include <common>\nuniform float specBoost;';
+const SPEC_UNIFORM = '#include <common>\nuniform vec2 specBoost;';
 const SPEC_PATCH = `#include <lights_fragment_maps>
 #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
-   radiance *= specBoost;
+{
+   vec3 seen = inverseTransformDirection( reflect( -geometryViewDir, geometryNormal ), viewMatrix );
+   radiance *= mix( specBoost.y, specBoost.x, smoothstep( -.35, .15, seen.y ) );
    #ifdef USE_CLEARCOAT
-   clearcoatRadiance *= specBoost;
+   seen = inverseTransformDirection( reflect( -geometryViewDir, geometryClearcoatNormal ), viewMatrix );
+   clearcoatRadiance *= mix( specBoost.y, specBoost.x, smoothstep( -.35, .15, seen.y ) );
    #endif
+}
 #endif`;
 /** The spec patch alone, for the few library materials drawn unbatched (the clock hands). */
 function specShader(m: T.MeshStandardMaterial, specU: SpecUniform) {
@@ -253,8 +273,10 @@ export function createCityMaterials() {
     wood: { roughness: 0.8 },
     bark: { roughness: 0.95 },
     iron: { roughness: 0.4, metalness: 0.5, spec: 3 },
-    brass: { roughness: 0.3, metalness: 1, spec: 4 },
-    enamel: { roughness: 0.45, spec: 2.5, clearcoat: 1, clearcoatRoughness: 0.15 },
+    // A pale core on tops and rounded parts; walls (which only see the floor) a muted, darker brass.
+    brass: { roughness: 0.3, metalness: 1, spec: 4, specFloor: 2.5 },
+    // Clear-coat lines on rounded edges and a sheen on tops; walls keep their body colour.
+    enamel: { roughness: 0.45, spec: 2, specFloor: 0.5, clearcoat: 1, clearcoatRoughness: 0.25 },
     glass: { roughness: 0.06, spec: 4 },
     foliage: { roughness: 0.8 }, // soft plastic; never a sheen (a pale rim round every tree)
     grass: { roughness: 0.95 },
@@ -270,12 +292,15 @@ export function createCityMaterials() {
   const spec = new Map<SurfaceKind, SpecUniform>();
   function specFor(kind: SurfaceKind) {
     let u = spec.get(kind);
-    if (!u) spec.set(kind, (u = { value: finish[kind]?.spec ?? 1 }));
+    if (!u) {
+      const up = finish[kind]?.spec ?? 1;
+      spec.set(kind, (u = { value: new T.Vector2(up, finish[kind]?.specFloor ?? up) }));
+    }
     return u;
   }
-  /** Live tuning from the console (`__city.model.materialLibrary.setSpec('brass', 3)`). */
-  function setSpec(kind: SurfaceKind, value: number) {
-    specFor(kind).value = value;
+  /** Live tuning from the console: `__city.model.materialLibrary.setSpec('enamel', 2, 0.5)` (up, floor). */
+  function setSpec(kind: SurfaceKind, up: number, floor = up) {
+    specFor(kind).value.set(up, floor);
   }
   function material(colour: string, kind: SurfaceKind = 'stone') {
     const key = `${kind}:${colour}`;
@@ -291,7 +316,7 @@ export function createCityMaterials() {
       const m = look.clearcoat
         ? new T.MeshPhysicalMaterial({ ...options, clearcoat: look.clearcoat, clearcoatRoughness: look.clearcoatRoughness ?? 0 })
         : new T.MeshStandardMaterial(options);
-      if ((look.spec ?? 1) !== 1) specShader(m, specFor(kind));
+      if ((look.spec ?? 1) !== 1 || (look.specFloor ?? 1) !== 1) specShader(m, specFor(kind));
       m.name = `city-${kind}`;
       m.userData.surfaceKind = kind;
       if (kind === 'glass') {

@@ -38,7 +38,7 @@ export const palette = {
   copper: '#6faf9b', copperLight: '#8cc7b2', pantile: '#c8644a', pantileLight: '#d98a6c',
   glass: '#6fa8c4', glassDark: '#6fa8c4', studioGlass: '#8cc4d8', ink: '#26313a',
   greenDoor: '#2e6e4c', blueDoor: '#2d5f8f', redDoor: '#b23a30',
-  wood: '#a06b3e', woodDark: '#6b4529', metal: '#4b545b', bronze: '#a87b45', gold: '#e8b84a',
+  wood: '#a06b3e', woodDark: '#6b4529', metal: '#4b545b', bronze: '#a87b45', gold: '#e8b84a', brass: '#dcbc78',
   road: '#6b7279', roadLine: '#e8e2cc', kerb: '#cfc3a6', pavement: '#d4c4a0', plaza: '#d4c4a0', plazaDark: '#bfac86', path: '#b8946a',
   pool: '#2a86b0', poolEdge: '#62c0d4', poolWater: '#3fa6c4', poolSurface: '#bfe6ee', render: '#f2e9d6',
   grass: '#a2bf50', grassLight: '#aac757', grassDark: '#98b74a', lawnPad: '#8bb038', lawnEdge: '#7a9638',
@@ -50,6 +50,12 @@ export const palette = {
   white: '#f5efe0', lantern: '#ffd48a', tram: '#2f6b4a', tramOrange: '#e07a2c', tramCream: '#efe2c2',
   boat: '#c9412f', balloon: '#c9412f', balloonBand: '#efe2c2',
 };
+/** A roof's finish follows its colour: verdigris copper, glazed pantile, otherwise satin slate. */
+function roofKind(colour: string): SurfaceKind {
+  if (colour === palette.copper || colour === palette.copperLight) return 'copper';
+  if (colour === palette.pantile || colour === palette.pantileLight) return 'pantile';
+  return 'slate';
+}
 
 /**
  * The balloon's ring: centred on the island, out over the shore and the sea, so it stays out
@@ -544,7 +550,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
         bevelOffset: -b,
         bevelSegments: 1,
       }),
-      material(color, 'slate'),
+      material(color, roofKind(color)),
     );
     mesh.rotation.y = Math.PI / 2;
     mesh.position.set(x - w / 2 + b, y, z);
@@ -553,7 +559,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     mesh.userData.roof = true;
     mesh.userData.eaveY = y;
     g.add(mesh);
-    if (opts.ridge !== false) box(g, x, y + rise - 0.01, z, w + 0.04, 0.12, 0.2, opts.ridgeColor ?? palette.slateLight, 'slate');
+    const ridge = opts.ridgeColor ?? palette.slateLight;
+    if (opts.ridge !== false) box(g, x, y + rise - 0.01, z, w + 0.04, 0.12, 0.2, ridge, roofKind(ridge));
     return mesh;
   }
   /** Two rounded 0.2 slabs on the plate edges (+-d/2 at y), eave/verge overhang, 0.16x0.26 ridge, stone gables tucked under. Ridge along x. Returns ridge top. */
@@ -563,13 +570,14 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     const len = (half + e + t * s) / c, zc = (half + e) / 2;
     const yc = y + rise - ((half + e - t * s) / 2) * Math.tan(a) + (c * t) / 2;
     for (const side of [-1, 1]) {
-      const plate = box(g, x, yc, z + side * zc, w + 2 * v, t, len, color, 'slate', { rx: side * a });
+      const plate = box(g, x, yc, z + side * zc, w + 2 * v, t, len, color, roofKind(color), { rx: side * a });
       // A sloped slab's box drops below the wall top, so it says where its eave is (Step 5 bake).
       plate.userData.roof = true;
       plate.userData.eaveY = y;
     }
     const top = y + rise + t / c;
-    box(g, x, top - 0.03, z, w + 2 * v + 0.06, 0.16, 0.26, opts.ridge ?? palette.slateLight, 'slate');
+    const ridge = opts.ridge ?? palette.slateLight;
+    box(g, x, top - 0.03, z, w + 2 * v + 0.06, 0.16, 0.26, ridge, roofKind(ridge));
     if (opts.gable) {
       const inner = half - (opts.inset ?? 0.15), k = (half - inner) * Math.tan(a) - 0.02;
       const sh = new T.Shape(); sh.moveTo(-inner, 0); sh.lineTo(inner, 0);
@@ -620,17 +628,19 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     opts: { arched?: boolean; frame?: string; dress?: string; sill?: boolean; lintel?: boolean; mullion?: boolean; glass?: string; bars?: number } = {},
   ) {
     const f=0.11, r=w/2, frame=opts.frame??palette.trim, dress=opts.dress??palette.trim;
-    const ring=frameRing(g,x,y,z,w,h,f,0.16,frame,'paint',opts.arched);
+    const frameKind: SurfaceKind = frame === palette.metal ? 'iron' : 'paint'; // cream and dressed frames stay matte
+    const ring=frameRing(g,x,y,z,w,h,f,0.16,frame,frameKind,opts.arched);
     const glass=new T.Mesh(new T.ShapeGeometry(ring(0.01),8),material(opts.glass??palette.glass,'glass'));
     glass.position.set(x,y,z+0.06); g.add(glass); // 0.1 behind the frame face
-    if(opts.mullion) box(g,x,y,z+0.08,0.08,h,0.06,frame,'paint');
+    if(opts.mullion) box(g,x,y,z+0.08,0.08,h,0.06,frame,frameKind);
     if(opts.sill!==false) box(g,x,y-h/2-f-0.05,z+0.11,w+2*f+0.16,0.1,0.22,dress,'stone');
     if(opts.lintel!==false){ if(opts.arched) box(g,x,y+h/2+r+f+0.1,z+0.1,0.24,0.32,0.2,dress,'stone'); else box(g,x,y+h/2+f+0.09,z+0.09,w+2*f+0.2,0.18,0.18,dress,'stone'); }
   }
   /**
-   * A door on the wall face at z: one leaf with a raised rim (the centre reads recessed), a gold
-   * knob, a 0.18 stone surround and, when the sill y is above the ground, nested 0.14 risers that
-   * stand on y=0. `fanlight` is accepted for old callers and ignored; `arched` is the arched variant.
+   * A door on the wall face at z: one enamelled leaf with a raised rim (the centre reads recessed),
+   * a round brass knob, a 0.18 stone surround and, when the sill y is above the ground, nested 0.14
+   * risers that stand on y=0. `fanlight` is accepted for old callers and ignored; `arched` is the
+   * arched variant.
    */
   function door(
     g: T.Object3D,
@@ -643,10 +653,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     opts: { arched?: boolean; fanlight?: boolean; surround?: string; width?: number; landing?: number; steps?: boolean | number } = {},
   ) {
     const s=opts.surround??palette.trim, f=0.18;
-    box(g,x,y+h/2,z+0.05,w,h,0.1,color,'paint');
-    for(const sx of [-1,1]) box(g,x+sx*(w/2-0.08),y+h/2,z+0.12,0.16,h,0.04,color,'paint');
-    for(const ry of [0.08,h-0.08]) box(g,x,y+ry,z+0.12,w-0.32,0.16,0.04,color,'paint'); // centre reads 0.04 recessed
-    box(g,x+w*0.3,y+h*0.5,z+0.17,0.08,0.08,0.06,palette.gold,'iron');
+    box(g,x,y+h/2,z+0.05,w,h,0.1,color,'enamel');
+    for(const sx of [-1,1]) box(g,x+sx*(w/2-0.08),y+h/2,z+0.12,0.16,h,0.04,color,'enamel');
+    for(const ry of [0.08,h-0.08]) box(g,x,y+ry,z+0.12,w-0.32,0.16,0.04,color,'enamel'); // centre reads 0.04 recessed
+    sphere(g,x+w*0.3,y+h*0.5,z+0.17,0.05,palette.brass,'brass'); // round, so it can carry a highlight
     if(opts.arched){ const fan=new T.Shape(); fan.absarc(0,0,w/2,0,Math.PI,false); fan.closePath();
       const gl=new T.Mesh(new T.ShapeGeometry(fan,8),material(palette.glass,'glass')); gl.position.set(x,y+h,z+0.06); g.add(gl);
       frameRing(g,x,y+h/2,z,w,h,0.2,0.24,s,'stone',true,true); box(g,x,y+h+w/2+0.2,z+0.12,0.28,0.36,0.24,s,'stone'); }
@@ -676,7 +686,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     return ph;
   }
   /** A fat chimney stack from y0 to top with a cap and `pots` pantile pots. */
-  function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'stone'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'stone',18); }
+  function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'stone'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'pantile',18); }
 
   /* ---------------------------------------------------------------- */
   /* Terrain                                                           */
@@ -1218,14 +1228,14 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const lanternGlass = material(palette.lantern, 'glass').clone();
   lanternGlass.emissive.set(palette.lantern);
   lanternGlass.emissiveIntensity = 0;
-  /** A chunky lamp: iron plinth, gold collar, thick shaft, a fat lantern (height ± 0.2) and a hat. */
+  /** A chunky lamp: iron plinth, a round brass collar, thick shaft, a fat lantern (height ± 0.2) and a hat. */
   function lamp(g: T.Object3D, x: number, z: number, height = 1.8, y = plan.terrainHeight(x, z)) {
     const post = new T.Group();
     post.position.set(x, y, z);
     g.add(post);
     const iron = palette.metal;
     box(post, 0, 0.15, 0, 0.34, 0.3, 0.34, iron, 'iron'); // plinth
-    box(post, 0, 0.33, 0, 0.26, 0.06, 0.26, palette.gold, 'iron'); // gold collar
+    cylinder(post, 0, 0.33, 0, 0.14, 0.14, 0.06, palette.brass, 'brass', 12); // brass collar: round, so it sweeps a highlight
     const shaft = new T.Mesh(new T.CylinderGeometry(0.07, 0.085, height - 0.5, 10, 1, true), material(iron, 'iron'));
     shaft.position.y = 0.3 + (height - 0.5) / 2;
     shaft.castShadow = shaft.receiveShadow = true;
@@ -1293,27 +1303,27 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     paintCanopy([geo], [[0, 0, 0, r]], TREE.round, palette.hedge, -r * sy, r * sy);
     const m = new T.Mesh(geo, material('#ffffff', 'foliage')); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m;
   }
-  /** A red phone box: a stone plinth, a fat body with one big pane per face, a cream sign band, a crown and a pyramid hat. */
+  /** A red enamel phone box: a stone plinth, a fat body with one big pane per face, a blank cream band, a crown and a pyramid hat. */
   function phoneBox(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
     const p = new T.Group(); p.position.set(x, y, z); p.rotation.y = ry; g.add(p);
     const red = palette.boat; // the palette's accent red
     box(p, 0, 0.1, 0, 0.84, 0.2, 0.84, palette.stoneDark, 'stone'); // plinth
-    box(p, 0, 1.0, 0, 0.72, 1.6, 0.72, red, 'paint'); // body
+    box(p, 0, 1.0, 0, 0.72, 1.6, 0.72, red, 'enamel'); // body
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       const f = new T.Group(); f.rotation.y = side; p.add(f);
       box(f, 0, 0.98, 0.35, 0.48, 1.04, 0.04, palette.glass, 'glass'); // pane
-      box(f, 0, 0.98, 0.37, 0.07, 1.04, 0.03, red, 'paint'); // mullion
-      box(f, 0, 1.15, 0.37, 0.48, 0.07, 0.03, red, 'paint'); // transom
-      box(f, 0, 1.64, 0.37, 0.5, 0.13, 0.03, palette.white, 'paint'); // sign band
+      box(f, 0, 0.98, 0.37, 0.07, 1.04, 0.03, red, 'enamel'); // mullion
+      box(f, 0, 1.15, 0.37, 0.48, 0.07, 0.03, red, 'enamel'); // transom
+      box(f, 0, 1.64, 0.37, 0.5, 0.13, 0.03, palette.white, 'enamel'); // sign band, blank
     }
-    box(p, 0, 1.86, 0, 0.84, 0.12, 0.84, red, 'paint'); // crown
-    cone(p, 0, 2.02, 0, 0.58, 0.2, red, 'paint', 4); // hat
+    box(p, 0, 1.86, 0, 0.84, 0.12, 0.84, red, 'enamel'); // crown
+    cone(p, 0, 2.02, 0, 0.58, 0.2, red, 'enamel', 4); // hat
     return p;
   }
-  /** A fat green litter bin with a gold band and a dark lid. */
+  /** A fat green enamel litter bin with a brass band and an iron lid. */
   function bin(g: T.Object3D, x: number, y: number, z: number) {
-    cylinder(g, x, y + 0.33, z, 0.24, 0.2, 0.66, palette.greenDoor, 'paint', 12); // body
-    cylinder(g, x, y + 0.5, z, 0.245, 0.245, 0.07, palette.gold, 'iron', 12); // band
+    cylinder(g, x, y + 0.33, z, 0.24, 0.2, 0.66, palette.greenDoor, 'enamel', 12); // body
+    cylinder(g, x, y + 0.5, z, 0.245, 0.245, 0.07, palette.brass, 'brass', 12); // band
     cylinder(g, x, y + 0.7, z, 0.27, 0.27, 0.1, palette.metal, 'iron', 12); // lid
   }
   /** The park bandstand: a fat octagon on a stepped plinth, chunky columns, low panels and a big verdigris hat. */
@@ -1330,15 +1340,15 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(p, 0, 0.065, 2.34, 1.1, 0.13, 0.3, palette.stoneDark, 'stone');
     for (let i = 0; i < 8; i++) {
       const th = Math.PI / 8 + (i * Math.PI) / 4;               // octagon corners (x = r sin, z = r cos)
-      const col = new T.Mesh(new T.CylinderGeometry(0.09, 0.11, 2.1, 10, 1, true), material(palette.frame, 'paint'));
+      const col = new T.Mesh(new T.CylinderGeometry(0.09, 0.11, 2.1, 10, 1, true), material(palette.frame, 'enamel')); // painted cast iron
       col.position.set(1.55 * Math.sin(th), 1.45, 1.55 * Math.cos(th)); col.castShadow = col.receiveShadow = true; p.add(col);
       const mid = th + Math.PI / 8; if (i === 7) continue;     // entrance between corners 7 and 0 faces +z
-      box(p, 1.432 * Math.sin(mid), 0.6, 1.432 * Math.cos(mid), 0.95, 0.4, 0.12, palette.frame, 'paint', { ry: mid });
+      box(p, 1.432 * Math.sin(mid), 0.6, 1.432 * Math.cos(mid), 0.95, 0.4, 0.12, palette.frame, 'enamel', { ry: mid });
     }
-    oct(1.7, 1.7, 0.32, 2.66, palette.frame, 'paint');           // closed frieze; columns stop under it
-    const roof = new T.Mesh(facets(new T.ConeGeometry(2.3, 1.2, 8)), material(palette.copper, 'slate'));
+    oct(1.7, 1.7, 0.32, 2.66, palette.frame, 'enamel');          // closed frieze; columns stop under it
+    const roof = new T.Mesh(facets(new T.ConeGeometry(2.3, 1.2, 8)), material(palette.copper, 'copper'));
     roof.rotation.y = Math.PI / 8; roof.position.y = 3.42; roof.castShadow = roof.receiveShadow = true; p.add(roof);
-    const fin = new T.Mesh(new T.IcosahedronGeometry(0.16, 1), material(palette.gold, 'iron')); fin.position.y = 4.1; p.add(fin);
+    const fin = new T.Mesh(new T.IcosahedronGeometry(0.16, 1), material(palette.brass, 'brass')); fin.position.y = 4.1; p.add(fin);
     return p;
   }
   /** The park's notice board: two posts, a wooden board with a paper sheet and a slate roof. */
@@ -1352,41 +1362,41 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
   /** The tower crane on the reserved plot, built from a few thick painted members, with a swinging jib and a hook load. */
   function crane(g: T.Object3D, x: number, z: number) {
-    const Y = palette.gold; // crane yellow, painted
+    const Y = palette.gold; // crane yellow, enamelled
     const base = new T.Group();
     base.position.set(x, 0, z);
     g.add(base);
     box(base, 0, 0.18, 0, CRANE_BASE, 0.36, CRANE_BASE, '#bdb6a4', 'stone'); // footing
     for (const sx of [-0.3, 0.3])
-      for (const sz of [-0.3, 0.3]) box(base, sx, 0.36 + 3.6, sz, 0.16, 7.2, 0.16, Y, 'paint'); // mast chords
+      for (const sz of [-0.3, 0.3]) box(base, sx, 0.36 + 3.6, sz, 0.16, 7.2, 0.16, Y, 'enamel'); // mast chords
     for (let i = 0; i < 5; i++) {
       const y = 1.26 + i * 1.2;
       for (const s of [-0.3, 0.3]) {
-        box(base, 0, y, s, 0.6, 0.09, 0.09, Y, 'paint'); // ring bars
-        box(base, s, y, 0, 0.09, 0.09, 0.6, Y, 'paint');
+        box(base, 0, y, s, 0.6, 0.09, 0.09, Y, 'enamel'); // ring bars
+        box(base, s, y, 0, 0.09, 0.09, 0.6, Y, 'enamel');
       }
       // One diagonal on each camera-facing face.
-      box(base, 0, y + 0.6, 0.3, 0.09, 1.34, 0.09, Y, 'paint', { rz: 0.4636 });
-      box(base, 0.3, y + 0.6, 0, 0.09, 1.34, 0.09, Y, 'paint', { rx: 0.4636 });
+      box(base, 0, y + 0.6, 0.3, 0.09, 1.34, 0.09, Y, 'enamel', { rz: 0.4636 });
+      box(base, 0.3, y + 0.6, 0, 0.09, 1.34, 0.09, Y, 'enamel', { rx: 0.4636 });
     }
     const jib = new T.Group();
     jib.position.set(0, 7.86, 0);
     jib.userData.keepSeparate = true;
     base.add(jib);
-    box(jib, 0, 0, 0, 1.1, 0.6, 1.1, Y, 'paint'); // slewing unit
-    box(jib, 0.35, 0.65, 0.1, 0.9, 0.7, 0.8, Y, 'paint'); // cab
+    box(jib, 0, 0, 0, 1.1, 0.6, 1.1, Y, 'enamel'); // slewing unit
+    box(jib, 0.35, 0.65, 0.1, 0.9, 0.7, 0.8, Y, 'enamel'); // cab
     box(jib, 0.35, 0.7, 0.51, 0.62, 0.38, 0.06, palette.glass, 'glass'); // cab window
-    cone(jib, 0, 1.8, 0, 0.42, 1.6, Y, 'paint', 4); // apex
-    box(jib, 3.3, 0.35, 0, 6.2, 0.22, 0.22, Y, 'paint'); // top chord
-    for (const s of [-0.22, 0.22]) box(jib, 3.3, -0.05, s, 6.2, 0.12, 0.12, Y, 'paint'); // bottom chords
-    for (let i = 0; i < 8; i++) box(jib, 0.75 + i * 0.75, 0.15, 0, 0.09, 0.5, 0.09, Y, 'paint', { rz: i % 2 ? 0.75 : -0.75 }); // web
-    box(jib, -1.5, 0.15, 0, 2.4, 0.18, 0.5, Y, 'paint'); // counter-jib
+    cone(jib, 0, 1.8, 0, 0.42, 1.6, Y, 'enamel', 4); // apex
+    box(jib, 3.3, 0.35, 0, 6.2, 0.22, 0.22, Y, 'enamel'); // top chord
+    for (const s of [-0.22, 0.22]) box(jib, 3.3, -0.05, s, 6.2, 0.12, 0.12, Y, 'enamel'); // bottom chords
+    for (let i = 0; i < 8; i++) box(jib, 0.75 + i * 0.75, 0.15, 0, 0.09, 0.5, 0.09, Y, 'enamel', { rz: i % 2 ? 0.75 : -0.75 }); // web
+    box(jib, -1.5, 0.15, 0, 2.4, 0.18, 0.5, Y, 'enamel'); // counter-jib
     box(jib, -2.3, -0.05, 0, 0.9, 0.8, 0.9, '#9a978c', 'stone'); // counterweight
     box(jib, 1.7, 1.15, 0, 3.9, 0.07, 0.07, palette.metal, 'iron', { rz: -0.34 }); // ties
     box(jib, -1.1, 1.15, 0, 2.5, 0.07, 0.07, palette.metal, 'iron', { rz: 0.55 });
     box(jib, 4.6, -0.2, 0, 0.42, 0.2, 0.5, palette.metal, 'iron'); // trolley
     box(jib, 4.6, -1.7, 0, 0.06, 2.9, 0.06, palette.metal, 'iron'); // line
-    box(jib, 4.6, -3.25, 0, 0.36, 0.32, 0.24, palette.boat, 'paint'); // hook block
+    box(jib, 4.6, -3.25, 0, 0.36, 0.32, 0.24, palette.boat, 'enamel'); // hook block
     box(jib, 4.6, -3.8, 0, 1.2, 0.18, 0.5, palette.wood, 'wood'); // plank load
     animated.push({
       object: jib,
@@ -1430,8 +1440,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     lamp(p, 0.42, 0.45, 1.8, 0.2);
     lamp(p, -0.38, L - 0.45, 1.8, 0.2);
     cylinder(p, 0.72, 1.45, lastPile, 0.035, 0.04, 1.9, palette.metal, 'iron', 18); // flagpole on the seaward pile
-    box(p, 0.33, 2.12, lastPile, 0.75, 0.5, 0.04, palette.blueDoor, 'paint');
-    for (const s of [-1, 1]) box(p, 0.33, 2.12, lastPile + 0.03, 0.82, 0.09, 0.02, palette.white, 'paint', { rz: s * 0.588 }); // saltire
+    box(p, 0.33, 2.12, lastPile, 0.75, 0.5, 0.04, palette.blueDoor, 'fabric'); // cloth
+    for (const s of [-1, 1]) box(p, 0.33, 2.12, lastPile + 0.03, 0.82, 0.09, 0.02, palette.white, 'fabric', { rz: s * 0.588 }); // saltire
     box(p, 1.25, 0.3, 1.5, 0.6, 0.6, 0.6, plank[0], 'wood', { ry: 0.2 }); // crates 0.55-0.7 of a person
     box(p, 1.28, 0.85, 1.48, 0.5, 0.5, 0.5, palette.gold, 'paint', { ry: -0.15 });
     cylinder(p, 2.85, 0.3, 1.6, 0.24, 0.22, 0.6, plank[0], 'wood', 18); // barrel with two hoops
@@ -1450,11 +1460,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     cylinder(hut, 0.42, 2.78, -0.3, 0.08, 0.09, 0.16, palette.brick, 'stone', 18);
     // The wall is only 1.5 wide: a small window without sill or lintel keeps clear of the door jamb.
     windowAt(hut, -0.43, 1.0, 0.65, 0.38, 0.5, { sill: false, lintel: false });
-    box(hut, 0.32, 0.8, 0.67, 0.52, 1.0, 0.1, palette.blueDoor, 'paint'); // own door leaf on the plinth, no door() panels
+    box(hut, 0.32, 0.8, 0.67, 0.52, 1.0, 0.1, palette.blueDoor, 'enamel'); // own door leaf on the plinth, no door() panels
     for (const s of [-1, 1]) box(hut, 0.32 + s * 0.36, 0.86, 0.67, 0.14, 1.12, 0.14, palette.trim, 'stone');
     box(hut, 0.32, 1.44, 0.68, 0.86, 0.16, 0.16, palette.trim, 'stone');
-    sphere(hut, 0.5, 0.8, 0.73, 0.045, palette.gold, 'iron', 12);
-    const ring = new T.Mesh(new T.TorusGeometry(0.17, 0.055, 8, 16), material(palette.flowers[0], 'paint'));
+    sphere(hut, 0.5, 0.8, 0.73, 0.045, palette.brass, 'brass', 12);
+    const ring = new T.Mesh(new T.TorusGeometry(0.17, 0.055, 8, 16), material(palette.flowers[0], 'enamel'));
     ring.position.set(0.78, 0.95, 0.1);
     ring.rotation.y = Math.PI / 2;
     ring.castShadow = true;
@@ -1467,10 +1477,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       buoy.position.set(sx + dz * lx + dx * lz, WATER, sz - dx * lx + dz * lz);
       buoy.userData.keepSeparate = true;
       g.add(buoy);
-      cylinder(buoy, 0, 0.05, 0, 0.3, 0.34, 0.4, colour, 'paint', 18); // float -0.15..0.25
-      cylinder(buoy, 0, 0.12, 0, 0.325, 0.33, 0.1, palette.white, 'paint', 18); // white band, about 0.015 proud
-      if (top === 'can') box(buoy, 0, 0.45, 0, 0.26, 0.4, 0.26, colour, 'paint');
-      else cone(buoy, 0, 0.47, 0, 0.22, 0.44, colour, 'paint', 18, 0);
+      cylinder(buoy, 0, 0.05, 0, 0.3, 0.34, 0.4, colour, 'enamel', 18); // float -0.15..0.25
+      cylinder(buoy, 0, 0.12, 0, 0.325, 0.33, 0.1, palette.white, 'enamel', 18); // white band, about 0.015 proud
+      if (top === 'can') box(buoy, 0, 0.45, 0, 0.26, 0.4, 0.26, colour, 'enamel');
+      else cone(buoy, 0, 0.47, 0, 0.22, 0.44, colour, 'enamel', 18, 0);
       const glow = material(palette.lantern, 'glass').clone();
       glow.emissive.set(palette.lantern);
       const lampMesh = new T.Mesh(new T.SphereGeometry(0.08, 12, 8), glow);
@@ -1493,8 +1503,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     dinghy.userData.keepSeparate = true;
     g.add(dinghy);
     // The hull's top cap sits 0.005 under the band's, so the two caps don't z-fight on the gunwale.
-    hullSolid(dinghy, 0.34, 0.8, 0.72, -0.06, 0.155, 0.04, palette.white, 'paint'); // -0.06..0.175, waterline 0.06 up
-    hullSolid(dinghy, 0.36, 0.81, 0.73, 0.1, 0.02, 0.03, palette.blueDoor, 'paint'); // rubbing band 0.10..0.18, 0.01 proud
+    hullSolid(dinghy, 0.34, 0.8, 0.72, -0.06, 0.155, 0.04, palette.white, 'enamel'); // -0.06..0.175, waterline 0.06 up
+    hullSolid(dinghy, 0.36, 0.81, 0.73, 0.1, 0.02, 0.03, palette.blueDoor, 'enamel'); // rubbing band 0.10..0.18, 0.01 proud
     const floor = new T.Mesh(new T.ShapeGeometry(hullShape(0.27, 0.66, 0.6), 4).rotateX(-Math.PI / 2), material(palette.wood, 'wood'));
     floor.position.y = 0.185;
     floor.receiveShadow = true;
@@ -1536,10 +1546,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     // The cap is a trim band, not an overhang. As a slab, batch() would bake it as an eave over the whole
     // shaft (whose foot it sleeves) and, through its square box, over the plinth's diagonals only.
     cylinder(rock, 0, 0.74, 0, 1.0, 1.08, 0.08, cream, 'stone', 24).userData.ground = true; // cap
-    cylinder(rock, 0, 2.15, 0, 0.68, 0.9, 2.9, white, 'paint', 24); // shaft 0.70-3.60
+    cylinder(rock, 0, 2.15, 0, 0.68, 0.9, 2.9, white, 'paint', 24); // shaft 0.70-3.60: painted masonry, so matte
     const shaftR = (y: number) => 0.9 - (0.22 * (y - 0.7)) / 2.9;
-    for (const [y0, y1] of [[1.6, 2.1], [2.75, 3.25]]) cylinder(rock, 0, (y0 + y1) / 2, 0, shaftR(y1) + 0.03, shaftR(y0) + 0.03, y1 - y0, red, 'paint', 24); // 0.03 proud
-    box(rock, Math.sin(face) * 0.78, 1.02, Math.cos(face) * 0.78, 0.42, 0.62, 0.25, palette.greenDoor, 'paint', { ry: face }); // door
+    for (const [y0, y1] of [[1.6, 2.1], [2.75, 3.25]]) cylinder(rock, 0, (y0 + y1) / 2, 0, shaftR(y1) + 0.03, shaftR(y0) + 0.03, y1 - y0, red, 'enamel', 24); // 0.03 proud
+    box(rock, Math.sin(face) * 0.78, 1.02, Math.cos(face) * 0.78, 0.42, 0.62, 0.25, palette.greenDoor, 'enamel', { ry: face }); // door
     box(rock, Math.sin(face) * 0.71, 2.42, Math.cos(face) * 0.71, 0.26, 0.36, 0.2, '#2d3838', 'glass', { ry: face }); // window, lit at night
     cylinder(rock, 0, 3.72, 0, 1.0, 0.7, 0.24, cream, 'stone', 24); // corbel 3.60-3.84
     cylinder(rock, 0, 3.92, 0, 1.02, 1.02, 0.16, iron, 'iron', 24); // gallery deck 3.84-4.00 (wider than shaft)
@@ -1560,12 +1570,12 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     lamps.push(lanternRoom);
     for (let i = 0; i < 4; i++) box(rock, Math.cos((i * Math.PI) / 2) * 0.56, 4.4, Math.sin((i * Math.PI) / 2) * 0.56, 0.1, 0.8, 0.1, iron, 'iron'); // mullions off the camera axis
     cylinder(rock, 0, 4.85, 0, 0.66, 0.66, 0.1, iron, 'iron', 24);
-    const dome = new T.Mesh(new T.SphereGeometry(0.64, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), material(red, 'paint'));
+    const dome = new T.Mesh(new T.SphereGeometry(0.64, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), material(red, 'enamel'));
     dome.scale.y = 0.85;
     dome.position.y = 4.9;
     dome.castShadow = dome.receiveShadow = true;
     rock.add(dome);
-    sphere(rock, 0, 5.52, 0, 0.12, palette.gold, 'iron', 18);
+    sphere(rock, 0, 5.52, 0, 0.12, palette.brass, 'brass', 18);
     // The beam at night: a cone of light that only adds light. It is brightest by the lamp and
     // gone by its open end, and fades towards its edges (only the side facing the camera is
     // drawn, so the cone shows as one soft layer). It swings slowly either side of the seaward
@@ -1773,11 +1783,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     }
     box(shell, 0, top + 0.1, 0, 2 * W + 0.3, 0.2, D + 0.3, dress, 'stone');
     box(shell, 0, top + 0.6, 0, 2 * W - 0.3, 0.8, D - 0.1, stone, 'stone', { segments: 2 });
-    for (const sz of [-1, 1]) box(shell, 0, top + 0.6, sz * ((D - 0.1) / 2 + 0.03), 2.4, 0.46, 0.06, palette.bronze, 'iron');
+    for (const sz of [-1, 1]) box(shell, 0, top + 0.6, sz * ((D - 0.1) / 2 + 0.03), 2.4, 0.46, 0.06, palette.bronze, 'brass'); // blank bronze plaques
     box(shell, 0, top + 1.1, 0, 2 * W - 0.1, 0.2, D + 0.1, dress, 'stone');
     box(shell, 0, top + 1.4, 0, 1.6, 0.4, 0.9, stone, 'stone');
     for (const sx of [-1, 1]) {
-      cylinder(shell, sx * 1.75, top + 1.45, 0, 0.1, 0.13, 0.5, palette.bronze, 'iron');
+      cylinder(shell, sx * 1.75, top + 1.45, 0, 0.1, 0.13, 0.5, palette.bronze, 'brass');
       const glow = material(palette.lantern, 'glass').clone();
       glow.emissive.set(palette.lantern);
       const bowl = new T.Mesh(new T.SphereGeometry(0.24, 14, 10), glow);
@@ -1830,8 +1840,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     door(shell, 0, 0.52, tz + tw / 2, 1.3, 2.2, palette.greenDoor, { arched: true, landing: 0.25, width: 2.0 });
     windowAt(shell, 0, 4.65, tz + tw / 2, 0.8, 1.2, { arched: true, mullion: true });
     box(shell, 0, 6.1, tz, tw + 0.3, 0.2, tw + 0.3, palette.trim, 'stone');
-    // Four clocks at 70% of the face: a metal rim, a cream dial that glows after dusk like the
-    // windows, four markers, a fixed gold hub and hands that keep Glasgow time.
+    // Four clocks at 70% of the face: an iron rim, a cream dial that glows after dusk like the
+    // windows, four iron markers, a fixed brass hub and iron hands that keep Glasgow time.
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       const face = new T.Group();
       face.position.set(0, 0, tz);
@@ -1851,7 +1861,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
         const a = (i * Math.PI) / 2;
         box(face, Math.sin(a) * 0.66, 7.75 + Math.cos(a) * 0.66, tw / 2 + 0.105, 0.1, 0.2, 0.03, palette.metal, 'iron', { rz: -a });
       }
-      const hub = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 0.05, 12), material(palette.gold, 'iron'));
+      const hub = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 0.05, 12), material(palette.brass, 'brass'));
       hub.rotation.x = Math.PI / 2;
       hub.position.set(0, 7.75, tw / 2 + 0.16); // static, so it batches with the tower
       face.add(hub);
@@ -1871,11 +1881,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     for (const sx of [-1, 1])
       for (const sz of [-1, 1]) {
         cylinder(shell, sx * 1.25, 9.35, tz + sz * 1.25, 0.16, 0.18, 0.6, palette.trim, 'stone');
-        cone(shell, sx * 1.25, 9.9, tz + sz * 1.25, 0.26, 0.5, palette.copper, 'slate', 4);
+        cone(shell, sx * 1.25, 9.9, tz + sz * 1.25, 0.26, 0.5, palette.copper, 'copper', 4);
       }
-    cone(shell, 0, 10.55, tz, 1.41, 3.0, palette.copper, 'slate', 4);
-    cylinder(shell, 0, 12.55, tz, 0.035, 0.05, 1.2, palette.bronze, 'iron'); // starts 0.1 inside the apex
-    sphere(shell, 0, 13.2, tz, 0.1, palette.gold, 'iron');
+    cone(shell, 0, 10.55, tz, 1.41, 3.0, palette.copper, 'copper', 4);
+    cylinder(shell, 0, 12.55, tz, 0.035, 0.05, 1.2, palette.bronze, 'brass'); // starts 0.1 inside the apex
+    sphere(shell, 0, 13.2, tz, 0.1, palette.brass, 'brass');
     const vane = new T.Group();
     vane.position.set(0, 12.85, tz);
     vane.userData.keepSeparate = true;
@@ -2004,7 +2014,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     }
     for (let i = 0; i < 2; i++) {
       box(shell, ax + 0.85, 4.89, -1.4 + i * 1.3, 0.9, 0.14, 0.2, palette.metal, 'iron');
-      box(shell, ax + 0.85, 4.98, -1.4 + i * 1.3, 1.1, 0.08, 0.8, '#2f4e66', 'iron', { rx: 0.35 });
+      box(shell, ax + 0.85, 4.98, -1.4 + i * 1.3, 1.1, 0.08, 0.8, '#2f4e66', 'enamel', { rx: 0.35 }); // glossy panel, no night glow
     }
     // B's coping (top 3.59) with two planters of clipped topiary.
     box(shell, 1.6, 3.47, 0, 2.6, 0.24, d - 0.4, white, 'paint');
@@ -2107,13 +2117,13 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       box(tram, 0, y, 0, r * 2, h, half * 2, c, k);
       for (const z of [-half, half]) cylinder(tram, 0, y, z, r, r, h, c, k, 24);
     };
-    tier(0.48, 0.55, 0.54, orange, 'paint'); // 0.205..0.755
-    tier(0.8, 0.1, 0.565, green, 'paint'); // waist band
-    tier(1.09, 0.48, 0.52, cream, 'paint'); // 0.85..1.33
+    tier(0.48, 0.55, 0.54, orange, 'enamel'); // 0.205..0.755
+    tier(0.8, 0.1, 0.565, green, 'enamel'); // waist band
+    tier(1.09, 0.48, 0.52, cream, 'enamel'); // 0.85..1.33
     tier(1.1, 0.3, 0.535, palette.glass, 'glass'); // wrap-round windows, 0.015 proud
-    tier(1.4, 0.14, 0.6, green, 'paint'); // roof 1.33..1.47, 0.08 eave
-    box(tram, 0, 1.53, 0, 0.7, 0.12, 2.0, cream, 'paint'); // clerestory 1.47..1.59
-    for (const z of [-0.84, -0.28, 0.28, 0.84]) box(tram, 0, 1.1, z, 1.1, 0.32, 0.1, cream, 'paint'); // pillars
+    tier(1.4, 0.14, 0.6, green, 'enamel'); // roof 1.33..1.47, 0.08 eave
+    box(tram, 0, 1.53, 0, 0.7, 0.12, 2.0, cream, 'enamel'); // clerestory 1.47..1.59
+    for (const z of [-0.84, -0.28, 0.28, 0.84]) box(tram, 0, 1.1, z, 1.1, 0.32, 0.1, cream, 'enamel'); // pillars
     for (const z of [-1.1, 1.1]) box(tram, 0, 0.13, z, 0.86, 0.22, 0.9, '#3a3f44', 'iron'); // bogie skirts replace 8 wheels
     box(tram, 0, 1.65, 0.5, 0.3, 0.12, 0.3, palette.metal, 'iron'); // pole base ON the clerestory
     box(tram, 0, 1.99, -0.085, 0.07, 0.07, 1.3, palette.metal, 'iron', { rx: 0.45 }); // trolley pole, lower end at the base
@@ -2132,17 +2142,17 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     const boat = new T.Group();
     boat.name = 'harbour-boat';
     const red = palette.boat, cream = palette.tramCream, wood = palette.wood, dark = palette.woodDark;
-    hullSolid(boat, 0.62, 2.0, 1.45, -0.12, 0.36, 0.06, red, 'paint'); // -0.12..0.36, waterline at local 0
-    hullSolid(boat, 0.66, 2.02, 1.47, 0.34, 0.04, 0.04, cream, 'paint'); // gunwale 0.34..0.46, 0.02 proud
+    hullSolid(boat, 0.62, 2.0, 1.45, -0.12, 0.36, 0.06, red, 'enamel'); // -0.12..0.36, waterline at local 0
+    hullSolid(boat, 0.66, 2.02, 1.47, 0.34, 0.04, 0.04, cream, 'enamel'); // gunwale 0.34..0.46, 0.02 proud
     const deck = new T.Mesh(new T.ShapeGeometry(hullShape(0.56, 1.8, 1.32), 6).rotateX(-Math.PI / 2), material(wood, 'wood'));
     deck.position.y = 0.465;
     deck.receiveShadow = true;
     boat.add(deck);
-    box(boat, 0, 0.83, -0.45, 0.9, 0.74, 0.85, cream, 'paint'); // wheelhouse 0.46..1.20
+    box(boat, 0, 0.83, -0.45, 0.9, 0.74, 0.85, cream, 'enamel'); // wheelhouse 0.46..1.20
     box(boat, 0, 0.95, -0.45, 0.94, 0.26, 0.89, palette.glass, 'glass'); // wrap-round windows
-    box(boat, 0, 1.26, -0.45, 1.04, 0.12, 1.0, red, 'paint'); // roof, 0.07 eave
-    cylinder(boat, 0, 1.52, -0.72, 0.13, 0.15, 0.4, cream, 'paint', 18); // funnel
-    cylinder(boat, 0, 1.66, -0.72, 0.145, 0.145, 0.1, red, 'paint', 18); // funnel band
+    box(boat, 0, 1.26, -0.45, 1.04, 0.12, 1.0, red, 'enamel'); // roof, 0.07 eave
+    cylinder(boat, 0, 1.52, -0.72, 0.13, 0.15, 0.4, cream, 'enamel', 18); // funnel
+    cylinder(boat, 0, 1.66, -0.72, 0.145, 0.145, 0.1, red, 'enamel', 18); // funnel band
     cylinder(boat, 0, 1.75, -0.15, 0.055, 0.065, 0.9, dark, 'wood', 18); // mast stepped ON the roof (1.30..2.20)
     box(boat, 0, 1.98, -0.15, 0.7, 0.08, 0.08, dark, 'wood'); // yard
     box(boat, 0.18, 0.62, 0.75, 0.32, 0.3, 0.32, wood, 'wood', { ry: 0.3 }); // deck cargo
@@ -2155,7 +2165,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
         f.castShadow = true;
         boat.add(f);
       }
-    const buoyRing = new T.Mesh(new T.TorusGeometry(0.14, 0.05, 8, 14), material(palette.flowers[0], 'paint'));
+    const buoyRing = new T.Mesh(new T.TorusGeometry(0.14, 0.05, 8, 14), material(palette.flowers[0], 'enamel'));
     buoyRing.position.set(0.5, 0.66, -0.45);
     buoyRing.rotation.y = Math.PI / 2;
     boat.add(buoyRing);
