@@ -85,6 +85,69 @@ function noise2(x: number, z: number) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Planting kit: baked two-tone ramps for trees, hedges and beds       */
+/* ------------------------------------------------------------------ */
+
+/** Tree looks: body tones, a warm lime crown and a cool dark underside. */
+const TREE = {
+  round:   { tones: [palette.canopy[0], palette.canopy[1]], top: '#d2dc58', under: '#3c6a2e' },
+  autumn:  { tones: [palette.autumn[0], palette.autumn[1]], top: '#f2c862', under: '#99582a' },
+  blossom: { tones: [palette.blossom[0], palette.blossom[1]], top: '#fdd9e3', under: '#bf7590' },
+  pine:    { tones: [palette.pine[0], palette.pine[1]], top: '#74b155', under: '#22503a' },
+  trunk: palette.bark, pineTrunk: palette.pineBark,
+};
+const sstep = T.MathUtils.smoothstep, mix = T.MathUtils.lerp;
+/** Bake colour × value(y) into vertex colours, e.g. a trunk that darkens up into its canopy. */
+export function paintByHeight(geo: T.BufferGeometry, colour: string, value: (y: number) => number) {
+  const p = geo.getAttribute('position'), c = new T.Color(colour), out = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) { const f = value(p.getY(i)); out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f; }
+  geo.setAttribute('color', new T.BufferAttribute(out, 3));
+  return geo;
+}
+/** One lump in tree space: only spun about y, so the squash and the ramp stay vertical. */
+export function canopyLump(r: number, detail: number, x: number, y: number, z: number, spin: number) {
+  const g = new T.IcosahedronGeometry(r, detail);
+  g.rotateY(spin); g.scale(1, 0.85, 1); g.translate(x, y, z);
+  return g;
+}
+/** Clash two-tone: cool dark underside, warm lime crown, darker creases where lumps meet. */
+function paintCanopy(geos: T.BufferGeometry[], spheres: number[][], look: { top: string; under: string }, tone: string, y0: number, y1: number) {
+  const base = new T.Color(tone), top = new T.Color(look.top), under = new T.Color(look.under), c = new T.Color();
+  geos.forEach((g, k) => {
+    const p = g.getAttribute('position'), n = g.getAttribute('normal'), out = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), v = sstep(y, y0, y1);
+      let f = mix(0.45, 1.05, sstep(v, 0.12, 0.88));
+      spheres.forEach(([sx, sy, sz, sr], j) => {
+        if (j === k) return;
+        const gap = Math.hypot(x - sx, (y - sy) / 0.85, z - sz) - sr;
+        if (gap > 0) f *= 1 - 0.3 * (1 - sstep(gap, 0, 0.3 * sr));
+      });
+      c.copy(base).lerp(under, 0.3 * (1 - v)).lerp(top, 0.35 * sstep(v, 0.55, 1) * Math.max(0, n.getY(i)));
+      out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f;
+    }
+    g.setAttribute('color', new T.BufferAttribute(out, 3));
+  });
+}
+const BLOOMS = palette.flowers;
+const bloomGeometry = (() => { const g = new T.IcosahedronGeometry(0.1, 0); g.setAttribute('normal', g.getAttribute('position').clone()); g.normalizeNormals(); return g; })(); // 20 tris, smooth blob
+/**
+ * Clone a shared box geometry and bake a bottom->top ramp plus a tint on up-facing tops (use with '#ffffff').
+ * Keep `bottom` near 0.9: the batch bake already darkens every base towards the ground.
+ */
+function bakeRamp(m: T.Mesh, colour: string, bottom: number, top: number, tint = colour, amount = 0) {
+  const geo = (m.geometry = (m.geometry as T.BufferGeometry).clone()); geo.computeBoundingBox();
+  const { min, max } = geo.boundingBox!, p = geo.getAttribute('position'), n = geo.getAttribute('normal');
+  const a = new T.Color(colour), b = new T.Color(tint), c = new T.Color(), out = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const v = (p.getY(i) - min.y) / Math.max(1e-6, max.y - min.y), f = mix(bottom, top, v);
+    c.copy(a).lerp(b, amount * v * sstep(n.getY(i), 0.2, 0.9));
+    out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f;
+  }
+  geo.setAttribute('color', new T.BufferAttribute(out, 3)); return m;
+}
+
+/* ------------------------------------------------------------------ */
 /* Layout shared by the town and its ground masks                      */
 /* ------------------------------------------------------------------ */
 
@@ -1146,20 +1209,35 @@ export function buildTown(
     }
     return t;
   }
-  function hedge(g: T.Object3D, x: number, y: number, z: number, length: number, ry = 0, height = 0.5) {
-    return box(g, x, y + height / 2, z, length, height, 0.34, palette.hedge, 'foliage', { bevel: 0.1, ry });
+  /** One fat bloom: a squashed 20-triangle blob that casts no shadow. */
+  function bloom(g: T.Object3D, x: number, y: number, z: number, colour: string) {
+    const m = new T.Mesh(bloomGeometry, material(colour, 'foliage'));
+    m.position.set(x, y, z); m.scale.set(1, 0.7, 1); m.rotation.y = hash(x * 13 + z * 7) * 3;
+    m.castShadow = false; m.receiveShadow = true; m.userData.noShadow = true; g.add(m); return m;
   }
+  /** A hedge as one rounded mass with a lime top, optionally split by a gap (`at` along its length). */
+  function hedge(g: T.Object3D, x: number, y: number, z: number, length: number, ry = 0, height = 0.55, gap?: { at: number; width: number }) {
+    const h = new T.Group(); h.position.set(x, y, z); h.rotation.y = ry; g.add(h);
+    const spans = gap ? [[-length / 2, gap.at - gap.width / 2], [gap.at + gap.width / 2, length / 2]] : [[-length / 2, length / 2]];
+    for (const [a, b] of spans) if (b - a >= 0.45)
+      bakeRamp(box(h, (a + b) / 2, height / 2, 0, b - a, height, 0.6, '#ffffff', 'foliage', { bevel: 0.12, segments: 1 }), palette.hedge, 0.9, 1.05, palette.hedgeTop, 0.45);
+    return h;
+  }
+  /** A stone kerb, a green mound and three to six chunky blooms. */
   function flowerBed(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, seed: number) {
-    // Soil rises above its stone edging, so no two tops share a height.
-    box(g, x, y + 0.06, z, w, 0.12, d, palette.soil, 'soil');
-    box(g, x, y + 0.05, z, w + 0.12, 0.1, d + 0.12, palette.stoneDark, 'stone');
-    const count = Math.round(w * d * 5);
+    box(g, x, y + 0.11, z, w + 0.16, 0.22, d + 0.16, palette.stoneDark, 'stone'); // kerb
+    bakeRamp(box(g, x, y + 0.27, z, w - 0.04, 0.2, d - 0.04, '#ffffff', 'foliage', { bevel: 0.09, segments: 1 }), palette.hedge, 0.9, 1.05, palette.hedgeTop, 0.4); // mound
+    const count = T.MathUtils.clamp(Math.round(w * d * 4), 3, 6), long = w >= d;
     for (let i = 0; i < count; i++) {
-      const px = x + (hash(seed + i * 3) - 0.5) * (w - 0.2),
-        pz = z + (hash(seed + i * 3 + 1) - 0.5) * (d - 0.2);
-      sphere(g, px, y + 0.17, pz, 0.055, palette.flowers[i % palette.flowers.length], 'paint', 5);
-      box(g, px, y + 0.11, pz, 0.02, 0.1, 0.02, palette.canopy[0], 'foliage');
+      const along = ((i + 0.5) / count - 0.5) * (Math.max(w, d) - 0.3), across = (hash(seed + i * 3) - 0.5) * Math.max(0, Math.min(w, d) - 0.35);
+      bloom(g, x + (long ? along : across), y + 0.4, z + (long ? across : along), BLOOMS[(seed + i) % 5]);
     }
+  }
+  /** A clipped topiary lump, painted like a canopy. */
+  function topiary(g: T.Object3D, x: number, y: number, z: number, r: number, detail: number, sx = 1, sy = 0.9, sz = 1) {
+    const geo = new T.IcosahedronGeometry(r, detail); geo.scale(sx, sy, sz);
+    paintCanopy([geo], [[0, 0, 0, r]], TREE.round, palette.hedge, -r * sy, r * sy);
+    const m = new T.Mesh(geo, material('#ffffff', 'foliage')); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m;
   }
   function phoneBox(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
     const p = new T.Group();
@@ -1534,8 +1612,7 @@ export function buildTown(
     for (const sx of [-0.9, 0.9]) box(shell, sx, 2.6, d / 2 + 0.3, 0.14, 0.4, 0.5, palette.trim, 'stone');
     for (const sx of [-2.2, 2.2]) {
       cylinder(shell, sx, 0.65, d / 2 + 0.9, 0.3, 0.26, 0.36, palette.plinth, 'stone', 10);
-      const ball = sphere(shell, sx, 1.1, d / 2 + 0.9, 0.3, palette.canopy[0], 'foliage', 10);
-      ball.userData.softFoliage = true;
+      topiary(shell, sx, 1.1, d / 2 + 0.9, 0.3, 2);
     }
     box(shell, 0, 0.3 + h * 0.52, 0, w + 0.12, 0.09, d + 0.12, palette.trim, 'stone');
     box(shell, 0, 0.3 + h + 0.08, 0, w + 0.36, 0.2, d + 0.36, palette.trim, 'stone');
