@@ -12,6 +12,19 @@ for (const [, url] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
 }
 const manifest = JSON.parse(await readFile(path.join(dir, '.vite/manifest.json'), 'utf8'));
 assert(manifest['index.html'].dynamicImports.includes('app/city-scene.ts'), 'Scene must remain lazy-loaded.');
+// The first download is the entry chunk plus every chunk it imports statically.
+const firstDownload = new Set();
+for (const queue = ['index.html']; queue.length; ) {
+  const entry = manifest[queue.pop()];
+  if (firstDownload.has(entry.file)) continue;
+  firstDownload.add(entry.file);
+  queue.push(...(entry.imports || []));
+}
+for (const file of firstDownload)
+  assert(
+    !(await readFile(path.join(dir, file), 'utf8')).includes('WebGLRenderer'),
+    `three.js must stay out of the first download; ${file} contains WebGLRenderer. Import sky/clock helpers from app/glasgow-sun.ts (not city-atmosphere or other three-backed modules) and keep app/city-scene.ts behind its dynamic import.`,
+  );
 for (const entry of Object.values(manifest)) {
   for (const file of [entry.file, ...(entry.css || []), ...(entry.assets || [])])
     await access(path.join(dir, file));
@@ -22,4 +35,4 @@ for (const entry of Object.values(manifest)) {
   }
 }
 await access(path.join(dir, '.nojekyll'));
-console.log('Pages artifact verified: entry, stylesheet, public assets, lazy scene and repository base path.');
+console.log('Pages artifact verified: entry, stylesheet, public assets, lazy scene, three-free first download and repository base path.');

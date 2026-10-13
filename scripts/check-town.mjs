@@ -25,6 +25,7 @@ for (const name of [
   'city-ink',
   'city-water',
   'city-lighting',
+  'glasgow-sun',
   'city-atmosphere',
   'town-plan',
   'town-build',

@@ -10,7 +10,7 @@ import {
   glyphFor,
 } from './lab-content';
 import { chapterMeta } from './site-chrome';
-import type { SkyState } from './city-atmosphere';
+import type { SkyState } from './glasgow-sun';
 import type { SkyMode } from './use-sky';
 
 export const Hero = memo(function Hero({

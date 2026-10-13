@@ -25,7 +25,7 @@ import { buildings, type Building, type BuildingId, type Locale } from './city-d
 import { districts } from './city-districts';
 import { people, titleFor, type BrowseMode, type ContentId } from './lab-navigation';
 import type { HoverTarget } from './city-scene';
-import type { SkyState } from './city-atmosphere';
+import type { SkyState } from './glasgow-sun';
 import { LabContent, PlaceGlyph, glyphFor } from './lab-content';
 import { skyCaption, type SkyMode } from './use-sky';
 

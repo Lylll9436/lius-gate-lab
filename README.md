@@ -36,7 +36,8 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/town-plan.ts` | 小城规划：岛屿轮廓、山丘、街道、建筑位置、港口、植栽与路灯布置 |
 | `app/town-build.ts` | 程序化建模：地形、街道、建筑、树木、街具、车船、灯塔、热气球 |
 | `app/city-scene.ts` | 渲染器、镜头、光照、昼夜 / 天气、悬停与点击、单栋建筑近看 |
-| `app/city-atmosphere.ts` | 格拉斯哥太阳位置、雨、海鸥 |
+| `app/glasgow-sun.ts` | 格拉斯哥太阳位置与当地时间；首屏直接使用，不得引入 three（check-pages 会校验） |
+| `app/city-atmosphere.ts` | 雨、海鸥、主光方向 |
 | `app/city-water.ts` `app/city-ink.ts` | 水面着色器；最终合成（多重采样、接触阴影、选中光圈），深度方法参考 xi4u，MIT，见 THIRD_PARTY_NOTICES.md |
 | `app/city-materials.ts` `app/city-people.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、路灯、近看取景、悬停状态 |
 | `app/city-data.ts` `app/city-districts.ts` `app/lab-navigation.ts` `app/lab-records.ts` `app/content-schema.ts` | 建筑文案、分区、地址与章节映射、内容目录与校验 |

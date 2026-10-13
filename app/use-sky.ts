@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { glasgowSky, type SkyState } from './city-atmosphere';
+import { glasgowSky, type SkyState } from './glasgow-sun';
 import type { Locale } from './city-data';
 
 export type SkyMode = 'auto' | 'day' | 'night';
