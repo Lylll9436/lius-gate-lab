@@ -2,7 +2,7 @@ import { ArrowUpRight, Map, BookOpen, Mail } from 'lucide-react';
 import type { Locale } from './city-data';
 import type { BrowseMode, ContentId } from './lab-navigation';
 import { GateMark } from './lab-content';
-import { supervisorEmail } from './lab-records';
+import { joinUsMailto, supervisorEmail } from './lab-records';
 
 export type ChapterMeta = {
   id: ContentId;
@@ -128,7 +128,8 @@ export function SiteFooter({
   onNavigate: (mode: BrowseMode, id: ContentId) => void;
 }) {
   const zh = locale === 'zh',
-    joinEmail = supervisorEmail();
+    joinEmail = supervisorEmail(),
+    joinHref = joinUsMailto(zh);
   return (
     <footer className="site-footer">
       <div className="footer-brand">
@@ -146,10 +147,10 @@ export function SiteFooter({
           : 'The city keeps Glasgow time: the lamps come on at dusk, and the gulls fly whatever the weather.'}
       </p>
       <nav className="footer-links">
-        {joinEmail && (
+        {joinEmail && joinHref && (
           <a
             className="footer-join"
-            href={'mailto:' + joinEmail}
+            href={joinHref}
             aria-label={(zh ? '加入我们：发邮件给刘鹏远老师 ' : 'Join us: email Pengyuan Liu at ') + joinEmail}
             title={joinEmail}
           >

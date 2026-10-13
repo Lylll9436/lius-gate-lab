@@ -27,6 +27,9 @@ for (const visibility of [['published'], { value: 'published' }, null]) {
   );
 }
 const text = (en) => ({ en, zh: '测试内容' });
+// Fixture news is dated a month before the run, so it stays inside Gate's News window
+// (the last 12 months) whatever day the checks run.
+const recent = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
 const person = {
   ...structuredClone(catalog.people[1]),
   id: 'test-member',
@@ -61,18 +64,28 @@ const event = {
   sections: [],
   properties: [],
   links: [],
-  date: '2026-09-10',
+  date: recent,
   category: 'milestone',
   people: ['test-member'],
   image: null,
 };
 next = upsertRecord(next, 'events', event);
+// An outing from long ago: it stays in Life at the Gate but has left Gate's News.
+const oldEvent = {
+  ...event,
+  id: 'test-old-event',
+  title: text('Old test outing'),
+  date: '2024-05-01',
+  category: 'group-photo',
+  people: [],
+};
+next = upsertRecord(next, 'events', oldEvent);
 const outputRecord = {
   ...research,
   id: 'test-output',
   title: text('Test output'),
   type: 'paper',
-  date: '2026-09-10',
+  date: recent,
   researchId: 'test-study',
 };
 const noteRecord = {
@@ -126,9 +139,13 @@ assert(
 let removed = removeRecord(
   removeRecord(
     removeRecord(
-      removeRecord(next, 'outputs', 'test-output'),
-      'notes',
-      'test-note',
+      removeRecord(
+        removeRecord(next, 'outputs', 'test-output'),
+        'notes',
+        'test-note',
+      ),
+      'events',
+      'test-old-event',
     ),
     'events',
     'test-event',
@@ -152,8 +169,9 @@ for (const name of [
   'lab-navigation',
   'people-photos',
   'lab-content',
+  'site-chrome',
 ]) {
-  const ext = name === 'lab-content' ? 'tsx' : 'ts';
+  const ext = ['lab-content', 'site-chrome'].includes(name) ? 'tsx' : 'ts';
   const source = await fs.readFile(
     path.join(root, 'app', name + '.' + ext),
     'utf8',
@@ -183,6 +201,12 @@ const records = await import(
 );
 const { LabContent, NewsPreview, PeopleCards } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
+);
+const { SiteFooter } = await import(
+  pathToFileURL(path.join(output, 'site-chrome.mjs')).href
+);
+const { buildings } = await import(
+  pathToFileURL(path.join(output, 'city-data.mjs')).href
 );
 assert.equal(nav.people.length, 4);
 const moved = { ...catalog.people[2], buildingId: null };
@@ -261,8 +285,35 @@ assert(
   'Only the city file offers to open a record.',
 );
 assert(
-  study.includes('Test research') && !study.includes('No project records'),
+  study.includes('Test research') && !study.includes('started recently'),
+  'Real projects replace the Research chapter’s note for visitors.',
 );
+// Chapters with nothing published yet speak to visitors: no notes for the maintainer,
+// and every English text free of Chinese.
+for (const b of buildings)
+  for (const { en, zh } of [
+    b.summary,
+    b.architecture,
+    ...b.sections.flatMap((s) => [s.heading, s.body]),
+  ]) {
+    assert(
+      !/catalog|repositor|\brecords?\b|maintain/i.test(en) && !/目录|记录|维护/.test(zh),
+      'Visitors see no maintainer wording in ' + b.id + ': ' + en,
+    );
+    assert(!/[\u3400-\u9fff]/.test(en), 'English place text contains Chinese: ' + en);
+  }
+const studio = buildings.find((b) => b.id === 'research-studio'),
+  archive = buildings.find((b) => b.id === 'city-archive');
+assert.deepEqual(
+  studio.sections.map((s) => s.heading.en),
+  ['Projects'],
+  'Research keeps one note for visitors, without “How records are added”.',
+);
+for (const b of [studio, archive])
+  assert(
+    !/^No /.test(b.sections[0].body.en) && !/^目前尚未/.test(b.sections[0].body.zh),
+    'Empty chapters say what is coming, not that nothing exists: ' + b.id,
+  );
 const park = renderToStaticMarkup(
   React.createElement(LabContent, {
     id: 'corner-park',
@@ -271,12 +322,39 @@ const park = renderToStaticMarkup(
   }),
 );
 assert(park.includes('Test event') && !park.includes('No records yet'));
-// Gate's News: dated records from every collection, newest first, capped, bilingual.
+// Life at the Gate keeps every outing, its dates written as people say them.
+const parkZh = renderToStaticMarkup(
+  React.createElement(LabContent, { id: 'corner-park', locale: 'zh', onOpen() {} }),
+);
+assert(
+  park.includes('Old test outing') &&
+    park.includes('>1 May 2024</time>') &&
+    parkZh.includes('>2024年5月1日</time>') &&
+    !park.includes('>2024-05-01<') &&
+    !park.includes('>' + recent + '<'),
+  'Life dates read naturally, not as raw ISO dates.',
+);
+// Gate's News: dated records from every collection, newest first, capped, bilingual,
+// and only from the last 12 months.
 const news = records.recentNews(50);
 assert(news.length >= 3 && records.recentNews(2).length === 2 && !records.recentNews(0).length);
 for (let i = 1; i < news.length; i++)
   assert(news[i - 1].record.date >= news[i].record.date, 'News must be newest first.');
-const sameDay = news.filter((n) => n.record.date === '2026-09-10').map((n) => n.id);
+const yearAgo = new Date();
+yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
+assert(
+  news.every((n) => n.record.date >= yearAgo.toISOString().slice(0, 10)) &&
+    !news.some((n) => n.id === 'event:test-old-event'),
+  'News older than 12 months leaves the first screen.',
+);
+const onAnniversary = records.recentNews(50, new Date('2025-05-01T12:00:00Z')),
+  dayAfter = records.recentNews(50, new Date('2025-05-02T12:00:00Z'));
+assert(
+  onAnniversary.some((n) => n.id === 'event:test-old-event') &&
+    !dayAfter.some((n) => n.id === 'event:test-old-event'),
+  'News stays for exactly 12 months.',
+);
+const sameDay = news.filter((n) => n.record.date === recent).map((n) => n.id);
 assert.deepEqual(sameDay, ['output:test-output', 'event:test-event', 'note:test-note']);
 for (const n of news) assert(nav.isContentId(n.id), 'News must open a real record: ' + n.id);
 const newsEn = renderToStaticMarkup(
@@ -284,17 +362,48 @@ const newsEn = renderToStaticMarkup(
 );
 assert(newsEn.includes('Gate’s News') && newsEn.includes('Test output') && newsEn.includes('Paper'));
 assert(!/[\u3400-\u9fff]/.test(newsEn), 'English news contains Chinese.');
-assert(newsEn.includes('10 Sept 2026') || newsEn.includes('10 Sep 2026'), 'News dates read naturally.');
+assert(
+  new RegExp('dateTime="' + recent + '">\\d{1,2} [A-Z][a-z]{2,3} \\d{4}</time>').test(newsEn),
+  'News dates read naturally.',
+);
 const newsZh = renderToStaticMarkup(
   React.createElement(NewsPreview, { locale: 'zh', onOpen() {} }),
 );
 assert(newsZh.includes('刘家门快讯') && (newsZh.match(/<li>/g) || []).length === 3);
-// Join us: the supervisor's email comes from their catalogue record.
+// Join us: the supervisor's email comes from their catalogue record, and every Join us
+// link (news card and footer) fills in the subject line in the reader's language.
 const supervisorMail = catalog.people
   .find((p) => p.id === 'pengyuan-liu')
   .links.find((l) => l.url.startsWith('mailto:')).url;
-assert(newsEn.includes('Join us!') && newsEn.includes('href="' + supervisorMail + '"'));
-assert(newsZh.includes('加入我们！'));
+const joinHref = {
+  en: supervisorMail + '?subject=' + encodeURIComponent('PhD enquiry — Liu’s Gate'),
+  zh: supervisorMail + '?subject=' + encodeURIComponent('博士申请咨询 — 刘家门'),
+};
+assert(newsEn.includes('Join us!') && newsEn.includes('href="' + joinHref.en + '"'));
+assert(newsZh.includes('加入我们！') && newsZh.includes('href="' + joinHref.zh + '"'));
+for (const locale of ['en', 'zh']) {
+  const footer = renderToStaticMarkup(
+    React.createElement(SiteFooter, { locale, onNavigate() {} }),
+  );
+  assert(
+    footer.includes('class="footer-join" href="' + joinHref[locale] + '"'),
+    'The footer’s Join us fills in the subject (' + locale + ').',
+  );
+  if (locale === 'en')
+    assert(!/[\u3400-\u9fff]/.test(footer), 'English footer contains Chinese.');
+  // With no news from the last year the card keeps only Join us.
+  const joinOnly = renderToStaticMarkup(
+    React.createElement(NewsPreview, { locale, onOpen() {}, limit: 0 }),
+  );
+  assert(
+    joinOnly.includes('is-join-only') &&
+      joinOnly.includes('href="' + joinHref[locale] + '"') &&
+      joinOnly.includes(locale === 'zh' ? '加入我们！' : 'Join us!') &&
+      !joinOnly.includes('<ol') &&
+      !joinOnly.includes(locale === 'zh' ? '刘家门快讯' : 'Gate’s News'),
+    'Without news only Join us shows (' + locale + ').',
+  );
+}
 // Reading view: each person card folds out the full profile from the catalogue, and email
 // links show the address itself, labelled for assistive tech, in the same tab.
 const escapeHtml = (value) =>
@@ -431,5 +540,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, Gate’s News order and rendering, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
 );

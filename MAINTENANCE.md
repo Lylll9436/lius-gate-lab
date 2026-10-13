@@ -17,9 +17,12 @@
 | links | 双语链接标题和 HTTPS / mailto 地址 |
 
 - 人员额外字段：`role`、`affiliation`、`photo`、`buildingId`。照片放在 `public/people/`，`photo` 填 `/people/文件名.jpg`，无照片用 `null`（页面显示姓名首字母的方块，颜色取自住所）。`buildingId` 只能是 `pengyuan-liu`、`yunlong-liu`、`qin-li` 三户之一或 `null`；为 `null` 时人员仍出现在成员章节，在小城中定位到联排住宅。
-- 研究额外字段：`status`（`active` / `completed`）、`people`、`buildingId`。`active` 进入研究工作室，`completed` 自动进入档案馆。
+- 研究额外字段：`status`（`active` / `completed`）、`people`、`buildingId`。`active` 进入研究工作室，`completed` 自动进入档案馆，并保留与成员和成果的关联。
 - 活动额外字段：`date`（真实 YYYY-MM-DD）、`category`（`group-photo` / `celebration` / `milestone`）、`people`、`image`（`public/media/` 下的图片或 `null`）。活动按日期倒序进入街角公园。
 - 成果（`outputs`）：`type` 为 `paper` / `dataset` / `software` / `report`，加 `date`、`people`、`researchId`、`buildingId`。研究记录（`notes`）同样有 `date`、`people`、`researchId`、`buildingId`。
+- 研究工作室和档案馆还没有记录时，显示 `app/city-data.ts` 里写给访客的说明（`sections`）；发布第一条记录后说明自动隐藏。这些说明只写给访客，维护方法写在本文件里。
+- 首屏「刘家门快讯」自动取最近 12 个月内的活动、成果与研究记录，按日期倒序最多 3 条（`app/lab-records.ts` 的 `recentNews`），过期自动下架，不用手动删除；一年内都没有新记录时，首屏卡片只保留「加入我们」。街角公园仍列出全部活动，日期按「3 Oct 2026」/「2026年10月3日」显示。
+- 「加入我们」（首屏卡片与页脚）的邮箱取自导师记录里的 mailto 链接，并自动带上邮件主题「PhD enquiry — Liu’s Gate」/「博士申请咨询 — 刘家门」（`app/lab-records.ts` 的 `joinUsMailto`）。
 
 ## 修改方式
 

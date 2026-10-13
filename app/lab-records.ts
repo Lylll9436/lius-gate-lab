@@ -34,6 +34,13 @@ export function supervisorEmail() {
     ?.links.find((l) => l.url.startsWith('mailto:'));
   return link ? link.url.slice('mailto:'.length).split('?')[0] : null;
 }
+/** Join us: an email to the supervisor with the subject line already filled in. */
+export function joinUsMailto(zh: boolean) {
+  const email = supervisorEmail();
+  if (!email) return null;
+  const subject = zh ? '博士申请咨询 — 刘家门' : 'PhD enquiry — Liu’s Gate';
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}`;
+}
 export type RecordKind = 'person' | 'research' | 'event' | 'output' | 'note';
 export type NewsItem =
   | { id: string; kind: 'event'; record: EventRecord }
@@ -41,10 +48,14 @@ export type NewsItem =
   | { id: string; kind: 'note'; record: NoteRecord };
 /**
  * Gate's News: the latest dated records from life at the Gate, outputs and research notes,
- * newest first. Nothing extra to maintain: publishing a dated record is the news.
+ * newest first, from the last 12 months only so the first screen never shows stale news.
+ * Nothing extra to maintain: publishing a dated record is the news, and it ages out by itself.
  */
-export function recentNews(limit = 3): NewsItem[] {
+export function recentNews(limit = 3, today: Date = new Date()): NewsItem[] {
   const rank = { output: 0, event: 1, note: 2 };
+  const yearAgo = new Date(today.getTime());
+  yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
+  const since = yearAgo.toISOString().slice(0, 10);
   const items: NewsItem[] = [
     ...eventRecords.map((record) => ({
       id: 'event:' + record.id,
@@ -63,6 +74,7 @@ export function recentNews(limit = 3): NewsItem[] {
     })),
   ];
   return items
+    .filter((item) => item.record.date >= since)
     .sort(
       (a, b) =>
         b.record.date.localeCompare(a.record.date) ||

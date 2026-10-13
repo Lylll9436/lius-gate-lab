@@ -115,8 +115,8 @@ const places: Building[] = [
       {
         heading: t('This site', '关于本站'),
         body: t(
-          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive. All content is maintained in one catalogue file in the repository.',
-          '本站按一座小城组织：每一章对应一栋建筑，完成的工作从工作室转入档案馆。全部内容由仓库中的一个目录文件统一维护。',
+          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive.',
+          '本站按一座小城组织：每一章对应一栋建筑，完成的工作从工作室转入档案馆。',
         ),
       },
     ],
@@ -246,15 +246,8 @@ const places: Building[] = [
       {
         heading: t('Projects', '项目'),
         body: t(
-          'No project records have been published yet. Each project page will list its research question, methods, data, people and outputs.',
-          '目前尚未发布项目记录。每个项目页面将列出研究问题、方法、数据、参与成员与成果。',
-        ),
-      },
-      {
-        heading: t('How records are added', '记录维护'),
-        body: t(
-          'Projects are added to the catalogue as records. When a project is marked completed it moves to the Archive automatically, keeping its links to people and outputs.',
-          '项目以记录形式加入目录。项目标记为完成后自动转入档案馆，并保留与成员和成果的关联。',
+          'Liu’s Gate started recently, and its PhD projects are just getting under way. Each project will be introduced here as its work is published. Until then, the People chapter says what each member works on.',
+          '刘家门成立不久，同学们的博士课题刚刚起步，每个课题都会在成果发表后在这里介绍。在此之前，可以在「成员」一章了解每位成员的研究方向。',
         ),
       },
     ],
@@ -285,8 +278,8 @@ const places: Building[] = [
       {
         heading: t('Publications', '论文'),
         body: t(
-          'No publications have been listed yet. Entries will include authors, venue, year and links to the paper, code or data.',
-          '目前尚未列出论文。条目将包含作者、发表渠道、年份以及论文、代码或数据的链接。',
+          'Papers from Liu’s Gate will be listed here as they are published, with links to read them and to any code or data.',
+          '刘家门的论文发表后会陆续在这里列出，并附论文以及代码或数据的链接。',
         ),
       },
       {

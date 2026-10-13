@@ -21,6 +21,7 @@ import {
   personContentId,
   recentNews,
   supervisorEmail,
+  joinUsMailto,
   type NewsItem,
 } from './lab-records';
 import type {
@@ -258,7 +259,10 @@ function newsKindLabel(item: NewsItem, zh: boolean) {
   return zh ? '研究记录' : 'Research note';
 }
 
-/** Gate's News on the first screen: the latest few dated records, each opening in place. */
+/**
+ * Gate's News on the first screen: the latest few dated records, each opening in place.
+ * With no news from the last year the news part stays hidden and only Join us shows.
+ */
 export function NewsPreview({
   locale,
   onOpen,
@@ -270,8 +274,24 @@ export function NewsPreview({
 }) {
   const zh = locale === 'zh',
     items = recentNews(limit),
-    joinEmail = supervisorEmail();
-  if (!items.length && !joinEmail) return null;
+    joinEmail = supervisorEmail(),
+    joinHref = joinUsMailto(zh);
+  if (!items.length && !joinHref) return null;
+  const join = joinHref && (
+    <footer className="hero-news-join">
+      <strong>{zh ? '加入我们！' : 'Join us!'}</strong>
+      <a href={joinHref}>{joinEmail}</a>
+    </footer>
+  );
+  if (!items.length)
+    return (
+      <aside
+        className="hero-news is-join-only"
+        aria-label={zh ? '加入我们' : 'Join us'}
+      >
+        {join}
+      </aside>
+    );
   return (
     <aside className="hero-news" aria-labelledby="hero-news-title">
       <header className="hero-news-head">
@@ -326,12 +346,7 @@ export function NewsPreview({
         {zh ? '查看师门生活' : 'More from life at the Gate'}
         <ArrowUpRight size={14} />
       </button>
-      {joinEmail && (
-        <footer className="hero-news-join">
-          <strong>{zh ? '加入我们！' : 'Join us!'}</strong>
-          <a href={'mailto:' + joinEmail}>{joinEmail}</a>
-        </footer>
-      )}
+      {join}
     </aside>
   );
 }
@@ -457,7 +472,7 @@ function RecordView({
         {output && <Pill>{typeLabel(output.type, zh)}</Pill>}
         {'date' in record && (
           <time className="record-date" dateTime={record.date}>
-            {record.date}
+            {newsDate(record.date, zh)}
           </time>
         )}
         {'researchId' in record && record.researchId && (

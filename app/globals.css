@@ -1046,6 +1046,15 @@ body:has(.mode-explore),
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+/* No news from the last year: the card keeps only Join us, without the rule above it. */
+.hero-news.is-join-only {
+  padding: 12px 14px;
+}
+.hero-news.is-join-only .hero-news-join {
+  margin: 0;
+  padding: 0 6px;
+  border-top: 0;
+}
 .hero h1 {
   margin: 14px 0 20px;
   line-height: 0.92;
