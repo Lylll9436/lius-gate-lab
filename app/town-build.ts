@@ -184,8 +184,9 @@ const plazaPlanters = () =>
   });
 /** The park's bandstand stands just behind the park centre. */
 const bandstandAt = (): XZ => [plan.park.x, plan.park.z - 0.3];
-const CRANE_BASE = 1.4,
-  HOARDING_THICKNESS = 0.06;
+/** The crane's stone footing (square) and the hoarding panels' thickness; the ground masks stamp both. */
+const CRANE_BASE = 1.8,
+  HOARDING_THICKNESS = 0.12;
 /** The hoarding round the reserved plot: offset from the plot centre, length, rotation. */
 const hoardingWalls = (plot: typeof plan.reservedPlot) =>
   [
@@ -1150,17 +1151,15 @@ export function buildTown(
   /* ---------------------------------------------------------------- */
   /* Furniture, planting, small things                                 */
   /* ---------------------------------------------------------------- */
+  /** A chunky bench: two leg slabs with back posts, one seat slab and one back board. */
   function bench(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
-    const b = new T.Group();
-    b.position.set(x, y, z);
-    b.rotation.y = ry;
-    g.add(b);
-    for (const sx of [-0.55, 0.55]) {
-      box(b, sx, 0.22, 0, 0.05, 0.44, 0.42, palette.metal, 'metal');
-      box(b, sx, 0.52, -0.2, 0.05, 0.5, 0.05, palette.metal, 'metal');
+    const b = new T.Group(); b.position.set(x, y, z); b.rotation.y = ry; g.add(b);
+    for (const sx of [-0.52, 0.52]) {
+      box(b, sx, 0.19, 0.02, 0.1, 0.38, 0.4, palette.metal, 'metal');   // leg slab, 108
+      box(b, sx, 0.62, -0.17, 0.1, 0.5, 0.08, palette.metal, 'metal');  // back post, 12
     }
-    for (const dz of [-0.14, 0, 0.14]) box(b, 0, 0.45, dz, 1.3, 0.04, 0.11, palette.wood, 'wood', { bevel: 0.01 });
-    for (const dy of [0.62, 0.76]) box(b, 0, dy, -0.2, 1.3, 0.1, 0.04, palette.wood, 'wood', { bevel: 0.01 });
+    box(b, 0, 0.42, 0.02, 1.3, 0.1, 0.46, palette.wood, 'wood');      // seat slab, 108
+    box(b, 0, 0.7, -0.19, 1.3, 0.26, 0.1, palette.wood, 'wood');      // back board, 108
     return b;
   }
   // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
@@ -1243,103 +1242,117 @@ export function buildTown(
     paintCanopy([geo], [[0, 0, 0, r]], TREE.round, palette.hedge, -r * sy, r * sy);
     const m = new T.Mesh(geo, material('#ffffff', 'foliage')); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m;
   }
+  /** A red phone box: a stone plinth, a fat body with one big pane per face, a cream sign band, a crown and a pyramid hat. */
   function phoneBox(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
-    const p = new T.Group();
-    p.position.set(x, y, z);
-    p.rotation.y = ry;
-    g.add(p);
-    box(p, 0, 0.75, 0, 0.6, 1.5, 0.6, '#b3332b', 'paint', { bevel: 0.03 });
+    const p = new T.Group(); p.position.set(x, y, z); p.rotation.y = ry; g.add(p);
+    const red = palette.boat; // the palette's accent red
+    box(p, 0, 0.1, 0, 0.84, 0.2, 0.84, palette.stoneDark, 'stone'); // plinth
+    box(p, 0, 1.0, 0, 0.72, 1.6, 0.72, red, 'paint'); // body
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-      const face = new T.Group();
-      face.rotation.y = side;
-      p.add(face);
-      box(face, 0, 0.85, 0.3, 0.42, 1.05, 0.02, palette.glass, 'glass');
-      for (let i = 1; i < 4; i++) box(face, 0, 0.5 + i * 0.26, 0.31, 0.44, 0.02, 0.02, '#b3332b', 'paint');
+      const f = new T.Group(); f.rotation.y = side; p.add(f);
+      box(f, 0, 0.98, 0.35, 0.48, 1.04, 0.04, palette.glass, 'glass'); // pane
+      box(f, 0, 0.98, 0.37, 0.07, 1.04, 0.03, red, 'paint'); // mullion
+      box(f, 0, 1.15, 0.37, 0.48, 0.07, 0.03, red, 'paint'); // transom
+      box(f, 0, 1.64, 0.37, 0.5, 0.13, 0.03, palette.white, 'paint'); // sign band
     }
-    box(p, 0, 1.56, 0, 0.66, 0.12, 0.66, '#9d2b24', 'paint');
-    cone(p, 0, 1.7, 0, 0.42, 0.18, '#9d2b24', 'paint', 4);
+    box(p, 0, 1.86, 0, 0.84, 0.12, 0.84, red, 'paint'); // crown
+    cone(p, 0, 2.02, 0, 0.58, 0.2, red, 'paint', 4); // hat
     return p;
   }
+  /** A fat green litter bin with a gold band and a dark lid. */
   function bin(g: T.Object3D, x: number, y: number, z: number) {
-    cylinder(g, x, y + 0.3, z, 0.17, 0.15, 0.6, palette.metal, 'metal', 8);
-    cylinder(g, x, y + 0.62, z, 0.19, 0.19, 0.05, '#2d3838', 'metal', 8);
+    cylinder(g, x, y + 0.33, z, 0.24, 0.2, 0.66, palette.greenDoor, 'paint', 12); // body
+    cylinder(g, x, y + 0.5, z, 0.245, 0.245, 0.07, palette.gold, 'metal', 12); // band
+    cylinder(g, x, y + 0.7, z, 0.27, 0.27, 0.1, palette.metal, 'metal', 12); // lid
   }
+  /** The park bandstand: a fat octagon on a stepped plinth, chunky columns, low panels and a big verdigris hat. */
   function pavilion(g: T.Object3D, x: number, y: number, z: number) {
-    const p = new T.Group();
-    p.position.set(x, y, z);
-    g.add(p);
-    cylinder(p, 0, 0.08, 0, 1.75, 1.85, 0.16, palette.stoneDark, 'stone', 8);
-    cylinder(p, 0, 0.2, 0, 1.6, 1.6, 0.08, palette.plaza, 'paving', 8);
+    const p = new T.Group(); p.position.set(x, y, z); g.add(p);
+    /** Flat-faced 8-sided pieces (non-indexed, face normals) so they shade as octagons, not cylinders. */
+    const facets = (geo: T.BufferGeometry) => { const flat = geo.toNonIndexed(); geo.dispose(); flat.computeVertexNormals(); return flat; };
+    const oct = (rt: number, rb: number, h: number, yc: number, colour: string, kind: SurfaceKind) => {
+      const m = new T.Mesh(facets(new T.CylinderGeometry(rt, rb, h, 8)), material(colour, kind));
+      m.rotation.y = Math.PI / 8; m.position.y = yc; m.castShadow = m.receiveShadow = true; p.add(m); return m; };
+    oct(1.9, 2.0, 0.4, 0.2, palette.stoneDark, 'stone');          // plinth (flat face to +z)
+    oct(1.78, 1.78, 0.08, 0.44, palette.plaza, 'paving');         // floor
+    box(p, 0, 0.13, 2.02, 1.1, 0.26, 0.34, palette.stoneDark, 'stone'); // steps land on the park's gravel strip
+    box(p, 0, 0.065, 2.34, 1.1, 0.13, 0.3, palette.stoneDark, 'stone');
     for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-      cylinder(p, Math.cos(a) * 1.35, 1.35, Math.sin(a) * 1.35, 0.045, 0.055, 2.3, palette.trim, 'paint', 8);
-      box(p, Math.cos(a) * 1.35, 0.72, Math.sin(a) * 1.35, 0.9, 0.04, 0.04, palette.trim, 'paint', { ry: -a + Math.PI / 2 });
+      const th = Math.PI / 8 + (i * Math.PI) / 4;               // octagon corners (x = r sin, z = r cos)
+      const col = new T.Mesh(new T.CylinderGeometry(0.09, 0.11, 2.1, 10, 1, true), material(palette.frame, 'paint'));
+      col.position.set(1.55 * Math.sin(th), 1.45, 1.55 * Math.cos(th)); col.castShadow = col.receiveShadow = true; p.add(col);
+      const mid = th + Math.PI / 8; if (i === 7) continue;     // entrance between corners 7 and 0 faces +z
+      box(p, 1.432 * Math.sin(mid), 0.6, 1.432 * Math.cos(mid), 0.95, 0.4, 0.12, palette.frame, 'paint', { ry: mid });
     }
-    const ring = new T.Mesh(new T.CylinderGeometry(1.5, 1.5, 0.12, 8, 1, true), material(palette.trim, 'paint'));
-    ring.position.y = 2.5;
-    p.add(ring);
-    cone(p, 0, 3.02, 0, 1.75, 1.0, palette.copper, 'slate', 8, Math.PI / 8);
-    sphere(p, 0, 3.6, 0, 0.09, palette.bronze, 'metal', 8);
-    bench(p, 0, 0.24, 0.55, Math.PI);
+    oct(1.7, 1.7, 0.32, 2.66, palette.frame, 'paint');           // closed frieze; columns stop under it
+    const roof = new T.Mesh(facets(new T.ConeGeometry(2.3, 1.2, 8)), material(palette.copper, 'slate'));
+    roof.rotation.y = Math.PI / 8; roof.position.y = 3.42; roof.castShadow = roof.receiveShadow = true; p.add(roof);
+    const fin = new T.Mesh(new T.IcosahedronGeometry(0.16, 1), material(palette.gold, 'metal')); fin.position.y = 4.1; p.add(fin);
     return p;
   }
+  /** The park's notice board: two posts, a wooden board with a paper sheet and a slate roof. */
   function memoryBoard(g: T.Object3D, x: number, y: number, z: number, ry: number) {
-    const b = new T.Group();
-    b.position.set(x, y, z);
-    b.rotation.y = ry;
-    g.add(b);
-    for (const dx of [-0.6, 0.6]) box(b, dx, 0.8, 0, 0.07, 1.6, 0.07, palette.woodDark, 'wood');
-    box(b, 0, 1.15, 0, 1.35, 0.8, 0.05, palette.wood, 'wood', { bevel: 0.01 });
-    box(b, 0, 1.15, 0.03, 1.2, 0.66, 0.01, '#e6e0cc', 'paint');
-    box(b, 0, 1.62, 0, 1.5, 0.08, 0.3, palette.slate, 'slate');
+    const b = new T.Group(); b.position.set(x, y, z); b.rotation.y = ry; g.add(b);
+    for (const dx of [-0.6, 0.6]) box(b, dx, 0.8, 0, 0.12, 1.6, 0.12, palette.woodDark, 'wood'); // posts
+    box(b, 0, 1.15, 0, 1.35, 0.85, 0.1, palette.wood, 'wood'); // board
+    box(b, 0, 1.15, 0.06, 1.15, 0.65, 0.02, palette.white, 'paint'); // paper
+    box(b, 0, 1.66, 0, 1.6, 0.12, 0.42, palette.slate, 'slate'); // roof
     return b;
   }
+  /** The tower crane on the reserved plot, built from a few thick painted members, with a swinging jib and a hook load. */
   function crane(g: T.Object3D, x: number, z: number) {
+    const Y = palette.gold; // crane yellow, painted
     const base = new T.Group();
     base.position.set(x, 0, z);
     g.add(base);
-    box(base, 0, 0.12, 0, CRANE_BASE, 0.24, CRANE_BASE, '#9b9a90', 'stone');
-    const mastH = 7.5;
-    for (const sx of [-0.28, 0.28])
-      for (const sz of [-0.28, 0.28]) box(base, sx, mastH / 2 + 0.24, sz, 0.07, mastH, 0.07, palette.gold, 'metal');
-    for (let y = 0.6; y < mastH; y += 0.7) {
-      box(base, 0, y + 0.24, 0.28, 0.6, 0.04, 0.04, palette.gold, 'metal');
-      box(base, 0, y + 0.24, -0.28, 0.6, 0.04, 0.04, palette.gold, 'metal');
-      box(base, 0.28, y + 0.24, 0, 0.04, 0.04, 0.6, palette.gold, 'metal');
-      box(base, -0.28, y + 0.24, 0, 0.04, 0.04, 0.6, palette.gold, 'metal');
-      box(base, 0, y + 0.59, 0.28, 0.68, 0.035, 0.035, palette.gold, 'metal', { rz: 0.8 });
+    box(base, 0, 0.18, 0, CRANE_BASE, 0.36, CRANE_BASE, '#bdb6a4', 'stone'); // footing
+    for (const sx of [-0.3, 0.3])
+      for (const sz of [-0.3, 0.3]) box(base, sx, 0.36 + 3.6, sz, 0.16, 7.2, 0.16, Y, 'paint'); // mast chords
+    for (let i = 0; i < 5; i++) {
+      const y = 1.26 + i * 1.2;
+      for (const s of [-0.3, 0.3]) {
+        box(base, 0, y, s, 0.6, 0.09, 0.09, Y, 'paint'); // ring bars
+        box(base, s, y, 0, 0.09, 0.09, 0.6, Y, 'paint');
+      }
+      // One diagonal on each camera-facing face.
+      box(base, 0, y + 0.6, 0.3, 0.09, 1.34, 0.09, Y, 'paint', { rz: 0.4636 });
+      box(base, 0.3, y + 0.6, 0, 0.09, 1.34, 0.09, Y, 'paint', { rx: 0.4636 });
     }
     const jib = new T.Group();
-    jib.position.set(0, mastH + 0.4, 0);
+    jib.position.set(0, 7.86, 0);
     jib.userData.keepSeparate = true;
     base.add(jib);
-    box(jib, 0, 0.1, 0, 0.9, 0.5, 0.9, palette.gold, 'metal');
-    box(jib, 2.9, 0.4, 0, 6.4, 0.12, 0.12, palette.gold, 'metal');
-    box(jib, 2.9, 0.0, 0, 6.4, 0.08, 0.08, palette.gold, 'metal');
-    for (let i = 0; i < 9; i++) box(jib, 0.4 + i * 0.7, 0.2, 0, 0.05, 0.42, 0.05, palette.gold, 'metal', { rz: i % 2 ? 0.7 : -0.7 });
-    box(jib, -1.6, 0.25, 0, 2.2, 0.1, 0.1, palette.gold, 'metal');
-    box(jib, -2.2, 0.0, 0, 0.9, 0.5, 0.9, '#7b7b74', 'stone');
-    box(jib, 0, 1.2, 0, 0.1, 1.8, 0.1, palette.gold, 'metal');
-    box(jib, 1.6, 1.3, 0, 3.6, 0.02, 0.02, palette.metal, 'metal', { rz: -0.42 });
-    box(jib, -1.2, 1.3, 0, 2.4, 0.02, 0.02, palette.metal, 'metal', { rz: 0.56 });
-    box(jib, 0.3, 0.6, 0, 1.0, 0.3, 0.9, palette.gold, 'metal');
-    box(jib, 0.3, 0.55, 0.4, 0.5, 0.3, 0.02, palette.glass, 'glass');
-    box(jib, 4.2, 0.3, 0, 0.3, 0.12, 0.3, palette.metal, 'metal');
-    box(jib, 4.2, -1.6, 0, 0.02, 3.6, 0.02, palette.metal, 'metal');
-    box(jib, 4.2, -3.5, 0, 0.26, 0.26, 0.14, palette.metal, 'metal');
+    box(jib, 0, 0, 0, 1.1, 0.6, 1.1, Y, 'paint'); // slewing unit
+    box(jib, 0.35, 0.65, 0.1, 0.9, 0.7, 0.8, Y, 'paint'); // cab
+    box(jib, 0.35, 0.7, 0.51, 0.62, 0.38, 0.06, palette.glass, 'glass'); // cab window
+    cone(jib, 0, 1.8, 0, 0.42, 1.6, Y, 'paint', 4); // apex
+    box(jib, 3.3, 0.35, 0, 6.2, 0.22, 0.22, Y, 'paint'); // top chord
+    for (const s of [-0.22, 0.22]) box(jib, 3.3, -0.05, s, 6.2, 0.12, 0.12, Y, 'paint'); // bottom chords
+    for (let i = 0; i < 8; i++) box(jib, 0.75 + i * 0.75, 0.15, 0, 0.09, 0.5, 0.09, Y, 'paint', { rz: i % 2 ? 0.75 : -0.75 }); // web
+    box(jib, -1.5, 0.15, 0, 2.4, 0.18, 0.5, Y, 'paint'); // counter-jib
+    box(jib, -2.3, -0.05, 0, 0.9, 0.8, 0.9, '#9a978c', 'stone'); // counterweight
+    box(jib, 1.7, 1.15, 0, 3.9, 0.07, 0.07, palette.metal, 'metal', { rz: -0.34 }); // ties
+    box(jib, -1.1, 1.15, 0, 2.5, 0.07, 0.07, palette.metal, 'metal', { rz: 0.55 });
+    box(jib, 4.6, -0.2, 0, 0.42, 0.2, 0.5, palette.metal, 'metal'); // trolley
+    box(jib, 4.6, -1.7, 0, 0.06, 2.9, 0.06, palette.metal, 'metal'); // line
+    box(jib, 4.6, -3.25, 0, 0.36, 0.32, 0.24, palette.boat, 'paint'); // hook block
+    box(jib, 4.6, -3.8, 0, 1.2, 0.18, 0.5, palette.wood, 'wood'); // plank load
     animated.push({
       object: jib,
       update(time) {
         jib.rotation.y = Math.sin(time * 0.07) * 0.9;
       },
     });
-    // Hoarding and materials on the plot.
+    // Hoarding round the plot (lengthened by its thickness so the corners close), with a blue band
+    // standing just proud of the top, and building materials inside.
     const plot = plan.reservedPlot;
-    for (const [dx, dz, l, ry] of hoardingWalls(plot))
-      box(g, plot.x + dx, 0.45, plot.z + dz, l, 0.9, HOARDING_THICKNESS, '#d9d4c5', 'paint', { ry });
-    box(g, plot.x - 1.4, 0.3, plot.z + 1.3, 1.2, 0.6, 0.8, '#b4a58b', 'wood');
-    box(g, plot.x + 1.2, 0.25, plot.z + 1.4, 0.9, 0.5, 0.9, '#9a8f7c', 'stone');
-    box(g, plot.x + 1.3, 0.2, plot.z - 1.5, 1.6, 0.4, 0.7, '#c2b8a4', 'stone');
+    for (const [dx, dz, l, ry] of hoardingWalls(plot)) {
+      box(g, plot.x + dx, 0.5, plot.z + dz, l + HOARDING_THICKNESS, 1.0, HOARDING_THICKNESS, '#efe2c2', 'paint', { ry });
+      box(g, plot.x + dx, 0.93, plot.z + dz, l + 0.14, 0.18, 0.14, palette.blueDoor, 'paint', { ry });
+    }
+    box(g, plot.x - 1.4, 0.35, plot.z + 1.3, 0.7, 0.7, 0.7, palette.wood, 'wood'); // crates
+    box(g, plot.x - 1.4, 1.0, plot.z + 1.3, 0.6, 0.6, 0.6, palette.wood, 'wood', { ry: 0.4 });
+    box(g, plot.x + 1.2, 0.225, plot.z + 1.4, 0.9, 0.45, 0.6, palette.brick, 'stone'); // brick pallet
     return base;
   }
   function pierAndHarbour(g: T.Object3D) {
