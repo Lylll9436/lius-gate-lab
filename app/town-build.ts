@@ -1163,22 +1163,27 @@ export function buildTown(
     for (const dy of [0.62, 0.76]) box(b, 0, dy, -0.2, 1.3, 0.1, 0.04, palette.wood, 'wood', { bevel: 0.01 });
     return b;
   }
-  function lamp(g: T.Object3D, x: number, z: number, height = 2.3) {
-    const y = plan.terrainHeight(x, z);
+  // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
+  const lanternGlass = material(palette.lantern, 'glass').clone();
+  lanternGlass.emissive.set(palette.lantern);
+  lanternGlass.emissiveIntensity = 0;
+  /** A chunky lamp: iron plinth, gold collar, thick shaft, a fat lantern (height ± 0.2) and a hat. */
+  function lamp(g: T.Object3D, x: number, z: number, height = 1.8, y = plan.terrainHeight(x, z)) {
     const post = new T.Group();
     post.position.set(x, y, z);
     g.add(post);
-    cylinder(post, 0, 0.1, 0, 0.09, 0.12, 0.2, palette.metal, 'metal', 8);
-    cylinder(post, 0, height / 2, 0, 0.03, 0.045, height, palette.metal, 'metal', 8);
-    box(post, 0, height - 0.02, 0, 0.1, 0.05, 0.1, palette.metal, 'metal');
-    const glass = material(palette.lantern, 'glass').clone();
-    glass.emissive.set(palette.lantern);
-    glass.emissiveIntensity = 0;
-    const lantern = new T.Mesh(new T.BoxGeometry(0.22, 0.26, 0.22), glass);
-    lantern.position.set(0, height + 0.15, 0);
+    const iron = palette.metal;
+    box(post, 0, 0.15, 0, 0.34, 0.3, 0.34, iron, 'metal'); // plinth
+    box(post, 0, 0.33, 0, 0.26, 0.06, 0.26, palette.gold, 'metal'); // gold collar
+    const shaft = new T.Mesh(new T.CylinderGeometry(0.07, 0.085, height - 0.5, 10, 1, true), material(iron, 'metal'));
+    shaft.position.y = 0.3 + (height - 0.5) / 2;
+    shaft.castShadow = shaft.receiveShadow = true;
+    post.add(shaft);
+    const lantern = new T.Mesh(new T.BoxGeometry(0.36, 0.4, 0.36), lanternGlass);
+    lantern.position.y = height;
     lantern.castShadow = false;
     post.add(lantern);
-    cone(post, 0, height + 0.34, 0, 0.19, 0.14, palette.metal, 'metal', 4);
+    cone(post, 0, height + 0.31, 0, 0.32, 0.22, iron, 'metal', 4); // hat
     lamps.push(lantern);
     return post;
   }
@@ -1364,8 +1369,8 @@ export function buildTown(
     pitchedRoof(hut, 0, 1.8, 0, 1.8, 1.6, 0.55, palette.slate);
     windowAt(hut, -0.35, 1.0, 0.7, 0.5, 0.6, { bars: 1 });
     door(hut, 0.4, 0.0, 0.7, 0.5, 1.3, palette.blueDoor, { steps: 1, width: 0.7 });
-    lamp(p, W / 2 + 0.3, 0.3, 1.9).position.y += 0.18;
-    lamp(p, -W / 2 - 0.3, L - 0.4, 1.9).position.y += 0.18;
+    lamp(p, W / 2 + 0.3, 0.3, 1.9, 0.18);
+    lamp(p, -W / 2 - 0.3, L - 0.4, 1.9, 0.18);
     for (let i = 0; i < 3; i++) {
       const a = plan.pier.tangent;
       const bx = plan.pierEnd[0] + a[0] * (i - 1) * 2.6 + dx * 1.6 + (i - 1) * dx * 0.4,
@@ -2010,7 +2015,7 @@ export function buildTown(
     const inner = i % 2 === 0;
     walkers.push({
       root,
-      loop: plan.walkLoop(inner ? 1.35 : -1.35),
+      loop: plan.walkLoop(inner ? 1.62 : -1.62),
       distance: i * 13.7 + 4,
       speed: (inner ? 0.75 : -0.75) * (0.85 + hash(i + 3) * 0.3),
     });

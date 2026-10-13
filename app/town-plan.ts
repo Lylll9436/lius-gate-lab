@@ -424,12 +424,15 @@ export function lampPlan(): LampSpec[] {
       const length = Math.hypot(avenue.to[0] - avenue.from[0], avenue.to[1] - avenue.from[1]);
       const dx = (avenue.to[0] - avenue.from[0]) / length,
         dz = (avenue.to[1] - avenue.from[1]) / length;
-      for (let d = 1.1; d < length - 1.4; d += 4.1)
+      // Stop 2.4 short of the ring so no avenue lamp stands on the ring pavement.
+      for (let d = 1.1; d < length - 2.4; d += 5.2)
         push(avenue.from[0] + dx * d - dz * side * 1.25, avenue.from[1] + dz * d + dx * side * 1.25);
     }
-  const inner = offsetPolyline(ringLine, 1.3);
+  // Ring lamps on the kerb side of the inner pavement: bases span 1.05-1.39, clear of the kerb
+  // (to 1.03) and of the walkers at 1.62.
+  const inner = offsetPolyline(ringLine, 1.22);
   const innerLength = polylineLength(inner, true);
-  for (let d = 3; d < innerLength; d += 7.3) {
+  for (let d = 3; d < innerLength; d += 9.0) {
     const p = samplePolyline(inner, d, true);
     if (nearJunction(p.x, p.z, 2.4)) continue;
     push(p.x, p.z);

@@ -15,9 +15,10 @@ export function createStreetLighting(
   const lights = lamps.map((lamp, i) => {
     const light = new T.SpotLight('#ffcc86', 0, 5.2, 1.0, 0.7, 2);
     lamp.getWorldPosition(light.position);
-    // Sample the lower front of the lantern, outside its opaque base and central pole.
-    light.position.y -= 0.19;
-    light.position.z += 0.075;
+    // Inside the 0.36 lantern, just below its middle and 0.1 clear of the shaft, so the post
+    // casts an ordinary shadow instead of blacking out half of the cone.
+    light.position.y -= 0.12;
+    light.position.z += 0.17;
     light.target.position.copy(light.position);
     light.target.position.y = 0.12;
     light.castShadow = i < shadows;
