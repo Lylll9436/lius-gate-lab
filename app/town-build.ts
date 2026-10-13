@@ -32,7 +32,7 @@ export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: numbe
 export const palette = {
   blonde: '#dcc08c', pale: '#e6d2a2', red: '#b8604a', brick: '#a4452e', brickLight: '#dcc08c',
   trim: '#ecdcb6', trimRed: '#d29a7c', frame: '#f5efe0', stoneDark: '#c4a878', plinth: '#c4a878', plinthRed: '#93503c',
-  slate: '#8fa4b9', slateLight: '#a9b8c6', slateDark: '#8fa4b9', // alias: no dark slate; delete once unused (Step 19)
+  slate: '#8fa4b9', slateLight: '#a9b8c6',
   copper: '#6faf9b', copperLight: '#8cc7b2', pantile: '#c8644a', pantileLight: '#d98a6c',
   glass: '#6fa8c4', glassDark: '#6fa8c4', studioGlass: '#8cc4d8', ink: '#26313a',
   greenDoor: '#2e6e4c', blueDoor: '#2d5f8f', redDoor: '#b23a30',
@@ -495,33 +495,6 @@ export function buildTown(
       for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, 'stone')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
     }
     return top;
-  }
-  function gabledRoofEnds(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    w: number,
-    d: number,
-    rise: number,
-    color: string,
-  ) {
-    // Stone gables stand 2 cm proud of the slate end faces, so the two never share a plane.
-    for (const side of [-1, 1]) {
-      const shape = new T.Shape();
-      shape.moveTo(-d / 2 + 0.06, 0);
-      shape.lineTo(d / 2 - 0.06, 0);
-      shape.lineTo(0, rise - 0.04);
-      shape.closePath();
-      const mesh = new T.Mesh(
-        new T.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false }),
-        material(color),
-      );
-      mesh.rotation.y = Math.PI / 2;
-      mesh.position.set(side > 0 ? x + w / 2 - 0.12 : x - w / 2 - 0.02, y, z);
-      mesh.castShadow = mesh.receiveShadow = true;
-      g.add(mesh);
-    }
   }
   /**
    * A bevelled frame ring, extruded `deep` out of the wall face at z: rectangular or arched,
@@ -1401,7 +1374,7 @@ export function buildTown(
     hut.rotation.y = -0.2;
     p.add(hut);
     box(hut, 0, 0.9, 0, 1.6, 1.8, 1.4, palette.render, 'paint', { bevel: 0.02 });
-    pitchedRoof(hut, 0, 1.8, 0, 1.8, 1.6, 0.55, palette.slateDark);
+    pitchedRoof(hut, 0, 1.8, 0, 1.8, 1.6, 0.55, palette.slate);
     windowAt(hut, -0.35, 1.0, 0.7, 0.5, 0.6, { bars: 1 });
     door(hut, 0.4, 0.0, 0.7, 0.5, 1.3, palette.blueDoor, { steps: 1, width: 0.7 });
     lamp(p, W / 2 + 0.3, 0.3, 1.9).position.y += 0.18;
@@ -1893,18 +1866,22 @@ export function buildTown(
     root.position.set(c.x, plan.terrainHeight(c.x, c.z), c.z);
     root.rotation.y = c.rotation;
     g.add(root);
-    const w = 2.8,
-      d = 2.4,
-      h = 2.2;
-    box(root, 0, 0.1, 0, w + 0.2, 0.2, d + 0.2, palette.plinth, 'stone');
-    box(root, 0, 0.2 + h / 2, 0, w, h, d, c.color, 'stone');
-    pitchedRoof(root, 0, 0.2 + h, 0, w + 0.3, d + 0.3, 0.9, index % 2 ? palette.slate : palette.slateDark);
-    gabledRoofEnds(root, 0, 0.2 + h, 0, w + 0.3, d + 0.3, 0.9, c.color);
-    door(root, 0.6, 0.2, d / 2, 0.6, 1.5, [palette.greenDoor, palette.blueDoor, palette.redDoor][index % 3], { steps: 1, width: 0.9 });
-    windowAt(root, -0.65, 1.1, d / 2, 0.55, 0.7);
-    box(root, -0.8, 0.2 + h + 0.7, 0, 0.4, 0.9, 0.4, c.color, 'stone');
-    cylinder(root, -0.8, 0.2 + h + 1.25, 0, 0.07, 0.08, 0.2, '#b06a4a', 'stone', 8);
-    hedge(root, 0, 0, d / 2 + 1.0, w, 0, 0.36);
+    // Squat walls on a battered plinth under a steep (49 degree) slab roof, alternating slate and
+    // red pantile, with a fat gable chimney. The wall is 2.0 so the door head clears the eave soffit.
+    const w=2.8, d=2.4, P=0.3, h=2.0, top=P+h;
+    plinth(root,w,d,palette.plinth,{height:P,proud:0.2});
+    box(root,0,P+h/2,0,w,h,d,c.color,'stone');
+    const pan=index%2===1, ridge=slabRoof(root,0,top,0,w,d,1.4,pan?palette.pantile:palette.slate,{eave:0.25,verge:0.25,inset:0,ridge:pan?palette.pantileLight:palette.slateLight,gable:c.color});
+    door(root,0.6,P,d/2,0.75,1.5,[palette.greenDoor,palette.blueDoor,palette.redDoor][index%3],{landing:0.2,width:1.0});
+    windowAt(root,-0.65,1.2,d/2,0.7,0.75,{frame:palette.trim});
+    chimney(root,-(w/2-0.35),ridge-0.8,ridge+0.45,0,c.color,palette.trim,1);
+    // Front garden sized to the room before the pavement: a hedge with a gap at the door, and a path from the step.
+    const fx = c.x + (Math.sin(c.rotation) * d) / 2,
+      fz = c.z + (Math.cos(c.rotation) * d) / 2;
+    const room = plan.distanceToStreets(fx, fz) - plan.PAVEMENT_WIDTH - 0.05;
+    if (room > 1.25) hedge(root, 0, 0, d / 2 + Math.min(1.0, room - 0.35), w, 0, 0.45, { at: 0.6, width: 0.9 });
+    const L = Math.min(room, 1.6) - 0.5;
+    if (L >= 0.2) box(root, 0.6, 0.035, d / 2 + 0.5 + L / 2, 0.7, 0.07, L, palette.plaza, 'paving');
   }
 
   /* ---------------------------------------------------------------- */
