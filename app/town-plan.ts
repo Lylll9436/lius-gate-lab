@@ -378,13 +378,11 @@ export function plantingPlan(): TreeSpec[] {
       const a = (Math.PI / 2) * i + Math.PI / 4 + side * 0.4;
       push(Math.cos(a) * 4.55, Math.sin(a) * 4.55, 0.6, 'round');
     }
-  // Park and terrace gardens.
-  for (let i = 0; i < 7; i++) {
-    const x = park.x + (hash(i * 11 + 3) - 0.5) * (park.w - 1.6),
-      z = park.z + (hash(i * 11 + 5) - 0.5) * (park.d - 1.6);
-    if (Math.hypot(x - park.x, z - park.z) < 1.6) continue;
-    push(x, z, 0.9 + hash(i * 11 + 7) * 0.25, i % 3 === 1 ? 'autumn' : 'round');
-  }
+  // Park: four trees framing the bandstand, each at least 3.4 from the park centre and clear of
+  // the flower beds, the benches, the memory board and the gravel strip.
+  for (const [dx, dz, size, kind] of [[-3.4, 0.1, 1.05, 'round'], [3.6, -0.6, 0.95, 'autumn'], [-3.3, -2.25, 0.9, 'round'], [3.4, -2.35, 0.85, 'round']] as const)
+    push(park.x + dx, park.z + dz, size, kind);
+  // Terrace gardens.
   for (const [x, z] of [
     [-24.9, terraceRow.z - terraceRow.spacing / 2],
     [-24.9, terraceRow.z + terraceRow.spacing / 2],

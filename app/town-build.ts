@@ -2016,16 +2016,38 @@ export function buildTown(
     const inPark = Math.abs(spec.x - plan.park.x) < plan.park.w / 2 + 0.2 && Math.abs(spec.z - plan.park.z) < plan.park.d / 2 + 0.2;
     tree(inPark ? parkGroup : land, spec, i);
   });
-  // The corner park: a lawn, a pavilion, benches, flowers and the memory board.
-  box(parkGroup, plan.park.x, 0.02, plan.park.z, plan.park.w, 0.04, plan.park.d, palette.grassLight, 'grass');
-  box(parkGroup, plan.park.x, 0.045, plan.park.z + plan.park.d / 2 - 0.6, plan.park.w, 0.02, 0.8, palette.plaza, 'paving');
-  pavilion(parkGroup, bandstandAt()[0], 0.04, bandstandAt()[1]);
-  memoryBoard(parkGroup, plan.park.x + plan.park.w / 2 - 1.0, 0.04, plan.park.z + 1.6, -0.6);
-  bench(parkGroup, plan.park.x - 2.6, 0.04, plan.park.z + 1.9, Math.PI);
-  bench(parkGroup, plan.park.x + 1.4, 0.04, plan.park.z + 1.9, Math.PI);
-  flowerBed(parkGroup, plan.park.x - 2.8, 0.04, plan.park.z - 1.4, 1.6, 0.7, 7);
-  flowerBed(parkGroup, plan.park.x + 2.6, 0.04, plan.park.z - 1.2, 1.4, 0.7, 19);
-  bin(parkGroup, plan.park.x + 3.3, 0.04, plan.park.z + 2.2);
+  // The corner park, a raised plot: a bevelled turf slab (top 0.10) inside stone edging that opens
+  // on the ring side, a gravel strip along that side with spurs to the bandstand and to the ring's
+  // inner pavement (z 13.05), then the bandstand, beds and board on the turf, benches and bin on the strip.
+  {
+    const P = plan.park,
+      EDGE = 0.18,
+      OPEN = 0.6;
+    box(parkGroup, P.x, 0.05, P.z, P.w - 2 * EDGE, 0.1, P.d - 2 * EDGE, palette.grassLight, 'grass', { bevel: 0.04 });
+    const edging = (x: number, z: number, w: number, d: number) => box(parkGroup, x, 0.08, z, w, 0.16, d, palette.kerb, 'stone');
+    edging(P.x, P.z - P.d / 2 + EDGE / 2, P.w, EDGE);
+    for (const s of [-1, 1]) {
+      edging(P.x + s * (P.w / 2 - EDGE / 2), P.z, EDGE, P.d - 2 * EDGE);
+      edging(P.x + s * (OPEN + P.w / 2) / 2, P.z + P.d / 2 - EDGE / 2, P.w / 2 - OPEN, EDGE);
+    }
+    const gravel = (g: T.Object3D, x: number, y: number, z: number, w: number, h: number, d: number) => {
+      const m = box(g, x, y, z, w, h, d, palette.path, 'gravel');
+      m.userData.noShadow = true;
+      return m;
+    };
+    gravel(parkGroup, P.x, 0.115, P.z + P.d / 2 - 0.55, P.w - 0.6, 0.03, 0.7);
+    gravel(parkGroup, P.x, 0.115, P.z + 1.625, 0.8, 0.03, 0.45); // to the bandstand plinth (z 10.6 to 11.05)
+    // To the ring's inner pavement: it starts under the strip, so no grass shows between them.
+    gravel(land, P.x, 0.05, 12.35, 2 * OPEN, 0.1, 1.4);
+    pavilion(parkGroup, bandstandAt()[0], 0.1, bandstandAt()[1]);
+    memoryBoard(parkGroup, P.x + P.w / 2 - 1.0, 0.1, P.z + 1.6, -0.6);
+    // At z + 2.1 the benches' back legs stay on the strip.
+    bench(parkGroup, P.x - 2.6, 0.13, P.z + 2.1, Math.PI);
+    bench(parkGroup, P.x + 1.4, 0.13, P.z + 2.1, Math.PI);
+    flowerBed(parkGroup, P.x - 2.8, 0.1, P.z - 1.4, 1.6, 0.7, 7);
+    flowerBed(parkGroup, P.x + 2.6, 0.1, P.z - 1.2, 1.4, 0.7, 19);
+    bin(parkGroup, P.x + 3.3, 0.13, P.z + 2.2);
+  }
   // Plaza furniture.
   phoneBox(land, 4.65, plan.levels.plaza, -0.9, -0.6);
   bin(land, 0.9, plan.levels.plaza, 4.9);
