@@ -358,6 +358,9 @@ export function plantingPlan(): TreeSpec[] {
     const p = samplePolyline(outer, d, true);
     if (p.x < -15.5) continue; // the terrace gardens face this side
     if (nearJunction(p.x, p.z, 3.2)) continue;
+    // Bigger canopies: keep clear of the crane hoarding and the cottages and their front gardens.
+    if (insideRect(p.x, p.z, reservedPlot, 1.0)) continue;
+    if (cottages.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < 3.0)) continue;
     push(p.x, p.z, 0.82 + hash(d * 3) * 0.12, 'round');
   }
   for (const avenue of avenues)
@@ -382,7 +385,8 @@ export function plantingPlan(): TreeSpec[] {
   // the flower beds, the benches, the memory board and the gravel strip.
   for (const [dx, dz, size, kind] of [[-3.4, 0.1, 1.05, 'round'], [3.6, -0.6, 0.95, 'autumn'], [-3.3, -2.25, 0.9, 'round'], [3.4, -2.35, 0.85, 'round']] as const)
     push(park.x + dx, park.z + dz, size, kind);
-  // Terrace gardens.
+  // Terrace gardens: one tree behind each gap, never in a gap or a front garden. The trunks stand
+  // 1.44 from the nearest walls, clear of the canopy's reach (about 1.0) and 1.3 inside the shore.
   for (const [x, z] of [
     [-24.9, terraceRow.z - terraceRow.spacing / 2],
     [-24.9, terraceRow.z + terraceRow.spacing / 2],

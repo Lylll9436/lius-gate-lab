@@ -98,14 +98,14 @@ const TREE = {
 };
 const sstep = T.MathUtils.smoothstep, mix = T.MathUtils.lerp;
 /** Bake colour × value(y) into vertex colours, e.g. a trunk that darkens up into its canopy. */
-export function paintByHeight(geo: T.BufferGeometry, colour: string, value: (y: number) => number) {
+function paintByHeight(geo: T.BufferGeometry, colour: string, value: (y: number) => number) {
   const p = geo.getAttribute('position'), c = new T.Color(colour), out = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) { const f = value(p.getY(i)); out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f; }
   geo.setAttribute('color', new T.BufferAttribute(out, 3));
   return geo;
 }
 /** One lump in tree space: only spun about y, so the squash and the ramp stay vertical. */
-export function canopyLump(r: number, detail: number, x: number, y: number, z: number, spin: number) {
+function canopyLump(r: number, detail: number, x: number, y: number, z: number, spin: number) {
   const g = new T.IcosahedronGeometry(r, detail);
   g.rotateY(spin); g.scale(1, 0.85, 1); g.translate(x, y, z);
   return g;
@@ -128,6 +128,24 @@ function paintCanopy(geos: T.BufferGeometry[], spheres: number[][], look: { top:
     }
     g.setAttribute('color', new T.BufferAttribute(out, 3));
   });
+}
+/** Pine: three rounded lathe tiers, each rim overhanging the narrow waist of the tier below. */
+function pine(t: T.Group, s: number, index: number, add: (g: T.BufferGeometry, k: SurfaceKind) => void) {
+  add(paintByHeight(new T.CylinderGeometry(0.1*s, 0.15*s, 0.8*s, 8, 1, true).translate(0, 0.4*s, 0), TREE.pineTrunk, (y) => mix(0.95, 0.8, y / (0.8*s))), 'bark');
+  const profile = [[0.001, -0.04], [0.82, 0], [1, 0.14], [0.48, 0.66], [0.13, 0.94], [0.001, 1]]; // bottom->top = outward normals
+  const base = new T.Color(TREE.pine.tones[index % 2]), top = new T.Color(TREE.pine.top), under = new T.Color(TREE.pine.under), c = new T.Color();
+  const geos = [[1.0, 0.85, 0.5], [0.78, 0.78, 1.05], [0.52, 0.72, 1.55]].map(([r, h, y0], k) => {
+    const g = new T.LatheGeometry(profile.map(([px, py]) => new T.Vector2(px * r * s, py * h * s)), 10).translate(0, y0 * s, 0);
+    const p = g.getAttribute('position'), n = g.getAttribute('normal'), out = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const ly = (p.getY(i) - y0 * s) / (h * s), f = mix(0.5, 1.0, sstep(ly, -0.02, 0.3)) * mix(0.88, 1.05, k / 2);
+      c.copy(base).lerp(under, 0.3 * (1 - sstep(ly, 0, 0.3))).lerp(top, 0.3 * sstep(ly, 0.3, 1) * Math.max(0, n.getY(i)));
+      out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f;
+    }
+    g.setAttribute('color', new T.BufferAttribute(out, 3)); return g;
+  });
+  add(mergeGeometries(geos)!, 'foliage');
+  return t;
 }
 const BLOOMS = palette.flowers;
 const bloomGeometry = (() => { const g = new T.IcosahedronGeometry(0.1, 0); g.setAttribute('normal', g.getAttribute('position').clone()); g.normalizeNormals(); return g; })(); // 20 tris, smooth blob
@@ -1171,54 +1189,23 @@ export function buildTown(
     t.rotation.y = hash(index * 3) * Math.PI * 2;
     g.add(t);
     const s = spec.size;
-    if (spec.kind === 'pine') {
-      cylinder(t, 0, 0.5 * s, 0, 0.05 * s, 0.09 * s, 1.0 * s, palette.bark, 'bark', 7);
-      const tones = palette.pine;
-      for (let i = 0; i < 3; i++) {
-        const r = (0.95 - i * 0.22) * s,
-          h = (1.1 - i * 0.12) * s,
-          cy = (0.9 + i * 0.62) * s;
-        const c = cone(t, 0, cy + h / 2 - 0.2 * s, 0, r, h, tones[(index + i) % 3], 'foliage', 7, hash(i + index) * 2);
-        c.userData.softFoliage = true;
-      }
-      return t;
-    }
-    cylinder(t, 0, 0.42 * s, 0, 0.06 * s, 0.11 * s, 0.85 * s, palette.bark, 'bark', 7);
-    for (const side of [-1, 1])
-      box(t, side * 0.12 * s, 0.95 * s, 0, 0.05 * s, 0.32 * s, 0.05 * s, palette.bark, 'bark', { rz: -side * 0.6 });
-    const tones =
-      spec.kind === 'autumn'
-        ? palette.autumn
-        : spec.kind === 'round' && (index * 7) % 23 === 0
-          ? palette.blossom
-          : palette.canopy;
-    const lumps = [
-      [0, 1.35, 0, 0.72],
-      [0.34, 1.15, 0.18, 0.5],
-      [-0.3, 1.2, -0.22, 0.52],
-      [0.05, 1.72, -0.05, 0.48],
-      [-0.1, 1.05, 0.33, 0.42],
-    ];
-    for (const [lx, ly, lz, lr] of lumps) {
-      const geometry = new T.IcosahedronGeometry(lr * s, 1);
-      const p = geometry.getAttribute('position'),
-        colors = new Float32Array(p.count * 3);
-      const tone = new T.Color(tones[Math.abs(index + Math.round(lx * 10)) % tones.length]);
-      for (let i = 0; i < p.count; i++) {
-        const v = T.MathUtils.clamp(0.72 + (p.getY(i) / (lr * s) + 1) * 0.2, 0.6, 1.05);
-        colors[i * 3] = tone.r * v;
-        colors[i * 3 + 1] = tone.g * v;
-        colors[i * 3 + 2] = tone.b * v;
-      }
-      geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
-      const m = new T.Mesh(geometry, material('#ffffff', 'foliage'));
-      m.position.set(lx * s, ly * s, lz * s);
-      m.scale.set(1, 0.86, 1);
-      m.rotation.set(hash(index + lx) * 1.2, hash(index + ly) * 3, 0);
-      m.castShadow = m.receiveShadow = true;
-      m.userData.softFoliage = true;
-      t.add(m);
-    }
+    const add = (geo: T.BufferGeometry, kind: SurfaceKind) => { const m = new T.Mesh(geo, material('#ffffff', kind)); m.castShadow = m.receiveShadow = true; t.add(m); };
+    if (spec.kind === 'pine') return pine(t, s, index, add);
+    // A thick flared trunk (about 30% shows below the canopy; the batch bake darkens its base)
+    // under a fat main lump and two or three side lumps, painted two-tone in tree space.
+    const blossom = spec.kind === 'round' && (index * 7) % 23 === 0;
+    const look = spec.kind === 'autumn' ? TREE.autumn : blossom ? TREE.blossom : TREE.round;
+    const trunk = new T.CylinderGeometry(0.12*s, 0.16*s, 1.15*s, 10, 2, true).translate(0, 0.575*s, 0);
+    const flare = new T.CylinderGeometry(0.16*s, 0.25*s, 0.14*s, 10, 1, true).translate(0, 0.07*s, 0);
+    const wood = mergeGeometries([trunk, flare])!;
+    paintByHeight(wood, TREE.trunk, (y) => y < 0.6*s ? 1.0 : mix(1.0, 0.55, (y - 0.6*s) / (0.55*s)));
+    add(wood, 'bark');
+    const spheres = [[0, 1.62, 0, 0.9], [0.64, 1.28, 0.24, 0.6], [-0.52, 1.36, -0.34, 0.58]];
+    if (s >= 1) spheres.push([0.1, 1.5, 0.66, 0.5]);
+    const lumps = spheres.map(([x, y, z, r]) => [x*s, y*s, z*s, r*s]);
+    const geos = lumps.map(([x, y, z, r], k) => canopyLump(r, k === 0 ? 2 : 1, x, y, z, hash(index + k) * 3));
+    paintCanopy(geos, lumps, look, look.tones[hash(index*5+1) < 0.5 ? 0 : 1], 0.75*s, 2.4*s);
+    add(mergeGeometries(geos)!, 'foliage');
     return t;
   }
   /** One fat bloom: a squashed 20-triangle blob that casts no shadow. */
@@ -2052,7 +2039,7 @@ export function buildTown(
       g.traverse((o) => {
         if (!(o instanceof T.Mesh) || lamps.includes(o)) return;
         const k = kindOf(o);
-        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.softFoliage || o.userData.ground) return;
+        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.ground) return;
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
         const toG = inv.clone().multiply(o.matrixWorld),
           box = o.geometry.boundingBox!.clone().applyMatrix4(toG),
