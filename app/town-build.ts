@@ -1463,30 +1463,56 @@ export function buildTown(
     const rock = new T.Group();
     rock.position.set(x, 0, z);
     g.add(rock);
-    for (let i = 0; i < 5; i++) {
-      const stone = new T.Mesh(new T.DodecahedronGeometry(1.2 - i * 0.12, 0), material(i % 2 ? '#7f8b86' : '#99a39b', 'stone'));
-      stone.position.set((hash(i * 9) - 0.5) * 1.6, -0.5 + i * 0.12, (hash(i * 9 + 1) - 0.5) * 1.6);
-      stone.scale.set(1.5, 0.75, 1.2);
-      stone.rotation.set(i * 0.6, i * 1.1, 0.2);
-      stone.castShadow = stone.receiveShadow = true;
-      rock.add(stone);
+    // Four rounded boulders with a gentle ramp (0.85 to 1.02, paler on top); batch()'s contact bake supplies the wet, darker foot.
+    ([[0, -0.3, 0, 1.6, 1.25, 0.5, 1.1, '#9aa39b'], [1.35, -0.3, 0.7, 1.0, 1.2, 0.55, 1.0, '#8f9a92'], [-1.25, -0.35, -0.45, 1.1, 1.1, 0.5, 1.2, '#a3aaa0'], [0.4, -0.4, -1.4, 0.9, 1.3, 0.5, 1.0, '#8f9a92']] as const).forEach(([bx, by, bz, r, sx, sy, sz, c], i) => {
+      const geo = new T.IcosahedronGeometry(r, 1),
+        p = geo.getAttribute('position'),
+        col = new Float32Array(p.count * 3);
+      for (let k = 0; k < p.count; k++) col.fill(0.85 + 0.17 * T.MathUtils.smoothstep(by + p.getY(k) * sy, -0.1, 0.45), k * 3, k * 3 + 3);
+      geo.setAttribute('color', new T.BufferAttribute(col, 3));
+      const s = new T.Mesh(geo, material(c, 'stone'));
+      s.position.set(bx, by, bz);
+      s.scale.set(sx, sy, sz);
+      s.rotation.y = i * 1.3;
+      s.castShadow = s.receiveShadow = true;
+      rock.add(s);
+    });
+    // A fat striped drum: the gallery is wider than the shaft and the lantern sits on the deck.
+    const white = palette.white, red = palette.boat, cream = palette.tramCream, iron = palette.metal, face = 0.8;
+    cylinder(rock, 0, 0.45, 0, 1.05, 1.2, 0.5, palette.plinth, 'stone', 24); // plinth 0.20-0.70
+    // The cap is a trim band, not an overhang. As a slab, batch() would bake it as an eave over the whole
+    // shaft (whose foot it sleeves) and, through its square box, over the plinth's diagonals only.
+    cylinder(rock, 0, 0.74, 0, 1.0, 1.08, 0.08, cream, 'stone', 24).userData.ground = true; // cap
+    cylinder(rock, 0, 2.15, 0, 0.68, 0.9, 2.9, white, 'paint', 24); // shaft 0.70-3.60
+    const shaftR = (y: number) => 0.9 - (0.22 * (y - 0.7)) / 2.9;
+    for (const [y0, y1] of [[1.6, 2.1], [2.75, 3.25]]) cylinder(rock, 0, (y0 + y1) / 2, 0, shaftR(y1) + 0.03, shaftR(y0) + 0.03, y1 - y0, red, 'paint', 24); // 0.03 proud
+    box(rock, Math.sin(face) * 0.78, 1.02, Math.cos(face) * 0.78, 0.42, 0.62, 0.25, palette.greenDoor, 'paint', { ry: face }); // door
+    box(rock, Math.sin(face) * 0.71, 2.42, Math.cos(face) * 0.71, 0.26, 0.36, 0.2, '#2d3838', 'glass', { ry: face }); // window, lit at night
+    cylinder(rock, 0, 3.72, 0, 1.0, 0.7, 0.24, cream, 'stone', 24); // corbel 3.60-3.84
+    cylinder(rock, 0, 3.92, 0, 1.02, 1.02, 0.16, iron, 'metal', 24); // gallery deck 3.84-4.00 (wider than shaft)
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      box(rock, Math.cos(a) * 0.94, 4.17, Math.sin(a) * 0.94, 0.08, 0.34, 0.08, iron, 'metal');
     }
-    cylinder(rock, 0, 0.4, 0, 0.9, 1.0, 0.3, palette.stoneDark, 'stone', 12);
-    cylinder(rock, 0, 2.1, 0, 0.45, 0.6, 3.2, palette.white, 'paint', 14);
-    cylinder(rock, 0, 2.2, 0, 0.47, 0.5, 0.5, palette.boat, 'paint', 14);
-    cylinder(rock, 0, 3.75, 0, 0.62, 0.62, 0.12, palette.metal, 'metal', 14);
-    const railRing = new T.Mesh(new T.TorusGeometry(0.6, 0.02, 6, 20), material(palette.metal, 'metal'));
-    railRing.rotation.x = Math.PI / 2;
-    railRing.position.y = 4.1;
-    rock.add(railRing);
+    const rail = new T.Mesh(new T.TorusGeometry(0.94, 0.05, 8, 32), material(iron, 'metal'));
+    rail.rotation.x = Math.PI / 2;
+    rail.position.y = 4.34;
+    rail.castShadow = true;
+    rock.add(rail);
     const glass = material(palette.lantern, 'glass').clone();
     glass.emissive.set(palette.lantern);
-    const lanternRoom = new T.Mesh(new T.CylinderGeometry(0.36, 0.36, 0.7, 10), glass);
-    lanternRoom.position.y = 4.2;
+    const lanternRoom = new T.Mesh(new T.CylinderGeometry(0.56, 0.56, 0.8, 24), glass);
+    lanternRoom.position.y = 4.4; // 4.00-4.80, sits on the deck
     rock.add(lanternRoom);
     lamps.push(lanternRoom);
-    cone(rock, 0, 4.78, 0, 0.5, 0.45, palette.boat, 'paint', 10, 0);
-    sphere(rock, 0, 5.05, 0, 0.07, palette.bronze, 'metal', 8);
+    for (let i = 0; i < 4; i++) box(rock, Math.cos((i * Math.PI) / 2) * 0.56, 4.4, Math.sin((i * Math.PI) / 2) * 0.56, 0.1, 0.8, 0.1, iron, 'metal'); // mullions off the camera axis
+    cylinder(rock, 0, 4.85, 0, 0.66, 0.66, 0.1, iron, 'metal', 24);
+    const dome = new T.Mesh(new T.SphereGeometry(0.64, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), material(red, 'paint'));
+    dome.scale.y = 0.85;
+    dome.position.y = 4.9;
+    dome.castShadow = dome.receiveShadow = true;
+    rock.add(dome);
+    sphere(rock, 0, 5.52, 0, 0.12, palette.gold, 'metal', 18);
     // The beam: a translucent cone that sweeps the harbour at night.
     const beamMaterial = new T.MeshBasicMaterial({
       color: palette.lantern,
@@ -1499,7 +1525,7 @@ export function buildTown(
     beam.rotation.z = Math.PI / 2;
     beam.position.x = 8;
     const pivot = new T.Group();
-    pivot.position.set(x, 4.2, z);
+    pivot.position.set(x, 4.4, z);
     pivot.add(beam);
     g.add(pivot);
     pivot.userData.keepSeparate = true;
@@ -2031,7 +2057,7 @@ export function buildTown(
   plan.cottages.forEach((c, i) => buildCottage(land, c, i));
   crane(land, plan.reservedPlot.x, plan.reservedPlot.z);
   pierAndHarbour(land);
-  lighthouse(city);
+  lighthouse(land);
   hotAirBalloon(city);
 
   const models = new Map<BuildingId, Model>();
