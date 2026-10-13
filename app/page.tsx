@@ -203,7 +203,7 @@ export default function Home() {
   function toggleDirectory() {
     if (directory) return closeDirectory();
     // The Directory and Plan view's key are two ways through the town: one at a time.
-    if (plan) leavePlan();
+    if (plan) setPlan(false);
     setDirectory(true);
     if (!wide) {
       fileBeforeDirectory.current = panelOpen;
@@ -252,7 +252,8 @@ export default function Home() {
     applyView({ mode: nextMode, content: nextContent }, options.keepTour);
     if (nextMode === 'reading') scrollToContent(nextContent);
     const hash = `#${nextMode === 'city' ? 'city' : 'read'}/${nextContent}`;
-    if (window.location.hash !== hash) {
+    // The tour's first step is always one entry, even from its first stop, so Back ends it there.
+    if (window.location.hash !== hash || options.keepTour) {
       if (options.replace) window.history.replaceState(null, '', hash);
       else window.history.pushState(null, '', hash);
     }
@@ -297,7 +298,7 @@ export default function Home() {
     navigate('city', tourStops[index], { keepTour: true, replace: touring });
   }
   function togglePlan() {
-    if (plan) return leavePlan();
+    if (plan) return setPlan(false);
     setInspect(false);
     // Plan view shows the whole town: it ends a tour, and takes the Directory's place.
     setTour(-1);
@@ -305,11 +306,6 @@ export default function Home() {
     setPlan(true);
     setDistrict(null);
     api.current?.setPlan(true);
-  }
-  /** Plan view off: the camera goes back to the open place, as a pick would frame it. */
-  function leavePlan() {
-    setPlan(false);
-    if (api.current) frameCity(api.current, content);
   }
   function focusDistrict(id: DistrictId) {
     // Picking the district in focus again shows all four.
@@ -423,6 +419,18 @@ export default function Home() {
     });
     return () => cancelAnimationFrame(frame);
   }, [mode, content, ready]);
+  // The model follows Plan view's key: whatever turns Plan view off (its button, the Directory,
+  // a pick, the tour, Inspect, reading mode, Back) takes the tints away, and in the city the
+  // camera goes back to the open place, as a pick would frame it.
+  const planShown = useRef(false);
+  useEffect(() => {
+    const was = planShown.current,
+      engine = api.current;
+    planShown.current = plan;
+    if (plan || !was || !engine) return;
+    engine.setPlan(false);
+    if (mode === 'city' && !inspect) frameCity(engine, content);
+  }, [plan, mode, content, inspect]);
   // A Directory row rings its place while pointed at; nothing stays ringed once it closes.
   useEffect(() => {
     if (!directory) api.current?.setAccent(null);
