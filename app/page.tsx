@@ -13,7 +13,7 @@ import {
 } from './lab-navigation';
 import type { CityAPI, HoverTarget } from './city-scene';
 import { useGlasgowSky, effectiveNight, type SkyMode } from './use-sky';
-import { Masthead, SiteFooter } from './site-chrome';
+import { Masthead, SiteFooter, chapterMeta } from './site-chrome';
 import { CityStage, type StageController } from './city-stage';
 import { Hero, Chapters } from './chapters';
 import { chapterBearings } from './town-plan';
@@ -32,7 +32,6 @@ const WIDE = '(min-width: 961px)';
 export default function Home() {
   const mount = useRef<HTMLDivElement>(null),
     api = useRef<CityAPI | null>(null),
-    pendingScroll = useRef<ContentId | null>(null),
     // While the page scrolls itself to a chapter, the camera heads straight there
     // instead of visiting every chapter the scroll passes on the way.
     scrollLock = useRef<{ chapter: ContentId; until: number } | null>(null),
@@ -80,26 +79,30 @@ export default function Home() {
     setDirectory(false);
     if (!keepTour) setTour(-1);
   }
-  /** Scroll the reading page to a chapter or card, and send the camera straight there. */
-  const scrollToContent = useCallback((id: ContentId) => {
+  /** Scroll the reading page to a chapter or card, and send the camera straight there.
+   *  `instant` jumps without the smooth glide (a page opened at an address). */
+  const scrollToContent = useCallback((id: ContentId, instant = false) => {
     const chapter = id === 'overview' ? 'overview' : chapterFor(id);
-    scrollLock.current = { chapter, until: performance.now() + 2500 };
+    // The lock holds until the scroll starts (the first frames can be seconds late
+    // while the town is built), then for as long as a smooth scroll may take.
+    const lock = { chapter, until: Infinity };
+    scrollLock.current = lock;
     setActive(chapter);
     // Two frames: the story must be laid out again if explore mode was just left.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
+        lock.until = performance.now() + 2500;
         const target =
           document.getElementById(`read-${id}`) ??
           document.getElementById(`read-${chapterFor(id)}`);
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
-          .matches;
-        if (id === 'overview')
-          window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
-        else
-          target?.scrollIntoView({
-            behavior: reduced ? 'auto' : 'smooth',
-            block: 'start',
-          });
+        // 'instant', not 'auto': the page's CSS scroll-behavior is smooth.
+        const behavior: ScrollBehavior =
+          instant ||
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? 'instant'
+            : 'smooth';
+        if (id === 'overview') window.scrollTo({ top: 0, behavior });
+        else target?.scrollIntoView({ behavior, block: 'start' });
         target
           ?.querySelector<HTMLElement>('h2,h3')
           ?.focus({ preventScroll: true });
@@ -176,31 +179,36 @@ export default function Home() {
   }
 
   // Address bar → view. An empty address opens the reading page at the top.
+  // The scroll starts right here, not in a later effect that could fire on some
+  // unrelated change: a page opened at an address jumps straight to it, a bare
+  // address is left where it is, and Back/Forward glide to their place.
   useEffect(() => {
     let disposed = false;
-    const sync = () => {
+    const sync = (first: boolean) => {
       if (disposed) return;
       const hash = window.location.hash;
       const next = hash
         ? parseLocation(hash)
         : { mode: 'reading' as const, content: 'overview' };
-      if (next.mode === 'reading') pendingScroll.current = next.content;
       applyView(next);
+      if (next.mode === 'reading' && (hash || !first))
+        scrollToContent(next.content, first);
     };
-    void Promise.resolve().then(sync);
-    window.addEventListener('popstate', sync);
-    window.addEventListener('hashchange', sync);
+    const onHistory = () => sync(false);
+    void Promise.resolve().then(() => sync(true));
+    window.addEventListener('popstate', onHistory);
+    window.addEventListener('hashchange', onHistory);
     const media = window.matchMedia(WIDE),
       onMedia = () => setWide(media.matches);
     onMedia();
     media.addEventListener('change', onMedia);
     return () => {
       disposed = true;
-      window.removeEventListener('popstate', sync);
-      window.removeEventListener('hashchange', sync);
+      window.removeEventListener('popstate', onHistory);
+      window.removeEventListener('hashchange', onHistory);
       media.removeEventListener('change', onMedia);
     };
-  }, []);
+  }, [scrollToContent]);
 
   // The city loads once, lazily, and stays mounted across both modes.
   useEffect(() => {
@@ -255,14 +263,6 @@ export default function Home() {
     if (mode === 'city')
       api.current?.setFrameShift(panelOpen && wide ? 0.17 : 0);
   }, [mode, panelOpen, wide, ready]);
-
-  // Reading mode: an address arriving from the address bar scrolls to its chapter.
-  useEffect(() => {
-    if (mode !== 'reading' || !pendingScroll.current) return;
-    const id = pendingScroll.current;
-    pendingScroll.current = null;
-    scrollToContent(id);
-  }, [mode, content, scrollToContent]);
 
   // Reading mode: the chapter under the reading line drives the camera.
   useEffect(() => {
@@ -344,12 +344,21 @@ export default function Home() {
   useEffect(() => {
     api.current?.setGrid(grid);
   }, [grid, ready]);
+  // The tab names the chapter being read (in the city, the open place's chapter).
+  const titleChapter = explore
+    ? content === 'overview'
+      ? 'overview'
+      : chapterFor(content)
+    : active;
   useEffect(() => {
     document.documentElement.lang = zh ? 'zh-CN' : 'en';
-    document.title = zh
-      ? '刘家门 · 格拉斯哥大学'
-      : 'LIU’S GATE · University of Glasgow';
-  }, [zh]);
+    const site = zh ? '刘家门' : 'LIU’S GATE',
+      chapter = chapterMeta.find((c) => c.id === titleChapter);
+    // The About chapter's title already names the group, so it uses its short label.
+    document.title = chapter
+      ? `${(chapter.id === 'town-hall' ? chapter.label : chapter.title)[locale]} · ${site}`
+      : `${site} · ${zh ? '格拉斯哥大学' : 'University of Glasgow'}`;
+  }, [zh, locale, titleChapter]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || mode !== 'city') return;

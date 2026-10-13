@@ -253,6 +253,13 @@ const readingStudy = renderToStaticMarkup(
   }),
 );
 assert(readingStudy.includes('id="read-research:test-study"'));
+// On the page a record is already open where the reader is: only the city's file
+// offers to open it.
+assert(
+  study.includes('Open this record') &&
+    !readingStudy.includes('Open this record'),
+  'Only the city file offers to open a record.',
+);
 assert(
   study.includes('Test research') && !study.includes('No project records'),
 );
@@ -342,6 +349,22 @@ for (const [locale, heading, summary, emailLabel] of [
     );
   if (locale === 'en')
     assert(!/[\u3400-\u9fff]/.test(cards), 'English people contain Chinese.');
+  // The reading page's cards are the people's anchors and fold out the profile in place,
+  // so only the city's People file has a Profile button (it opens the person's file).
+  const page = renderToStaticMarkup(
+    React.createElement(PeopleCards, { locale, onOpen() {}, reading: true }),
+  );
+  const profileButton = '>' + (locale === 'zh' ? '个人资料' : 'Profile') + '<';
+  assert(
+    cards.includes(profileButton) && !page.includes(profileButton),
+    'Only the city file has a Profile button (' + locale + ').',
+  );
+  assert(
+    page.includes('id="read-pengyuan-liu"') &&
+      !cards.includes('id="read-') &&
+      page.includes('<details class="person-profile">'),
+    'Reading cards carry the anchors and keep the fold-out (' + locale + ').',
+  );
 }
 const dossier = renderToStaticMarkup(
   React.createElement(LabContent, {

@@ -576,10 +576,14 @@ function CatalogList({
               locale={locale}
               onOpen={onOpen}
             />
-            <button className="link-action" onClick={() => onOpen(id)}>
-              {locale === 'zh' ? '打开此记录' : 'Open this record'}
-              <ArrowUpRight size={14} />
-            </button>
+            {/* In the city this opens the record's own file; on the page the
+                record is already open where the reader is. */}
+            {!reading && (
+              <button className="link-action" onClick={() => onOpen(id)}>
+                {locale === 'zh' ? '打开此记录' : 'Open this record'}
+                <ArrowUpRight size={14} />
+              </button>
+            )}
           </article>
         );
       })}
@@ -598,6 +602,7 @@ export function PersonCard({
   onHover,
   onVisit,
   index,
+  reading = false,
 }: {
   id: ContentId;
   locale: Locale;
@@ -605,11 +610,14 @@ export function PersonCard({
   onOpen: (id: ContentId) => void;
   onHover?: (building: BuildingId | null) => void;
   onVisit?: (building: BuildingId) => void;
+  /** On the reading page the card is the person's anchor and its fold-out is the profile.
+   *  In the city (the People file) a Profile button opens the person's own file. */
+  reading?: boolean;
 }) {
   const person = people.find((p) => p.id === id);
   const [profileOpen, setProfileOpen] = useState(false);
   // An address naming this person (on load, Back/Forward or a typed link) opens their profile.
-  // In-app links use pushState, which fires neither event: the Profile button opens it itself.
+  // In-app links use pushState, which fires neither event.
   useEffect(() => {
     const sync = () => {
       const { mode, content } = parseLocation(window.location.hash);
@@ -628,11 +636,12 @@ export function PersonCard({
     home = person.buildingId
       ? buildings.find((b) => b.id === person.buildingId)
       : undefined,
-    hasProfile = !!(person.sections.length || person.properties.length);
+    hasProfile = !!(person.sections.length || person.properties.length),
+    visit = home && onVisit;
   return (
     <div
       className="person-card"
-      id={`read-${id}`}
+      id={reading ? `read-${id}` : undefined}
       onMouseEnter={() => onHover?.(home?.id ?? null)}
       onMouseLeave={() => onHover?.(null)}
     >
@@ -656,27 +665,25 @@ export function PersonCard({
             ))}
           </div>
         )}
-        <div className="person-actions">
-          <button
-            className="link-action"
-            onClick={() => {
-              setProfileOpen(true);
-              onOpen(id);
-            }}
-          >
-            {zh ? '个人资料' : 'Profile'}
-            <ArrowUpRight size={14} />
-          </button>
-          {home && onVisit && (
-            <button
-              className="link-action quiet"
-              onClick={() => onVisit(home.id)}
-            >
-              <PlaceGlyph kind="house" size={15} />
-              {zh ? `住所 · ${home.style.zh}` : `Home · ${home.style.en}`}
-            </button>
-          )}
-        </div>
+        {(!reading || visit) && (
+          <div className="person-actions">
+            {!reading && (
+              <button className="link-action" onClick={() => onOpen(id)}>
+                {zh ? '个人资料' : 'Profile'}
+                <ArrowUpRight size={14} />
+              </button>
+            )}
+            {visit && (
+              <button
+                className="link-action quiet"
+                onClick={() => onVisit(home.id)}
+              >
+                <PlaceGlyph kind="house" size={15} />
+                {zh ? `住所 · ${home.style.zh}` : `Home · ${home.style.en}`}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {hasProfile && (
         <details
@@ -702,11 +709,13 @@ export function PeopleCards({
   onOpen,
   onHover,
   onVisit,
+  reading = false,
 }: {
   locale: Locale;
   onOpen: (id: ContentId) => void;
   onHover?: (building: BuildingId | null) => void;
   onVisit?: (building: BuildingId) => void;
+  reading?: boolean;
 }) {
   return (
     <div className="people-cards">
@@ -719,6 +728,7 @@ export function PeopleCards({
           onOpen={onOpen}
           onHover={onHover}
           onVisit={onVisit}
+          reading={reading}
         />
       ))}
     </div>

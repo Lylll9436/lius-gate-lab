@@ -108,6 +108,7 @@ export const Chapters = memo(function Chapters({
             <div className="chapter-body">
               {chapter.id === 'people' ? (
                 <PeopleCards
+                  reading
                   locale={locale}
                   onOpen={onOpen}
                   onHover={onHoverBuilding}

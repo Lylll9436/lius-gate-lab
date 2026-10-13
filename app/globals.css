@@ -1243,6 +1243,8 @@ img {
 .catalog-entry {
   padding: 18px 0;
   border-top: 1px solid var(--line);
+  /* A jump to a record (or a person, below) stops just under the masthead. */
+  scroll-margin-top: calc(var(--masthead) + 16px);
 }
 .catalog-entry > h3 {
   font-family: var(--font-display);
@@ -1318,6 +1320,7 @@ img {
   padding: 18px 0;
   border-top: 1px solid var(--line);
   transition: background-color 0.2s ease;
+  scroll-margin-top: calc(var(--masthead) + 16px);
 }
 .person-card:first-child {
   border-top: 0;
@@ -1351,6 +1354,10 @@ img {
 .person-profile {
   grid-column: 2;
   margin-top: -14px;
+}
+/* A reading card for someone without a home has no action row to tuck under. */
+.person-body:not(:has(> .person-actions)) + .person-profile {
+  margin-top: 0;
 }
 .person-profile > summary {
   display: flex;
@@ -1690,6 +1697,8 @@ img {
     min-height: 0;
     padding: 8px 16px;
     background: var(--bg);
+    /* On wide screens the chapter's own top padding clears the masthead. */
+    scroll-margin-top: calc(var(--masthead) + 16px);
   }
   .panel {
     width: 100%;
