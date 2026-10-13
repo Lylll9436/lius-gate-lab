@@ -2098,7 +2098,7 @@ export function buildTown(
     bin(parkGroup, P.x + 3.3, 0.13, P.z + 2.2);
   }
   // Plaza furniture.
-  phoneBox(land, 4.65, plan.levels.plaza, -0.9, -0.6);
+  phoneBox(land, plan.phoneBoxSpot[0], plan.levels.plaza, plan.phoneBoxSpot[1], -0.6);
   bin(land, 0.9, plan.levels.plaza, 4.9);
   bin(land, -4.9, plan.levels.plaza, 0.9);
   // Terrace gardens: a flower bed in each gap between the three homes, standing on the lawn (y 0).

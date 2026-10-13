@@ -245,6 +245,8 @@ export const sites: Record<BuildingId, Site> = {
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
 };
 export const siteList = Object.values(sites);
+/** The red phone box on the east edge of the plaza (the plaza tree beside it is left out). */
+export const phoneBoxSpot: XZ = [4.65, -0.9];
 
 /**
  * Reading-mode camera bearings per chapter. The camera sits along (sin b, cos b) from its
@@ -381,7 +383,11 @@ export function plantingPlan(): TreeSpec[] {
   for (let i = 0; i < 4; i++)
     for (const side of [-1, 1]) {
       const a = (Math.PI / 2) * i + Math.PI / 4 + side * 0.4;
-      push(Math.cos(a) * 4.55, Math.sin(a) * 4.55, 0.6, 'round');
+      const x = Math.cos(a) * 4.55,
+        z = Math.sin(a) * 4.55;
+      // The phone box takes this tree's place on the plaza edge.
+      if (Math.hypot(x - phoneBoxSpot[0], z - phoneBoxSpot[1]) < 1.4) continue;
+      push(x, z, 0.6, 'round');
     }
   // Park: four trees framing the bandstand, each at least 3.4 from the park centre and clear of
   // the flower beds, the benches, the memory board and the gravel strip.

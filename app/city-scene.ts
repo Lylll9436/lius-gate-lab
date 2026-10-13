@@ -112,7 +112,9 @@ export function createCity(
   );
   container.appendChild(renderer.domElement);
   const scene = new T.Scene(),
-    camera = new T.OrthographicCamera(-24, 24, 24, -24, 0.1, 180),
+    // A negative near plane: on tall (phone) frames the bottom edge of an orthographic view
+    // starts below sea level, and a positive near plane would cut the sea off there.
+    camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180),
     model = buildTown();
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
   const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
@@ -481,6 +483,10 @@ export function createCity(
       (-(clientY - rect.top) / rect.height) * 2 + 1,
     );
     ray.setFromCamera(mouse, camera);
+    // An orthographic ray starts at the camera plane; with the negative near plane, scenery
+    // can sit behind that plane (low on tall frames), so start the ray at the near plane.
+    ray.ray.origin.addScaledVector(ray.ray.direction, camera.near);
+    ray.far = camera.far - camera.near;
     // Each model carries an invisible hit box; the merged geometry is never raycast.
     const hit = ray.intersectObjects(
       [...Array.from(models.values(), (m) => m.hit ?? m.root), parkHit],
