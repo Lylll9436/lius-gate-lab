@@ -2036,6 +2036,17 @@ body:has(.mode-explore),
   .is-explore.has-side .plan-legend {
     right: var(--beside);
   }
+  /* The plan key keeps to one line here (it scrolls sideways if it must): two lines would
+     reach the bars on a phone held sideways in a browser, under the tour. */
+  .is-explore .plan-legend {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .is-explore .plan-legend button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   .mode-explore .dossier,
   .mode-explore .directory {
     top: calc(var(--masthead) + 8px);
