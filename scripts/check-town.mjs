@@ -99,6 +99,17 @@ for (const site of plan.siteList) {
         `Overlapping sites: ${site.id} and ${other.id}`,
       );
 }
+// The terrace reads as the three members' homes: a cottage beside it stands well back from
+// the row's line and is turned, so it never looks like a fourth or fifth house in the row.
+const row = plan.terraceRow;
+for (const c of plan.cottages) {
+  assert(plan.onIsland(c.x, c.z, 2.5), `Cottage by the shore: ${c.x}, ${c.z}`);
+  assert(plan.distanceToStreets(c.x, c.z) > 2, `Cottage on a street: ${c.x}, ${c.z}`);
+  if (Math.abs(c.x - row.x) < 8 && Math.abs(c.z - row.z) < row.spacing * 3) {
+    assert(Math.abs(c.x - row.x) > 2.5, `Cottage on the terrace row's line: ${c.x}, ${c.z}`);
+    assert(Math.abs(plan.angleDiff(c.rotation, Math.PI / 2)) > 0.3, `Cottage facing the street like the terrace: ${c.x}, ${c.z}`);
+  }
+}
 // Trees stay off the streets and sites; the harbour boat stays in the water.
 const trees = plan.plantingPlan();
 assert(trees.length > 60, 'Too few trees: ' + trees.length);

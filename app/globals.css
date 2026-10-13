@@ -513,6 +513,32 @@ body:has(.mode-explore),
   font-size: 11px;
   letter-spacing: 0.04em;
 }
+/* The People chapter's name tags: small glass pills that city-scene keeps over the roofs
+   (data-shown while the chapter is on screen). The bottom centre sits 0.3 above the chimney. */
+.map-labels .home-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: transform;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+}
+.map-labels .home-tag[data-shown] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.35s ease;
+}
 .stage-caption {
   position: absolute;
   left: 16px;
@@ -1537,6 +1563,7 @@ body:has(.mode-explore),
 .hover-chip,
 .stage-loading,
 .building-hover-label,
+.home-tag,
 .scene-fallback,
 .skip-link {
   background: var(--glass-glow), var(--glass-tint);
@@ -1562,6 +1589,7 @@ body:has(.mode-explore),
 :root[data-theme='night'] .hover-chip,
 :root[data-theme='night'] .stage-loading,
 :root[data-theme='night'] .building-hover-label,
+:root[data-theme='night'] .home-tag,
 :root[data-theme='night'] .scene-fallback,
 :root[data-theme='night'] .skip-link {
   -webkit-backdrop-filter: blur(22px) saturate(150%) brightness(0.9);
@@ -1604,7 +1632,8 @@ body:has(.mode-explore),
 .plan-legend::before,
 .tour-control::before,
 .inspection-toolbar::before,
-.building-hover-label::before {
+.building-hover-label::before,
+.home-tag::before {
   content: '';
   position: absolute;
   inset: -1px;
@@ -1651,6 +1680,7 @@ body:has(.mode-explore),
   .hover-chip,
   .stage-loading,
   .building-hover-label,
+  .home-tag,
   .scene-fallback,
   .skip-link {
     background: var(--glass-solid);
@@ -1675,6 +1705,7 @@ body:has(.mode-explore),
   .hover-chip,
   .stage-loading,
   .building-hover-label,
+  .home-tag,
   .scene-fallback,
   .skip-link {
     background: var(--glass-solid);

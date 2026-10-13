@@ -185,15 +185,15 @@ const places: Building[] = [
       ),
       architecture: t(
         p.model === 'villa'
-          ? 'A blonde sandstone terrace with a bay window, a dormer and a green front door.'
+          ? 'A blonde sandstone terrace with a bay window, gable windows and a green front door.'
           : p.id === 'qin-li'
             ? 'A pale sandstone house with a front gable, a bay window and a dark red door.'
-            : 'A red sandstone terrace with a bay window, a dormer and a blue front door.',
+            : 'A red sandstone terrace with a full-height bay window, gable windows and a blue front door.',
         p.model === 'villa'
-          ? '浅砂岩联排，带凸窗、老虎窗和绿色大门。'
+          ? '浅砂岩联排，带凸窗、山墙窗和绿色大门。'
           : p.id === 'qin-li'
             ? '浅色砂岩住宅，带朝街山墙、凸窗和深红色大门。'
-            : '红砂岩联排，带凸窗、老虎窗和蓝色大门。',
+            : '红砂岩联排，带通高凸窗、山墙窗和蓝色大门。',
       ),
       x: p.x,
       z: p.z,

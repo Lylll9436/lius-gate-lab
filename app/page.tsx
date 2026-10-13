@@ -529,6 +529,11 @@ export default function Home() {
     else engine.reset();
   }, [settledShot, mode, ready, wide, content]);
 
+  // The People chapter names the three homes on the model while its camera is on them.
+  useEffect(() => {
+    api.current?.setHomeTags(mode === 'reading' && settledShot === 'people');
+  }, [mode, settledShot, ready]);
+
   // The sky, the weather, the clock and the theme.
   useEffect(() => {
     api.current?.setSky({

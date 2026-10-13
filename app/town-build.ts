@@ -1882,16 +1882,16 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(shell, 0, P + h / 2, 0, w, h, d, stone, 'stone');
     quoins(shell, w, d, P, top, dress, { front: 0.25, corners: 'front' });
     box(shell, 0, top + 0.1, 0, w + 0.3, 0.2, d + 0.3, dress, 'stone');
-    // The signature bay: grounded on its own battered plinth, under a lean-to (a pyramid on the
-    // full-height red bay). 1.0 wide at x -0.6, so it clears the left quoins (x -1.11) and the door jamb.
+    // The signature bay: grounded on its own battered plinth, under a lean-to. The red bay
+    // rises the full height of the wall, so the main roof's eave caps it instead.
+    // 1.0 wide at x -0.6, so it clears the left quoins (x -1.11) and the door jamb.
     const bayX = -0.6,
       bayW = 1.0,
       bayTop = red ? top : 2.02;
     box(shell, bayX, P / 2, d / 2 + 0.3, bayW + 0.12, P, 0.75, base, 'stone', { taper: 0.04 }); // grounded
     box(shell, bayX, (P + bayTop) / 2, d / 2 + 0.25, bayW, bayTop - P, 0.6, stone, 'stone');
     box(shell, bayX, bayTop + 0.1, d / 2 + 0.3, bayW + 0.12, 0.2, 0.75, dress, 'stone');
-    if (red) cone(shell, bayX, bayTop + 0.5, d / 2 + 0.3, 0.85, 0.6, palette.slate, 'slate', 4);
-    else box(shell, bayX, bayTop + 0.38, d / 2 + 0.33, bayW + 0.3, 0.16, 0.9, palette.slate, 'slate', { rx: 0.45 }); // lean-to
+    if (!red) box(shell, bayX, bayTop + 0.38, d / 2 + 0.33, bayW + 0.3, 0.16, 0.9, palette.slate, 'slate', { rx: 0.45 }); // lean-to
     windowAt(shell, bayX, 1.25, d / 2 + 0.55, 0.72, 0.95, { frame: dress, lintel: !red });
     if (red) windowAt(shell, bayX, 2.45, d / 2 + 0.55, 0.72, 0.8, { frame: dress, sill: false, lintel: false });
     // The door on the plinth's landing; its risers step down to the ground at d/2 + 0.85.

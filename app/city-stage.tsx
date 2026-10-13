@@ -143,6 +143,21 @@ export function CityStage({
           <strong>{tr('Corner park', '街角公园')}</strong>
           <span>{tr('Life at the Gate · Harbour', '师门生活 · 港口')}</span>
         </div>
+        {/* The People chapter's name tags over the members' roofs, placed by the city. In
+            English the first name; in Chinese the full name, two or three characters. */}
+        {people.map(
+          (person) =>
+            person.buildingId && (
+              <span
+                key={person.id}
+                data-home-tag={person.buildingId}
+                className="home-tag"
+                aria-hidden="true"
+              >
+                {zh ? person.name.zh : person.name.en.split(' ')[0]}
+              </span>
+            ),
+        )}
       </div>
 
       {/* Top-left: where you are, what you point at, what the sky is doing. */}

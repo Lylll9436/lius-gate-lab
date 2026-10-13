@@ -55,7 +55,8 @@ export function onIsland(x: number, z: number, margin = 0) {
 export const mounds = [
   { x: -20, z: -19, r: 4.5, h: 1.1 },
   { x: 22, z: -18, r: 4.5, h: 0.8 },
-  { x: -24, z: 12, r: 4.5, h: 0.6 },
+  // South of the terrace, clear of the cottage set back beside it.
+  { x: -21.5, z: 15.5, r: 4.5, h: 0.6 },
   { x: 23, z: 4, r: 4, h: 0.5 },
 ];
 export function terrainHeight(x: number, z: number) {
@@ -274,9 +275,13 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
+/**
+ * Cottages around the town. The two by the terrace stand about 3 back from the row's line
+ * (x -22), turned in toward it, so the row reads as the three members' homes and not five.
+ */
 export const cottages: { x: number; z: number; rotation: number; color: string }[] = [
-  { x: -21.5, z: -9.5, rotation: Math.PI / 2, color: '#e1cfa8' },
-  { x: -21, z: 10.5, rotation: Math.PI / 2 + 0.3, color: '#d9c39a' },
+  { x: -24.6, z: -10.6, rotation: Math.PI / 2 - 0.55, color: '#e1cfa8' },
+  { x: -24.6, z: 11.6, rotation: Math.PI / 2 + 0.55, color: '#d9c39a' },
   { x: 20.5, z: 1.5, rotation: -Math.PI / 2, color: '#e4d2ad' },
   { x: 5, z: -17.5, rotation: 0, color: '#cdb48d' },
   { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8' },

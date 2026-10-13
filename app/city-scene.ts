@@ -73,6 +73,11 @@ export type CityAPI = {
   setFrameShift: (fraction: number, down?: number) => void;
   /** Ring one building from the page (hovering a person card, for example). */
   setAccent: (id: BuildingId | null) => void;
+  /**
+   * The People chapter: pin a name tag above each member's home, and ring only the home
+   * whose card is hovered instead of the whole row.
+   */
+  setHomeTags: (on: boolean) => void;
   dispose: () => void;
 };
 
@@ -426,6 +431,22 @@ export async function createCity(
       ),
     },
   ];
+  // The People chapter's name tags: each is pinned 0.3 above the top of its home (the
+  // chimney pots), over the middle of the house.
+  const homeTags = Array.from(
+    container.parentElement!.querySelectorAll<HTMLElement>('[data-home-tag]'),
+    (element) => {
+      const root = models.get(element.dataset.homeTag as BuildingId)?.root,
+        anchor = new T.Vector3();
+      if (root) {
+        root.getWorldPosition(anchor);
+        anchor.y = new T.Box3().setFromObject(root).max.y + 0.3;
+      }
+      return { element, anchor, found: !!root, shown: false, placed: '' };
+    },
+  ).filter((tag) => tag.found);
+  const tagPoint = new T.Vector3();
+  let tagsOn = false;
   let focusedIds: BuildingId[] = [],
     parkSelected = false,
     autoFocus = false;
@@ -768,6 +789,31 @@ export async function createCity(
       }
     }
   }
+  /**
+   * Keep each name tag over its roof: the anchor is projected with the frame just rendered,
+   * and the tag's bottom centre is put there. A roof outside the frame hides its tag.
+   */
+  function placeHomeTags() {
+    const on = tagsOn && !inspect && !planMode;
+    for (const tag of homeTags) {
+      let show = on;
+      if (on) {
+        tagPoint.copy(tag.anchor).project(camera);
+        const x = ((tagPoint.x + 1) / 2) * width,
+          y = ((1 - tagPoint.y) / 2) * height;
+        show = x > 0 && x < width && y > 0 && y < height;
+        const placed = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
+        if (show && placed !== tag.placed) {
+          tag.element.style.transform = placed;
+          tag.placed = placed;
+        }
+      }
+      if (show !== tag.shown) {
+        tag.shown = show;
+        tag.element.toggleAttribute('data-shown', show);
+      }
+    }
+  }
   renderer.domElement.addEventListener('pointerdown', down);
   renderer.domElement.addEventListener('pointerup', up);
   renderer.domElement.addEventListener('pointermove', move);
@@ -899,14 +945,19 @@ export async function createCity(
     }
     animateExtras(dt, now, blend);
     ink.render();
+    placeHomeTags();
   }
   function animateExtras(dt: number, now: number, blend: number) {
     if (hover.id !== lastHover) {
       lastHover = hover.id as HoverTarget;
       options.onHover?.(lastHover);
     }
+    // With the name tags up, the whole row is not ringed: only the home being pointed at
+    // (on the model or by its person card) is.
     const ringed = new Set<T.Object3D>(
-      focusedIds.map((id) => models.get(id)!.root),
+      tagsOn && focusedIds.length > 1
+        ? []
+        : focusedIds.map((id) => models.get(id)!.root),
     );
     const extra = hover.id && hover.id !== 'corner-park' ? hover.id : accentId;
     if (extra && !inspect) {
@@ -1086,6 +1137,11 @@ export async function createCity(
     },
     setAccent(id) {
       accentId = id;
+    },
+    setHomeTags(on) {
+      tagsOn = on;
+      // Put away at once: the next frame may be a while off (the stage scrolled out of view).
+      if (!on) placeHomeTags();
     },
     setGrid(v) {
       gridEnabled = v;
