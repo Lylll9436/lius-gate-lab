@@ -763,7 +763,6 @@ export function buildTown(
       col: number[] = [],
       idx: number[] = [];
     const base = new T.Color(color);
-    const quads: boolean[] = [];
     for (let k = 0; k < count; k++) {
       const i = k % n;
       const p = points[i];
@@ -780,10 +779,12 @@ export function buildTown(
       const tone = 1 - shade / 2 + shade * noise2(p[0] * 0.8, p[1] * 0.8);
       const c = base.clone().multiplyScalar(tone);
       col.push(c.r, c.g, c.b, c.r, c.g, c.b);
-      quads.push(!gap || !gap(p[0], p[1]));
     }
     for (let k = 0; k < count - 1; k++) {
-      if (!quads[k] || !quads[k + 1]) continue;
+      // One gap test per segment, at its midpoint.
+      const p = points[k % n],
+        q = points[(k + 1) % n];
+      if (gap && gap((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)) continue;
       const a = k * 2,
         b = a + 1,
         c = a + 2,
@@ -800,63 +801,166 @@ export function buildTown(
     g.add(mesh);
     return mesh;
   }
+  /**
+   * A raised strip with real side faces: a top, two sides from `bottom` to `top`, and an end cap
+   * wherever a run starts or stops. `right` is either the second edge polyline or a width, in which
+   * case `left` is the centre line. Sides are `side` or the top colour x0.74. Ground-like: no bake.
+   */
+  function slab(
+    g: T.Object3D,
+    left: XZ[],
+    right: XZ[] | number,
+    top: number,
+    bottom: number,
+    color: string,
+    kind: SurfaceKind,
+    closed: boolean,
+    keep: (k: number) => boolean = () => true,
+    side?: string,
+  ): T.Mesh {
+    if (typeof right === 'number')
+      return slab(g, plan.offsetPolyline(left, -right / 2, closed), plan.offsetPolyline(left, right / 2, closed), top, bottom, color, kind, closed, keep, side);
+    const n = left.length,
+      count = closed ? n : n - 1;
+    const pos: number[] = [],
+      col: number[] = [];
+    const topColor = new T.Color(color),
+      sideColor = side ? new T.Color(side) : topColor.clone().multiplyScalar(0.74);
+    const at = (p: XZ, y: number) => new T.Vector3(p[0], y + plan.terrainHeight(p[0], p[1]), p[1]);
+    const up = new T.Vector3(0, 1, 0);
+    // a-b-c-d run round the quad; flip it if it does not face `outward`.
+    const quad = (a: T.Vector3, b: T.Vector3, c: T.Vector3, d: T.Vector3, outward: T.Vector3, tone: T.Color) => {
+      if (b.clone().sub(a).cross(c.clone().sub(a)).dot(outward) < 0) [b, d] = [d, b];
+      for (const v of [a, b, c, a, c, d]) {
+        pos.push(v.x, v.y, v.z);
+        col.push(tone.r, tone.g, tone.b);
+      }
+    };
+    const kept = (k: number) => (closed ? keep((k + count) % count) : k >= 0 && k < count && keep(k));
+    for (let k = 0; k < count; k++) {
+      if (!keep(k)) continue;
+      const j = (k + 1) % n,
+        l0 = left[k],
+        l1 = left[j],
+        r0 = right[k],
+        r1 = right[j];
+      const along = new T.Vector3(l1[0] + r1[0] - l0[0] - r0[0], 0, l1[1] + r1[1] - l0[1] - r0[1]).normalize(),
+        across = new T.Vector3(r0[0] + r1[0] - l0[0] - l1[0], 0, r0[1] + r1[1] - l0[1] - l1[1]).normalize();
+      quad(at(l0, top), at(l1, top), at(r1, top), at(r0, top), up, topColor);
+      quad(at(l0, bottom), at(l1, bottom), at(l1, top), at(l0, top), across.clone().negate(), sideColor);
+      quad(at(r0, bottom), at(r1, bottom), at(r1, top), at(r0, top), across, sideColor);
+      if (!kept(k - 1)) quad(at(l0, bottom), at(r0, bottom), at(r0, top), at(l0, top), along.clone().negate(), sideColor);
+      if (!kept(k + 1)) quad(at(l1, bottom), at(r1, bottom), at(r1, top), at(l1, top), along, sideColor);
+    }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    geometry.computeVertexNormals();
+    const mesh = new T.Mesh(geometry, material('#ffffff', kind));
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.userData.noShadow = true;
+    mesh.userData.ground = true;
+    g.add(mesh);
+    return mesh;
+  }
   function buildStreets() {
     const R = plan.ROAD_WIDTH,
-      P = plan.PAVEMENT_WIDTH;
-    // Surfaces at one height never overlap: avenues stop at the ring's kerb, and their
-    // pavements stop where the ring's pavement begins.
-    const inAvenueRoad = (x: number, z: number) =>
-      plan.avenues.some((a) => plan.distanceToSegment([x, z], a.from, a.to) < R / 2 + 0.25);
-    const inRingStreet = (x: number, z: number) =>
-      plan.distanceToPolyline([x, z], plan.ringLine, true) < R / 2 + P + 0.05;
-    const inPlaza = (x: number, z: number) => Math.hypot(x, z) < plan.PLAZA_RADIUS - 0.02;
-    // Ring road, its pavements and kerbs.
-    ribbon(land, plan.ringLine, R, plan.levels.road, palette.road, 'asphalt', true);
+      P = plan.PAVEMENT_WIDTH,
+      KERB = 0.18,
+      { road: roadY, pavement: pavementY, kerb: kerbY } = plan.levels;
+    // Avenues that cross into the ring: direction u, and the ring tangent t at the junction.
+    const crossings = plan.avenues
+      .filter((a) => a.crossing)
+      .map((a) => {
+        const length = Math.hypot(a.to[0] - a.from[0], a.to[1] - a.from[1]),
+          u: XZ = [(a.to[0] - a.from[0]) / length, (a.to[1] - a.from[1]) / length];
+        return { ...a, length, u, t: [-u[1], u[0]] as XZ };
+      });
+    // The ring, densified (plan.ringLine has no points on its straight runs) with exact cut
+    // stations where each avenue's road edge and kerb meet it.
+    const ring = plan.densify(plan.ringLine, 2);
+    for (const a of crossings)
+      for (const o of [R / 2, R / 2 + KERB])
+        for (const s of [-1, 1]) {
+          const p: XZ = [a.to[0] + a.t[0] * o * s, a.to[1] + a.t[1] * o * s];
+          if (ring.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 1e-6)) continue;
+          const k = ring.findIndex((q, i) => plan.distanceToSegment(p, q, ring[(i + 1) % ring.length]) < 1e-6);
+          if (k >= 0) ring.splice(k + 1, 0, p);
+        }
+    /** Within `o` of an avenue mouth, along the ring, on the avenue side. */
+    const mouth = (o: number) => (x: number, z: number) =>
+      crossings.some(
+        (a) =>
+          Math.abs((x - a.to[0]) * a.t[0] + (z - a.to[1]) * a.t[1]) < o &&
+          plan.distanceToSegment([x, z], a.from, a.to) < R / 2 + P + 0.1,
+      );
+    /** Keep segment k unless its midpoint (between edges a and b) is in the gap. */
+    const openAt = (a: XZ[], b: XZ[], gap: (x: number, z: number) => boolean) => (k: number) => {
+      const j = (k + 1) % a.length;
+      return !gap((a[k][0] + a[j][0] + b[k][0] + b[j][0]) / 4, (a[k][1] + a[j][1] + b[k][1] + b[j][1]) / 4);
+    };
+    // Ring road, and tram rails under the tram's wheels, unbroken through the junctions.
+    ribbon(land, ring, R, roadY, palette.road, 'asphalt', true);
+    for (const s of [-1, 1])
+      ribbon(land, plan.offsetPolyline(ring, s * 0.42), 0.07, roadY + 0.003, palette.metal, 'metal', true, undefined, 0).userData.noShadow = true;
+    // Raised pavements and kerbs on both sides. The kerb's road face is the riser; the pavement's
+    // road edge tucks under the kerb. Only the inner side opens at the avenue mouths.
     for (const side of [-1, 1]) {
-      const centre = plan.offsetPolyline(plan.ringLine, side * (R / 2 + P / 2));
-      ribbon(land, centre, P, plan.levels.pavement, palette.pavement, 'paving', true, inAvenueRoad);
-      const kerb = plan.offsetPolyline(plan.ringLine, side * (R / 2 + 0.05));
-      ribbon(land, kerb, 0.1, plan.levels.pavement + 0.004, palette.kerb, 'stone', true, inAvenueRoad, 0);
+      const edges = (o0: number, o1: number) => [plan.offsetPolyline(ring, side * o0), plan.offsetPolyline(ring, side * o1)];
+      const [pa, pb] = edges(R / 2 + KERB / 2, R / 2 + P),
+        [ka, kb] = edges(R / 2, R / 2 + KERB),
+        inner = side > 0;
+      slab(land, pa, pb, pavementY, -0.02, palette.pavement, 'paving', true, inner ? openAt(pa, pb, mouth(R / 2 + KERB)) : undefined, palette.plazaDark);
+      slab(land, ka, kb, kerbY, 0, palette.kerb, 'stone', true, inner ? openAt(ka, kb, mouth(R / 2 + KERB)) : undefined);
     }
-    // Avenues.
-    for (const avenue of plan.avenues) {
-      const fullLength = Math.hypot(avenue.to[0] - avenue.from[0], avenue.to[1] - avenue.from[1]);
-      const ux = (avenue.to[0] - avenue.from[0]) / fullLength,
-        uz = (avenue.to[1] - avenue.from[1]) / fullLength;
-      const roadEnd: XZ = avenue.crossing
-        ? [avenue.to[0] - ux * (R / 2 + 0.06), avenue.to[1] - uz * (R / 2 + 0.06)]
-        : avenue.to;
-      ribbon(land, [avenue.from, roadEnd], R, plan.levels.road, palette.road, 'asphalt', false);
-      const line: XZ[] = [avenue.from, avenue.to];
+    // Avenues: explicit ends. Edges start on the circle r = 5.1, under the plaza's kerb ring;
+    // the road abuts the ring road, kerbs return to the ring's kerb line, pavements meet the
+    // ring's inner pavement.
+    for (const a of crossings) {
+      const n: XZ = [-a.u[1], a.u[0]];
+      const at = (along: number, o: number): XZ => [a.from[0] + a.u[0] * along + n[0] * o, a.from[1] + a.u[1] * along + n[1] * o];
+      const start = (o: number) => Math.sqrt(5.1 ** 2 - o ** 2) - plan.PLAZA_RADIUS,
+        edge = (o: number, end: number) => [at(start(o), o), at(end, o)];
+      // The road's start corners sit on r = 5.1 too, so no grass shows at the plaza rim.
+      ribbon(land, [at(start(R / 2), 0), at(a.length - R / 2, 0)], R, roadY, palette.road, 'asphalt', false);
       for (const side of [-1, 1]) {
-        const centre = plan.offsetPolyline(line, side * (R / 2 + P / 2), false);
-        ribbon(land, centre, P, plan.levels.pavement, palette.pavement, 'paving', false, (x, z) => inRingStreet(x, z) || inPlaza(x, z));
-        const kerb = plan.offsetPolyline(line, side * (R / 2 + 0.05), false);
-        ribbon(land, kerb, 0.1, plan.levels.pavement + 0.004, palette.kerb, 'stone', false, (x, z) => inRingStreet(x, z) || inPlaza(x, z), 0);
+        const paveEnd = a.length - (R / 2 + P),
+          kerbEnd = a.length - R / 2;
+        slab(land, edge(side * (R / 2 + KERB / 2), paveEnd), edge(side * (R / 2 + P), paveEnd), pavementY, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
+        slab(land, edge((side * R) / 2, kerbEnd), edge(side * (R / 2 + KERB), kerbEnd), kerbY, 0, palette.kerb, 'stone', false);
       }
-      // Centre line dashes and a zebra crossing before the ring.
-      const length = Math.hypot(avenue.to[0] - avenue.from[0], avenue.to[1] - avenue.from[1]);
-      const dx = (avenue.to[0] - avenue.from[0]) / length,
-        dz = (avenue.to[1] - avenue.from[1]) / length;
-      for (let d = 1.4; d < length - 3.2; d += 1.4)
-        box(land, avenue.from[0] + dx * d, plan.levels.road + 0.004, avenue.from[1] + dz * d, 0.06 + Math.abs(dx) * 0.54, 0.006, 0.06 + Math.abs(dz) * 0.54, palette.roadLine, 'paint');
-      if (!avenue.crossing) continue;
-      for (let s = -2; s <= 2; s++) {
-        const d = length - 1.75,
-          offset = s * 0.32,
-          alongZ = Math.abs(dz) > 0.5;
-        box(
-          land,
-          avenue.from[0] + dx * d - dz * offset,
-          plan.levels.road + 0.005,
-          avenue.from[1] + dz * d + dx * offset,
-          alongZ ? 0.18 : 0.42,
-          0.006,
-          alongZ ? 0.42 : 0.18,
-          palette.roadLine,
-          'paint',
-        );
+      // Centre dashes, and a zebra across the mouth, where the ring's inner pavement is cut.
+      for (let d = 1.6; d < a.length - 3.2; d += 1.6) {
+        const [x, z] = at(d, 0);
+        box(land, x, roadY + 0.004, z, 0.1 + Math.abs(a.u[0]) * 0.6, 0.006, 0.1 + Math.abs(a.u[1]) * 0.6, palette.roadLine, 'paint');
       }
+      for (const o of [-0.54, -0.18, 0.18, 0.54]) {
+        const [x, z] = at(a.length - (R / 2 + P / 2), o);
+        box(land, x, roadY + 0.004, z, 0.24 + Math.abs(a.u[0]) * 0.66, 0.006, 0.24 + Math.abs(a.u[1]) * 0.66, palette.roadLine, 'paint');
+      }
+    }
+    // The north avenue is the Town Hall's forecourt: one paved slab from the hall plinth to the
+    // plaza rim (z -6.3 to -5.1), its top and sides coloured by facing.
+    {
+      const e = Math.sqrt(5.1 ** 2 - 9),
+        shape = new T.Shape();
+      shape.moveTo(-3, 6.3);
+      shape.lineTo(3, 6.3);
+      shape.lineTo(3, e);
+      shape.absarc(0, 0, 5.1, Math.atan2(e, 3), Math.atan2(e, -3), false);
+      const geometry = new T.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, -0.02, 0);
+      const normals = geometry.getAttribute('normal'),
+        topColor = new T.Color(palette.pavement),
+        sideColor = new T.Color(palette.plazaDark),
+        tones: number[] = [];
+      for (let i = 0; i < normals.count; i++) tones.push(...(normals.getY(i) > 0.5 ? topColor : sideColor).toArray());
+      geometry.setAttribute('color', new T.Float32BufferAttribute(tones, 3));
+      const forecourt = new T.Mesh(geometry, material('#ffffff', 'paving'));
+      forecourt.receiveShadow = true;
+      forecourt.userData.ground = true;
+      forecourt.userData.noShadow = true;
+      land.add(forecourt);
     }
     // The plaza: an inner island for the gate, a reflecting pool ring with four causeways,
     // and an outer paved ring. Pieces meet at shared edges; nothing is stacked.

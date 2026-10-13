@@ -83,7 +83,8 @@ export const PLAZA_RADIUS = 5.2;
 export const ROAD_WIDTH = 1.7,
   PAVEMENT_WIDTH = 1.1;
 export const ring = { hw: 16, hd: 14, cz: 1, radius: 5 };
-export const levels = { road: 0.02, pavement: 0.06, plaza: 0.06 };
+/** Surface tops: the road lies on the grass; pavements, the plaza and kerbs are raised slabs. */
+export const levels = { road: 0.02, pavement: 0.1, plaza: 0.1, kerb: 0.14 };
 
 /** A closed rounded rectangle, sampled clockwise when seen from above. */
 export function roundedRect(
@@ -146,6 +147,18 @@ export function samplePolyline(points: XZ[], distance: number, closed = false) {
     d -= length;
   }
   return { x: points[0][0], z: points[0][1], heading: 0 };
+}
+/** Subdivide every segment of a closed polyline into ceil(length / step) equal pieces. */
+export function densify(points: XZ[], step: number): XZ[] {
+  const out: XZ[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i],
+      b = points[(i + 1) % points.length],
+      pieces = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let k = 0; k < pieces; k++)
+      out.push([a[0] + ((b[0] - a[0]) * k) / pieces, a[1] + ((b[1] - a[1]) * k) / pieces]);
+  }
+  return out;
 }
 /** Offset a closed polyline sideways (positive = to the right of travel). */
 export function offsetPolyline(points: XZ[], offset: number, closed = true): XZ[] {
