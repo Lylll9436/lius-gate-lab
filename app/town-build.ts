@@ -1558,56 +1558,77 @@ export function buildTown(
   /* Buildings                                                         */
   /* ---------------------------------------------------------------- */
   function buildGate(shell: T.Group) {
-    const stone = palette.blonde,
-      trim = palette.trim;
-    for (const x of [-1.45, 1.45]) {
-      box(shell, x, 0.17, 0, 1.4, 0.34, 1.9, palette.plinth, 'stone');
-      box(shell, x, 1.85, 0, 1.05, 3.0, 1.5, stone, 'stone', { segments: 2 });
-      for (const z of [-0.78, 0.78]) {
-        box(shell, x - 0.38, 1.85, z, 0.16, 2.7, 0.14, trim, 'stone');
-        box(shell, x + 0.38, 1.85, z, 0.16, 2.7, 0.14, trim, 'stone');
-        box(shell, x, 1.7, z + 0.04 * Math.sign(z), 0.42, 0.9, 0.08, palette.stoneDark, 'stone');
-        box(shell, x, 1.7, z + 0.07 * Math.sign(z), 0.28, 0.66, 0.06, stone, 'stone');
-      }
-      box(shell, x, 3.45, 0, 1.3, 0.22, 1.72, trim, 'stone');
-      box(shell, x, 3.62, 0, 1.12, 0.12, 1.56, stone, 'stone');
+    // One solid arch mass: piers, spandrels and entablature are a single bevelled extrusion, so no
+    // light shows between the piers and the attic. Red and cream voussoirs, battered plinths.
+    const W = 2.2,
+      D = 1.5,
+      r = 0.95,
+      foot = 0.45,
+      spring = 2.45,
+      top = 4.2,
+      b = 0.1,
+      stone = palette.blonde,
+      dress = palette.trim;
+    // Plinth corners at (2.35, 0.9) stay inside the causeway sector (21.0 degrees, under 21.8).
+    for (const sx of [-1, 1]) box(shell, sx * 1.6, foot / 2, 0, 1.5, foot, D + 0.3, palette.plinth, 'stone', { taper: 0.05 });
+    const body = new T.Shape();
+    body.moveTo(-W, foot);
+    body.lineTo(-r, foot);
+    body.lineTo(-r, spring);
+    body.absarc(0, spring, r, Math.PI, 0, true);
+    body.lineTo(r, foot);
+    body.lineTo(W, foot);
+    body.lineTo(W, top);
+    body.lineTo(-W, top);
+    body.closePath();
+    const mass = new T.Mesh(
+      new T.ExtrudeGeometry(body, { depth: D - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 2, curveSegments: 16 }),
+      material(stone, 'stone'),
+    );
+    mass.position.z = -D / 2 + b;
+    mass.castShadow = mass.receiveShadow = true;
+    shell.add(mass);
+    // Seven chunky voussoirs, alternating dressing and red, standing 0.08 proud of each face.
+    for (let i = 0; i < 7; i++) {
+      const a0 = (i * Math.PI) / 7 + 0.012,
+        a1 = ((i + 1) * Math.PI) / 7 - 0.012,
+        ri = r - 0.03,
+        ro = 1.5;
+      const v = new T.Shape();
+      v.moveTo(Math.cos(a0) * ri, spring + Math.sin(a0) * ri);
+      v.lineTo(Math.cos(a0) * ro, spring + Math.sin(a0) * ro);
+      v.lineTo(Math.cos(a1) * ro, spring + Math.sin(a1) * ro);
+      v.lineTo(Math.cos(a1) * ri, spring + Math.sin(a1) * ri);
+      v.closePath();
+      const m = new T.Mesh(
+        new T.ExtrudeGeometry(v, { depth: D + 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelOffset: -0.03, bevelSegments: 1 }),
+        material(i % 2 ? palette.red : dress, 'stone'),
+      );
+      m.position.z = -(D + 0.16) / 2 + 0.03;
+      m.castShadow = m.receiveShadow = true;
+      shell.add(m);
     }
-    const opening = 0.95,
-      outer = 1.52,
-      base = 2.5;
-    for (let i = 0; i < 11; i++) {
-      const a = (i * Math.PI) / 11,
-        b = ((i + 1) * Math.PI) / 11;
-      const shape = new T.Shape();
-      shape.moveTo(Math.cos(a) * opening, base + Math.sin(a) * opening);
-      shape.lineTo(Math.cos(a) * outer, base + Math.sin(a) * outer);
-      shape.lineTo(Math.cos(b) * outer, base + Math.sin(b) * outer);
-      shape.lineTo(Math.cos(b) * opening, base + Math.sin(b) * opening);
-      shape.closePath();
-      const mesh = new T.Mesh(new T.ExtrudeGeometry(shape, { depth: 1.5, bevelEnabled: false }), material(i % 2 ? stone : trim, 'stone'));
-      mesh.position.z = -0.75;
-      mesh.castShadow = mesh.receiveShadow = true;
-      shell.add(mesh);
+    box(shell, 0, 3.8, 0, 0.5, 0.9, D + 0.24, dress, 'stone'); // keystone into cornice
+    for (const sx of [-1, 1]) {
+      box(shell, sx * (r + 0.1), spring - 0.1, 0, 0.32, 0.2, D + 0.12, dress, 'stone'); // impost
+      for (const sz of [-1, 1]) box(shell, sx * 1.6, 1.5, (sz * D) / 2, 0.7, 1.5, 0.12, dress, 'stone'); // pier panel, half set in
     }
-    box(shell, 0, base + outer + 0.05, 0, 0.5, 0.42, 1.6, trim, 'stone');
-    box(shell, 0, 4.25, 0, 4.3, 0.42, 1.78, stone, 'stone');
-    box(shell, 0, 4.56, 0, 4.55, 0.16, 1.98, trim, 'stone');
-    box(shell, 0, 4.98, 0, 4.0, 0.7, 1.62, stone, 'stone');
-    for (const z of [-0.83, 0.83]) box(shell, 0, 4.98, z, 2.9, 0.42, 0.04, '#4e5a56', 'metal');
-    box(shell, 0, 5.4, 0, 4.3, 0.14, 1.86, trim, 'stone');
-    balustrade(shell, 0, 5.47, 0.82, 3.9);
-    balustrade(shell, 0, 5.47, -0.82, 3.9);
-    for (const x of [-1.45, 1.45]) {
-      cylinder(shell, x, 5.65, 0, 0.1, 0.14, 0.4, palette.bronze, 'metal', 8);
+    box(shell, 0, top + 0.1, 0, 2 * W + 0.3, 0.2, D + 0.3, dress, 'stone');
+    box(shell, 0, top + 0.6, 0, 2 * W - 0.3, 0.8, D - 0.1, stone, 'stone', { segments: 2 });
+    for (const sz of [-1, 1]) box(shell, 0, top + 0.6, sz * ((D - 0.1) / 2 + 0.03), 2.4, 0.46, 0.06, palette.bronze, 'metal');
+    box(shell, 0, top + 1.1, 0, 2 * W - 0.1, 0.2, D + 0.1, dress, 'stone');
+    box(shell, 0, top + 1.4, 0, 1.6, 0.4, 0.9, stone, 'stone');
+    for (const sx of [-1, 1]) {
+      cylinder(shell, sx * 1.75, top + 1.45, 0, 0.1, 0.13, 0.5, palette.bronze, 'metal');
       const glow = material(palette.lantern, 'glass').clone();
       glow.emissive.set(palette.lantern);
-      const bowl = new T.Mesh(new T.SphereGeometry(0.17, 10, 8), glow);
-      bowl.position.set(x, 5.95, 0);
+      const bowl = new T.Mesh(new T.SphereGeometry(0.24, 14, 10), glow);
+      bowl.position.set(sx * 1.75, top + 1.92, 0);
       shell.add(bowl);
       lamps.push(bowl);
     }
     shell.userData.landmark = "LIU'S GATE";
-    shell.userData.openingWidth = opening * 2;
+    shell.userData.openingWidth = r * 2;
   }
 
   function buildHall(shell: T.Group, site: plan.Site) {
