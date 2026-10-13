@@ -474,7 +474,6 @@ export function buildTown(
     return mesh;
   }
   /** Two rounded 0.2 slabs on the plate edges (+-d/2 at y), eave/verge overhang, 0.16x0.26 ridge, stone gables tucked under. Ridge along x. Returns ridge top. */
-  // oxlint-disable-next-line no-unused-vars -- the building rebuilds (Steps 14-19) call it
   function slabRoof(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, rise: number, color: string, opts: { eave?: number; verge?: number; thick?: number; ridge?: string; gable?: string; inset?: number } = {}) {
     const e = opts.eave ?? 0.4, v = opts.verge ?? 0.25, t = opts.thick ?? 0.2, half = d / 2;
     const a = Math.atan2(rise, half), s = Math.sin(a), c = Math.cos(a);
@@ -639,7 +638,6 @@ export function buildTown(
       box(g,sx*(w/2+proud-lx/2),y0+tall/2+i*step,sz*(d/2+proud-lz/2),lx,tall,lz,color,'stone'); }
   }
   /** A battered, grounded base (6 degree batter) w x d plus `proud` all round, with an optional rusticated block row. Returns its height. */
-  // oxlint-disable-next-line no-unused-vars -- the building rebuilds (Steps 14-19) call it
   function plinth(g: T.Object3D, w: number, d: number, color: string, opts: { x?: number; z?: number; height?: number; proud?: number; blocks?: boolean } = {}) {
     const ph=opts.height??0.42, p=opts.proud??0.25, x=opts.x??0, z=opts.z??0;
     box(g,x,ph/2,z,w+2*p,ph,d+2*p,color,'stone',{taper:ph*0.105}); // 6 degree batter
@@ -648,7 +646,6 @@ export function buildTown(
     return ph;
   }
   /** A fat chimney stack from y0 to top with a cap and `pots` pantile pots. */
-  // oxlint-disable-next-line no-unused-vars -- the building rebuilds (Steps 14-19) call it
   function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'stone'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'stone',18); }
 
   /* ---------------------------------------------------------------- */
@@ -1741,96 +1738,65 @@ export function buildTown(
 
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
     const w = site.w,
-      d = site.d,
-      h = 3.1;
-    const stone = variant === 'villa' ? palette.blonde : variant === 'red-tenement' ? palette.red : palette.pale;
-    const trim = variant === 'red-tenement' ? palette.trimRed : palette.trim;
-    const doorColor = variant === 'villa' ? palette.greenDoor : variant === 'red-tenement' ? palette.blueDoor : palette.redDoor;
-    box(shell, 0, 0.12, 0, w + 0.2, 0.24, d + 0.2, variant === 'red-tenement' ? palette.plinthRed : palette.plinth, 'stone');
-    box(shell, 0, 0.24 + h / 2, 0, w, h, d, stone, 'stone');
-    quoins(shell, w, d, 0.24, 3.34, trim, { front: 0.25, corners: 'front' });
-    box(shell, 0, 0.24 + h * 0.5, 0, w + 0.08, 0.07, d + 0.08, trim, 'stone');
-    box(shell, 0, 0.24 + h + 0.06, 0, w + 0.3, 0.16, d + 0.3, trim, 'stone');
-    // Ground floor: a bay window and the front door; first floor: two sashes.
+      d = site.d;
+    // Squat walls under a big roof: a 0.42 plinth and 2.6 of wall, so the roof is about 43% of the height.
+    const P = 0.42,
+      h = 2.6,
+      top = P + h,
+      roofY = top + 0.2; // 3.22: on the cornice
+    const red = variant === 'red-tenement';
+    const stone = variant === 'villa' ? palette.blonde : red ? palette.red : palette.pale;
+    const dress = variant === 'villa' ? palette.trim : red ? palette.trimRed : palette.blonde;
+    const base = red ? palette.plinthRed : palette.plinth;
+    const doorColor = variant === 'villa' ? palette.greenDoor : red ? palette.blueDoor : palette.redDoor;
+    plinth(shell, w, d, base, { height: P, proud: 0.25 });
+    box(shell, 0, P + h / 2, 0, w, h, d, stone, 'stone');
+    quoins(shell, w, d, P, top, dress, { front: 0.25, corners: 'front' });
+    box(shell, 0, top + 0.1, 0, w + 0.3, 0.2, d + 0.3, dress, 'stone');
+    // The signature bay: grounded on its own battered plinth, under a lean-to (a pyramid on the
+    // full-height red bay). 1.0 wide at x -0.6, so it clears the left quoins (x -1.11) and the door jamb.
     const bayX = -0.6,
-      doorX = 0.72;
-    const bay = new T.Group();
-    bay.position.set(bayX, 0, d / 2);
-    shell.add(bay);
-    box(bay, 0, 0.9, 0.2, 1.05, 1.5, 0.42, stone, 'stone');
-    box(bay, 0, 0.3, 0.2, 1.15, 0.3, 0.52, palette.plinth, 'stone');
-    box(bay, 0, 1.72, 0.2, 1.2, 0.1, 0.56, trim, 'stone');
-    windowAt(bay, 0, 1.0, 0.41, 0.6, 1.0, { frame: trim, sill: false });
-    for (const side of [-1, 1]) {
-      const face = new T.Group();
-      face.position.set(side * 0.52, 0, 0.2);
-      face.rotation.y = (side * Math.PI) / 2;
-      bay.add(face);
-      windowAt(face, 0, 1.0, 0.0, 0.26, 0.95, { frame: trim, sill: false, bars: 1 });
-    }
-    // Until the Step 14 rebuild the door sits under the right first-floor window: 1.75 tall, its head
-    // stands in for that window's sill, so the two never share a face.
-    door(shell, doorX, 0.24, d / 2 + 0.02, 0.74, 1.75, doorColor, { fanlight: true, steps: 2, width: 1.1 });
-    railing(shell, doorX - 0.6, 0.24, d / 2 + 0.5, 0.7, 0.8, Math.PI / 2);
-    railing(shell, doorX + 0.6, 0.24, d / 2 + 0.5, 0.7, 0.8, Math.PI / 2);
-    for (const x of [-0.65, 0.65]) windowAt(shell, x, 0.24 + h * 0.76, d / 2, 0.58, 0.95, { frame: trim, sill: x < 0 });
-    // Rear windows and a garden door.
-    const rear = new T.Group();
-    rear.position.z = -d / 2;
-    rear.rotation.y = Math.PI;
-    shell.add(rear);
-    for (const x of [-0.65, 0.65]) {
-      windowAt(rear, x, 0.24 + h * 0.76, 0, 0.5, 0.9, { frame: trim });
-      windowAt(rear, x, 1.2, 0, 0.5, 0.95, { frame: trim });
-    }
+      bayW = 1.0,
+      bayTop = red ? top : 2.02;
+    box(shell, bayX, P / 2, d / 2 + 0.3, bayW + 0.12, P, 0.75, base, 'stone', { taper: 0.04 }); // grounded
+    box(shell, bayX, (P + bayTop) / 2, d / 2 + 0.25, bayW, bayTop - P, 0.6, stone, 'stone');
+    box(shell, bayX, bayTop + 0.1, d / 2 + 0.3, bayW + 0.12, 0.2, 0.75, dress, 'stone');
+    if (red) cone(shell, bayX, bayTop + 0.5, d / 2 + 0.3, 0.85, 0.6, palette.slate, 'slate', 4);
+    else box(shell, bayX, bayTop + 0.38, d / 2 + 0.33, bayW + 0.3, 0.16, 0.9, palette.slate, 'slate', { rx: 0.45 }); // lean-to
+    windowAt(shell, bayX, 1.25, d / 2 + 0.55, 0.72, 0.95, { frame: dress, lintel: !red });
+    if (red) windowAt(shell, bayX, 2.45, d / 2 + 0.55, 0.72, 0.8, { frame: dress, sill: false, lintel: false });
+    // The door on the plinth's landing; its risers step down to the ground at d/2 + 0.85.
+    const doorX = 0.52;
+    door(shell, doorX, P, d / 2, 0.7, 1.75, doorColor, { surround: dress, landing: 0.25, width: 1.0 });
+    // Sides get one window each (and a gable window under a side gable); the rear has masses only.
     for (const side of [-1, 1]) {
       const face = new T.Group();
       face.position.x = (side * w) / 2;
       face.rotation.y = (side * Math.PI) / 2;
       shell.add(face);
-      windowAt(face, 0.9, 0.24 + h * 0.76, 0, 0.5, 0.9, { frame: trim });
-      windowAt(face, -0.9, 1.2, 0, 0.5, 0.95, { frame: trim });
+      windowAt(face, side * 0.6, 1.35, 0, 0.7, 0.95, { frame: dress });
+      if (variant !== 'gabled-house') windowAt(face, 0, 3.8, 0, 0.5, 0.55, { frame: dress, lintel: false });
     }
-    // Roof, dormer or gable, chimney with two pots.
-    const roofY = 0.24 + h + 0.14,
-      rise = 1.05;
+    // A big slab roof and a fat chimney. The gabled house turns its ridge to face the street.
     if (variant === 'gabled-house') {
-      pitchedRoof(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, palette.slateDark);
-      gabledRoofEnds(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, stone);
-      // A front-facing gable over the bay.
-      const front = new T.Group();
-      front.position.set(bayX, roofY, d / 2 - 0.55);
-      front.rotation.y = Math.PI / 2;
-      shell.add(front);
-      pitchedRoof(front, 0, 0, 0, 1.3, 1.4, 0.75, palette.slateDark);
-      const gable = new T.Shape();
-      gable.moveTo(-0.66, 0);
-      gable.lineTo(0.66, 0);
-      gable.lineTo(0, 0.72);
-      gable.closePath();
-      const gableMesh = new T.Mesh(new T.ExtrudeGeometry(gable, { depth: 0.12, bevelEnabled: false }), material(stone, 'stone'));
-      gableMesh.position.set(bayX, roofY, d / 2 + 0.08);
-      gableMesh.castShadow = true;
-      shell.add(gableMesh);
-      windowAt(shell, bayX, roofY + 0.3, d / 2 + 0.2, 0.3, 0.36, { frame: trim, sill: false, bars: 1 });
+      const r = new T.Group();
+      r.rotation.y = Math.PI / 2;
+      shell.add(r);
+      const top2 = slabRoof(r, 0, roofY, 0, d, w + 0.3, 1.6, palette.slate, { eave: 0.2, verge: 0.3, gable: stone });
+      windowAt(shell, 0, 3.75, d / 2, 0.5, 0.55, { frame: dress, lintel: false });
+      chimney(shell, 0, top2 - 0.8, top2 + 0.5, -(d / 2 - 0.5), stone, dress, 2);
     } else {
-      pitchedRoof(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, variant === 'red-tenement' ? palette.slateDark : palette.slate);
-      gabledRoofEnds(shell, 0, roofY, 0, w + 0.24, d + 0.3, rise, stone);
-      const dormer = new T.Group();
-      dormer.position.set(0.2, roofY + 0.32, d / 2 - 0.95);
-      shell.add(dormer);
-      box(dormer, 0, 0.3, 0, 0.78, 0.62, 0.7, stone, 'stone');
-      windowAt(dormer, 0, 0.3, 0.35, 0.36, 0.42, { frame: trim, sill: false, bars: 1 });
-      pitchedRoof(dormer, 0, 0.62, 0, 0.9, 0.78, 0.3, palette.slate, { ridge: false });
+      const top2 = slabRoof(shell, 0, roofY, 0, w, d + 0.3, 1.8, palette.slate, { eave: 0.4, verge: 0.15, gable: stone });
+      chimney(shell, seed % 2 ? -(w / 2 - 0.35) : w / 2 - 0.35, top2 - 0.9, top2 + 0.55, 0, stone, dress, 2);
     }
-    const chimneyX = seed % 2 ? -w / 2 + 0.35 : w / 2 - 0.35;
-    box(shell, chimneyX, roofY + rise * 0.55 + 0.35, -0.2, 0.46, 1.3, 0.72, variant === 'red-tenement' ? '#a16e54' : '#c2a983', 'stone');
-    box(shell, chimneyX, roofY + rise * 0.55 + 1.02, -0.2, 0.56, 0.09, 0.82, trim, 'stone');
-    for (const dz of [-0.18, 0.18]) cylinder(shell, chimneyX, roofY + rise * 0.55 + 1.2, -0.2 + dz, 0.07, 0.08, 0.28, '#b06a4a', 'stone', 8);
-    // Front garden: hedge, path, a splash of flowers.
-    hedge(shell, -0.1, 0, d / 2 + 1.3, w - 0.5, 0, 0.42);
-    box(shell, doorX, 0.03, d / 2 + 0.95, 0.8, 0.06, 1.0, palette.plaza, 'paving');
-    flowerBed(shell, bayX, 0, d / 2 + 0.75, 1.0, 0.45, seed * 31);
+    // Front garden, sized to the room in front of the pavement (about 1.9 for every house in the row):
+    // a flower mound before the bay, a hedge with a gap at the door, and a path from the steps.
+    const fx = site.x + (Math.sin(site.rotation) * d) / 2,
+      fz = site.z + (Math.cos(site.rotation) * d) / 2;
+    const room = plan.distanceToStreets(fx, fz) - plan.PAVEMENT_WIDTH - 0.05;
+    if (room >= 1.2) flowerBed(shell, bayX, 0, d / 2 + 0.9, 1.0, 0.4, seed * 31);
+    if (room >= 1.75) hedge(shell, -0.1, 0, d / 2 + Math.min(1.4, room - 0.35), w - 0.5, 0, 0.55, { at: doorX + 0.1, width: 1.0 });
+    if (room - 0.85 >= 0.2) box(shell, doorX, 0.03, d / 2 + (0.85 + room) / 2, 0.8, 0.06, room - 0.85, palette.plaza, 'paving');
   }
 
   function buildStudio(shell: T.Group, site: plan.Site) {
