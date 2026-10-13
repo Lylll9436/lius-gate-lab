@@ -1951,46 +1951,73 @@ export function buildTown(
   /* ---------------------------------------------------------------- */
   /* Vehicles and people                                               */
   /* ---------------------------------------------------------------- */
+  /** Glasgow Corporation tram: orange, green and cream tiers with half-round ends, an eaved roof and a trolley pole. */
   function buildTram() {
     const tram = new T.Group();
     tram.name = 'tram';
-    box(tram, 0, 0.5, 0, 0.95, 0.5, 3.4, palette.tram, 'paint', { bevel: 0.05 });
-    box(tram, 0, 0.95, 0, 0.92, 0.5, 3.3, palette.tramCream, 'paint', { bevel: 0.05 });
-    box(tram, 0, 1.0, 0, 0.98, 0.3, 3.0, palette.glass, 'glass');
-    for (let z = -1.3; z <= 1.3; z += 0.52) box(tram, 0, 1.0, z, 1.0, 0.32, 0.05, palette.tramCream, 'paint');
-    box(tram, 0, 1.3, 0, 0.9, 0.12, 3.5, palette.tram, 'paint', { bevel: 0.04 });
-    box(tram, 0, 1.45, 0, 0.5, 0.05, 1.6, palette.metal, 'metal');
-    box(tram, 0, 1.75, 0, 0.04, 0.55, 0.04, palette.metal, 'metal', { rx: 0.5 });
-    box(tram, 0, 1.75, 0, 0.04, 0.55, 0.04, palette.metal, 'metal', { rx: -0.5 });
-    box(tram, 0, 2.0, 0, 0.5, 0.03, 0.03, palette.metal, 'metal');
-    for (const z of [-1.1, 1.1]) for (const x of [-0.42, 0.42]) cylinder(tram, x, 0.22, z, 0.2, 0.2, 0.1, '#2d3838', 'metal', 10).rotation.z = Math.PI / 2;
-    for (const z of [-1.72, 1.72]) {
-      box(tram, 0, 0.75, z, 0.8, 0.36, 0.04, palette.glass, 'glass');
+    const orange = palette.tramOrange, green = palette.tram, cream = palette.tramCream, half = 1.26;
+    // Each tier is a box with a half-round cylinder at either end.
+    const tier = (y: number, h: number, r: number, c: string, k: SurfaceKind) => {
+      box(tram, 0, y, 0, r * 2, h, half * 2, c, k);
+      for (const z of [-half, half]) cylinder(tram, 0, y, z, r, r, h, c, k, 24);
+    };
+    tier(0.48, 0.55, 0.54, orange, 'paint'); // 0.205..0.755
+    tier(0.8, 0.1, 0.565, green, 'paint'); // waist band
+    tier(1.09, 0.48, 0.52, cream, 'paint'); // 0.85..1.33
+    tier(1.1, 0.3, 0.535, palette.glass, 'glass'); // wrap-round windows, 0.015 proud
+    tier(1.4, 0.14, 0.6, green, 'paint'); // roof 1.33..1.47, 0.08 eave
+    box(tram, 0, 1.53, 0, 0.7, 0.12, 2.0, cream, 'paint'); // clerestory 1.47..1.59
+    for (const z of [-0.84, -0.28, 0.28, 0.84]) box(tram, 0, 1.1, z, 1.1, 0.32, 0.1, cream, 'paint'); // pillars
+    for (const z of [-1.1, 1.1]) box(tram, 0, 0.13, z, 0.86, 0.22, 0.9, '#3a3f44', 'metal'); // bogie skirts replace 8 wheels
+    box(tram, 0, 1.65, 0.5, 0.3, 0.12, 0.3, palette.metal, 'metal'); // pole base ON the clerestory
+    box(tram, 0, 1.99, -0.085, 0.07, 0.07, 1.3, palette.metal, 'metal', { rx: 0.45 }); // trolley pole, lower end at the base
+    for (const z of [-1.8, 1.8]) {
       const light = material(palette.lantern, 'glass').clone();
       light.emissive.set(palette.lantern);
-      const head = new T.Mesh(new T.SphereGeometry(0.07, 8, 6), light);
+      const head = new T.Mesh(new T.SphereGeometry(0.09, 12, 8), light);
       head.position.set(0, 0.5, z);
       tram.add(head);
       lamps.push(head);
     }
     return tram;
   }
+  /** Harbour boat: a shaped red hull sitting in the water (waterline at local 0), a wheelhouse, funnel and a mast on its roof. */
   function buildBoat() {
     const boat = new T.Group();
     boat.name = 'harbour-boat';
-    box(boat, 0, 0.16, 0, 1.0, 0.36, 2.6, palette.boat, 'paint', { bevel: 0.08 });
-    box(boat, 0, 0.3, 0, 1.04, 0.08, 2.64, '#efe6cf', 'paint', { bevel: 0.03 });
-    box(boat, 0, 0.36, 0.1, 0.86, 0.06, 2.3, palette.wood, 'wood');
-    box(boat, 0, 0.68, -0.4, 0.7, 0.6, 0.9, '#efe6cf', 'paint', { bevel: 0.03 });
-    box(boat, 0, 0.76, -0.4, 0.74, 0.26, 0.94, palette.glass, 'glass');
-    box(boat, 0, 1.02, -0.4, 0.8, 0.08, 1.0, palette.boat, 'paint', { bevel: 0.02 });
-    cylinder(boat, 0, 1.6, 0.4, 0.025, 0.035, 1.3, palette.woodDark, 'wood', 7);
-    box(boat, 0, 1.3, 0.4, 0.6, 0.02, 0.02, palette.woodDark, 'wood');
-    cone(boat, 0, 0.12, 1.4, 0.45, 0.7, palette.boat, 'paint', 4).rotation.x = Math.PI / 2;
+    const red = palette.boat, cream = palette.tramCream, wood = palette.wood, dark = palette.woodDark;
+    hullSolid(boat, 0.62, 2.0, 1.45, -0.12, 0.36, 0.06, red, 'paint'); // -0.12..0.36, waterline at local 0
+    hullSolid(boat, 0.66, 2.02, 1.47, 0.34, 0.04, 0.04, cream, 'paint'); // gunwale 0.34..0.46, 0.02 proud
+    const deck = new T.Mesh(new T.ShapeGeometry(hullShape(0.56, 1.8, 1.32), 6).rotateX(-Math.PI / 2), material(wood, 'wood'));
+    deck.position.y = 0.465;
+    deck.receiveShadow = true;
+    boat.add(deck);
+    box(boat, 0, 0.83, -0.45, 0.9, 0.74, 0.85, cream, 'paint'); // wheelhouse 0.46..1.20
+    box(boat, 0, 0.95, -0.45, 0.94, 0.26, 0.89, palette.glass, 'glass'); // wrap-round windows
+    box(boat, 0, 1.26, -0.45, 1.04, 0.12, 1.0, red, 'paint'); // roof, 0.07 eave
+    cylinder(boat, 0, 1.52, -0.72, 0.13, 0.15, 0.4, cream, 'paint', 18); // funnel
+    cylinder(boat, 0, 1.66, -0.72, 0.145, 0.145, 0.1, red, 'paint', 18); // funnel band
+    cylinder(boat, 0, 1.75, -0.15, 0.055, 0.065, 0.9, dark, 'wood', 18); // mast stepped ON the roof (1.30..2.20)
+    box(boat, 0, 1.98, -0.15, 0.7, 0.08, 0.08, dark, 'wood'); // yard
+    box(boat, 0.18, 0.62, 0.75, 0.32, 0.3, 0.32, wood, 'wood', { ry: 0.3 }); // deck cargo
+    box(boat, -0.2, 0.6, 1.05, 0.26, 0.26, 0.26, palette.gold, 'paint', { ry: -0.2 });
+    for (const sx of [-1, 1])
+      for (const fz of [-0.6, 0.35]) {
+        const f = new T.Mesh(new T.TorusGeometry(0.09, 0.045, 6, 10), material('#3a3f44', 'paint')); // fenders
+        f.position.set(sx * 0.72, 0.22, fz);
+        f.rotation.y = Math.PI / 2;
+        f.castShadow = true;
+        boat.add(f);
+      }
+    const buoyRing = new T.Mesh(new T.TorusGeometry(0.14, 0.05, 8, 14), material(palette.flowers[0], 'paint'));
+    buoyRing.position.set(0.5, 0.66, -0.45);
+    buoyRing.rotation.y = Math.PI / 2;
+    boat.add(buoyRing);
+    for (const s of [-1, 1]) box(boat, s * 0.52, 0.02, 1.5, 0.12, 0.03, 0.7, '#eaf6f2', 'paint', { ry: s * 0.5 }); // bow wave
     const light = material(palette.lantern, 'glass').clone();
     light.emissive.set(palette.lantern);
-    const lanternMesh = new T.Mesh(new T.SphereGeometry(0.06, 8, 6), light);
-    lanternMesh.position.set(0, 2.3, 0.4);
+    const lanternMesh = new T.Mesh(new T.SphereGeometry(0.1, 12, 8), light);
+    lanternMesh.position.set(0, 2.28, -0.15); // mast lantern
     boat.add(lanternMesh);
     lamps.push(lanternMesh);
     return boat;
