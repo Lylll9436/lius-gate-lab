@@ -1487,8 +1487,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     rock.position.set(x, 0, z);
     g.add(rock);
     // Four dark, rounded boulders that stand clear of the water, with a gentle ramp (0.85 to 1.02,
-    // paler on top); batch()'s contact bake supplies the wet, darker foot.
-    ([[0, -0.3, 0, 1.6, 1.25, 0.8, 1.1, '#6b7670'], [1.35, -0.3, 0.7, 1.0, 1.2, 0.8, 1.0, '#646f69'], [-1.25, -0.35, -0.45, 1.1, 1.1, 0.8, 1.2, '#717b75'], [0.4, -0.4, -1.4, 0.9, 1.3, 0.8, 1.0, '#646f69']] as const).forEach(([bx, by, bz, r, sx, sy, sz, c], i) => {
+    // paler on top); batch()'s contact bake supplies the wet, darker foot. The big one under the
+    // tower sits lower, so it meets the plinth below its cap (at most 0.6 up) instead of cutting
+    // through the cream ring at the tower's foot.
+    ([[0, -0.5, 0, 1.6, 1.25, 0.8, 1.1, '#6b7670'], [1.35, -0.3, 0.7, 1.0, 1.2, 0.8, 1.0, '#646f69'], [-1.25, -0.35, -0.45, 1.1, 1.1, 0.8, 1.2, '#717b75'], [0.4, -0.4, -1.4, 0.9, 1.3, 0.8, 1.0, '#646f69']] as const).forEach(([bx, by, bz, r, sx, sy, sz, c], i) => {
       const geo = new T.IcosahedronGeometry(r, 1),
         p = geo.getAttribute('position'),
         col = new Float32Array(p.count * 3);
