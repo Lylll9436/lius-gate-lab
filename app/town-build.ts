@@ -2389,6 +2389,55 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
     });
   }
+  /**
+   * A tartan picnic blanket and a hamper on the park turf, front-left of the bandstand under the
+   * edge of the west tree: 0.26 clear of the bandstand plinth, 0.22 of the bench, 0.4 of the trunk.
+   * The tartan is one flat colour per triangle on a 0.05 grid, the mix of a muted red, navy, green
+   * and cream sett across and along it (0.5 repeat), so no texture can shimmer. It lies 0.012 over
+   * the turf (top 0.10), casts no shadow and takes no contact bake.
+   */
+  function picnic(g: T.Object3D) {
+    const spot = { x: -12.2, z: 10.25, ry: 0.25 },
+      W = 1.2,
+      D = 0.9,
+      cell = 0.05;
+    const red = new T.Color('#a94a3e'),
+      navy = new T.Color('#34506e'),
+      green = new T.Color('#3d6450'),
+      cream = new T.Color(palette.white);
+    // The sett in 0.05 cells: red 4, navy 2, red 1, green 2, cream 1.
+    const sett = [red, red, red, red, navy, navy, red, green, green, cream];
+    const stripe = (t: number) => sett[((Math.floor(t / cell + 1e-6) % sett.length) + sett.length) % sett.length];
+    const geo = new T.PlaneGeometry(W, D, Math.round(W / cell), Math.round(D / cell)).rotateX(-Math.PI / 2).toNonIndexed();
+    const p = geo.getAttribute('position'),
+      out = new Float32Array(p.count * 3),
+      c = new T.Color();
+    for (let i = 0; i < p.count; i += 3) {
+      const u = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3 + W / 2,
+        v = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3 + D / 2;
+      c.copy(stripe(u)).lerp(stripe(v), 0.5);
+      for (let k = 0; k < 3; k++) c.toArray(out, (i + k) * 3);
+    }
+    geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    const rug = new T.Group();
+    rug.position.set(spot.x, 0.112, spot.z);
+    rug.rotation.y = spot.ry;
+    g.add(rug);
+    const blanket = new T.Mesh(geo, material('#ffffff', 'fabric'));
+    blanket.castShadow = false;
+    blanket.receiveShadow = true;
+    blanket.userData.noShadow = true;
+    rug.add(blanket);
+    // A wicker hamper on the back corner, away from the Life chapter's camera, and its lid and handle.
+    const hamper = new T.Group();
+    hamper.position.set(-0.36, 0, -0.2);
+    hamper.rotation.y = -0.18;
+    rug.add(hamper);
+    box(hamper, 0, 0.12, 0, 0.42, 0.24, 0.3, palette.wood, 'wood');
+    box(hamper, 0, 0.27, 0, 0.46, 0.06, 0.34, palette.woodDark, 'wood');
+    box(hamper, 0, 0.33, 0, 0.24, 0.06, 0.03, palette.woodDark, 'wood');
+    return rug;
+  }
 
   /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
@@ -2445,6 +2494,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     flowerBed(parkGroup, P.x + 2.6, 0.1, P.z - 1.2, 1.4, 0.7, 19);
     bin(parkGroup, P.x + 3.3, 0.13, P.z + 2.2);
   }
+  picnic(parkGroup);
   // Plaza furniture.
   phoneBox(land, plan.phoneBoxSpot[0], plan.levels.plaza, plan.phoneBoxSpot[1], -0.6);
   bin(land, 0.9, plan.levels.plaza, 4.9);
