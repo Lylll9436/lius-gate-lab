@@ -2187,9 +2187,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   parkGroup.name = 'corner-park';
   parkGroup.userData.parkSelection = true;
   city.add(parkGroup);
-  trees.forEach((spec, i) => {
+  // Each tree's spin, tone and season accent come from its id, so a tree left out of the plan
+  // (the one the paddock took) does not change the look of every tree planted after it.
+  trees.forEach((spec) => {
     const inPark = Math.abs(spec.x - plan.park.x) < plan.park.w / 2 + 0.2 && Math.abs(spec.z - plan.park.z) < plan.park.d / 2 + 0.2;
-    tree(inPark ? parkGroup : land, spec, i);
+    tree(inPark ? parkGroup : land, spec, Number(spec.id.slice(5)));
   });
   yield 'trees';
   // The corner park, a raised plot: a bevelled turf slab (top 0.10) inside stone edging that opens
