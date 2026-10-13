@@ -23,3 +23,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Fonts
+
+The site serves its own copies of these typefaces, installed from Fontsource (npm packages `@fontsource-variable/fraunces`, `@fontsource-variable/inter` and `@fontsource/ibm-plex-mono`). Each is licensed under the SIL Open Font License 1.1 (<https://openfontlicense.org>); the full licence text ships in each package's `LICENSE` file.
+
+- Fraunces, by Undercase Type (Phaedra Charles and Flavia Zimbardi).
+- Inter, by Rasmus Andersson.
+- IBM Plex Mono, by IBM Corp. ("IBM Plex" is a trademark of IBM).
