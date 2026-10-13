@@ -432,10 +432,7 @@ export function lampPlan(): LampSpec[] {
     if (nearJunction(p.x, p.z, 2.4)) continue;
     push(p.x, p.z);
   }
-  for (let i = 0; i < 4; i++) {
-    const a = (Math.PI / 2) * i + Math.PI / 4;
-    push(Math.cos(a) * 2.6, Math.sin(a) * 2.6);
-  }
+  // No lamps on the plaza: the pool ring fills it, and the avenue lamps light the gate.
   return lamps;
 }
 

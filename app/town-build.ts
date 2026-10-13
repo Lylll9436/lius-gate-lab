@@ -38,7 +38,7 @@ export const palette = {
   greenDoor: '#2e6e4c', blueDoor: '#2d5f8f', redDoor: '#b23a30',
   wood: '#a06b3e', woodDark: '#6b4529', metal: '#4b545b', bronze: '#a87b45', gold: '#e8b84a',
   road: '#6b7279', roadLine: '#e8e2cc', kerb: '#cfc3a6', pavement: '#d4c4a0', plaza: '#d4c4a0', plazaDark: '#bfac86', path: '#b8946a',
-  pool: '#2a86b0', poolEdge: '#62c0d4', poolWater: '#3fa6c4', render: '#f2e9d6',
+  pool: '#2a86b0', poolEdge: '#62c0d4', poolWater: '#3fa6c4', poolSurface: '#bfe6ee', render: '#f2e9d6',
   grass: '#a2bf50', grassLight: '#aac757', grassDark: '#98b74a', lawnPad: '#8bb038', lawnEdge: '#7a9638',
   sand: '#e4cc94', sandWet: '#c2a675', soil: '#6b4a2e',
   canopy: ['#7aab2e', '#93bb3a', '#86b234', '#6f9e2a'], hedge: '#5e8f28', hedgeTop: '#93bb3a',
@@ -151,15 +151,18 @@ function bakeRamp(m: T.Mesh, colour: string, bottom: number, top: number, tint =
 /* Layout shared by the town and its ground masks                      */
 /* ------------------------------------------------------------------ */
 
-/** The plaza's reflecting pool ring, cut by four causeways. */
-const POOL = { inner: 2.0, outer: 3.65 },
-  POOL_GAP = Math.asin(1.05 / ((POOL.inner + POOL.outer) / 2));
-/** One planter per pool sector, between the pool and the plaza rim; its long side runs radially. */
-const PLANTER = { radius: 4.45, w: 1.1, d: 0.5 };
+/**
+ * The plaza's reflecting pool ring (water from `inner` to `outer`, a 0.3 coping on each side),
+ * cut by four causeways that stay at least 0.95 half-wide at the island, like the arch opening.
+ */
+const POOL = { inner: 2.7, outer: 3.9, coping: 0.3 },
+  POOL_GAP = Math.asin(1.3 / ((POOL.inner + POOL.outer) / 2));
+/** One planter per pool sector, on the paving between the outer coping and the rim; its long side runs along the ring. */
+const PLANTER = { radius: 4.47, w: 1.2, d: 0.45 };
 const plazaPlanters = () =>
   [0, 1, 2, 3].map((i) => {
-    const a = (Math.PI / 2) * i + POOL_GAP + (Math.PI / 2 - POOL_GAP * 2) / 2;
-    return { a, x: Math.cos(a) * PLANTER.radius, z: Math.sin(a) * PLANTER.radius };
+    const a = (Math.PI / 2) * i + Math.PI / 4; // the middle of pool sector i
+    return { ry: Math.PI / 2 - a, x: Math.cos(a) * PLANTER.radius, z: Math.sin(a) * PLANTER.radius };
   });
 /** The park's bandstand stands just behind the park centre. */
 const bandstandAt = (): XZ => [plan.park.x, plan.park.z - 0.3];
@@ -241,7 +244,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   const plot = plan.reservedPlot;
   rect(plot.x, plot.z, CRANE_BASE, CRANE_BASE, 0, 0.9, 0.4);
   for (const [dx, dz, l, ry] of hoardingWalls(plot)) rect(plot.x + dx, plot.z + dz, l, HOARDING_THICKNESS, ry, 0.5, 0.3);
-  for (const p of plazaPlanters()) rect(p.x, p.z, PLANTER.w, PLANTER.d, -p.a, 0.7, 0.35);
+  for (const p of plazaPlanters()) rect(p.x, p.z, PLANTER.w, PLANTER.d, p.ry, 0.7, 0.35);
   const [bx, bz] = bandstandAt();
   disc(bx, bz, 2.1, 1, 0.5);
   for (const t of trees) {
@@ -1026,10 +1029,15 @@ export function buildTown(
       land.add(forecourt);
     }
     // The plaza: an inner island for the gate, a reflecting pool ring with four causeways,
-    // and an outer paved ring. Pieces meet at shared edges; nothing is stacked.
+    // an outer paved ring and a darker border band under a lathed kerb. Pieces meet at shared edges.
     const poolInner = POOL.inner,
       poolOuter = POOL.outer,
-      gapAngle = POOL_GAP;
+      coping = POOL.coping,
+      gapAngle = POOL_GAP,
+      plazaY = plan.levels.plaza,
+      copingTop = plazaY + 0.12,
+      // The lawn runs on at y 0 under the whole plaza, so the bed lies just above it to be seen.
+      poolBed = plazaY - 0.08;
     const flat = (geometry: T.BufferGeometry, color: string, kind: SurfaceKind, y: number) => {
       const mesh = new T.Mesh(geometry, material(color, kind));
       mesh.rotation.x = -Math.PI / 2;
@@ -1038,82 +1046,93 @@ export function buildTown(
       land.add(mesh);
       return mesh;
     };
-    flat(new T.CircleGeometry(poolInner - 0.08, 48), palette.plaza, 'paving', plan.levels.plaza);
-    flat(new T.RingGeometry(poolOuter + 0.08, plan.PLAZA_RADIUS, 64), palette.plaza, 'paving', plan.levels.plaza);
+    /**
+     * Lathed stone, ground-like (the batch bake leaves it alone). List the (r, y) profile up the outer
+     * face, across the top toward the axis, then down the inner face: LatheGeometry then winds it to
+     * face outward. It stays single-sided, so its shadow comes from the far faces and lit faces never
+     * shadow themselves (a double-sided sheet streaks with acne). Its open ends are capped.
+     */
+    const lathe = (profile: XZ[], start: number, span: number, segments: number, colour: string) => {
+      const mesh = new T.Mesh(new T.LatheGeometry(profile.map(([r, y]) => new T.Vector2(r, y)), segments, start, span), material(colour, 'stone'));
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.userData.ground = true;
+      land.add(mesh);
+      return mesh;
+    };
+    flat(new T.CircleGeometry(poolInner - coping, 48), palette.plaza, 'paving', plazaY);
     for (let i = 0; i < 4; i++)
       flat(
-        new T.RingGeometry(poolInner - 0.08, poolOuter + 0.08, 12, 1, (Math.PI / 2) * i - gapAngle, gapAngle * 2),
+        new T.RingGeometry(poolInner - coping, poolOuter + coping, 12, 1, (Math.PI / 2) * i - gapAngle, gapAngle * 2),
         palette.plaza,
         'paving',
-        plan.levels.plaza,
+        plazaY,
       );
-    flat(new T.RingGeometry(plan.PLAZA_RADIUS - 0.16, plan.PLAZA_RADIUS + 0.02, 64), palette.kerb, 'stone', plan.levels.plaza + 0.005);
-    // Paving pattern: concentric rings of darker stone.
-    for (const r of [1.72, 4.1])
-      for (let i = 0; i < 4; i++)
-        flat(
-          new T.RingGeometry(r - 0.05, r + 0.05, 48, 1, (Math.PI / 2) * i + 0.42, Math.PI / 2 - 0.84),
-          palette.plazaDark,
-          'stone',
-          plan.levels.plaza + 0.004,
-        );
+    flat(new T.RingGeometry(poolOuter + coping, 4.72, 64), palette.plaza, 'paving', plazaY);
+    flat(new T.RingGeometry(4.72, 5.1, 64), palette.plazaDark, 'paving', plazaY);
+    // The kerb ring: a lip toward the plaza, a rounded top and a face down to the grass. It opens
+    // (±3) where the hall forecourt meets the plaza; a lathe angle φ lies at world (sin φ, cos φ).
+    const kerbEnd = Math.PI - Math.asin(3 / 5.1);
+    lathe(
+      [[5.22, -0.02], [5.22, kerbY - 0.03], [5.19, kerbY], [5.05, kerbY], [5.02, plazaY + 0.01], [5.02, plazaY]],
+      -kerbEnd,
+      kerbEnd * 2,
+      96,
+      palette.kerb,
+    );
+    for (const phi of [-kerbEnd, kerbEnd])
+      box(land, Math.sin(phi) * 5.12, (kerbY - 0.02) / 2, Math.cos(phi) * 5.12, 0.2, kerbY + 0.02, 0.04, palette.kerb, 'stone', { ry: phi - Math.PI / 2 }).userData.ground = true;
+    // Pool copings, 0.3 wide with rounded edges (the lathe's smooth normals); a lathe arc from φ
+    // lies at world angle π/2 − φ, and the four sectors are symmetric, so the sets coincide.
+    const copings: XZ[][] = [
+      [[poolOuter + coping, plazaY - 0.02], [poolOuter + coping, copingTop - 0.05], [poolOuter + coping - 0.05, copingTop], [poolOuter + 0.05, copingTop], [poolOuter, copingTop - 0.05], [poolOuter, poolBed]],
+      [[poolInner, poolBed], [poolInner, copingTop - 0.05], [poolInner - 0.05, copingTop], [poolInner - coping + 0.05, copingTop], [poolInner - coping, copingTop - 0.05], [poolInner - coping, plazaY - 0.02]],
+    ];
+    // A pale, matte, see-through surface over a bed that is light at both edges and deeper cyan in the
+    // middle. The surface is lit like a pale wall, so it stays thin enough for the cyan bed to show.
+    const water = material(palette.poolSurface, 'water').clone();
+    water.transparent = true;
+    water.opacity = 0.15;
+    water.depthWrite = false;
+    water.roughness = 0.35;
+    water.metalness = 0;
+    const bedEdge = new T.Color(palette.poolEdge),
+      bedMiddle = new T.Color(palette.poolWater);
     for (let i = 0; i < 4; i++) {
       const start = (Math.PI / 2) * i + gapAngle,
         span = Math.PI / 2 - gapAngle * 2;
-      const bed = new T.Mesh(new T.RingGeometry(poolInner, poolOuter, 32, 1, start, span), material(palette.pool, 'stone'));
-      bed.rotation.x = -Math.PI / 2;
-      bed.position.y = plan.levels.plaza - 0.16;
-      bed.receiveShadow = true;
-      land.add(bed);
-      const water = material('#7fb7b8', 'water').clone();
-      water.transparent = true;
-      water.opacity = 0.72;
-      water.depthWrite = false;
-      water.roughness = 0.12;
-      water.metalness = 0.25;
+      const bedGeometry = new T.RingGeometry(poolInner, poolOuter, 32, 3, start, span),
+        p = bedGeometry.getAttribute('position'),
+        tones: number[] = [];
+      for (let k = 0; k < p.count; k++) {
+        const u = T.MathUtils.clamp((Math.hypot(p.getX(k), p.getY(k)) - poolInner) / (poolOuter - poolInner), 0, 1);
+        tones.push(...bedEdge.clone().lerp(bedMiddle, Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.6)).toArray());
+      }
+      bedGeometry.setAttribute('color', new T.Float32BufferAttribute(tones, 3));
+      flat(bedGeometry, '#ffffff', 'stone', poolBed);
       const surface = new T.Mesh(new T.RingGeometry(poolInner, poolOuter, 32, 1, start, span), water);
       surface.rotation.x = -Math.PI / 2;
-      surface.position.y = plan.levels.plaza - 0.03;
+      surface.position.y = plazaY - 0.03;
       surface.name = 'pool-' + i;
       surface.renderOrder = 2;
       land.add(surface);
-      // Pool walls: short curved kerbs on both edges of each sector, visible from both sides.
-      const wallMaterial = material(palette.trim, 'stone').clone();
-      wallMaterial.side = T.DoubleSide;
-      for (const [r, wide] of [
-        [poolInner - 0.08, 0.16],
-        [poolOuter + 0.08, 0.16],
-      ] as const) {
-        const wall = new T.Mesh(new T.RingGeometry(r - wide / 2, r + wide / 2, 32, 1, start, span), material(palette.trim, 'stone'));
-        wall.rotation.x = -Math.PI / 2;
-        wall.position.y = plan.levels.plaza + 0.1;
-        land.add(wall);
-        for (const radius of [r + wide / 2, r - wide / 2]) {
-          const side = new T.Mesh(
-            new T.CylinderGeometry(radius, radius, 0.26, 32, 1, true, start, span),
-            wallMaterial,
-          );
-          side.position.y = plan.levels.plaza - 0.03;
-          land.add(side);
-        }
-        // Closed ends where the wall meets a causeway: thin across, as wide as the wall.
-        for (const a of [start, start + span])
-          box(land, Math.cos(a) * r, plan.levels.plaza + 0.03, Math.sin(a) * r, wide, 0.26, 0.04, palette.trim, 'stone', { ry: -a });
+      for (const profile of copings) lathe(profile, start, span, 32, palette.trim);
+      // Where a sector meets a causeway: a cap on each coping, and the causeway's side face over the water.
+      for (const a of [start, start + span]) {
+        for (const r of [poolInner - coping / 2, poolOuter + coping / 2])
+          box(land, Math.cos(a) * r, (copingTop + poolBed) / 2, Math.sin(a) * r, coping, copingTop - poolBed, 0.05, palette.trim, 'stone', { ry: -a }).userData.ground = true;
+        const r = (poolInner + poolOuter) / 2;
+        box(land, Math.cos(a) * r, (plazaY + poolBed) / 2, Math.sin(a) * r, poolOuter - poolInner, plazaY - poolBed, 0.05, palette.plazaDark, 'stone', { ry: -a }).userData.ground = true;
       }
-      // Between the pool and the rim: a planter with a clipped hedge and flowers, two benches facing the water.
-      const { a, x: px, z: pz } = plazaPlanters()[i];
-      box(land, px, plan.levels.plaza + 0.18, pz, PLANTER.w, 0.36, PLANTER.d, palette.stoneDark, 'stone', { bevel: 0.03, ry: -a });
-      box(land, px, plan.levels.plaza + 0.5, pz, 0.95, 0.3, 0.36, palette.canopy[1], 'foliage', { bevel: 0.1, ry: -a });
-      for (let f = 0; f < 6; f++) {
-        const t = -0.4 + (0.8 * f) / 5;
-        sphere(land, px + Math.cos(a) * t, plan.levels.plaza + 0.68, pz + Math.sin(a) * t, 0.05, palette.flowers[f % palette.flowers.length], 'paint', 6);
-      }
-      for (const side of [-1, 1]) {
-        const ba = a + side * 0.62,
-          bx = Math.cos(ba) * 3.6,
-          bz = Math.sin(ba) * 3.6;
-        bench(land, bx, plan.levels.plaza, bz, Math.atan2(-Math.cos(ba), -Math.sin(ba)));
-      }
+      // Between the outer coping and the rim: a planter along the ring, a clipped mound and three blooms.
+      const { ry, x: px, z: pz } = plazaPlanters()[i],
+        tx = Math.cos(ry),
+        tz = -Math.sin(ry);
+      box(land, px, plazaY + 0.2, pz, PLANTER.w, 0.4, PLANTER.d, palette.stoneDark, 'stone', { ry });
+      bakeRamp(box(land, px, plazaY + 0.5, pz, 1.05, 0.26, 0.34, '#ffffff', 'foliage', { bevel: 0.12, segments: 1, ry }), palette.hedge, 0.9, 1.05, palette.hedgeTop, 0.45);
+      [BLOOMS[0], BLOOMS[1], BLOOMS[3]].forEach((colour, f) => {
+        const t = (f - 1) * 0.32;
+        bloom(land, px + tx * t, plazaY + 0.66, pz + tz * t, colour);
+      });
     }
   }
 
