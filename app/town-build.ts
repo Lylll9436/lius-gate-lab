@@ -1442,7 +1442,8 @@ export function buildTown(
     dinghy.rotation.y = heading + 0.06;
     dinghy.userData.keepSeparate = true;
     g.add(dinghy);
-    hullSolid(dinghy, 0.34, 0.8, 0.72, -0.06, 0.16, 0.04, palette.white, 'paint'); // -0.06..0.18, waterline 0.06 up
+    // The hull's top cap sits 0.005 under the band's, so the two caps don't z-fight on the gunwale.
+    hullSolid(dinghy, 0.34, 0.8, 0.72, -0.06, 0.155, 0.04, palette.white, 'paint'); // -0.06..0.175, waterline 0.06 up
     hullSolid(dinghy, 0.36, 0.81, 0.73, 0.1, 0.02, 0.03, palette.blueDoor, 'paint'); // rubbing band 0.10..0.18, 0.01 proud
     const floor = new T.Mesh(new T.ShapeGeometry(hullShape(0.27, 0.66, 0.6), 4).rotateX(-Math.PI / 2), material(palette.wood, 'wood'));
     floor.position.y = 0.185;
