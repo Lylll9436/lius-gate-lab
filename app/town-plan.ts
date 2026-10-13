@@ -285,6 +285,11 @@ export const cottages: { x: number; z: number; rotation: number; color: string }
   { x: 5, z: -17.5, rotation: 0, color: '#cdb48d' },
   { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8' },
 ];
+/**
+ * The Highland herd's paddock in the south-west outskirts (dyke centre lines, axis-aligned),
+ * built with the herd. The heather, thistles and other Scottish props keep 1.0 clear of it.
+ */
+export const paddockReserve = { x: -11.6, z: 20.9, w: 5.2, d: 3.4 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
@@ -479,3 +484,63 @@ export function walkFloor(x: number, z: number) {
   );
 }
 export const tramLoop = ringLine;
+
+/**
+ * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
+ * gardens and the gaps between them); the moorland props keep out of it too.
+ */
+const terraceClearing = { x: terraceRow.x, z: terraceRow.z, w: 11, d: 2 * (terraceRow.spacing + 4) };
+/**
+ * Thistle clumps by the paddock: just beyond its 1.0 margin on the south (sea), east and west
+ * sides, off the mown lawn and away from the gate in the north wall.
+ */
+export const thistles: XZ[] = [
+  [-13.5, 23.75],
+  [-11.15, 23.8],
+  [-9.2, 23.7],
+  [-7.9, 22.55],
+  [-15.35, 22.4],
+];
+export type HeatherDrift = {
+  id: string;
+  x: number;
+  z: number;
+  /** Three low lumps (world x, z and radius) that make up the drift. */
+  lumps: { x: number; z: number; r: number }[];
+};
+/** How far a drift's lumps reach from its centre. */
+export const heatherReach = (d: HeatherDrift) => Math.max(...d.lumps.map((l) => Math.hypot(l.x - d.x, l.z - d.z) + l.r));
+/**
+ * Heather drifts for a moorland read: a seeded scatter of at most 20 low drifts on the hills and
+ * along the coast, never on the mown town lawn, the terrace, the streets or near a building, and
+ * clear of the trees' trunks, the paddock, the thistles and one another.
+ */
+export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] {
+  const drifts: HeatherDrift[] = [];
+  for (let i = 0; i < 1500 && drifts.length < 20; i++) {
+    const x = (hash(i * 7 + 3) - 0.5) * 62,
+      z = (hash(i * 7 + 4) - 0.5) * 62,
+      spin = hash(i * 7 + 6) * Math.PI * 2;
+    const lumps = Array.from({ length: 3 }, (_, k) => {
+      const a = spin + k * 2.1 + 0.5 * hash(i * 7 + 5 + k),
+        d = k === 0 ? 0.06 : 0.3 + 0.12 * hash(i * 11 + k),
+        r = (k === 0 ? 0.32 : 0.26) + 0.1 * hash(i * 13 + k * 5);
+      return { x: x + Math.cos(a) * d, z: z + Math.sin(a) * d, r };
+    });
+    const drift = { id: 'heather-' + drifts.length, x, z, lumps },
+      reach = heatherReach(drift);
+    if (!onIsland(x, z, 0.3 + reach)) continue;
+    const coast = islandRadius(Math.atan2(z, x)) - Math.hypot(x, z);
+    if (!(terrainHeight(x, z) > 0.25 || coast < 3.0)) continue;
+    if (lumps.some((l) => lawnCore(l.x, l.z) > 0.02) || distanceToStreets(x, z) < 2.5) continue;
+    if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 0.35 * t.size + 0.5 + reach)) continue;
+    if (cottages.some((c) => Math.hypot(c.x - x, c.z - z) < 3.4 + reach)) continue;
+    if (nearSite(x, z, 1.5 + reach) || Math.hypot(x - pier.start[0], z - pier.start[1]) < 5.5) continue;
+    if (insideRect(x, z, terraceClearing, reach) || insideRect(x, z, paddockReserve, 1.0 + reach)) continue;
+    if (insideRect(x, z, reservedPlot, 1.5 + reach)) continue;
+    if (thistles.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < 0.5 + reach)) continue;
+    if (drifts.some((o) => Math.hypot(o.x - x, o.z - z) < 2.2)) continue;
+    drifts.push(drift);
+  }
+  return drifts;
+}

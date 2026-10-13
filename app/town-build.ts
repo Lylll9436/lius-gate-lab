@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   createCityMaterials,
   GROUND_HEIGHT_RANGE,
@@ -185,6 +185,17 @@ function bakeRamp(m: T.Mesh, colour: string, bottom: number, top: number, tint =
     out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f;
   }
   geo.setAttribute('color', new T.BufferAttribute(out, 3)); return m;
+}
+/**
+ * Heather keeps its own season, like the trees: a muted mauve bloom in late summer, fading and
+ * warmer in autumn, russet seed heads in winter and plain green-brown shoots in spring. `bloom`
+ * colours the up-facing tops; `stem` the sides.
+ */
+export function heatherLook(season: Season) {
+  if (season === 'spring') return { stem: '#5a7440', bloom: '#8a9258' };
+  if (season === 'winter') return { stem: '#5c663c', bloom: '#8a6a52' };
+  if (season === 'autumn') return { stem: '#5c7040', bloom: '#9a71a0' };
+  return { stem: '#5a7440', bloom: '#a070ad' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -2170,6 +2181,110 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Scottish touches                                                  */
+  /* ---------------------------------------------------------------- */
+  /** The terrain's surface normal at (x, z), for props that lie along a slope. */
+  function terrainNormal(x: number, z: number) {
+    const e = 0.05;
+    return new T.Vector3(
+      plan.terrainHeight(x - e, z) - plan.terrainHeight(x + e, z),
+      2 * e,
+      plan.terrainHeight(x, z - e) - plan.terrainHeight(x, z + e),
+    ).normalize();
+  }
+  /**
+   * A heather drift: three low, knobbly lumps, each laid along the slope and sunk by a quarter of
+   * its height, green-brown on the sides and mottled with the season's bloom on top. No shadow.
+   */
+  function heatherDrift(g: T.Object3D, drift: plan.HeatherDrift, index: number) {
+    const look = heatherLook(season),
+      stem = new T.Color(look.stem),
+      bloom = new T.Color(look.bloom),
+      c = new T.Color(),
+      up = new T.Vector3(0, 1, 0);
+    const geos = drift.lumps.map((l, k) => {
+      const ico = new T.IcosahedronGeometry(l.r, 1);
+      ico.deleteAttribute('normal');
+      ico.deleteAttribute('uv');
+      // Shared corners, so the knobbly displacement cannot open cracks; smooth normals after it.
+      const geo = mergeVertices(ico),
+        p = geo.getAttribute('position'),
+        speck = new Float32Array(p.count);
+      ico.dispose();
+      for (let i = 0; i < p.count; i++) {
+        const v = new T.Vector3().fromBufferAttribute(p, i),
+          seed = hash(index * 31 + k * 7 + i * 1.7);
+        v.multiplyScalar(1 + (seed - 0.5) * 0.14);
+        p.setXYZ(i, v.x, v.y, v.z);
+        speck[i] = hash(index * 17 + k * 5 + i * 2.3);
+      }
+      geo.rotateY(hash(index * 5 + k) * Math.PI);
+      geo.scale(1, 0.66, 1);
+      geo.translate(0, 0.3 * l.r, 0); // 1.2r tall, a quarter of it under the ground
+      geo.applyQuaternion(new T.Quaternion().setFromUnitVectors(up, terrainNormal(l.x, l.z)));
+      geo.translate(l.x, plan.terrainHeight(l.x, l.z), l.z);
+      geo.computeVertexNormals();
+      const n = geo.getAttribute('normal'),
+        out = new Float32Array(p.count * 3),
+        tone = 0.94 + 0.1 * hash(index * 7 + k * 3);
+      for (let i = 0; i < p.count; i++) {
+        const top = sstep(n.getY(i), 0.45, 0.92),
+          f = tone * mix(0.8, 1.04, top) * (0.92 + 0.12 * speck[i]);
+        c.copy(stem).lerp(bloom, top * (0.7 + 0.3 * speck[i])); // a flowering crown over green sides
+        out[i * 3] = c.r * f;
+        out[i * 3 + 1] = c.g * f;
+        out[i * 3 + 2] = c.b * f;
+      }
+      geo.setAttribute('color', new T.BufferAttribute(out, 3));
+      return geo;
+    });
+    const m = new T.Mesh(mergeGeometries(geos)!, material('#ffffff', 'foliage'));
+    m.castShadow = false;
+    m.receiveShadow = true;
+    m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /** A thistle clump: a spiky rosette of three flat leaves, two or three stems, each with a green cup and a purple head. No shadow. */
+  function thistle(g: T.Object3D, x: number, z: number, seed: number) {
+    const t = new T.Group();
+    t.position.set(x, plan.terrainHeight(x, z), z);
+    t.rotation.y = hash(seed) * Math.PI;
+    g.add(t);
+    const leaf = '#78935c',
+      quiet = (m: T.Mesh) => {
+        m.castShadow = false;
+        m.userData.noShadow = true;
+        return m;
+      };
+    for (let k = 0; k < 3; k++) quiet(cone(t, 0, 0.02, 0, 0.2, 0.05, leaf, 'foliage', 4, (k * Math.PI) / 6));
+    const stems = hash(seed + 1) < 0.5 ? 2 : 3;
+    for (let k = 0; k < stems; k++) {
+      const a = k * 2.3 + hash(seed + k) * 0.6,
+        sx = Math.cos(a) * 0.05,
+        sz = Math.sin(a) * 0.05,
+        rz = (hash(seed + k * 3 + 2) - 0.5) * 0.4,
+        h = 0.32 - k * 0.04;
+      quiet(box(t, sx, h / 2, sz, 0.07, h, 0.07, leaf, 'foliage', { rz }));
+      const tx = sx - (Math.sin(rz) * h) / 2,
+        ty = h / 2 + (Math.cos(rz) * h) / 2;
+      const cup = quiet(cone(t, tx, ty + 0.03, sz, 0.07, 0.08, leaf, 'foliage', 12, 0));
+      cup.rotation.x = Math.PI; // apex down, into the stem
+      const head = quiet(new T.Mesh(bloomGeometry, material('#9b6aa6', 'foliage'))); // thistle purple, s 0.36
+      head.position.set(tx, ty + 0.1, sz);
+      head.scale.setScalar(0.9);
+      head.receiveShadow = true;
+      t.add(head);
+    }
+    return t;
+  }
+  /** Moorland on the outskirts: heather drifts on the hills and the coast, thistles by the paddock. */
+  function moorland(g: T.Object3D, trees: plan.TreeSpec[]) {
+    plan.heatherPlan(trees).forEach((drift, i) => heatherDrift(g, drift, i));
+    plan.thistles.forEach(([x, z], i) => thistle(g, x, z, 31 + i * 7));
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
   buildTerrain();
@@ -2235,6 +2350,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   crane(land, plan.reservedPlot.x, plan.reservedPlot.z);
   pierAndHarbour(land);
   lighthouse(land);
+  moorland(land, trees);
   hotAirBalloon(city);
   yield 'park, harbour and landmarks';
 

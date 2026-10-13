@@ -360,6 +360,45 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
+// Moorland: heather drifts on the hills and the coast and thistles by the paddock, never on the
+// mown town lawn, the terrace, the streets, the beach or within 1.0 of the herd's paddock.
+const inPaddock = (x, z, pad) =>
+  Math.abs(x - plan.paddockReserve.x) < plan.paddockReserve.w / 2 + pad &&
+  Math.abs(z - plan.paddockReserve.z) < plan.paddockReserve.d / 2 + pad;
+const heather = plan.heatherPlan(trees);
+assert(heather.length >= 12 && heather.length <= 20, 'Heather drifts: ' + heather.length);
+for (const d of heather)
+  for (const l of d.lumps)
+    for (const [ex, ez] of [[0, 0], [l.r, 0], [-l.r, 0], [0, l.r], [0, -l.r]]) {
+      const x = l.x + ex,
+        z = l.z + ez;
+      assert(plan.onIsland(x, z, 0.2), `${d.id} runs onto the beach`);
+      assert(plan.lawnCore(x, z) < 0.05, `${d.id} on the town lawn`);
+      assert(plan.distanceToStreets(x, z) > 1.5, `${d.id} by a street`);
+      assert(!inPaddock(x, z, 1.0), `${d.id} in the paddock`);
+      assert(!(Math.abs(x - row.x) < 5.5 && Math.abs(z - row.z) < row.spacing + 4), `${d.id} by the terrace`);
+      for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) > 0.3 * t.size, `${d.id} round the trunk of ${t.id}`);
+    }
+for (const [x, z] of plan.thistles) {
+  assert(plan.onIsland(x, z, 1) && plan.lawnCore(x, z) < 0.02 && plan.distanceToStreets(x, z) > 2, `Thistle astray at ${x}, ${z}`);
+  assert(!inPaddock(x, z, 1.0), `Thistle in the paddock at ${x}, ${z}`);
+}
+// Heather keeps its own season in muted colours: a mauve bloom in late summer and autumn only.
+const { heatherLook } = await load('town-build');
+const hsv = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
+    max = Math.max(r, g, b),
+    d = max - Math.min(r, g, b);
+  const h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s: max ? d / max : 0 };
+};
+for (const season of ['spring', 'summer', 'autumn', 'winter']) {
+  const look = heatherLook(season),
+    bloom = hsv(look.bloom);
+  assert(bloom.s <= 0.45 && hsv(look.stem).s <= 0.5, `${season} heather is too loud`);
+  const mauve = bloom.h > 270 && bloom.h < 320;
+  assert.equal(mauve, season === 'summer' || season === 'autumn', `${season} heather ${mauve ? 'blooms' : 'does not bloom'}`);
+}
 // The season shows on the trees: blossom only in spring, autumn tones only in autumn.
 const { glasgowSeason } = await load('glasgow-sun');
 const { treeLook } = await load('town-build');
