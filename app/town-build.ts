@@ -2013,7 +2013,8 @@ export function buildTown(
     buoyRing.position.set(0.5, 0.66, -0.45);
     buoyRing.rotation.y = Math.PI / 2;
     boat.add(buoyRing);
-    for (const s of [-1, 1]) box(boat, s * 0.52, 0.02, 1.5, 0.12, 0.03, 0.7, '#eaf6f2', 'paint', { ry: s * 0.5 }); // bow wave
+    // Bow waves: each strip's forward end hugs the stem and its aft end trails outward, just clear of the hull.
+    for (const s of [-1, 1]) box(boat, s * 0.52, 0.02, 1.5, 0.12, 0.03, 0.7, '#eaf6f2', 'paint', { ry: -s * 0.5 });
     const light = material(palette.lantern, 'glass').clone();
     light.emissive.set(palette.lantern);
     const lanternMesh = new T.Mesh(new T.SphereGeometry(0.1, 12, 8), light);
