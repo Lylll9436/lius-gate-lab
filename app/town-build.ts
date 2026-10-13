@@ -1040,6 +1040,9 @@ export function buildTown(
       forecourt.userData.noShadow = true;
       land.add(forecourt);
     }
+    // The archive's loading path: from the south avenue's pavement edge (x 1.95) to the dock front
+    // (x 5.95), centred on the hoist door (z 9.2), its top 0.02 under the pavement's.
+    slab(land, [[1.95, 8.6], [5.95, 8.6]], [[1.95, 9.8], [5.95, 9.8]], 0.08, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
     // The plaza: an inner island for the gate, a reflecting pool ring with four causeways,
     // an outer paved ring and a darker border band under a lathed kerb. Pieces meet at shared edges.
     const poolInner = POOL.inner,
@@ -1838,79 +1841,52 @@ export function buildTown(
 
   function buildArchive(shell: T.Group, site: plan.Site) {
     const w = site.w,
-      d = site.d,
-      h = 3.3;
-    box(shell, 0, 0.12, 0, w + 0.3, 0.24, d + 0.3, palette.plinth, 'stone');
-    box(shell, 0, 0.24 + h / 2, 0, w, h, d, palette.brick, 'stone');
-    quoins(shell, w, d, 0.24, 3.54, palette.brickLight);
-    for (let i = 0; i < 5; i++) {
-      const x = -w / 2 + 0.6 + (i * (w - 1.2)) / 4;
-      box(shell, x, 0.24 + h / 2, d / 2 + 0.05, 0.28, h, 0.1, palette.brickLight, 'stone');
-      box(shell, x, 0.24 + h / 2, -d / 2 - 0.05, 0.28, h, 0.1, palette.brickLight, 'stone');
-    }
-    for (let i = 0; i < 4; i++) {
-      const x = -w / 2 + 0.6 + ((i + 0.5) * (w - 1.2)) / 4;
-      if (i === 1) continue;
-      windowAt(shell, x, 1.6, d / 2, 0.62, 1.4, { arched: true, frame: '#3f4a4a', bars: 3 });
-    }
+      d = site.d;
+    // Red brick walls (0.45-3.65) on a rusticated, battered plinth (the rear is seen at overview) under a pale cornice.
+    plinth(shell, w, d, palette.plinth, { height: 0.45, blocks: true });
+    box(shell, 0, 2.05, 0, w, 3.2, d, palette.brick, 'stone');
+    box(shell, 0, 3.75, 0, w + 0.3, 0.2, d + 0.3, palette.trim, 'stone');
+    // Blonde piers: fat corners, and two intermediates on the front and rear framing the hoist bay.
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        box(shell, sx * 3.0, 2.05, sz * 2.3, 0.5, 3.2, 0.5, palette.brickLight, 'stone');
+        box(shell, sx * 1.05, 2.05, sz * (d / 2 + 0.05), 0.45, 3.2, 0.2, palette.brickLight, 'stone');
+      }
+    // Arched, metal-framed windows. The rear is seen at overview, so it is a secondary front.
+    const arched = { arched: true, frame: palette.metal, dress: palette.brickLight, mullion: true };
+    for (const x of [-2.01, 2.01]) windowAt(shell, x, 1.75, d / 2, 0.9, 1.3, arched);
     const rear = new T.Group();
     rear.position.z = -d / 2;
     rear.rotation.y = Math.PI;
     shell.add(rear);
-    for (let i = 0; i < 4; i++) windowAt(rear, -w / 2 + 0.6 + ((i + 0.5) * (w - 1.2)) / 4, 1.6, 0, 0.62, 1.4, { arched: true, frame: '#3f4a4a', bars: 3 });
+    for (const x of [-2.01, 0, 2.01]) windowAt(rear, x, 1.75, 0, 0.9, 1.3, arched);
     for (const side of [-1, 1]) {
       const face = new T.Group();
       face.position.x = (side * w) / 2;
       face.rotation.y = (side * Math.PI) / 2;
       shell.add(face);
-      for (let i = 0; i < 3; i++) windowAt(face, -d / 2 + 0.8 + (i * (d - 1.6)) / 2, 1.6, 0, 0.6, 1.3, { arched: true, frame: '#3f4a4a', bars: 3 });
+      for (const z of [-0.95, 0.95]) windowAt(face, z, 1.75, 0, 0.9, 1.3, arched);
     }
-    // The big arched doorway, a canopy and a loading dock.
-    const doorX = -w / 2 + 0.6 + (1.5 * (w - 1.2)) / 4;
-    box(shell, doorX, 0.24 + 1.1, d / 2 + 0.02, 1.3, 2.2, 0.08, '#3a4744', 'metal');
-    for (let i = 0; i < 6; i++) box(shell, doorX, 0.5 + i * 0.36, d / 2 + 0.07, 1.26, 0.03, 0.02, '#596b66', 'metal');
-    const archTop = new T.Mesh(new T.CylinderGeometry(0.65, 0.65, 0.06, 16, 1, false, Math.PI / 2, Math.PI), material('#3a4744', 'metal'));
-    archTop.rotation.x = Math.PI / 2;
-    archTop.position.set(doorX, 0.24 + 2.2, d / 2 + 0.03);
-    shell.add(archTop);
-    const archRim = new T.Mesh(new T.TorusGeometry(0.68, 0.07, 6, 18, Math.PI), material(palette.brickLight, 'stone'));
-    archRim.position.set(doorX, 0.24 + 2.2, d / 2 + 0.03);
-    shell.add(archRim);
-    box(shell, doorX, 3.15, d / 2 + 0.45, 2.2, 0.08, 0.9, palette.metal, 'metal');
-    for (const sx of [-0.9, 0.9]) box(shell, doorX + sx, 2.75, d / 2 + 0.85, 0.05, 0.8, 0.05, palette.metal, 'metal', { rx: -0.5 });
-    box(shell, doorX, 0.4, d / 2 + 0.5, 2.0, 0.32, 1.0, palette.plinth, 'stone');
-    box(shell, doorX + 1.6, 0.35, d / 2 + 0.5, 0.6, 0.22, 0.5, '#b4a58b', 'wood');
-    box(shell, doorX + 1.6, 0.52, d / 2 + 0.5, 0.5, 0.12, 0.4, '#9a8f7c', 'wood');
-    box(shell, 0, 0.24 + h + 0.08, 0, w + 0.3, 0.16, d + 0.3, palette.brickLight, 'stone');
-    // Sawtooth roof: three bays, glazing facing the rear.
-    const bays = 3,
-      bayW = (w + 0.2) / bays;
-    for (let i = 0; i < bays; i++) {
-      const x = -(w + 0.2) / 2 + bayW * (i + 0.5);
-      const shape = new T.Shape();
-      shape.moveTo(-(d + 0.2) / 2, 0);
-      shape.lineTo((d + 0.2) / 2, 0);
-      shape.lineTo((d + 0.2) / 2 - 0.3, 0.95);
-      shape.closePath();
-      const saw = new T.Mesh(new T.ExtrudeGeometry(shape, { depth: bayW, bevelEnabled: false }), material(palette.slate, 'slate'));
-      saw.rotation.y = Math.PI / 2;
-      saw.position.set(x - bayW / 2, 0.24 + h + 0.16, 0);
-      saw.castShadow = saw.receiveShadow = true;
-      saw.userData.roof = true;
-      saw.userData.eaveY = 0.24 + h + 0.16;
-      shell.add(saw);
-      const glazing = new T.Group();
-      glazing.position.set(x, 0.24 + h + 0.16, -(d + 0.2) / 2 + 0.1);
-      glazing.rotation.y = Math.PI;
-      glazing.rotation.x = 0.3;
-      shell.add(glazing);
-      box(glazing, 0, 0.45, 0, bayW - 0.2, 0.86, 0.05, palette.glass, 'glass');
-      for (let k = -2; k <= 2; k++) box(glazing, (k * (bayW - 0.2)) / 5, 0.45, 0.03, 0.04, 0.86, 0.03, '#d9dfd6', 'paint');
-      box(shell, x, 0.24 + h + 0.16 + 0.97, -(d + 0.2) / 2 + 0.3, bayW + 0.04, 0.07, 0.1, palette.slateLight, 'slate');
-    }
-    cylinder(shell, -w / 2 + 0.5, 0.24 + h + 2.2, -d / 2 + 0.5, 0.25, 0.3, 4.2, palette.brick, 'stone', 12);
-    cylinder(shell, -w / 2 + 0.5, 0.24 + h + 4.0, -d / 2 + 0.5, 0.32, 0.3, 0.3, palette.brickLight, 'stone', 12);
-    cylinder(shell, -w / 2 + 0.5, 0.24 + h + 4.3, -d / 2 + 0.5, 0.2, 0.28, 0.25, '#4b4f4a', 'metal', 12);
+    // The centre hoist bay: an arched door at dock height, a grounded dock, the hoist beam and block, crates.
+    door(shell, 0, 0.45, d / 2, 1.3, 2.0, palette.greenDoor, { arched: true, surround: palette.brickLight, steps: false });
+    box(shell, 0, 0.225, d / 2 + 0.6, 2.2, 0.45, 0.9, palette.plinth, 'stone');
+    box(shell, 0, 3.45, d / 2 + 0.45, 0.24, 0.24, 1.0, palette.woodDark, 'wood');
+    box(shell, 0, 3.18, d / 2 + 0.85, 0.2, 0.3, 0.2, palette.metal, 'metal');
+    box(shell, 1.55, 0.3, d / 2 + 0.55, 0.6, 0.6, 0.6, palette.wood, 'wood');
+    box(shell, 1.5, 0.84, d / 2 + 0.5, 0.48, 0.48, 0.48, '#b47a48', 'wood', { ry: 0.35 });
+    // A real sawtooth: three teeth across x with their ridges along z, each glazed on its tall face.
+    const Wr=w+0.3, bw=Wr/3, R=1.35, f=0.15, Dr=d+0.8, rb=0.04, y0=3.85;
+    for(let i=0;i<3;i++){ const x0=-Wr/2+i*bw, s=new T.Shape(); s.moveTo(x0,0); s.lineTo(x0+bw,0); s.lineTo(x0+bw,R); s.lineTo(x0,f); s.closePath();
+      const t=new T.Mesh(new T.ExtrudeGeometry(s,{depth:Dr-2*rb,bevelEnabled:true,bevelThickness:rb,bevelSize:rb,bevelOffset:-rb,bevelSegments:1}),material(palette.slate,'slate'));
+      t.position.set(0,y0,-Dr/2+rb); t.castShadow=t.receiveShadow=true; shell.add(t);
+      t.userData.roof = true; t.userData.eaveY = y0; // a tooth's box drops to the cornice top: the eave bake measures from there
+      box(shell,x0+bw+0.035,y0+(f+R)/2+0.05,0,0.07,R-f-0.25,Dr-0.6,palette.glass,'glass'); // north light faces local +x (world +z, seen at overview)
+      for(const mz of [-1,1]) box(shell,x0+bw+0.08,y0+(f+R)/2+0.05,mz*(Dr-0.6)/6,0.08,R-f-0.25,0.12,palette.metal,'metal');
+      box(shell,x0+bw-0.09,y0+R+0.03,0,0.28,0.16,Dr+0.04,palette.slateLight,'slate'); }
+    // A fat stack rising through the first tooth (roof at 4.41 there), with a blonde band and a metal cap.
+    cylinder(shell, -2.5, 5.9, -1.8, 0.4, 0.48, 4.1, palette.brick, 'stone');
+    cylinder(shell, -2.5, 7.4, -1.8, 0.47, 0.47, 0.26, palette.brickLight, 'stone');
+    cylinder(shell, -2.5, 8.0, -1.8, 0.5, 0.44, 0.2, palette.metal, 'metal');
   }
 
   function buildCottage(g: T.Object3D, c: (typeof plan.cottages)[number], index: number) {
