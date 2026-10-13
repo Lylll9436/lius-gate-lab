@@ -136,6 +136,9 @@ export default function Home() {
     scrollLock.current = lock;
     setActive(chapter);
     setEnding(false);
+    // A chosen chapter needs no settling: without this, coming back from the city would
+    // first turn the camera toward the last chapter read, then back.
+    setSettledShot(chapter);
     // Two frames: the story must be laid out again if explore mode was just left.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
