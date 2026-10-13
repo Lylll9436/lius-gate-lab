@@ -612,20 +612,6 @@ export function buildTown(
     box(r, 0, height * 0.45, 0, length + 0.03, 0.02, 0.02, palette.metal, 'metal');
     return r;
   }
-  function balustrade(g: T.Object3D, x: number, y: number, z: number, length: number, ry = 0, color = palette.trim) {
-    const r = new T.Group();
-    r.position.set(x, y, z);
-    r.rotation.y = ry;
-    g.add(r);
-    const posts = Math.max(3, Math.round(length / 0.24));
-    for (let i = 0; i < posts; i++) {
-      const px = -length / 2 + (length * i) / (posts - 1);
-      cylinder(r, px, 0.2, 0, 0.035, 0.05, 0.36, color, 'stone', 8);
-    }
-    box(r, 0, 0.42, 0, length + 0.1, 0.07, 0.14, color, 'stone');
-    box(r, 0, 0.03, 0, length + 0.1, 0.06, 0.14, color, 'stone');
-    return r;
-  }
   /**
    * Corner quoins from y0 to y1: 0.45-tall blocks alternating long and short by index, tucked into
    * the wall corner so only 0.06 stands proud. `front` caps the block length on the front face;
@@ -1632,129 +1618,108 @@ export function buildTown(
   }
 
   function buildHall(shell: T.Group, site: plan.Site) {
+    // A squat two-bay block (walls 0.5 to 4.3) under a copper roof, and a fat clock tower that
+    // stands 0.6 proud of the front over the arched entrance (tower z 0.4 to 2.9).
     const w = site.w,
       d = site.d,
-      h = 4.2,
-      stone = palette.blonde;
-    box(shell, 0, 0.15, 0, w + 0.3, 0.3, d + 0.3, palette.plinth, 'stone');
-    box(shell, 0, 0.3 + h / 2, 0, w, h, d, stone, 'stone');
-    quoins(shell, w, d, 0.3, 4.5, palette.trim);
-    // Pilasters and arched windows on the front, plain windows elsewhere.
-    for (let i = 0; i < 7; i++) {
-      const x = -w / 2 + 0.55 + (i * (w - 1.1)) / 6;
-      box(shell, x, 0.3 + h / 2, d / 2 + 0.05, 0.3, h, 0.12, palette.trim, 'stone');
+      tw = 2.5,
+      tz = d / 2 + 0.6 - tw / 2;
+    plinth(shell, w, d, palette.plinth, { height: 0.5 });
+    plinth(shell, tw, tw, palette.plinth, { z: tz, height: 0.52, blocks: true });
+    box(shell, 0, 2.4, 0, w, 3.8, d, palette.blonde, 'stone');
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) box(shell, sx * 3.6, 2.4, sz * 2.2, 0.45, 3.8, 0.45, palette.trim, 'stone'); // corner pilasters
+      box(shell, sx * 1.475, 2.4, d / 2, 0.45, 3.8, 0.3, palette.trim, 'stone'); // tower-flank pilasters
     }
-    for (let i = 0; i < 6; i++) {
-      const x = -w / 2 + 0.55 + ((i + 0.5) * (w - 1.1)) / 6;
-      if (i === 2 || i === 3) {
-        windowAt(shell, x, 3.1, d / 2, 0.56, 0.95, { arched: true });
-        continue;
-      }
-      windowAt(shell, x, 1.45, d / 2, 0.58, 1.3, { arched: true });
-      windowAt(shell, x, 3.1, d / 2, 0.56, 0.95, { arched: false });
-    }
-    for (const side of [-1, 1]) {
+    box(shell, 0, 2.9, 0, w + 0.3, 0.2, d + 0.3, palette.trim, 'stone'); // string course
+    box(shell, 0, 4.4, 0, w + 0.3, 0.2, d + 0.3, palette.trim, 'stone'); // cornice
+    // Eave 0.3, not 0.35: a longer front slab's upper corner pokes 0.03 through the tower face
+    // (z 2.9) as a thin copper line under the tower window.
+    slabRoof(shell, 0, 4.5, 0, w, d + 0.3, 2.2, palette.copper, { eave: 0.3, verge: 0.3, thick: 0.22, ridge: palette.copperLight, gable: palette.blonde });
+    // Two bays a side: arched windows below the string course, plain ones above. The rear has masses only.
+    for (const sx of [-1, 1]) {
+      windowAt(shell, sx * 2.54, 1.5, d / 2, 0.85, 1.15, { arched: true });
+      windowAt(shell, sx * 2.54, 3.55, d / 2, 0.85, 0.95, { sill: false, lintel: false });
       const face = new T.Group();
-      face.position.x = (side * w) / 2;
-      face.rotation.y = (side * Math.PI) / 2;
+      face.position.x = (sx * w) / 2;
+      face.rotation.y = (sx * Math.PI) / 2;
       shell.add(face);
-      for (let i = 0; i < 4; i++) {
-        const x = -d / 2 + 0.6 + (i * (d - 1.2)) / 3;
-        windowAt(face, x, 1.45, 0, 0.55, 1.25, { arched: true });
-        windowAt(face, x, 3.1, 0, 0.52, 0.9);
+      for (const z of [-0.95, 0.95]) {
+        windowAt(face, z, 1.5, 0, 0.85, 1.15, { arched: true });
+        windowAt(face, z, 3.55, 0, 0.85, 0.95, { sill: false, lintel: false });
       }
     }
-    const rear = new T.Group();
-    rear.position.z = -d / 2;
-    rear.rotation.y = Math.PI;
-    shell.add(rear);
-    for (let i = 0; i < 6; i++) {
-      const x = -w / 2 + 0.7 + (i * (w - 1.4)) / 5;
-      windowAt(rear, x, 1.45, 0, 0.55, 1.25);
-      windowAt(rear, x, 3.1, 0, 0.52, 0.9);
+    // The tower: buttresses with pyramid caps either side of the arched door, a mullioned window above.
+    box(shell, 0, 4.675, tz, tw, 8.35, tw, palette.blonde, 'stone', { segments: 2 });
+    for (const sx of [-1, 1]) {
+      box(shell, sx * 1.2, 3.05, tz + 1.2, 0.5, 5.1, 0.5, palette.trim, 'stone');
+      cone(shell, sx * 1.2, 5.8, tz + 1.2, 0.4, 0.4, palette.trim, 'stone', 4);
     }
-    // Entrance: double door, surround, balcony and steps down to the forecourt.
-    door(shell, 0, 0.3, d / 2 + 0.02, 1.2, 2.1, palette.greenDoor, { fanlight: true, steps: 3, width: 2.4 });
-    box(shell, 0, 2.85, d / 2 + 0.3, 2.1, 0.12, 0.7, palette.trim, 'stone');
-    balustrade(shell, 0, 2.91, d / 2 + 0.6, 2.0);
-    for (const sx of [-0.9, 0.9]) box(shell, sx, 2.6, d / 2 + 0.3, 0.14, 0.4, 0.5, palette.trim, 'stone');
-    for (const sx of [-2.2, 2.2]) {
-      cylinder(shell, sx, 0.65, d / 2 + 0.9, 0.3, 0.26, 0.36, palette.plinth, 'stone', 10);
-      topiary(shell, sx, 1.1, d / 2 + 0.9, 0.3, 2);
-    }
-    box(shell, 0, 0.3 + h * 0.52, 0, w + 0.12, 0.09, d + 0.12, palette.trim, 'stone');
-    box(shell, 0, 0.3 + h + 0.08, 0, w + 0.36, 0.2, d + 0.36, palette.trim, 'stone');
-    balustrade(shell, 0, 0.3 + h + 0.18, d / 2 + 0.1, w - 2.6);
-    pitchedRoof(shell, 0, 0.3 + h + 0.18, 0, w + 0.2, d + 0.2, 1.35);
-    gabledRoofEnds(shell, 0, 0.3 + h + 0.18, 0, w + 0.2, d + 0.2, 1.35, stone);
-    // The tower: clock faces, belfry, spire, weather vane.
-    const tx = 0,
-      tz = 0.3,
-      tw = 1.8,
-      th = 8.0;
-    box(shell, tx, 0.3 + th / 2, tz, tw, th, tw, stone, 'stone', { segments: 2 });
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(shell, tx + (sx * tw) / 2, 0.3 + th / 2, tz + (sz * tw) / 2, 0.24, th, 0.24, palette.trim, 'stone');
-    for (const y of [4.6, 6.1]) box(shell, tx, y, tz, tw + 0.2, 0.1, tw + 0.2, palette.trim, 'stone');
+    door(shell, 0, 0.52, tz + tw / 2, 1.3, 2.2, palette.greenDoor, { arched: true, landing: 0.25, width: 2.0 });
+    windowAt(shell, 0, 4.65, tz + tw / 2, 0.8, 1.2, { arched: true, mullion: true });
+    box(shell, 0, 6.1, tz, tw + 0.3, 0.2, tw + 0.3, palette.trim, 'stone');
+    // Four clocks at 70% of the face: a metal rim, a cream dial that glows after dusk like the
+    // windows, four markers, a fixed gold hub and hands that keep Glasgow time.
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       const face = new T.Group();
-      face.position.set(tx, 0, tz);
+      face.position.set(0, 0, tz);
       face.rotation.y = side;
       shell.add(face);
-      windowAt(face, 0, 5.3, tw / 2, 0.42, 0.9, { arched: true, bars: 2 });
-      // The belfry opening.
-      box(face, 0, 7.05, tw / 2 + 0.02, 0.5, 1.0, 0.06, '#3e4a48', 'metal');
-      for (let i = 0; i < 4; i++) box(face, 0, 6.65 + i * 0.25, tw / 2 + 0.06, 0.54, 0.04, 0.06, palette.trim, 'stone');
-      // The clock: a cream dial behind glass (lit after dusk like the windows), a dark bezel
-      // and hands that keep Glasgow time.
-      const dial = new T.Mesh(new T.CylinderGeometry(0.46, 0.46, 0.06, 24), material('#f4ecd8', 'glass'));
+      const rim = new T.Mesh(new T.CylinderGeometry(0.95, 0.95, 0.08, 24), material(palette.metal, 'metal'));
+      rim.rotation.x = Math.PI / 2;
+      rim.position.set(0, 7.75, tw / 2 + 0.04);
+      rim.castShadow = rim.receiveShadow = true;
+      face.add(rim);
+      const dial = new T.Mesh(new T.CylinderGeometry(0.85, 0.85, 0.06, 24), material(palette.white, 'glass'));
       dial.rotation.x = Math.PI / 2;
-      dial.position.set(0, 7.95, tw / 2 + 0.04);
+      dial.position.set(0, 7.75, tw / 2 + 0.07);
       dial.userData.flatGlass = true; // an even cream face, not a window's gradient
       face.add(dial);
-      const bezel = new T.Mesh(new T.TorusGeometry(0.47, 0.035, 6, 24), material(palette.ink, 'metal'));
-      bezel.position.set(0, 7.95, tw / 2 + 0.07);
-      face.add(bezel);
-      for (let i = 0; i < 12; i++) {
-        const a = (i * Math.PI) / 6;
-        box(face, Math.sin(a) * 0.37, 7.95 + Math.cos(a) * 0.37, tw / 2 + 0.075, 0.03, i % 3 ? 0.06 : 0.1, 0.01, palette.ink, 'metal', { rz: -a });
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        box(face, Math.sin(a) * 0.66, 7.75 + Math.cos(a) * 0.66, tw / 2 + 0.105, 0.1, 0.2, 0.03, palette.metal, 'metal', { rz: -a });
       }
+      const hub = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 0.05, 12), material(palette.gold, 'metal'));
+      hub.rotation.x = Math.PI / 2;
+      hub.position.set(0, 7.75, tw / 2 + 0.16); // static, so it batches with the tower
+      face.add(hub);
       const hands = new T.Group();
-      hands.position.set(0, 7.95, tw / 2 + 0.09);
+      hands.position.set(0, 7.75, tw / 2 + 0.14);
       hands.userData.keepSeparate = true;
       face.add(hands);
       const hour = new T.Group(),
         minute = new T.Group();
       hands.add(hour, minute);
-      box(hour, 0, 0.13, 0, 0.05, 0.3, 0.015, palette.ink, 'metal');
-      box(minute, 0, 0.18, 0, 0.035, 0.4, 0.012, palette.ink, 'metal');
-      sphere(hands, 0, 0, 0, 0.035, palette.bronze, 'metal', 8);
+      box(hour, 0, 0.2, 0, 0.09, 0.45, 0.02, palette.ink, 'metal');
+      box(minute, 0, 0.3, 0, 0.07, 0.65, 0.02, palette.ink, 'metal');
       clocks.push({ hour, minute });
     }
-    box(shell, tx, 0.3 + th + 0.1, tz, tw + 0.36, 0.2, tw + 0.36, palette.trim, 'stone');
-    balustrade(shell, tx, 0.3 + th + 0.2, tz + tw / 2 + 0.12, tw + 0.2);
-    balustrade(shell, tx, 0.3 + th + 0.2, tz - tw / 2 - 0.12, tw + 0.2);
-    balustrade(shell, tx + tw / 2 + 0.12, 0.3 + th + 0.2, tz, tw + 0.2, Math.PI / 2);
-    balustrade(shell, tx - tw / 2 - 0.12, 0.3 + th + 0.2, tz, tw + 0.2, Math.PI / 2);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      cylinder(shell, tx + sx * (tw / 2 + 0.02), 0.3 + th + 0.55, tz + sz * (tw / 2 + 0.02), 0.08, 0.1, 0.5, stone, 'stone', 6);
-      cone(shell, tx + sx * (tw / 2 + 0.02), 0.3 + th + 1.0, tz + sz * (tw / 2 + 0.02), 0.14, 0.45, palette.slate, 'slate', 6, 0);
-    }
-    cone(shell, tx, 0.3 + th + 0.2 + 1.3, tz, 1.15, 2.6, palette.slate, 'slate', 4);
-    cylinder(shell, tx, 0.3 + th + 3.6, tz, 0.03, 0.05, 0.6, palette.bronze, 'metal', 6);
-    sphere(shell, tx, 0.3 + th + 3.9, tz, 0.09, palette.bronze, 'metal', 8);
+    // The crown: a cornice, four pinnacles, a copper spire (9.05 to 12.05), a finial and a flag.
+    box(shell, 0, 8.95, tz, tw + 0.36, 0.2, tw + 0.36, palette.trim, 'stone');
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        cylinder(shell, sx * 1.25, 9.35, tz + sz * 1.25, 0.16, 0.18, 0.6, palette.trim, 'stone');
+        cone(shell, sx * 1.25, 9.9, tz + sz * 1.25, 0.26, 0.5, palette.copper, 'slate', 4);
+      }
+    cone(shell, 0, 10.55, tz, 1.41, 3.0, palette.copper, 'slate', 4);
+    cylinder(shell, 0, 12.55, tz, 0.035, 0.05, 1.2, palette.bronze, 'metal'); // starts 0.1 inside the apex
+    sphere(shell, 0, 13.2, tz, 0.1, palette.gold, 'metal');
     const vane = new T.Group();
-    vane.position.set(tx, 0.3 + th + 4.05, tz);
+    vane.position.set(0, 12.85, tz);
     vane.userData.keepSeparate = true;
     shell.add(vane);
-    box(vane, 0, 0, 0, 0.5, 0.02, 0.02, palette.bronze, 'metal');
-    cone(vane, 0.28, 0, 0, 0.05, 0.12, palette.bronze, 'metal', 4, 0).rotation.z = -Math.PI / 2;
-    box(vane, -0.2, 0, 0, 0.12, 0.09, 0.015, palette.bronze, 'metal');
+    box(vane, 0.42, 0, 0, 0.75, 0.5, 0.04, palette.blueDoor, 'fabric');
     animated.push({
       object: vane,
       update(time) {
         vane.rotation.y = Math.sin(time * 0.3) * 0.8 + Math.sin(time * 0.07) * 1.5;
       },
     });
+    // Forecourt planters, grounded, each with a clipped topiary ball.
+    for (const sx of [-1, 1]) {
+      box(shell, sx * 1.85, 0.25, d / 2 + 1.15, 0.7, 0.5, 0.7, palette.plinth, 'stone', { taper: 0.04 });
+      topiary(shell, sx * 1.85, 0.85, d / 2 + 1.15, 0.38, 2);
+    }
   }
 
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
