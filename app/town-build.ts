@@ -2117,7 +2117,7 @@ export function buildTown(
       root,
       loop: plan.walkLoop(inner ? 1.62 : -1.62),
       distance: i * 13.7 + 4,
-      speed: (inner ? 0.75 : -0.75) * (0.85 + hash(i + 3) * 0.3),
+      speed: (inner ? 0.85 : -0.85) * (0.85 + hash(i + 3) * 0.3),
     });
   }
   const tram = buildTram();
