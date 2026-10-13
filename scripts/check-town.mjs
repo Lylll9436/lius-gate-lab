@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import * as T from 'three';
 
-// Build the town in Node and check what a visitor relies on: seven places, finite geometry, a sane triangle budget, hover targets, water and night.
+// Build the town in Node and check what a visitor relies on: seven places, finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work', 'town-check');
 await fs.mkdir(output, { recursive: true });
@@ -254,6 +254,20 @@ city.traverse((o) => {
   }
 });
 assert(windows > 5);
+// The lighthouse beam swings over the sea at night, never across the island, and is not drawn by day.
+const beam = model.animated.find((e) => e.object.children[0]?.material?.uniforms?.strength);
+assert(beam, 'The lighthouse has a beam.');
+assert.equal(beam.object.children[0].material.side, T.FrontSide, 'The beam is one soft layer, not two.');
+const [rockX, rockZ] = plan.lighthouseRock;
+for (let i = 0; i < 240; i++) {
+  beam.update(i * 0.29, 1);
+  assert(beam.object.visible && beam.object.children[0].material.uniforms.strength.value > 0, 'The beam shines at night.');
+  const a = beam.object.rotation.y;
+  for (let d = 1; d <= 18; d++)
+    assert(!plan.onIsland(rockX + Math.cos(a) * d, rockZ - Math.sin(a) * d, -0.5), `The lighthouse beam crosses the island at t=${(i * 0.29).toFixed(2)}`);
+}
+beam.update(3, 0);
+assert(!beam.object.visible, 'No beam by day.');
 const scene = new T.Scene();
 scene.add(city);
 const lighting = createStreetLighting(scene, lamps.slice(0, 6), { shadows: 1 });
@@ -266,5 +280,5 @@ assert(lighting.lights.every((l) => l.intensity === 0));
 assert(!scene.children.includes(lighting.lights[0]), 'Spotlights leave the scene by day.');
 lighting.dispose();
 console.log(
-  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea and lit windows at night.`,
+  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it and lit windows at night.`,
 );

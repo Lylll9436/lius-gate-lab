@@ -1486,12 +1486,13 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     const rock = new T.Group();
     rock.position.set(x, 0, z);
     g.add(rock);
-    // Four rounded boulders with a gentle ramp (0.85 to 1.02, paler on top); batch()'s contact bake supplies the wet, darker foot.
-    ([[0, -0.3, 0, 1.6, 1.25, 0.5, 1.1, '#9aa39b'], [1.35, -0.3, 0.7, 1.0, 1.2, 0.55, 1.0, '#8f9a92'], [-1.25, -0.35, -0.45, 1.1, 1.1, 0.5, 1.2, '#a3aaa0'], [0.4, -0.4, -1.4, 0.9, 1.3, 0.5, 1.0, '#8f9a92']] as const).forEach(([bx, by, bz, r, sx, sy, sz, c], i) => {
+    // Four dark, rounded boulders that stand clear of the water, with a gentle ramp (0.85 to 1.02,
+    // paler on top); batch()'s contact bake supplies the wet, darker foot.
+    ([[0, -0.3, 0, 1.6, 1.25, 0.8, 1.1, '#6b7670'], [1.35, -0.3, 0.7, 1.0, 1.2, 0.8, 1.0, '#646f69'], [-1.25, -0.35, -0.45, 1.1, 1.1, 0.8, 1.2, '#717b75'], [0.4, -0.4, -1.4, 0.9, 1.3, 0.8, 1.0, '#646f69']] as const).forEach(([bx, by, bz, r, sx, sy, sz, c], i) => {
       const geo = new T.IcosahedronGeometry(r, 1),
         p = geo.getAttribute('position'),
         col = new Float32Array(p.count * 3);
-      for (let k = 0; k < p.count; k++) col.fill(0.85 + 0.17 * T.MathUtils.smoothstep(by + p.getY(k) * sy, -0.1, 0.45), k * 3, k * 3 + 3);
+      for (let k = 0; k < p.count; k++) col.fill(0.85 + 0.17 * T.MathUtils.smoothstep(by + p.getY(k) * sy, -0.1, 0.6), k * 3, k * 3 + 3);
       geo.setAttribute('color', new T.BufferAttribute(col, 3));
       const s = new T.Mesh(geo, material(c, 'stone'));
       s.position.set(bx, by, bz);
@@ -1536,27 +1537,104 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     dome.castShadow = dome.receiveShadow = true;
     rock.add(dome);
     sphere(rock, 0, 5.52, 0, 0.12, palette.gold, 'metal', 18);
-    // The beam: a translucent cone that sweeps the harbour at night.
-    const beamMaterial = new T.MeshBasicMaterial({
-      color: palette.lantern,
+    // The beam at night: a cone of light that only adds light. It is brightest by the lamp and
+    // gone by its open end, and fades towards its edges (only the side facing the camera is
+    // drawn, so the cone shows as one soft layer). It swings slowly either side of the seaward
+    // bearing and never turns round over the town.
+    const beamLength = 18,
+      beamRadius = 3.6;
+    const beamMaterial = new T.ShaderMaterial({
+      uniforms: T.UniformsUtils.merge([
+        T.UniformsLib.fog,
+        {
+          // Paler than the lantern glass: over the blue sea a warm beige turns pink, a near-white reads as light.
+          color: { value: new T.Color('#fff0d4') },
+          strength: { value: 0 },
+          beamLength: { value: beamLength },
+          slope: { value: beamRadius / beamLength },
+        },
+      ]),
+      vertexShader: `
+        #include <fog_pars_vertex>
+        uniform float beamLength;
+        varying vec3 vLocal;
+        varying vec3 vAxisX;
+        varying vec3 vAxisY;
+        varying vec3 vAxisZ;
+        varying vec3 vViewPosition;
+        void main(){
+          vLocal=vec3(position.x/beamLength,position.yz);
+          vAxisX=normalMatrix*vec3(1.,0.,0.);
+          vAxisY=normalMatrix*vec3(0.,1.,0.);
+          vAxisZ=normalMatrix*vec3(0.,0.,1.);
+          vec4 mvPosition=modelViewMatrix*vec4(position,1.);
+          vViewPosition=-mvPosition.xyz;
+          gl_Position=projectionMatrix*mvPosition;
+          #include <fog_vertex>
+        }`,
+      fragmentShader: `
+        #include <fog_pars_fragment>
+        uniform vec3 color;
+        uniform float strength;
+        uniform float slope;
+        varying vec3 vLocal;
+        varying vec3 vAxisX;
+        varying vec3 vAxisY;
+        varying vec3 vAxisZ;
+        varying vec3 vViewPosition;
+        void main(){
+          // The true cone normal at this pixel (not the faceted mesh's), so the falloff has no streaks.
+          vec2 around=normalize(vLocal.yz+1e-6);
+          vec3 n=normalize(-slope*vAxisX+around.x*vAxisY+around.y*vAxisZ);
+          vec3 toEye=isOrthographic?vec3(0.,0.,1.):normalize(vViewPosition);
+          // Full down the middle of the cone, nothing well before its silhouette: with u the
+          // distance from the middle as a share of the width, facing^4 = (1-u^2)^2.
+          float across=pow(max(dot(n,toEye),0.),4.);
+          // From the lantern glass outwards, falling to nothing at the open end.
+          float along=clamp(vLocal.x,0.,1.);
+          along=smoothstep(.02,.07,along)*pow(1.-along,2.2);
+          float a=strength*across*along;
+          #ifdef USE_FOG
+            #ifdef FOG_EXP2
+              a*=exp(-fogDensity*fogDensity*vFogDepth*vFogDepth);
+            #else
+              a*=1.-smoothstep(fogNear,fogFar,vFogDepth);
+            #endif
+          #endif
+          gl_FragColor=vec4(color,a);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      fog: true,
       transparent: true,
-      opacity: 0,
       depthWrite: false,
-      side: T.DoubleSide,
+      side: T.FrontSide,
+      // Additive light; the target's alpha (the composite divides by it) stays as it was.
+      blending: T.CustomBlending,
+      blendSrc: T.SrcAlphaFactor,
+      blendDst: T.OneFactor,
+      blendSrcAlpha: T.ZeroFactor,
+      blendDstAlpha: T.OneFactor,
     });
-    const beam = new T.Mesh(new T.ConeGeometry(2.6, 16, 14, 1, true), beamMaterial);
-    beam.rotation.z = Math.PI / 2;
-    beam.position.x = 8;
+    // The apex sits at the lamp and the cone opens along +x.
+    const beamGeometry = new T.ConeGeometry(beamRadius, beamLength, 32, 1, true).rotateZ(Math.PI / 2).translate(beamLength / 2, 0, 0);
+    const beam = new T.Mesh(beamGeometry, beamMaterial);
+    beam.renderOrder = 4; // over the sea (2) and the shore foam (3), under the rain (5)
     const pivot = new T.Group();
     pivot.position.set(x, 4.4, z);
     pivot.add(beam);
     g.add(pivot);
     pivot.userData.keepSeparate = true;
+    // Seaward: straight out from the nearest point of the coast. rotation.y = a turns +x to (cos a, -sin a).
+    const shore = plan.islandOutline.reduce((best, p) => (Math.hypot(p[0] - x, p[1] - z) < Math.hypot(best[0] - x, best[1] - z) ? p : best));
+    const seaward = Math.atan2(shore[1] - z, x - shore[0]),
+      swing = T.MathUtils.degToRad(70);
     animated.push({
       object: pivot,
       update(time, night) {
-        pivot.rotation.y = time * 0.5;
-        beamMaterial.opacity = night * 0.14;
+        pivot.visible = night > 0.01;
+        pivot.rotation.y = seaward + swing * Math.sin(time * 0.4);
+        beamMaterial.uniforms.strength.value = night * 0.3;
       },
     });
   }
