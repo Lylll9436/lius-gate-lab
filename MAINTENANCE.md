@@ -53,6 +53,7 @@ pnpm content remove events example-event
 - 造型与颜色：建筑零件（窗、门、屋顶、基座、隅石、烟囱）、种植零件（花坛、树篱、造型灌木）和配色 `palette` 都在 `app/town-build.ts`；材质的粗糙度在 `app/city-materials.ts` 的 `finish`。接触阴影与檐下阴影在合批时烘焙进顶点（`batch()` 的 bake），不要再加屏幕空间 AO，它会在树冠和细杆周围产生重影。地面的深色垫块、树影圆斑与草坪格纹来自 `buildGroundMasks` 生成的一张地面贴图，随规划数据自动更新。
 - 整体饱和度：`app/city-scene.ts` 里的 `SATURATION`（当前 0.72），在最终合成里统一调整，改一个数即可；1 为调色板原色。三位成员的住宅是一排并列的联排（`app/town-plan.ts` 的 `terraceRow`），间距由 `spacing` 控制。
 - `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移、真实日照（`setSky`）、雨、悬停射线与标签、单栋建筑近看、设备分级与帧率调节。`createCity` 的 API 由 `app/page.tsx` 调用。
+- 加载不卡页面：`app/page.tsx` 在模块执行时就开始下载 city-scene（仍是动态 `import()`，不进首包）；`createCity` 是异步的，用 `buildTownInPhases` 分阶段建城，每个阶段（以及 PMREM 环境光之前）都把主线程交还浏览器。新增较重的建模或合批步骤时，在 `town-build.ts` 的装配部分加一个 `yield`，让单个阶段保持在几十毫秒内；`buildTown` 一次跑完全部阶段，供 Node 检查使用。
 
 ## 交付前检查
 

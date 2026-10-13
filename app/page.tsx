@@ -29,6 +29,16 @@ const stops = buildings.map((b) => b.id);
 const bearings = chapterBearings;
 const WIDE = '(min-width: 961px)';
 /**
+ * The city's code (three.js and the town) starts downloading as soon as this module runs,
+ * alongside React's first render rather than after it. Still a dynamic import, so it stays
+ * out of the first download. (No window: a server render has no city to build.)
+ */
+const cityScene =
+  typeof window === 'undefined' ? null : import('./city-scene');
+// A failed download is reported where the city is built; this only keeps it from being
+// logged as unhandled before then.
+cityScene?.catch(() => {});
+/**
  * Reading mode: how long a chapter must stay under the reading line before the camera
  * follows it, so a quick scroll past several chapters turns the camera once, not each time.
  */
@@ -325,20 +335,32 @@ export default function Home() {
     };
   }, [scrollToContent]);
 
-  // The city loads once, lazily, and stays mounted across both modes.
+  // The city loads once and stays mounted across both modes. Its code is already on the way
+  // (see cityScene); the town is built a phase at a time, so the page stays responsive.
   useEffect(() => {
+    if (!cityScene) return;
     let disposed = false;
-    import('./city-scene')
-      .then(({ createCity }) => {
-        if (disposed || !mount.current) return;
-        api.current = createCity(
-          mount.current,
-          (id) =>
-            navigateRef.current(viewRef.current.mode, contentForBuilding(id)),
-          () => navigateRef.current(viewRef.current.mode, 'corner-park'),
-          { onHover: (id) => setHovered(id) },
-        );
-        api.current.setDrift(true);
+    cityScene
+      .then(({ createCity }) =>
+        disposed || !mount.current
+          ? null
+          : createCity(
+              mount.current,
+              (id) =>
+                navigateRef.current(
+                  viewRef.current.mode,
+                  contentForBuilding(id),
+                ),
+              () => navigateRef.current(viewRef.current.mode, 'corner-park'),
+              { onHover: (id) => setHovered(id) },
+            ),
+      )
+      .then((city) => {
+        if (!city) return;
+        // Left while the town was going up: nothing will show it.
+        if (disposed) return city.dispose();
+        api.current = city;
+        city.setDrift(true);
         setReady(true);
         setPaused(
           window.matchMedia('(prefers-reduced-motion: reduce)').matches,

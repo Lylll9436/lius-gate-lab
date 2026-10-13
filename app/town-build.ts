@@ -322,9 +322,24 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   return texture;
 }
 
-export function buildTown(
-  options: { library?: ReturnType<typeof createCityMaterials> } = {},
-) {
+type TownOptions = { library?: ReturnType<typeof createCityMaterials> };
+export type Town = ReturnType<typeof buildTown>;
+
+/** The whole town at once (the checks, and anything that cannot wait). */
+export function buildTown(options: TownOptions = {}) {
+  const phases = buildTownInPhases(options);
+  for (;;) {
+    const step = phases.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * The town in phases: it stops after each one (yielding the phase's name), so the page can
+ * hand the main thread back to the browser between them instead of freezing for the whole
+ * build. Run to the end, it returns the same town as buildTown.
+ */
+export function* buildTownInPhases(options: TownOptions = {}) {
   const library = options.library || createCityMaterials();
   const material = library.material;
   const city = new T.Group(),
@@ -2050,13 +2065,16 @@ export function buildTown(
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
   buildTerrain();
+  yield 'terrain';
   buildStreets();
+  yield 'streets';
   const lampSpecs = plan.lampPlan();
   for (const spec of lampSpecs) lamp(land, spec.x, spec.z);
   const trees = plan.plantingPlan();
   // Ground shade, shallows and the town lawn, shared by every ground material (and later the sea).
   const groundMasks = buildGroundMasks(trees, lampSpecs);
   library.bakeUniforms.groundMasks.value = groundMasks;
+  yield 'ground masks';
   const parkGroup = new T.Group();
   parkGroup.name = 'corner-park';
   parkGroup.userData.parkSelection = true;
@@ -2065,6 +2083,7 @@ export function buildTown(
     const inPark = Math.abs(spec.x - plan.park.x) < plan.park.w / 2 + 0.2 && Math.abs(spec.z - plan.park.z) < plan.park.d / 2 + 0.2;
     tree(inPark ? parkGroup : land, spec, i);
   });
+  yield 'trees';
   // The corner park, a raised plot: a bevelled turf slab (top 0.10) inside stone edging that opens
   // on the ring side, a gravel strip along that side with spurs to the bandstand and to the ring's
   // inner pavement (z 13.05), then the bandstand, beds and board on the turf, benches and bin on the strip.
@@ -2109,6 +2128,7 @@ export function buildTown(
   pierAndHarbour(land);
   lighthouse(land);
   hotAirBalloon(city);
+  yield 'park, harbour and landmarks';
 
   const models = new Map<BuildingId, Model>();
   for (const b of buildings) {
@@ -2146,6 +2166,7 @@ export function buildTown(
   city.add(tram);
   const boat = buildBoat();
   city.add(boat);
+  yield 'buildings and vehicles';
 
   /* ---------------------------------------------------------------- */
   /* Static batching by surface family                                 */
@@ -2305,9 +2326,14 @@ export function buildTown(
   }
   city.updateMatrixWorld(true);
   batch(land);
+  yield 'batch land';
   batch(parkGroup);
+  yield 'batch park';
   // Buildings share the library's batch materials, so one night toggle lights every window.
-  for (const m of models.values()) batch(m.shell);
+  for (const [id, m] of models) {
+    batch(m.shell);
+    yield `batch ${id}`;
+  }
   for (const walker of walkers)
     for (const part of walker.root.children) {
       const joints = part.children.filter((o) => o instanceof T.Group);

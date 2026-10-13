@@ -425,29 +425,43 @@ body:has(.mode-explore),
   height: 100%;
   touch-action: pan-y;
 }
+/* While the town is built: a pill at the bottom centre, in the row of the sky and camera bars
+   (and as tall as they are) just under the hero's hint, where the hero text cannot hide it. */
 .stage-loading {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: inline-flex;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  min-height: 46px;
+  margin: 0 auto;
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
+  padding: 6px 16px;
   border-radius: 999px;
   background: var(--panel);
   border: 1px solid var(--line);
   backdrop-filter: blur(var(--blur));
   -webkit-backdrop-filter: blur(var(--blur));
   font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
   color: var(--ink-2);
-  white-space: nowrap;
+}
+/* City mode has no hero over the town, and its own bar holds the bottom centre. */
+.is-explore .stage-loading {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
 }
 .loading-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
+  flex: none;
   animation: pulse 1.4s ease-in-out infinite;
 }
 @keyframes pulse {
@@ -1758,6 +1772,9 @@ body:has(.mode-explore),
     left: 12px;
     bottom: 12px;
   }
+  .stage-loading {
+    bottom: 12px;
+  }
   .hud-explore {
     bottom: 12px;
   }
@@ -1818,6 +1835,12 @@ body:has(.mode-explore),
     grid-template-columns: 1fr;
     gap: 20px;
     padding: 32px 16px 40px;
+  }
+}
+/* Too narrow for the pill between the sky and camera bars: it sits just above them. */
+@media (max-width: 780px) {
+  .stage-loading {
+    bottom: calc(12px + 46px + 8px);
   }
 }
 @media (max-width: 520px) {

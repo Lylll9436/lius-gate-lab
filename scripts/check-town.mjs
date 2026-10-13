@@ -148,6 +148,35 @@ city.traverse((o) => {
 });
 assert(meshes < 420, `Static batching regression: ${meshes} meshes`);
 assert(triangles < 900000, `Triangle budget exceeded: ${Math.round(triangles)}`);
+// The page builds the same town a phase at a time, handing the main thread back in between.
+const { buildTownInPhases } = await load('town-build');
+const phaseNames = [];
+let longestPhase = 0,
+  phased;
+for (const phases = buildTownInPhases(); ; ) {
+  const begin = performance.now(),
+    step = phases.next();
+  longestPhase = Math.max(longestPhase, performance.now() - begin);
+  if (step.done) {
+    phased = step.value;
+    break;
+  }
+  phaseNames.push(step.value);
+}
+assert(phaseNames.length >= 10, 'The town is built in phases: ' + phaseNames.join(', '));
+assert.equal(new Set(phaseNames).size, phaseNames.length, 'Every phase has its own name.');
+let phasedMeshes = 0,
+  phasedTriangles = 0;
+phased.city.traverse((o) => {
+  if (!o.isMesh) return;
+  phasedMeshes++;
+  phasedTriangles += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
+});
+assert.deepEqual(
+  [phasedMeshes, phasedTriangles, phased.models.size, phased.walkers.length],
+  [meshes, triangles, models.size, walkers.length],
+  'Built in phases, the town is the same town.',
+);
 for (const [id, m] of models) {
   assert.equal(m.root.userData.buildingId, id);
   const bounds = new T.Box3().setFromObject(m.root);
@@ -237,5 +266,5 @@ assert(lighting.lights.every((l) => l.intensity === 0));
 assert(!scene.children.includes(lighting.lights[0]), 'Spotlights leave the scene by day.');
 lighting.dispose();
 console.log(
-  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms, one shell per building with a fitted close-up, clickable buildings, open sea and lit windows at night.`,
+  `Town checks passed: 7 sites on the island, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea and lit windows at night.`,
 );

@@ -1,7 +1,12 @@
 import * as T from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildTown, type Model } from './town-build';
+import {
+  buildTown,
+  buildTownInPhases,
+  type Model,
+  type Town,
+} from './town-build';
 import * as plan from './town-plan';
 import { createCityInk } from './city-ink';
 import { createIslandWater } from './city-water';
@@ -82,17 +87,45 @@ const shortestAngle = (from: number, to: number) => {
 const YAW_RATE = 2.5,
   YAW_SPEED = Math.PI / 2;
 
-/** Build the town model only: used by the checks and by createCity. */
+/** Build the town model only, all at once: used by the checks. */
 export function buildCityModel() {
   return buildTown();
 }
 
-export function createCity(
+/**
+ * A fresh task: everything queued meanwhile (a scroll, a click, a frame of the page) runs
+ * first. A posted message, not a timer, so a background tab does not slow the build to a
+ * phase a second.
+ */
+function nextTask() {
+  return new Promise<void>((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+}
+
+/**
+ * The town and its renderer. The work is split into tasks (each phase of the town, then the
+ * renderer, then the studio light and the rest), so the page keeps scrolling and answering
+ * while the town goes up instead of freezing for the whole build.
+ */
+export async function createCity(
   container: HTMLDivElement,
   onSelect: (id: BuildingId) => void,
   onPark: () => void = () => {},
   options: CityOptions = {},
-): CityAPI {
+): Promise<CityAPI> {
+  const phases = buildTownInPhases();
+  let phase = phases.next();
+  while (!phase.done) {
+    await nextTask();
+    phase = phases.next();
+  }
+  const model: Town = phase.value;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Two quality tiers up front, then a frame-time governor that lowers resolution if needed.
   const cores = navigator.hardwareConcurrency || 4,
@@ -135,8 +168,7 @@ export function createCity(
   const scene = new T.Scene(),
     // A negative near plane: on tall (phone) frames the bottom edge of an orthographic view
     // starts below sea level, and a positive near plane would cut the sea off there.
-    camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180),
-    model = buildTown();
+    camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180);
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
   const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
   // The palette is modelled at full Clash saturation; the grade mutes it to a calmer,
@@ -144,6 +176,7 @@ export function createCity(
   const SATURATION = 0.72;
   ink.setSaturation(SATURATION);
   scene.add(city);
+  await nextTask();
   // Studio light: a pre-filtered room environment gives every surface soft fill and
   // a gentle highlight on rounded edges, the way a C4D/Octane clay render looks.
   const pmrem = new T.PMREMGenerator(renderer);
