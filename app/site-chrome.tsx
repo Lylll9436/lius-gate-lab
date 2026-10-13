@@ -44,8 +44,8 @@ export const chapterMeta: ChapterMeta[] = [
   },
   {
     id: 'lius-gate',
-    label: { en: 'The name', zh: '名字' },
-    title: { en: 'About the name', zh: '关于名字' },
+    label: { en: 'This site', zh: '本站' },
+    title: { en: 'About this site', zh: '关于本站' },
     place: { en: 'LIU’S GATE · Plaza', zh: '刘家门 · 中央广场' },
   },
 ];

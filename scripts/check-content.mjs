@@ -202,7 +202,7 @@ const records = await import(
 const { LabContent, NewsPreview, PeopleCards } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
-const { SiteFooter } = await import(
+const { SiteFooter, chapterMeta } = await import(
   pathToFileURL(path.join(output, 'site-chrome.mjs')).href
 );
 const { buildings } = await import(
@@ -302,6 +302,20 @@ for (const b of buildings) {
   for (const { en } of texts)
     assert(!/[\u3400-\u9fff]/.test(en), 'English place text contains Chinese: ' + en);
 }
+// One role label for the PhD members; only the supervisor differs (owner's decision).
+for (const p of catalog.people)
+  assert.deepEqual(
+    p.role,
+    p.id === 'pengyuan-liu' ? { en: 'SUPERVISOR', zh: '导师' } : { en: 'PHD RESEARCHER', zh: '博士生' },
+    'Role label for ' + p.id,
+  );
+// The chapter at the gate is about this site; the name story was removed at the owner's request.
+const gate = buildings.find((b) => b.id === 'lius-gate');
+assert.deepEqual(gate.sections.map((s) => s.heading.en), ['Layout', 'How to use the site']);
+assert.deepEqual(
+  chapterMeta.find((c) => c.id === 'lius-gate').title,
+  { en: 'About this site', zh: '关于本站' },
+);
 const studio = buildings.find((b) => b.id === 'research-studio'),
   archive = buildings.find((b) => b.id === 'city-archive');
 assert.deepEqual(
@@ -540,5 +554,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
 );

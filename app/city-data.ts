@@ -53,13 +53,6 @@ const places: Building[] = [
     color: '#d7c49e',
     sections: [
       {
-        heading: t('The name', '名字'),
-        body: t(
-          'Pengyuan Liu chose the name LIU’S GATE. The arch at the centre of the city stands for that name, and the rest of the city is arranged around it.',
-          '刘鹏远老师为自己的师门取名「刘家门」。小城中央的拱门代表这个名字，其余部分都围绕它布置。',
-        ),
-      },
-      {
         heading: t('Layout', '布局'),
         body: t(
           'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',

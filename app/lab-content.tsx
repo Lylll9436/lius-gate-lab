@@ -823,7 +823,7 @@ export function LabContent({
           </ul>
         )}
         <button className="link-action" onClick={() => onOpen('lius-gate')}>
-          {tr('About the name', '关于名字')}
+          {tr('About this site', '关于本站')}
           <ArrowUpRight size={14} />
         </button>
       </div>
