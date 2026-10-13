@@ -53,8 +53,11 @@ export const palette = {
 /**
  * The balloon's ring: centred on the island, out over the shore and the sea, so it stays out
  * of every chapter's subject. `turn` is radians per second (a lap in about seven minutes).
+ * `start` is the angle at load: north-east over the sea, the open top right of the opening
+ * view, about two minutes before the ring brings it behind the hero text (at 1.2 it began
+ * there, behind the lede, for the first minute).
  */
-export const BALLOON = { radius: 32, turn: 0.014 };
+export const BALLOON = { radius: 32, turn: 0.014, start: 5.25 };
 
 type Point = [number, number, number];
 /** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
@@ -1698,7 +1701,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       update(time) {
         // Round the whole island over the shore and the sea, so it never drifts across a
         // chapter's subject, turning slowly enough to keep a calm pace on the wide ring.
-        const a = time * BALLOON.turn + 1.2;
+        const a = time * BALLOON.turn + BALLOON.start;
         // The crown stays at about 17.9; the gulls fly below 10.7.
         b.position.set(Math.cos(a) * BALLOON.radius, 12.8 + Math.sin(time * 0.4) * 0.5, Math.sin(a) * BALLOON.radius);
         b.rotation.y = -a;

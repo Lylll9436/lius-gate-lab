@@ -297,6 +297,9 @@ const balloon = model.animated.find((e) => {
   return e.object.position.y > 11;
 });
 assert(balloon, 'The town has a balloon.');
+// It sets off north-east over the sea (the opening view's open top right), not behind the hero text.
+balloon.update(0, 0);
+assert(balloon.object.position.x > 10 && balloon.object.position.z < -20, 'The balloon starts north-east, over the sea.');
 for (let i = 0; i < 720; i++) {
   balloon.update(i * 0.7, 0);
   const { x, y, z } = balloon.object.position;
