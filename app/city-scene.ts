@@ -60,8 +60,12 @@ export type CityAPI = {
   setCityMode: (on: boolean) => void;
   /** Absolute camera bearing; the camera takes the shortest turn. */
   setYaw: (angle: number) => void;
-  /** Keep the subject left of centre (fraction of the viewport width) so a reading panel can sit beside it. */
-  setFrameShift: (fraction: number) => void;
+  /**
+   * Keep the subject left of centre (fraction of the viewport width) so a reading panel can
+   * sit beside it, and `down` (fraction of the viewport height) below the middle, for a
+   * frame whose top part is hidden.
+   */
+  setFrameShift: (fraction: number, down?: number) => void;
   /** Ring one building from the page (hovering a person card, for example). */
   setAccent: (id: BuildingId | null) => void;
   dispose: () => void;
@@ -71,6 +75,12 @@ const shortestAngle = (from: number, to: number) => {
   const d = (to - from) % (Math.PI * 2);
   return d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d;
 };
+/**
+ * The camera's turns are calmer than its glides: the bearing eases in at this rate (per
+ * second) and never turns faster than YAW_SPEED (radians per second, 90 degrees).
+ */
+const YAW_RATE = 2.5,
+  YAW_SPEED = Math.PI / 2;
 
 /** Build the town model only: used by the checks and by createCity. */
 export function buildCityModel() {
@@ -309,6 +319,7 @@ export function createCity(
     drift = false,
     driftAngle = 0,
     frameShift = 0,
+    frameDrop = 0,
     lastInteraction = -1e9,
     lastHover: HoverTarget = null,
     accentId: BuildingId | null = null,
@@ -399,20 +410,25 @@ export function createCity(
     return out.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
   }
   /**
-   * The panel offset: the view centre sits this far right of the subject, so the subject
-   * stays in the middle of the space a side panel leaves free, at any zoom.
+   * The panel offset: the view centre sits this far right of the subject (and above it, for
+   * a frame drop), so the subject stays in the middle of the space a side panel leaves free,
+   * at any zoom. It is measured at the current bearing, so it turns with the camera.
    */
+  const screenRight = new T.Vector3(),
+    screenUp = new T.Vector3();
   function panelOffset(out: T.Vector3) {
+    const zoom = Math.max(targetZoom, 0.1);
+    screenRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    screenUp.crossVectors(viewOffset(yaw, screenUp).normalize(), screenRight);
     return out
-      .set(Math.cos(targetYaw), 0, -Math.sin(targetYaw))
-      .multiplyScalar(
-        (frameShift * (camera.right - camera.left)) / Math.max(targetZoom, 0.1),
-      );
+      .copy(screenRight)
+      .multiplyScalar((frameShift * (camera.right - camera.left)) / zoom)
+      .addScaledVector(screenUp, (frameDrop * (camera.top - camera.bottom)) / zoom);
   }
   /**
    * The whole island in the part of the frame left free: beside a side panel (the frame
-   * shift), below the masthead and above the bottom controls (about 76 px each). Never
-   * closer than the plain overview's zoom of 1.
+   * shift), under a hidden top band (twice the frame drop), below the masthead and above the
+   * bottom controls (about 76 px each). Never closer than the plain overview's zoom of 1.
    */
   function fitOverview() {
     const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
@@ -431,7 +447,8 @@ export function createCity(
       maxY = Math.max(maxY, sy);
     }
     const freeWidth = Math.max(1, Math.max(0.3, 1 - 2 * Math.abs(frameShift)) * width - 48),
-      freeHeight = Math.max(height * 0.6, height - 152);
+      shownHeight = Math.max(0.3, 1 - 2 * Math.abs(frameDrop)) * height,
+      freeHeight = Math.max(shownHeight * 0.6, shownHeight - 152);
     targetZoom = T.MathUtils.clamp(
       Math.min(
         ((freeWidth / width) * (camera.right - camera.left)) / (maxX - minX),
@@ -745,7 +762,20 @@ export function createCity(
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
     if (!paused) time += dt;
     if (Math.abs(targetYaw - yaw) > 0.0001) {
-      yaw += shortestAngle(yaw, targetYaw) * blend;
+      // The bearing eases in more slowly than the glide and never whips round; a reduced-motion
+      // turn is a cut.
+      const left = shortestAngle(yaw, targetYaw);
+      if (reduced || Math.abs(left) < 0.0005) yaw = targetYaw = yaw + left;
+      else
+        yaw +=
+          Math.sign(left) *
+          Math.min(Math.abs(left) * (1 - Math.exp(-dt * YAW_RATE)), YAW_SPEED * dt);
+      // The panel offset turns with the camera, so the subject keeps its place beside the
+      // panel all through the turn instead of swinging behind it.
+      const shift = panelOffset(new T.Vector3());
+      controls.target.add(shift).sub(shiftApplied);
+      target.add(shift).sub(shiftApplied);
+      shiftApplied.copy(shift);
       align();
     }
     // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
@@ -1010,8 +1040,9 @@ export function createCity(
       inspectionAutoFit = true;
       if (overviewFit) fitOverview();
     },
-    setFrameShift(fraction) {
+    setFrameShift(fraction, down = 0) {
       frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
+      frameDrop = T.MathUtils.clamp(down, -0.35, 0.35);
       if (overviewFit) fitOverview();
     },
     setAccent(id) {

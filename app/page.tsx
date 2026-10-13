@@ -28,6 +28,26 @@ const stops = buildings.map((b) => b.id);
 /** A different bearing for every chapter, each facing its subject's front. */
 const bearings = chapterBearings;
 const WIDE = '(min-width: 961px)';
+/**
+ * Reading mode: how long a chapter must stay under the reading line before the camera
+ * follows it, so a quick scroll past several chapters turns the camera once, not each time.
+ */
+const CAMERA_SETTLE_MS = 200;
+/** The reading camera's last shot: the whole island once the footer arrives. */
+const READ_END = 'end';
+/** How the town is placed as the reading page ends. */
+function endFrame() {
+  const dock = document.querySelector<HTMLElement>('.stage-dock'),
+    footer = document.querySelector<HTMLElement>('.site-footer');
+  if (!dock || !footer || dock.offsetHeight <= 0) return 0;
+  // At the bottom of the page the footer has pushed the sticky stage up by this much,
+  // so the island is fitted to the part of the stage still in view.
+  const hidden = Math.max(
+    0,
+    dock.offsetHeight - (window.innerHeight - footer.offsetHeight),
+  );
+  return hidden / (2 * dock.offsetHeight);
+}
 /** The reading page's chapter for an address: the hero for the overview. */
 const readingChapter = (id: ContentId) =>
   id === 'overview' ? 'overview' : chapterFor(id);
@@ -68,6 +88,10 @@ export default function Home() {
       content: 'overview',
     }),
     [active, setActive] = useState<ContentId>('overview'),
+    // The footer has reached the town: the reading camera pulls back to the whole island.
+    [ending, setEnding] = useState(false),
+    // The reading camera's shot once the reading position has rested (see CAMERA_SETTLE_MS).
+    [settledShot, setSettledShot] = useState<string>('overview'),
     [ready, setReady] = useState(false),
     [error, setError] = useState(false),
     [skyMode, setSkyMode] = useState<SkyMode>('auto'),
@@ -111,6 +135,7 @@ export default function Home() {
     const lock = { chapter, until: Infinity };
     scrollLock.current = lock;
     setActive(chapter);
+    setEnding(false);
     // Two frames: the story must be laid out again if explore mode was just left.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
@@ -322,6 +347,13 @@ export default function Home() {
         scrollLock.current = null;
       }
       setActive((previous) => (previous === current ? previous : current));
+      // The read-through ends on the whole island once the footer comes into view. (Even at
+      // the bottom of the page the footer stays below the reading line on most screens, so
+      // its arrival is the cue: the reader is then on the last chapter's closing lines.)
+      const footer = document.querySelector<HTMLElement>('.site-footer');
+      setEnding(
+        !!footer && footer.getBoundingClientRect().top < window.innerHeight,
+      );
       // Keep a deeper address (a person) while their chapter is the active one.
       // The address is checked now, not in the state update below: React may run
       // that later, after a click has already put a new address in the bar.
@@ -351,12 +383,30 @@ export default function Home() {
       if (raf) cancelAnimationFrame(raf);
     };
   }, [mode, wide]);
+  // The masthead follows the active chapter at once; the camera waits until the reading
+  // position has rested on a chapter, so a flick through the page turns it once.
+  const shot = ending ? READ_END : active;
+  useEffect(() => {
+    if (shot === settledShot) return;
+    const timer = window.setTimeout(
+      () => setSettledShot(shot),
+      CAMERA_SETTLE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [shot, settledShot]);
   useEffect(() => {
     const engine = api.current;
     if (mode !== 'reading' || !engine) return;
-    const focusContent = chapterFor(content) === active ? content : active;
-    engine.setYaw(bearings[active] ?? Math.PI / 4);
-    if (active === 'overview') {
+    if (settledShot === READ_END) {
+      // Beside the last chapter's panel, in the part of the stage the footer leaves in view.
+      engine.setFrameShift(wide ? 0.21 : 0, endFrame());
+      engine.overview(true);
+      return;
+    }
+    const chapter = settledShot;
+    const focusContent = chapterFor(content) === chapter ? content : chapter;
+    engine.setYaw(bearings[chapter] ?? Math.PI / 4);
+    if (chapter === 'overview') {
       engine.reset();
       engine.setYaw(bearings.overview);
       engine.setFrameShift(wide ? -0.06 : 0);
@@ -369,7 +419,7 @@ export default function Home() {
     else if (destination.park) engine.focusPark();
     else if (destination.building) engine.select(destination.building);
     else engine.reset();
-  }, [active, mode, ready, wide, content]);
+  }, [settledShot, mode, ready, wide, content]);
 
   // The sky, the weather, the clock and the theme.
   useEffect(() => {

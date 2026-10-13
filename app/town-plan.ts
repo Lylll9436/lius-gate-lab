@@ -260,7 +260,8 @@ export const chapterBearings: Record<string, number> = {
   people: 1.9,
   'research-studio': -0.7,
   'city-archive': -0.97,
-  'corner-park': Math.PI / 4 + 0.22,
+  // Facing the park's notice board (turned -0.6) rather than its edge.
+  'corner-park': -0.35,
   'lius-gate': Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */

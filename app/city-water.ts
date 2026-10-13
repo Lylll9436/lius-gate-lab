@@ -94,11 +94,14 @@ function createCreekMaterial() {
   return { material, uniforms, blankMasks };
 }
 
+const SEA_SIZE = 480;
 /** The sea: deep blue offshore, turquoise where the ground masks' G channel marks the shallows. */
 export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Texture) {
   const { material, uniforms, blankMasks } = createCreekMaterial();
   if (masks) uniforms.groundMasks.value = masks;
-  const geometry = new T.PlaneGeometry(320, 320, 1, 1);
+  // Wide enough that a zoomed-out frame shifted beside a panel (or above the footer) never
+  // reaches the edge of the sea.
+  const geometry = new T.PlaneGeometry(SEA_SIZE, SEA_SIZE, 1, 1);
   geometry.rotateX(-Math.PI / 2);
   // Wave shape is in the fragment normals; a flat ocean mesh avoids coarse waves at the horizon.
   material.onBeforeCompile = ((original) => (shader) => {
@@ -118,7 +121,7 @@ export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Te
   // The unlit bed shows through the deep water's 10% transparency. Its colours match how the lit,
   // outermost shore shelf (#2f8fb6) renders by day and by night, so no seam shows where the shelf ends.
   const bottom = new T.Mesh(
-    new T.PlaneGeometry(320, 320),
+    new T.PlaneGeometry(SEA_SIZE, SEA_SIZE),
     new T.MeshBasicMaterial({ color: '#4da7c0', depthWrite: false }),
   );
   bottom.rotation.x = -Math.PI / 2;
