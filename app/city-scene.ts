@@ -53,6 +53,11 @@ export type CityAPI = {
   setRain: (v: boolean) => void;
   /** Slow idle camera drift while nobody is touching the city. */
   setDrift: (v: boolean) => void;
+  /**
+   * City mode's gestures: the plain wheel zooms, one finger pans, zooms close in on the
+   * pointer and the canvas keeps every touch. Off (reading mode), the page keeps scrolling.
+   */
+  setCityMode: (on: boolean) => void;
   /** Absolute camera bearing; the camera takes the shortest turn. */
   setYaw: (angle: number) => void;
   /** Keep the subject left of centre (fraction of the viewport width) so a reading panel can sit beside it. */
@@ -249,11 +254,26 @@ export function createCity(
   controls.touches.ONE = null;
   controls.touches.TWO = T.TOUCH.DOLLY_PAN;
   renderer.domElement.style.touchAction = 'pan-y';
+  // Reading mode leaves scrolling to the page: one finger and the plain wheel scroll it, and
+  // Ctrl/⌘ + wheel or a pinch zooms. City mode has no page to scroll, so the canvas takes
+  // every gesture: the plain wheel zooms, one finger pans, and zooms close in on the pointer.
+  let cityMode = false;
+  function setCityMode(on: boolean) {
+    cityMode = on;
+    controls.touches.ONE = on ? T.TOUCH.PAN : null;
+    controls.zoomToCursor = on;
+    renderer.domElement.style.touchAction = on ? 'none' : 'pan-y';
+  }
   function wheelIntent(e: WheelEvent) {
-    controls.enableZoom = e.ctrlKey || e.metaKey;
+    const modified = e.ctrlKey || e.metaKey;
+    controls.enableZoom = cityMode || modified;
+    // A trackpad pinch arrives as Ctrl + wheel, which OrbitControls already scales up.
+    controls.zoomSpeed = cityMode && !modified ? 1.5 : 1;
   }
   function touchIntent(e: PointerEvent) {
-    if (e.pointerType === 'touch') controls.enableZoom = true;
+    if (e.pointerType !== 'touch') return;
+    controls.enableZoom = true;
+    controls.zoomSpeed = 1;
   }
   renderer.domElement.addEventListener('wheel', wheelIntent, {
     capture: true,
@@ -641,11 +661,13 @@ export function createCity(
       hover.dragging = false;
       multiPointer = false;
     }
+    // A fingertip wobbles more than a mouse: a tap may travel 10 px and still pick.
+    const slop = e.pointerType === 'touch' ? 10 : 5;
     if (
       !tracked ||
       blocked ||
       e.button !== 0 ||
-      Math.hypot(e.clientX - downX, e.clientY - downY) > 5
+      Math.hypot(e.clientX - downX, e.clientY - downY) > slop
     )
       return;
     const id = pickAt(e.clientX, e.clientY);
@@ -727,11 +749,13 @@ export function createCity(
       align();
     }
     // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
-    // to keep, so a later re-fit cannot spring back; the subject beside the panel stays put.
+    // to keep, so a later re-fit cannot spring back. Zoomed at the view centre, the subject
+    // beside the panel stays put; zoomed at the pointer (City mode), the point under the
+    // pointer stays put and the panel offset is only measured again.
     if (!tween && camera.zoom !== shownZoom) {
       targetZoom = camera.zoom;
       const next = panelOffset(new T.Vector3());
-      controls.target.add(next).sub(shiftApplied);
+      if (!controls.zoomToCursor) controls.target.add(next).sub(shiftApplied);
       shiftApplied.copy(next);
       align();
     }
@@ -980,6 +1004,7 @@ export function createCity(
     setDrift(v) {
       drift = v;
     },
+    setCityMode,
     setYaw(angle) {
       targetYaw = yaw + shortestAngle(yaw, angle);
       inspectionAutoFit = true;

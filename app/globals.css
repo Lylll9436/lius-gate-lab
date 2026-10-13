@@ -400,6 +400,13 @@ img {
 .mode-explore .site-footer {
   display: none;
 }
+/* City mode: a downward pull pans the map; it must never refresh the page or bounce it.
+   The root scroller decides, so the rule sits on html and body. */
+html:has(.mode-explore),
+body:has(.mode-explore),
+.mode-explore {
+  overscroll-behavior: none;
+}
 .city-stage {
   position: absolute;
   inset: 0;

@@ -223,6 +223,23 @@ assert.equal(
   2,
   'Pinching must never open a building on finger release.',
 );
+// A fingertip may wobble up to 10 px and still pick; a mouse that moves 8 px is panning.
+for (const [pointerType, dx, picks] of [
+  ['touch', 8, true],
+  ['touch', 12, false],
+  ['mouse', 4, true],
+  ['mouse', 8, false],
+]) {
+  const start = eventAt('town-hall', { pointerType }),
+    before = selection.length;
+  emit('pointerdown', start);
+  emit('pointerup', { ...start, clientX: start.clientX + dx });
+  assert.equal(
+    selection.length - before,
+    picks ? 1 : 0,
+    `A ${pointerType} press that moves ${dx} px must ${picks ? '' : 'not '}pick.`,
+  );
+}
 assert.equal(f.pickAt(41, 200), null);
 assert.equal(f.pickAt(850, 200), null);
 
@@ -259,5 +276,5 @@ assert(
   'The label must not intercept clicks or trigger hover loops.',
 );
 console.log(
-  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection, and five viewport shapes.',
+  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, and five viewport shapes.',
 );

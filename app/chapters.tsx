@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useSyncExternalStore } from 'react';
 import { ArrowDown, ArrowUpRight, Map } from 'lucide-react';
 import type { BuildingId, Locale } from './city-data';
 import type { ContentId } from './lab-navigation';
@@ -12,6 +12,21 @@ import {
 import { chapterMeta } from './site-chrome';
 import type { SkyState } from './glasgow-sun';
 import type { SkyMode } from './use-sky';
+
+const COARSE_POINTER = '(pointer: coarse)';
+function watchPointer(onChange: () => void) {
+  const media = window.matchMedia(COARSE_POINTER);
+  media.addEventListener('change', onChange);
+  return () => media.removeEventListener('change', onChange);
+}
+/** A finger rather than a mouse: the hint names the gestures a phone or tablet has. */
+function useCoarsePointer() {
+  return useSyncExternalStore(
+    watchPointer,
+    () => window.matchMedia(COARSE_POINTER).matches,
+    () => false,
+  );
+}
 
 export const Hero = memo(function Hero({
   locale,
@@ -28,7 +43,16 @@ export const Hero = memo(function Hero({
   onRead: () => void;
   onOpen: (id: ContentId) => void;
 }) {
-  const zh = locale === 'zh';
+  const zh = locale === 'zh',
+    touch = useCoarsePointer();
+  // The hero is reading mode, where the plain wheel scrolls the page; City view zooms with it.
+  const gestures = touch
+    ? zh
+      ? '点击建筑 · 双指缩放'
+      : 'Tap a building · pinch to zoom'
+    : zh
+      ? '拖动平移 · Ctrl + 滚轮缩放（小城视图中直接滚动） · 点击建筑'
+      : 'Drag to pan · Ctrl + scroll to zoom (just scroll in City view) · Click a building';
   return (
     <section className="hero" id="read-overview" data-chapter="overview">
       <div className="hero-copy">
@@ -62,8 +86,8 @@ export const Hero = memo(function Hero({
       <div className="hero-foot">
         <span className="hero-hint">
           {zh
-            ? `现在格拉斯哥 ${sky.clock}${skyMode === 'auto' ? '，小城按当地时间作息' : ''} · 拖动平移 · Ctrl + 滚轮缩放 · 点击建筑`
-            : `It is ${sky.clock} in Glasgow${skyMode === 'auto' ? ' and the city keeps local time' : ''} · Drag to pan · Ctrl + scroll to zoom · Click a building`}
+            ? `现在格拉斯哥 ${sky.clock}${skyMode === 'auto' ? '，小城按当地时间作息' : ''} · ${gestures}`
+            : `It is ${sky.clock} in Glasgow${skyMode === 'auto' ? ' and the city keeps local time' : ''} · ${gestures}`}
         </span>
       </div>
     </section>

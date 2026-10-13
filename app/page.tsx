@@ -265,6 +265,10 @@ export default function Home() {
     };
   }, []);
 
+  // City mode hands the canvas every gesture; reading mode leaves scrolling to the page.
+  useEffect(() => {
+    api.current?.setCityMode(explore);
+  }, [explore, ready]);
   // Explore mode: the address decides what the camera looks at. A pick turns the camera
   // (the shortest way) to its subject's front; the bare city is the whole island.
   useEffect(() => {
