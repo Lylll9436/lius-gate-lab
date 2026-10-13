@@ -181,7 +181,7 @@ const nav = await import(
 const records = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
 );
-const { LabContent, NewsPreview } = await import(
+const { LabContent, NewsPreview, PeopleCards } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
 assert.equal(nav.people.length, 4);
@@ -288,6 +288,74 @@ const supervisorMail = catalog.people
   .links.find((l) => l.url.startsWith('mailto:')).url;
 assert(newsEn.includes('Join us!') && newsEn.includes('href="' + supervisorMail + '"'));
 assert(newsZh.includes('加入我们！'));
+// Reading view: each person card folds out the full profile from the catalogue, and email
+// links show the address itself, labelled for assistive tech, in the same tab.
+const escapeHtml = (value) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+const supervisor = catalog.people.find((p) => p.id === 'pengyuan-liu'),
+  supervisorAddress = supervisorMail.slice('mailto:'.length);
+for (const [locale, heading, summary, emailLabel] of [
+  ['en', 'Collaboration and PhD opportunities', 'Full profile', 'Email: '],
+  ['zh', '合作与博士招生', '完整简介', '邮箱：'],
+]) {
+  const cards = renderToStaticMarkup(
+    React.createElement(PeopleCards, { locale, onOpen() {} }),
+  );
+  const section = supervisor.sections.find(
+    (s) => s.heading[locale] === heading,
+  );
+  assert(section, 'The supervisor keeps the ' + heading + ' section.');
+  const education = supervisor.properties.find((p) => p.key === 'education');
+  assert(
+    cards.includes('<details class="person-profile">') &&
+      cards.includes('<summary>' + summary),
+    'Person cards fold out a full profile (' + locale + ').',
+  );
+  assert(
+    cards.includes('<h4>' + escapeHtml(heading) + '</h4>') &&
+      cards.includes(escapeHtml(section.body[locale])),
+    'Person cards show profile sections (' + locale + ').',
+  );
+  assert(
+    cards.includes('<dd>' + escapeHtml(education.value[locale]) + '</dd>') &&
+      (locale !== 'en' || cards.includes('<dd>Spatial statistics</dd>')),
+    'Person cards show profile properties (' + locale + ').',
+  );
+  assert(
+    cards.includes(
+      'aria-label="' + emailLabel + supervisorAddress + '">' +
+        supervisorAddress + '</a>',
+    ),
+    'The supervisor’s email address is visible link text (' + locale + ').',
+  );
+  const mailLinks = cards.match(/<a [^>]*href="mailto:[^>]*>.*?<\/a>/g) ?? [];
+  assert(mailLinks.length >= 3, 'Every member card keeps its email link.');
+  for (const link of mailLinks)
+    assert(
+      !link.includes('target=') && !link.includes('<svg'),
+      'Email links stay in the tab without the external arrow: ' + link,
+    );
+  if (locale === 'en')
+    assert(!/[\u3400-\u9fff]/.test(cards), 'English people contain Chinese.');
+}
+const dossier = renderToStaticMarkup(
+  React.createElement(LabContent, {
+    id: 'pengyuan-liu',
+    locale: 'en',
+    onOpen() {},
+  }),
+);
+assert(
+  dossier.includes('<h4>Collaboration and PhD opportunities</h4>') &&
+    dossier.includes('>' + supervisorAddress + '</a>') &&
+    !dossier.includes('person-profile'),
+  'The dossier keeps the full record and shows the email address.',
+);
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');
 for (const dir of ['app', 'scripts', 'content'])
@@ -340,5 +408,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, Gate’s News order and rendering, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, Gate’s News order and rendering, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
 );

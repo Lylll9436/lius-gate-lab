@@ -1,5 +1,5 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowUpRight } from 'lucide-react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { ArrowUpRight, ChevronDown } from 'lucide-react';
 import { publicAsset } from './public-asset';
 import { buildings, type BuildingId, type Locale } from './city-data';
 import { personPhotos } from './people-photos';
@@ -7,6 +7,7 @@ import {
   people,
   titleFor,
   destinations,
+  parseLocation,
   type ContentId,
 } from './lab-navigation';
 import {
@@ -352,6 +353,65 @@ function Pill({
   return <span className={`pill pill-${tone}`}>{children}</span>;
 }
 
+/** A record's sections and properties: the full profile, in the dossier and on a person's card. */
+function ProfileBody({
+  record,
+  locale,
+}: {
+  record: LabRecord;
+  locale: Locale;
+}) {
+  return (
+    <>
+      {record.sections.map((s, i) => (
+        <section className="record-section" key={i}>
+          <h4>{s.heading[locale]}</h4>
+          <p>{s.body[locale]}</p>
+        </section>
+      ))}
+      {!!record.properties.length && (
+        <dl className="record-props">
+          {record.properties.map((p) => (
+            <div key={p.key}>
+              <dt>{p.label[locale]}</dt>
+              <dd>{p.value[locale]}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </>
+  );
+}
+
+/** Email shows its address and stays in this tab; any other link opens a new one. */
+function RecordLink({
+  link,
+  locale,
+  iconSize,
+}: {
+  link: LabRecord['links'][number];
+  locale: Locale;
+  iconSize: number;
+}) {
+  if (link.url.startsWith('mailto:')) {
+    const address = link.url.slice('mailto:'.length).split('?')[0];
+    return (
+      <a
+        href={link.url}
+        aria-label={`${link.label[locale]}${locale === 'zh' ? '：' : ': '}${address}`}
+      >
+        {address}
+      </a>
+    );
+  }
+  return (
+    <a href={link.url} target="_blank" rel="noreferrer">
+      {link.label[locale]}
+      <ArrowUpRight size={iconSize} />
+    </a>
+  );
+}
+
 function RecordView({
   id,
   entry,
@@ -427,29 +487,16 @@ function RecordView({
           decoding="async"
         />
       )}
-      {record.sections.map((s, i) => (
-        <section className="record-section" key={i}>
-          <h4>{s.heading[locale]}</h4>
-          <p>{s.body[locale]}</p>
-        </section>
-      ))}
-      {!!record.properties.length && (
-        <dl className="record-props">
-          {record.properties.map((p) => (
-            <div key={p.key}>
-              <dt>{p.label[locale]}</dt>
-              <dd>{p.value[locale]}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <ProfileBody record={record} locale={locale} />
       {!!record.links.length && (
         <div className="record-links">
           {record.links.map((link) => (
-            <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
-              {link.label[locale]}
-              <ArrowUpRight size={14} />
-            </a>
+            <RecordLink
+              key={link.url}
+              link={link}
+              locale={locale}
+              iconSize={14}
+            />
           ))}
         </div>
       )}
@@ -567,11 +614,28 @@ export function PersonCard({
   onVisit?: (building: BuildingId) => void;
 }) {
   const person = people.find((p) => p.id === id);
+  const [profileOpen, setProfileOpen] = useState(false);
+  // An address naming this person (on load, Back/Forward or a typed link) opens their profile.
+  // In-app links use pushState, which fires neither event: the Profile button opens it itself.
+  useEffect(() => {
+    const sync = () => {
+      const { mode, content } = parseLocation(window.location.hash);
+      if (mode === 'reading' && content === id) setProfileOpen(true);
+    };
+    sync();
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
+  }, [id]);
   if (!person) return null;
   const zh = locale === 'zh',
     home = person.buildingId
       ? buildings.find((b) => b.id === person.buildingId)
-      : undefined;
+      : undefined,
+    hasProfile = !!(person.sections.length || person.properties.length);
   return (
     <div
       className="person-card"
@@ -590,20 +654,23 @@ export function PersonCard({
         {!!person.links.length && (
           <div className="record-links compact">
             {person.links.map((link) => (
-              <a
+              <RecordLink
                 key={link.url}
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {link.label[locale]}
-                <ArrowUpRight size={13} />
-              </a>
+                link={link}
+                locale={locale}
+                iconSize={13}
+              />
             ))}
           </div>
         )}
         <div className="person-actions">
-          <button className="link-action" onClick={() => onOpen(id)}>
+          <button
+            className="link-action"
+            onClick={() => {
+              setProfileOpen(true);
+              onOpen(id);
+            }}
+          >
             {zh ? '个人资料' : 'Profile'}
             <ArrowUpRight size={14} />
           </button>
@@ -618,6 +685,21 @@ export function PersonCard({
           )}
         </div>
       </div>
+      {hasProfile && (
+        <details
+          className="person-profile"
+          open={profileOpen}
+          onToggle={(e) => setProfileOpen(e.currentTarget.open)}
+        >
+          <summary>
+            {zh ? '完整简介' : 'Full profile'}
+            <ChevronDown size={15} aria-hidden="true" />
+          </summary>
+          <div className="person-profile-body">
+            <ProfileBody record={person} locale={locale} />
+          </div>
+        </details>
+      )}
     </div>
   );
 }

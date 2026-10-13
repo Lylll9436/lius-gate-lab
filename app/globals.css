@@ -1120,6 +1120,11 @@ img {
   text-underline-offset: 5px;
   text-decoration-thickness: 1px;
 }
+/* An email link shows the address itself, which may be wider than a phone's text column. */
+.record-links a[href^='mailto:'] {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .record-links.compact {
   margin: 8px 0 0;
 }
@@ -1340,6 +1345,51 @@ img {
   flex-wrap: wrap;
   gap: 4px 18px;
   margin-top: 6px;
+}
+/* The full profile folds out under the card's text; the body reuses the dossier's
+   .record-section and .record-props. */
+.person-profile {
+  grid-column: 2;
+  margin-top: -14px;
+}
+.person-profile > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 36px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  list-style: none;
+}
+.person-profile > summary::-webkit-details-marker {
+  display: none;
+}
+.person-profile > summary:hover {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 1px;
+}
+.person-profile > summary svg {
+  transition: transform 0.2s ease;
+}
+.person-profile[open] > summary svg {
+  transform: rotate(180deg);
+}
+.person-profile-body {
+  padding: 10px 0 4px;
+}
+.person-profile-body .record-section p {
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+.person-profile-body > .record-props:first-child {
+  margin-top: 4px;
+}
+.person-profile-body > :last-child {
+  margin-bottom: 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1700,6 +1750,15 @@ img {
   }
   .portrait-medium {
     width: 72px;
+  }
+  /* On a phone the profile text takes the card's full width; the summary stays in line
+     with the card's actions (portrait 72px + gap 14px). */
+  .person-profile {
+    grid-column: 1 / -1;
+    margin-top: -10px;
+  }
+  .person-profile > summary {
+    margin-left: 86px;
   }
   .site-footer {
     grid-template-columns: 1fr;
