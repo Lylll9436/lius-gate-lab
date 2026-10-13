@@ -1059,7 +1059,9 @@ export function buildTown(
       land.add(mesh);
       return mesh;
     };
-    flat(new T.CircleGeometry(poolInner - coping, 48), palette.plaza, 'paving', plazaY);
+    // The island disc and the outer ring reach 0.01 under the causeways (same paving, same colour)
+    // and the copings: their coarser chords would otherwise open hairline grass cracks at r 2.4 and 4.2.
+    flat(new T.CircleGeometry(poolInner - coping + 0.01, 48), palette.plaza, 'paving', plazaY);
     for (let i = 0; i < 4; i++)
       flat(
         new T.RingGeometry(poolInner - coping, poolOuter + coping, 12, 1, (Math.PI / 2) * i - gapAngle, gapAngle * 2),
@@ -1067,7 +1069,7 @@ export function buildTown(
         'paving',
         plazaY,
       );
-    flat(new T.RingGeometry(poolOuter + coping, 4.72, 64), palette.plaza, 'paving', plazaY);
+    flat(new T.RingGeometry(poolOuter + coping - 0.01, 4.72, 64), palette.plaza, 'paving', plazaY);
     flat(new T.RingGeometry(4.72, 5.1, 64), palette.plazaDark, 'paving', plazaY);
     // The kerb ring: a lip toward the plaza, a rounded top and a face down to the grass. It opens
     // (±3) where the hall forecourt meets the plaza; a lathe angle φ lies at world (sin φ, cos φ).
