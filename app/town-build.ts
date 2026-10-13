@@ -447,6 +447,19 @@ export function buildTown(
     g.add(m);
     return m;
   }
+  /** A boat hull plan in shape space: a rounded bow at -y (local +z after rotateX(-PI/2)), a square stern. */
+  function hullShape(hw: number, bow: number, stern: number) {
+    const s = new T.Shape(), q = Math.min(0.45, stern * 0.4);
+    s.moveTo(-hw * 0.82, stern); s.lineTo(hw * 0.82, stern); s.quadraticCurveTo(hw, stern, hw, stern - q); s.lineTo(hw, -bow * 0.15);
+    s.quadraticCurveTo(hw * 0.96, -bow * 0.8, 0, -bow); s.quadraticCurveTo(-hw * 0.96, -bow * 0.8, -hw, -bow * 0.15); s.lineTo(-hw, stern - q); s.quadraticCurveTo(-hw, stern, -hw * 0.82, stern);
+    return s;
+  }
+  /** A bevelled hull solid: spans y0 .. y0+depth+2*bevel, half-width hw+bevel, bow towards local +z. */
+  function hullSolid(g: T.Object3D, hw: number, bow: number, stern: number, y0: number, depth: number, bevel: number, colour: string, kind: SurfaceKind) {
+    const geo = new T.ExtrudeGeometry(hullShape(hw, bow, stern), { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 6 });
+    geo.rotateX(-Math.PI / 2).translate(0, y0 + bevel, 0);
+    const m = new T.Mesh(geo, material(colour, kind)); m.castShadow = m.receiveShadow = true; g.add(m); return m;
+  }
   /**
    * A pitched roof along the local x axis: a pentagon profile with a short fascia at the eaves,
    * bevelled ends and a fat ridge cap. For small roofs (hut, dormers); buildings use slabRoof.
@@ -591,18 +604,6 @@ export function buildTown(
     const landing=opts.landing??0, n=y>0.05?Math.max(1,Math.round(y/0.14)):0;
     for(let i=landing>0?1:0;i<n;i++){ const tread=y-(i*y)/n, front=landing+(landing>0?i:i+1)*0.3;
       box(g,x,tread/2,z+(front-0.05)/2,(opts.width??w+0.5)+i*0.08,tread,front+0.05,palette.plinth,'stone'); }
-  }
-  function railing(g: T.Object3D, x: number, y: number, z: number, length: number, height: number, ry = 0) {
-    const r = new T.Group();
-    r.position.set(x, y, z);
-    r.rotation.y = ry;
-    g.add(r);
-    const posts = Math.max(2, Math.round(length / 0.28));
-    for (let i = 0; i < posts; i++)
-      box(r, -length / 2 + (length * i) / (posts - 1), height / 2, 0, 0.022, height, 0.022, palette.metal, 'metal');
-    box(r, 0, height, 0, length + 0.03, 0.03, 0.03, palette.metal, 'metal');
-    box(r, 0, height * 0.45, 0, length + 0.03, 0.02, 0.02, palette.metal, 'metal');
-    return r;
   }
   /**
    * Corner quoins from y0 to y1: 0.45-tall blocks alternating long and short by index, tucked into
@@ -1365,39 +1366,65 @@ export function buildTown(
     g.add(p);
     const L = plan.pier.length,
       W = plan.pier.width;
-    box(p, 0, 0.14, L / 2, W, 0.08, L + 0.4, palette.wood, 'wood');
-    for (let z = 0.4; z <= L; z += 0.6) box(p, 0, 0.19, z, W + 0.04, 0.02, 0.1, palette.woodDark, 'wood');
-    for (let z = 0.2; z <= L; z += 1.2)
-      for (const side of [-1, 1]) {
-        cylinder(p, side * (W / 2 - 0.1), -0.2, z, 0.07, 0.08, 0.7, palette.woodDark, 'wood', 7);
-        if (Math.round(z / 1.2) % 2 === 0) cylinder(p, side * (W / 2 - 0.12), 0.32, z, 0.07, 0.08, 0.3, palette.woodDark, 'wood', 7);
-      }
-    railing(p, -W / 2 + 0.06, 0.18, L / 2, L - 0.3, 0.55, Math.PI / 2);
-    // A harbour master's hut with a lantern at the landward end.
+    // A chunky deck: a stone landing on the grass, two stringers, wobbly two-tone planks and fat
+    // piles that stand 0.3 proud as bollards. Pier-local +x is (dz, -dx), +z runs out to sea.
+    const plank = [palette.wood, '#94613a'], dark = palette.woodDark;
+    box(p, 0, 0.1, -0.35, W + 0.3, 0.2, 0.7, palette.stoneDark, 'stone'); // stone landing on the grass
+    for (const side of [-1, 1]) box(p, side * 0.62, 0.03, (L + 0.2) / 2, 0.16, 0.14, L + 0.2, dark, 'wood'); // stringers
+    const count = Math.round((L + 0.2) / 0.42), pitch = (L + 0.2) / count; // 15 planks
+    for (let k = 0; k < count; k++)
+      box(p, (hash(k * 5 + 1) - 0.5) * 0.06, 0.15 + (hash(k * 5 + 2) - 0.5) * 0.02, (k + 0.5) * pitch, W + 0.12, 0.1, pitch - 0.045, plank[k % 2], 'wood', { ry: (hash(k * 5 + 3) - 0.5) * 0.05 });
+    for (let z = 0.9; z < L + 0.2; z += 1.3) for (const side of [-1, 1]) cylinder(p, side * 0.72, -0.05, z, 0.14, 0.15, 1.1, dark, 'wood', 18); // piles 0.3 proud = bollards
+    const lastPile = 0.9 + 1.3 * Math.floor((L + 0.2 - 0.9) / 1.3); // 6.1
+    // Lamps stand on the boards (y 0.2), with the pier-local position passed straight through.
+    lamp(p, 0.42, 0.45, 1.8, 0.2);
+    lamp(p, -0.38, L - 0.45, 1.8, 0.2);
+    cylinder(p, 0.72, 1.45, lastPile, 0.035, 0.04, 1.9, palette.metal, 'metal', 18); // flagpole on the seaward pile
+    box(p, 0.33, 2.12, lastPile, 0.75, 0.5, 0.04, palette.blueDoor, 'paint');
+    for (const s of [-1, 1]) box(p, 0.33, 2.12, lastPile + 0.03, 0.82, 0.09, 0.02, palette.white, 'paint', { rz: s * 0.588 }); // saltire
+    box(p, 1.25, 0.3, 1.5, 0.6, 0.6, 0.6, plank[0], 'wood', { ry: 0.2 }); // crates 0.55-0.7 of a person
+    box(p, 1.28, 0.85, 1.48, 0.5, 0.5, 0.5, palette.gold, 'paint', { ry: -0.15 });
+    cylinder(p, 2.85, 0.3, 1.6, 0.24, 0.22, 0.6, plank[0], 'wood', 18); // barrel with two hoops
+    for (const y of [0.12, 0.48]) cylinder(p, 2.85, y, 1.6, 0.255, 0.255, 0.05, palette.metal, 'metal', 18);
+    // A harbour master's hut on a plinth at the landward end: steep pantile roof, chimney,
+    // a plain chunky door and a lifebuoy on the side wall.
     const hut = new T.Group();
-    hut.position.set(W / 2 + 1.1, 0, 0.9);
+    hut.position.set(W / 2 + 1.15, 0, 0.1);
     hut.rotation.y = -0.2;
     p.add(hut);
-    box(hut, 0, 0.9, 0, 1.6, 1.8, 1.4, palette.render, 'paint', { bevel: 0.02 });
-    pitchedRoof(hut, 0, 1.8, 0, 1.8, 1.6, 0.55, palette.slate);
-    windowAt(hut, -0.35, 1.0, 0.7, 0.5, 0.6, { bars: 1 });
-    door(hut, 0.4, 0.0, 0.7, 0.5, 1.3, palette.blueDoor, { steps: 1, width: 0.7 });
-    lamp(p, W / 2 + 0.3, 0.3, 1.9, 0.18);
-    lamp(p, -W / 2 - 0.3, L - 0.4, 1.9, 0.18);
-    for (let i = 0; i < 3; i++) {
-      const a = plan.pier.tangent;
-      const bx = plan.pierEnd[0] + a[0] * (i - 1) * 2.6 + dx * 1.6 + (i - 1) * dx * 0.4,
-        bz = plan.pierEnd[1] + a[1] * (i - 1) * 2.6 + dz * 1.6 + (i - 1) * dz * 0.4;
+    box(hut, 0, 0.15, 0, 1.7, 0.3, 1.5, palette.stoneDark, 'stone'); // plinth
+    box(hut, 0, 0.95, 0, 1.5, 1.3, 1.3, palette.render, 'paint'); // walls 0.30..1.60
+    pitchedRoof(hut, 0, 1.6, 0, 2.0, 1.8, 0.95, palette.pantile, { ridgeColor: palette.pantileLight }); // 0.25 overhang, rise 37%
+    box(hut, 0.42, 2.2, -0.3, 0.34, 0.8, 0.34, palette.red, 'stone'); // chimney
+    box(hut, 0.42, 2.65, -0.3, 0.44, 0.1, 0.44, palette.trimRed, 'stone');
+    cylinder(hut, 0.42, 2.78, -0.3, 0.08, 0.09, 0.16, palette.brick, 'stone', 18);
+    // The wall is only 1.5 wide: a small window without sill or lintel keeps clear of the door jamb.
+    windowAt(hut, -0.43, 1.0, 0.65, 0.38, 0.5, { sill: false, lintel: false });
+    box(hut, 0.32, 0.8, 0.67, 0.52, 1.0, 0.1, palette.blueDoor, 'paint'); // own door leaf on the plinth, no door() panels
+    for (const s of [-1, 1]) box(hut, 0.32 + s * 0.36, 0.86, 0.67, 0.14, 1.12, 0.14, palette.trim, 'stone');
+    box(hut, 0.32, 1.44, 0.68, 0.86, 0.16, 0.16, palette.trim, 'stone');
+    sphere(hut, 0.5, 0.8, 0.73, 0.045, palette.gold, 'metal', 12);
+    const ring = new T.Mesh(new T.TorusGeometry(0.17, 0.055, 8, 16), material(palette.flowers[0], 'paint'));
+    ring.position.set(0.78, 0.95, 0.1);
+    ring.rotation.y = Math.PI / 2;
+    ring.castShadow = true;
+    hut.add(ring);
+    // Two chunky channel buoys, a red can and a green cone, flanking the pier head: out past both
+    // foam lines in the bay's shallows, and at least 0.5 clear of the boat's loop.
+    const marks = [[2.0, 5.7, palette.boat, 'can'], [-2.6, 5.9, palette.greenDoor, 'cone']] as const;
+    for (const [i, [lx, lz, colour, top]] of marks.entries()) {
       const buoy = new T.Group();
-      buoy.position.set(bx, WATER, bz);
+      buoy.position.set(sx + dz * lx + dx * lz, WATER, sz - dx * lx + dz * lz);
       buoy.userData.keepSeparate = true;
       g.add(buoy);
-      sphere(buoy, 0, 0.1, 0, 0.19, '#e4652f', 'paint', 10);
-      cone(buoy, 0, 0.42, 0, 0.1, 0.4, '#e4652f', 'paint', 8);
+      cylinder(buoy, 0, 0.05, 0, 0.3, 0.34, 0.4, colour, 'paint', 18); // float -0.15..0.25
+      cylinder(buoy, 0, 0.12, 0, 0.325, 0.33, 0.1, palette.white, 'paint', 18); // white band, about 0.015 proud
+      if (top === 'can') box(buoy, 0, 0.45, 0, 0.26, 0.4, 0.26, colour, 'paint');
+      else cone(buoy, 0, 0.47, 0, 0.22, 0.44, colour, 'paint', 18, 0);
       const glow = material(palette.lantern, 'glass').clone();
       glow.emissive.set(palette.lantern);
-      const lampMesh = new T.Mesh(new T.SphereGeometry(0.05, 6, 5), glow);
-      lampMesh.position.y = 0.66;
+      const lampMesh = new T.Mesh(new T.SphereGeometry(0.08, 12, 8), glow);
+      lampMesh.position.y = top === 'can' ? 0.72 : 0.76;
       buoy.add(lampMesh);
       lamps.push(lampMesh);
       animated.push({
@@ -1408,15 +1435,20 @@ export function buildTown(
         },
       });
     }
-    // A moored dinghy beside the pier.
+    // A dinghy moored alongside the deck, on the side away from the hut, its stern past the foam:
+    // a shaped white hull with a blue rubbing band, a visible wooden floor and a seated thwart.
     const dinghy = new T.Group();
-    dinghy.position.set(sx + dx * 2.2 - plan.pier.tangent[0] * 1.5, WATER, sz + dz * 2.2 - plan.pier.tangent[1] * 1.5);
-    dinghy.rotation.y = heading + 0.3;
+    dinghy.position.set(sx + dx * 5.3 + plan.pier.tangent[0] * 1.4, WATER, sz + dz * 5.3 + plan.pier.tangent[1] * 1.4);
+    dinghy.rotation.y = heading + 0.06;
     dinghy.userData.keepSeparate = true;
     g.add(dinghy);
-    box(dinghy, 0, 0.1, 0, 0.7, 0.22, 1.6, '#e9e2cf', 'paint', { bevel: 0.05 });
-    box(dinghy, 0, 0.18, 0, 0.5, 0.04, 1.4, palette.wood, 'wood');
-    box(dinghy, 0, 0.3, 0, 0.56, 0.04, 0.1, palette.woodDark, 'wood');
+    hullSolid(dinghy, 0.34, 0.8, 0.72, -0.06, 0.16, 0.04, palette.white, 'paint'); // -0.06..0.18, waterline 0.06 up
+    hullSolid(dinghy, 0.36, 0.81, 0.73, 0.1, 0.02, 0.03, palette.blueDoor, 'paint'); // rubbing band 0.10..0.18, 0.01 proud
+    const floor = new T.Mesh(new T.ShapeGeometry(hullShape(0.27, 0.66, 0.6), 4).rotateX(-Math.PI / 2), material(palette.wood, 'wood'));
+    floor.position.y = 0.185;
+    floor.receiveShadow = true;
+    dinghy.add(floor);
+    box(dinghy, 0, 0.23, -0.1, 0.72, 0.07, 0.2, palette.woodDark, 'wood'); // thwart resting on the gunwales
     animated.push({
       object: dinghy,
       update(time) {

@@ -286,23 +286,25 @@ export const cottages: { x: number; z: number; rotation: number; color: string }
 const pierBearing = 1.0;
 const pierDir: XZ = [Math.cos(pierBearing), Math.sin(pierBearing)];
 const pierTangent: XZ = [-pierDir[1], pierDir[0]];
-const pierStartRadius = islandRadius(pierBearing) - 1.4;
+// The deck starts just inside the outline, so about 2.7 of its 6.0 run over water.
+const pierStartRadius = islandRadius(pierBearing) - 0.6;
 export const pier = {
   start: [pierDir[0] * pierStartRadius, pierDir[1] * pierStartRadius] as XZ,
   dir: pierDir,
   tangent: pierTangent,
-  length: 5.4,
+  length: 6.0,
   width: 1.5,
 };
 export const pierEnd: XZ = [
   pier.start[0] + pierDir[0] * pier.length,
   pier.start[1] + pierDir[1] * pier.length,
 ];
+// The loop clears the pier head, the two channel buoys and the dinghy.
 export const boatLoop = {
-  cx: pierEnd[0] + pierDir[0] * 3 + pierTangent[0] * 0.5,
-  cz: pierEnd[1] + pierDir[1] * 3 + pierTangent[1] * 0.5,
+  cx: pierEnd[0] + pierDir[0] * 3.2 + pierTangent[0] * 0.5,
+  cz: pierEnd[1] + pierDir[1] * 3.2 + pierTangent[1] * 0.5,
   along: 3.3,
-  across: 2.1,
+  across: 1.7,
 };
 export function boatPose(time: number) {
   const t = time * 0.1;
@@ -317,7 +319,7 @@ export function boatPose(time: number) {
   return {
     x,
     z,
-    y: 0.03 + Math.sin(time * 1.7) * 0.012,
+    y: Math.sin(time * 1.7) * 0.012, // the hull sits in the water
     heading: Math.atan2(dx, dz),
     roll: Math.sin(time * 1.1) * 0.03,
   };
@@ -401,7 +403,7 @@ export function plantingPlan(): TreeSpec[] {
     if (nearSite(x, z, 2.2) || insideRect(x, z, park, 1.2)) continue;
     if (insideRect(x, z, reservedPlot, 1.6)) continue;
     if (cottages.some((c) => Math.hypot(c.x - x, c.z - z) < 3.2)) continue;
-    if (Math.hypot(x - pier.start[0], z - pier.start[1]) < 4) continue;
+    if (Math.hypot(x - pier.start[0], z - pier.start[1]) < 4.8) continue;
     if (x > -27.5 && x < -16.5 && Math.abs(z - terraceRow.z) < terraceRow.spacing + 4) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.9)) continue;
     const hilly = terrainHeight(x, z) > 0.15 || z < -16;
