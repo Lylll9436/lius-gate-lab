@@ -28,6 +28,9 @@ const stops = buildings.map((b) => b.id);
 /** A different bearing for every chapter, each facing its subject's front. */
 const bearings = chapterBearings;
 const WIDE = '(min-width: 961px)';
+/** The reading page's chapter for an address: the hero for the overview. */
+const readingChapter = (id: ContentId) =>
+  id === 'overview' ? 'overview' : chapterFor(id);
 
 export default function Home() {
   const mount = useRef<HTMLDivElement>(null),
@@ -82,7 +85,7 @@ export default function Home() {
   /** Scroll the reading page to a chapter or card, and send the camera straight there.
    *  `instant` jumps without the smooth glide (a page opened at an address). */
   const scrollToContent = useCallback((id: ContentId, instant = false) => {
-    const chapter = id === 'overview' ? 'overview' : chapterFor(id);
+    const chapter = readingChapter(id);
     // The lock holds until the scroll starts (the first frames can be seconds late
     // while the town is built), then for as long as a smooth scroll may take.
     const lock = { chapter, until: Infinity };
@@ -285,14 +288,21 @@ export default function Home() {
       }
       setActive((previous) => (previous === current ? previous : current));
       // Keep a deeper address (a person) while their chapter is the active one.
-      setView((previous) => {
-        if (previous.mode !== 'reading') return previous;
-        if (chapterFor(previous.content) === current) return previous;
-        const hash = `#read/${current}`;
-        if (window.location.hash && window.location.hash !== hash)
-          window.history.replaceState(null, '', hash);
-        return { ...previous, content: current };
-      });
+      // The address is checked now, not in the state update below: React may run
+      // that later, after a click has already put a new address in the bar.
+      const shown = window.location.hash
+        ? parseLocation(window.location.hash)
+        : null;
+      if (
+        shown?.mode === 'reading' &&
+        readingChapter(shown.content) !== current
+      )
+        window.history.replaceState(null, '', `#read/${current}`);
+      setView((previous) =>
+        previous.mode !== 'reading' || chapterFor(previous.content) === current
+          ? previous
+          : { ...previous, content: current },
+      );
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(pick);
