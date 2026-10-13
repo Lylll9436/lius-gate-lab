@@ -316,6 +316,15 @@ for (const [id, m] of models) {
   assert(hit, 'Nothing to click on: ' + id);
 }
 assert.equal(model.parkHit.userData.placeId, 'corner-park');
+// The herd answers the pointer as the park does: straight down on the paddock, the pick (the
+// models' hit targets and the park's, recursively) finds the Corner park.
+{
+  const pad = plan.paddock;
+  ray.set(new T.Vector3(pad.x, 40, pad.z), new T.Vector3(0, -1, 0));
+  let picked = ray.intersectObjects([...Array.from(models.values(), (m) => m.hit ?? m.root), model.parkHit], true)[0]?.object;
+  while (picked && !picked.userData.placeId && !picked.userData.buildingId) picked = picked.parent;
+  assert.equal(picked?.userData.placeId, 'corner-park', 'Pointing at the herd finds the Corner park.');
+}
 // Open water around the island, and a water shader that still compiles.
 const water = createIslandWater(model.waterLevel, -0.5);
 city.add(water.bottom, water.mesh);

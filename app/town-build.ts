@@ -2358,6 +2358,19 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     head.rotation.y = 0.15 * (1 - s) * Math.cos(time * 0.23 + phase);
     head.rotation.z = 0.07 * Math.max(0, Math.sin(time * 0.9 + phase * 3 + 1)) ** 16;
   }
+  /**
+   * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
+   * the Highland-cow outing lives) through an invisible box under the park's own hit box. The
+   * herd stays out of the park group, so the park's selection ring still traces only the park.
+   */
+  function herdHit(parkHit: T.Mesh) {
+    const P = plan.paddock;
+    const hit = new T.Mesh(new T.BoxGeometry(P.w + 0.4, 1.6, P.d + 0.4), parkHit.material);
+    hit.name = 'herd-hit';
+    hit.position.set(P.x - parkHit.position.x, 0.8 - parkHit.position.y, P.z - parkHit.position.z);
+    hit.userData.placeId = 'corner-park';
+    parkHit.add(hit);
+  }
   /** A tail swishes in bursts; at time 0 (and so with reduced motion) every tail hangs still. */
   function tailPose(spec: plan.HerdMember, tail: T.Object3D, time: number) {
     const { phase } = spec;
@@ -2726,6 +2739,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   parkHit.position.set(plan.park.x, 1.1, plan.park.z);
   parkHit.userData.placeId = 'corner-park';
   city.add(parkHit);
+  herdHit(parkHit);
 
   return {
     city,
