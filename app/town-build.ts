@@ -303,6 +303,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
     disc(t.x, t.z, 1.0 * t.size, 0.45, 0.5);
     disc(t.x, t.z, 0.3 * t.size, 0.85, 0.3);
   }
+  for (const s of plan.flock) disc(s.x, s.z, 0.3, 0.4, 0.3); // a soft trodden patch under each sheep
   const scratch = new Float32Array(N * N);
   for (let pass = 0; pass < 2; pass++) {
     boxBlur(ao, scratch, true);
@@ -2183,6 +2184,15 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   /* ---------------------------------------------------------------- */
   /* Scottish touches                                                  */
   /* ---------------------------------------------------------------- */
+  const groundRay = new T.Raycaster(),
+    down = new T.Vector3(0, -1, 0);
+  /** The built island ground's height at (x, z): its triangles, not the smooth terrainHeight they sample. */
+  function groundY(x: number, z: number) {
+    const ground = land.getObjectByName('island-ground');
+    groundRay.set(new T.Vector3(x, 10, z), down);
+    const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
+    return hit ? hit.point.y : plan.terrainHeight(x, z);
+  }
   /** The terrain's surface normal at (x, z), for props that lie along a slope. */
   function terrainNormal(x: number, z: number) {
     const e = 0.05;
@@ -2283,6 +2293,79 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     plan.heatherPlan(trees).forEach((drift, i) => heatherDrift(g, drift, i));
     plan.thistles.forEach(([x, z], i) => thistle(g, x, z, 31 + i * 7));
   }
+  /**
+   * A static Scottish Blackface sheep, about 0.66 tall at the fleece: three lumpy cream fleece
+   * lumps (a creamy top, a darker belly and creases where they meet, a ragged hem), a black face
+   * with curled pale horns and little ears, black legs and a tail. Grazing ones hold the nose to
+   * the grass. Everything is 'fabric', so the whole flock batches with the land.
+   */
+  function blackfaceSheep(g: T.Object3D, spec: plan.SheepSpec, index: number) {
+    const root = new T.Group();
+    // Stand 0.02 into the built ground under the lowest hoof: the terrain mesh runs a little below
+    // the smooth terrainHeight it samples on a hilltop, so a hoof placed by that would float.
+    root.position.set(spec.x, Math.min(...plan.sheepFeet(spec).map(([x, z]) => groundY(x, z))) - 0.02, spec.z);
+    root.rotation.y = spec.heading;
+    g.add(root);
+    const face = '#3b3633',
+      horn = '#cfc6b0',
+      top = new T.Color(palette.white),
+      tone = new T.Color('#ece3cf'),
+      under = new T.Color('#c9bfa6'),
+      c = new T.Color();
+    // Fleece: body, shoulders and rump as [x, y, z, r, sx, sy, sz].
+    const lumps = [[0, 0.42, 0, 0.24, 1, 0.85, 1.35], [0, 0.47, 0.17, 0.19, 1, 1, 1], [0, 0.46, -0.17, 0.2, 1, 1, 1]];
+    const geos = lumps.map(([x, y, z, r, sx, sy, sz], k) => {
+      const geo = new T.IcosahedronGeometry(r, 1),
+        p = geo.getAttribute('position');
+      // A ragged hem: lower vertices pushed down by a hash of their position (shared corners move together).
+      for (let i = 0; i < p.count; i++)
+        if (p.getY(i) < -0.4 * r) p.setY(i, p.getY(i) - 0.035 * hash(Math.round(p.getX(i) * 997) + Math.round(p.getZ(i) * 613) * 3 + k * 7));
+      return geo.scale(sx, sy, sz).rotateY(hash(index * 3 + k) * 0.6).translate(x, y, z);
+    });
+    for (const geo of geos) {
+      const p = geo.getAttribute('position'),
+        n = geo.getAttribute('normal'),
+        out = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i),
+          y = p.getY(i),
+          z = p.getZ(i),
+          v = sstep(y, 0.24, 0.66);
+        let f = mix(0.8, 1.04, sstep(v, 0.1, 0.9)); // from 0.8: the batch bake already darkens the belly
+        lumps.forEach(([lx, ly, lz, r, sx, sy, sz], j) => {
+          if (geos[j] === geo) return;
+          const gap = Math.hypot((x - lx) / sx, (y - ly) / sy, (z - lz) / sz) - r;
+          if (gap > 0) f *= 1 - 0.18 * (1 - sstep(gap, 0, 0.3 * r));
+        });
+        c.copy(tone).lerp(under, 0.4 * (1 - v)).lerp(top, 0.5 * sstep(v, 0.5, 1) * Math.max(0, n.getY(i)));
+        out[i * 3] = c.r * f;
+        out[i * 3 + 1] = c.g * f;
+        out[i * 3 + 2] = c.b * f;
+      }
+      geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    }
+    const fleece = new T.Mesh(mergeGeometries(geos)!, material('#ffffff', 'fabric'));
+    fleece.castShadow = fleece.receiveShadow = true;
+    root.add(fleece);
+    for (const [lx, lz] of [[-0.1, 0.18], [0.1, 0.18], [-0.1, -0.18], [0.1, -0.18]]) box(root, lx, 0.13, lz, 0.08, 0.26, 0.08, face, 'fabric'); // legs, into the fleece
+    box(root, 0, 0.44, -0.38, 0.08, 0.13, 0.06, palette.white, 'fabric', { rx: -0.35 }); // tail
+    // Head: a pivot inside the shoulder lump, nose down to the grass when grazing.
+    const head = new T.Group();
+    head.position.set(0, spec.grazing ? 0.33 : 0.5, spec.grazing ? 0.31 : 0.3);
+    head.rotation.x = spec.grazing ? 1.25 : 0.45;
+    root.add(head);
+    box(head, 0, 0.02, 0.1, 0.17, 0.19, 0.26, face, 'fabric', { bevel: 0.06 });
+    for (const s of [-1, 1]) {
+      box(head, s * 0.11, 0.05, 0.03, 0.1, 0.03, 0.05, face, 'fabric', { rz: s * 0.3 }); // ear
+      // A curled horn in the side plane: the arc runs back, over the top and forward, open at the cheek.
+      const geo = new T.TorusGeometry(0.06, 0.028, 6, 10, 1.5 * Math.PI).rotateZ(1.5 * Math.PI).rotateY(Math.PI / 2);
+      const m = new T.Mesh(geo, material(horn, 'fabric'));
+      m.position.set(s * 0.1, 0.07, 0.02);
+      m.castShadow = m.receiveShadow = true;
+      head.add(m);
+    }
+    return root;
+  }
 
   /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
@@ -2351,6 +2434,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   pierAndHarbour(land);
   lighthouse(land);
   moorland(land, trees);
+  plan.flock.forEach((spec, i) => blackfaceSheep(land, spec, i));
   hotAirBalloon(city);
   yield 'park, harbour and landmarks';
 

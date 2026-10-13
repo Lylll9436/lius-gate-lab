@@ -383,6 +383,34 @@ for (const [x, z] of plan.thistles) {
   assert(plan.onIsland(x, z, 1) && plan.lawnCore(x, z) < 0.02 && plan.distanceToStreets(x, z) > 2, `Thistle astray at ${x}, ${z}`);
   assert(!inPaddock(x, z, 1.0), `Thistle in the paddock at ${x}, ${z}`);
 }
+// Blackface sheep graze the two empty hilltops, clear of the trees, the shore, the streets and the
+// cottages, and every hoof stands on (or just in) the built ground: none floats over the slope.
+const grass = [],
+  fabric = [];
+city.traverse((o) => {
+  if (o.isMesh && o.material.userData?.surfaceKind === 'grass') grass.push(o);
+  if (o.isMesh && o.material.userData?.surfaceKind === 'fabric') fabric.push(o);
+});
+assert(plan.flock.length === 5, 'Five sheep: ' + plan.flock.length);
+for (const s of plan.flock) {
+  assert(plan.terrainHeight(s.x, s.z) > 0.2, `${s.id} is not on a hill`);
+  assert(plan.islandRadius(Math.atan2(s.z, s.x)) - Math.hypot(s.x, s.z) > 1.6, `${s.id} by the shore`);
+  assert(plan.distanceToStreets(s.x, s.z) > 7, `${s.id} by a street`);
+  for (const c of plan.cottages) assert(Math.hypot(c.x - s.x, c.z - s.z) > 9.5, `${s.id} by a cottage`);
+  for (const t of trees) assert(Math.hypot(t.x - s.x, t.z - s.z) - 0.9 * t.size - 0.35 > 0.9, `${s.id} under ${t.id}`);
+  for (const [x, z] of plan.sheepFeet(s)) {
+    ray.set(new T.Vector3(x, 10, z), new T.Vector3(0, -1, 0));
+    const ground = ray.intersectObjects(grass, false)[0];
+    assert(ground, `No ground under ${s.id}`);
+    // The leg's underside, found from below the ground (the turf is one-sided).
+    ray.set(new T.Vector3(x, ground.point.y - 0.5, z), new T.Vector3(0, 1, 0));
+    const leg = ray.intersectObjects(fabric, false)[0];
+    assert(leg && leg.point.y < ground.point.y + 0.3, `${s.id} has no leg at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+    const above = leg.point.y - ground.point.y;
+    assert(above <= 0.005, `${s.id} has a hoof ${above.toFixed(3)} above the ground`);
+    assert(above > -0.15, `${s.id} has a hoof sunk ${(-above).toFixed(3)} into the hill`);
+  }
+}
 // Heather keeps its own season in muted colours: a mauve bloom in late summer and autumn only.
 const { heatherLook } = await load('town-build');
 const hsv = (hex) => {

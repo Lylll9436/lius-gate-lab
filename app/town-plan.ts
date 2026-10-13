@@ -539,8 +539,30 @@ export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] 
     if (insideRect(x, z, terraceClearing, reach) || insideRect(x, z, paddockReserve, 1.0 + reach)) continue;
     if (insideRect(x, z, reservedPlot, 1.5 + reach)) continue;
     if (thistles.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < 0.5 + reach)) continue;
+    if (flock.some((s) => Math.hypot(s.x - x, s.z - z) < 0.8 + reach)) continue;
     if (drifts.some((o) => Math.hypot(o.x - x, o.z - z) < 2.2)) continue;
     drifts.push(drift);
   }
   return drifts;
+}
+
+export type SheepSpec = { id: string; x: number; z: number; heading: number; grazing: boolean };
+/**
+ * Blackface sheep on the two empty hilltops, three on the north-west hill and two on the
+ * north-east one: at least 0.9 clear of the canopies, 1.6 of the coast, 7 of the streets and
+ * about 10 of the cottages. `heading` is rotation.y, so the nose points along (sin h, cos h);
+ * the ones on the steeper flanks stand along the slope.
+ */
+export const flock: SheepSpec[] = [
+  { id: 'sheep-0', x: -20.35, z: -19.75, heading: 2.3, grazing: true },
+  { id: 'sheep-1', x: -21.2, z: -20.95, heading: -1.0, grazing: false },
+  { id: 'sheep-2', x: -17.3, z: -20.3, heading: -2.7, grazing: true },
+  { id: 'sheep-3', x: 22.5, z: -19.75, heading: -1.9, grazing: true },
+  { id: 'sheep-4', x: 21.3, z: -18.6, heading: 0.6, grazing: false },
+];
+/** A sheep's four hooves in world x, z (local x ±0.1, z ±0.18). */
+export function sheepFeet(s: SheepSpec): XZ[] {
+  const c = Math.cos(s.heading),
+    n = Math.sin(s.heading);
+  return [[-0.1, 0.18], [0.1, 0.18], [-0.1, -0.18], [0.1, -0.18]].map(([lx, lz]) => [s.x + lx * c + lz * n, s.z - lx * n + lz * c]);
 }
