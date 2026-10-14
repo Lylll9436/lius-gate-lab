@@ -49,15 +49,17 @@ export function createBatch(ctx: TownContext) {
       groups = new Map<string, { mat: T.Material; cast: boolean; list: T.BufferGeometry[] }>(),
       old: T.Mesh[] = [];
     const kindOf = (o: T.Mesh) => (o.material as T.Material).userData?.surfaceKind as SurfaceKind;
-    // Pass 1: overhangs in g space (roofs and flat solid slabs, never foliage or ground), in a 4-unit grid.
-    type Cap = { id: number; box: T.Box3; top: number };
+    // Pass 1: overhangs in g space (roofs and flat solid slabs, never foliage, ground or a `band`
+    // course such as a bay's sill or string course), in a 4-unit grid. A `bayCap` (a bay's own
+    // cornice or roof) darkens only meshes tagged `bay`, so the main wall behind keeps its bake.
+    type Cap = { id: number; box: T.Box3; top: number; bay: boolean };
     const caps = new Map<number, Cap[]>();
     const cellOf = (x: number, z: number) => (Math.floor(x / 4) + 512) * 1024 + Math.floor(z / 4) + 512;
     if (mode !== 'none')
       g.traverse((o) => {
         if (!(o instanceof T.Mesh) || lamps.includes(o)) return;
         const k = kindOf(o);
-        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.ground) return;
+        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.ground || o.userData.band) return;
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
         const toG = inv.clone().multiply(o.matrixWorld),
           box = o.geometry.boundingBox!.clone().applyMatrix4(toG),
@@ -68,7 +70,7 @@ export function createBatch(ctx: TownContext) {
           o.userData.eaveY !== undefined
             ? new T.Vector3(0, o.userData.eaveY, 0).applyMatrix4(inv.clone().multiply(o.parent!.matrixWorld)).y
             : box.min.y;
-        const cap = { id: o.id, box, top };
+        const cap = { id: o.id, box, top, bay: !!o.userData.bayCap };
         for (let cx = Math.floor(box.min.x / 4); cx <= Math.floor(box.max.x / 4); cx++)
           for (let cz = Math.floor(box.min.z / 4); cz <= Math.floor(box.max.z / 4); cz++) {
             const key = (cx + 512) * 1024 + cz + 512;
@@ -142,7 +144,7 @@ export function createBatch(ctx: TownContext) {
               const qx = px + nx * 0.08,
                 qz = pz + nz * 0.08;
               for (const c of caps.get(cellOf(qx, qz)) ?? [])
-                if (c.id !== o.id && c.top > py - 0.06 && qx >= c.box.min.x && qx <= c.box.max.x && qz >= c.box.min.z && qz <= c.box.max.z)
+                if (c.id !== o.id && (!c.bay || o.userData.bay) && c.top > py - 0.06 && qx >= c.box.min.x && qx <= c.box.max.x && qz >= c.box.min.z && qz <= c.box.max.z)
                   eave = Math.min(eave, Math.max(0, c.top - py));
             }
           }

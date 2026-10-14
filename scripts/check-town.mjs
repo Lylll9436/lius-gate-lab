@@ -306,6 +306,97 @@ for (const [id, m] of models) {
     assert(above.zoom <= fit.zoom + 1e-9, 'Inspection above the sheet: ' + id);
   }
 }
+// The canted bays: under the eaves, out of the gardens, clear of the doorpiece, baked as one body under their own cap,
+// the main wall's bake untouched, one light per storey, and each home within its triangle budget. The models are
+// batched, so this reads the merged meshes in shell space (front +z, the wall face at d/2).
+{
+  const BAY = { x: -0.68, root: 1.06, depth: 0.55, cant: 0.23 },
+    slant = Math.hypot(BAY.depth, BAY.cant),
+    WALL_TOP = 3.02;
+  // Each bay's bodies (y0, y1) on the homes already rebuilt; the last one's top is the bay's own cap.
+  const BODIES = { 'yunlong-liu': [[0.42, 1.76], [1.9, 2.78]] };
+  const v = new T.Vector3(),
+    q = new T.Vector3(),
+    n = new T.Vector3(),
+    tri = new T.Box3();
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { w, d } = plan.sites[id],
+      bodies = BODIES[id],
+      cap = bodies?.at(-1)[1];
+    // Bay body faces as [normal x, normal z, point x, point z]: front, left cheek, right cheek.
+    const faces = [
+      [0, 1, BAY.x, d / 2 + BAY.depth],
+      [-BAY.depth / slant, BAY.cant / slant, BAY.x - BAY.root / 2, d / 2],
+      [BAY.depth / slant, BAY.cant / slant, BAY.x + BAY.root / 2, d / 2],
+    ];
+    // The door's lintel and left jamb, grown 0.02 all round.
+    const door = [
+      [-0.09, 2.17, 1.13, 2.39, 0.24],
+      [-0.01, 0.42, 0.17, 2.35, 0.2],
+    ].map(([x0, y0, x1, y1, dz]) => new T.Box3(new T.Vector3(x0, y0, d / 2), new T.Vector3(x1, y1, d / 2 + dz)).expandByScalar(0.02));
+    let tris = 0,
+      walls = 0,
+      capped = 0;
+    for (const o of shell.children) {
+      if (!o.isMesh) continue;
+      const p = o.geometry.attributes.position,
+        kind = o.material.userData.surfaceKind;
+      tris += (o.geometry.index?.count ?? p.count) / 3;
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        if (v.z > d / 2 + 0.45) assert(v.y < 3.12, `${id}: the bay stands through the eave at ${v.toArray().join(', ')}`);
+        if (!bodies) continue;
+        if (v.z > d / 2 + 0.75) assert(v.y < 0.7, `${id}: the bay reaches into the front garden at ${v.toArray().join(', ')}`);
+        // A cheek frame's root stile spans the lintel's height with no vertex there, so test triangles, not vertices.
+        if (kind === 'paint' && i % 3 === 2) {
+          tri.makeEmpty();
+          for (let j = i - 2; j <= i; j++) tri.expandByPoint(q.fromBufferAttribute(p, j));
+          if (tri.min.x < -0.03) assert(!door.some((b) => b.intersectsBox(tri)), `${id}: a bay frame touches the doorpiece at ${tri.min.toArray().join(', ')}`);
+        }
+        if (kind !== 'stone') continue;
+        n.fromBufferAttribute(o.geometry.attributes.normal, i);
+        const eave = o.geometry.attributes.aBake.getY(i) * 4;
+        // The main wall's flat front keeps its bake: only the main cornice caps it (2.48 at y 0.54, 0.12 at 2.90).
+        if (Math.abs(v.z - d / 2) < 2e-3 && n.z > 0.99 && Math.abs(Math.abs(v.x) - (w / 2 - 0.12)) < 2e-3) {
+          walls++;
+          assert(Math.abs(eave - (WALL_TOP - v.y)) < 0.02, `${id}: a bay cap darkens the main wall at ${v.toArray().join(', ')}`);
+        }
+        // A bay body darkens only toward its own cap, never a band's, and its top row sits right under it on every face.
+        const onFace = faces.some(([nx, nz, px, pz]) => n.x * nx + n.z * nz > 0.99 && Math.abs((v.x - px) * nx + (v.z - pz) * nz) < 2e-3);
+        const body = onFace && Math.abs(v.x - BAY.x) < BAY.root / 2 + 1e-3 && bodies.find(([y0, y1]) => v.y > y0 && v.y < y1);
+        if (!body) continue;
+        assert(eave > cap - v.y - 0.02, `${id}: a band course darkens the bay at ${v.toArray().join(', ')}`);
+        if (body[1] === cap && Math.abs(v.y - (cap - 0.03)) < 2e-3) {
+          capped++;
+          assert(eave < 0.1, `${id}: the bay's top is not under its cap at ${v.toArray().join(', ')}`);
+        }
+      }
+    }
+    assert(tris < 6000, `${id}: ${Math.round(tris)} triangles`);
+    if (!bodies) continue;
+    assert(walls >= 4 && capped >= 9, `${id}: found ${walls} main-wall and ${capped} capped bay vertices`);
+    // Once per-pane night lights land (model.windows): each bay storey (Pengyuan's upper band is the balcony) is one
+    // light, and the ground storey is forced on (level 255, out no earlier than byte 191, 01:22).
+    if (model.windows)
+      for (const [y0, y1, forced] of [
+        [0.6, 1.8, true],
+        [1.85, 3, false],
+      ]) {
+        const seen = new Set();
+        for (const o of shell.children)
+          if (o.isMesh && o.material.userData.surfaceKind === 'glass') {
+            const p = o.geometry.attributes.position,
+              a = o.geometry.attributes.aWindow.array;
+            for (let i = 0; i < p.count; i++)
+              if (v.fromBufferAttribute(p, i).x < -0.03 && v.z > d / 2 + 0.02 && v.y > y0 && v.y < y1) seen.add(a.slice(i * 4, i * 4 + 4).join());
+          }
+        assert.equal(seen.size, 1, `${id}: the bay's band ${y0}–${y1} has ${seen.size} lights`);
+        const [level, , off] = [...seen][0].split(',').map(Number);
+        if (forced) assert(level === 255 && off >= 191, `${id}: the ground storey is not lit late (${[...seen][0]})`);
+      }
+  }
+}
 // The pointer can find every building and the park.
 const ray = new T.Raycaster();
 for (const [id, m] of models) {

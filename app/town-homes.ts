@@ -1,14 +1,14 @@
 import * as T from 'three';
 import * as plan from './town-plan';
 import { palette } from './town-shared';
-import type { Kit } from './town-kit';
+import type { Bay, Kit } from './town-kit';
 import type { Nature } from './town-nature';
 
 /* ------------------------------------------------------------------ */
 /* Homes: the terrace row and the cottages                             */
 /* ------------------------------------------------------------------ */
 export function createHomes(kit: Kit, nature: Nature) {
-  const { box, slabRoof, windowAt, door, quoins, plinth, chimney } = kit;
+  const { box, slabRoof, windowAt, door, quoins, plinth, chimney, cantedPrism, bayFaces, sash } = kit;
   const { hedge, flowerBed } = nature;
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
     const w = site.w,
@@ -27,18 +27,39 @@ export function createHomes(kit: Kit, nature: Nature) {
     box(shell, 0, P + h / 2, 0, w, h, d, stone, 'stone');
     quoins(shell, w, d, P, top, dress, { front: 0.25, corners: 'front' });
     box(shell, 0, top + 0.1, 0, w + 0.3, 0.2, d + 0.3, dress, 'stone');
-    // The signature bay: grounded on its own battered plinth, under a lean-to. The red bay
-    // rises the full height of the wall, so the main roof's eave caps it instead.
-    // 1.0 wide at x -0.6, so it clears the left quoins (x -1.11) and the door jamb.
+    // The signature bay: a Glasgow canted sandstone bay in the 1.06 slot between the left quoins
+    // and the doorpiece. Its cheeks meet the wall at 67 degrees (the slot is too narrow for 45),
+    // so from any bearing the front and a cheek read as two tones meeting at an angle. Sash
+    // windows sit on every face: 0.36 glass on the front, 0.20 on each cheek, both storeys.
+    // Window groups for the night lights: `<id>-bay-0` (ground storey, kept lit late) and
+    // `<id>-bay-1` (upper storey); each group is one light, drawn from its first pane.
+    const bay: Bay = { x: -0.68, z0: d / 2, root: 1.06, depth: 0.55, cant: 0.23 };
     const bayX = -0.6,
       bayW = 1.0,
-      bayTop = red ? top : 2.02;
-    box(shell, bayX, P / 2, d / 2 + 0.3, bayW + 0.12, P, 0.75, base, 'stone', { taper: 0.04 }); // grounded
-    box(shell, bayX, (P + bayTop) / 2, d / 2 + 0.25, bayW, bayTop - P, 0.6, stone, 'stone');
-    box(shell, bayX, bayTop + 0.1, d / 2 + 0.3, bayW + 0.12, 0.2, 0.75, dress, 'stone');
-    if (!red) box(shell, bayX, bayTop + 0.38, d / 2 + 0.33, bayW + 0.3, 0.16, 0.9, palette.slate, 'slate', { rx: 0.45 }); // lean-to
-    windowAt(shell, bayX, 1.25, d / 2 + 0.55, 0.72, 0.95, { frame: dress, lintel: !red });
-    if (red) windowAt(shell, bayX, 2.45, d / 2 + 0.55, 0.72, 0.8, { frame: dress, sill: false, lintel: false });
+      bayTop = 2.02;
+    if (red) {
+      const first = shell.children.length; // from here to the bay cornice, everything is bay (tagged at the end)
+      const faces = bayFaces(shell, bay);
+      const storey = (n: number, y: number, h: number) => faces.forEach(({ face, arris }) =>
+        sash(face, arris * 0.07, y, 0, arris ? 0.2 : 0.36, h, dress, { group: `${site.id}-bay-${n}`, lit: n === 0 }));
+      cantedPrism(shell, bay, 0, P, base, 'stone', 0.06); // footing on the plinth line
+      cantedPrism(shell, bay, 0.56, 0.68, dress, 'stone', 0.06).userData.band = true; // sill course; frames sit on it
+      cantedPrism(shell, bay, P, 1.76, stone); // ground storey
+      storey(0, 1.2, 0.86); // glass 0.77-1.63, frames 0.69-1.71
+      // Two storeys up to the wallhead: the main eave caps the bay, its cornice stops under the eave lip.
+      cantedPrism(shell, bay, 1.76, 1.9, dress, 'stone', 0.07).userData.band = true; // string course
+      cantedPrism(shell, bay, 1.9, 2.78, stone);
+      storey(1, 2.33, 0.7); // frames 1.90-2.76
+      cantedPrism(shell, bay, 2.78, 2.96, dress, 'stone', 0.1).userData.bayCap = true; // front at z 2.75, under the fascia
+      for (const o of shell.children.slice(first)) o.traverse((m) => { m.userData.bay = true; }); // batch()'s bay-cap rule
+    } else {
+      // The old box bay on its own battered plinth, under a lean-to.
+      box(shell, bayX, P / 2, d / 2 + 0.3, bayW + 0.12, P, 0.75, base, 'stone', { taper: 0.04 }); // grounded
+      box(shell, bayX, (P + bayTop) / 2, d / 2 + 0.25, bayW, bayTop - P, 0.6, stone, 'stone');
+      box(shell, bayX, bayTop + 0.1, d / 2 + 0.3, bayW + 0.12, 0.2, 0.75, dress, 'stone');
+      box(shell, bayX, bayTop + 0.38, d / 2 + 0.33, bayW + 0.3, 0.16, 0.9, palette.slate, 'slate', { rx: 0.45 }); // lean-to
+      windowAt(shell, bayX, 1.25, d / 2 + 0.55, 0.72, 0.95, { frame: dress });
+    }
     // The door on the plinth's landing; its risers step down to the ground at d/2 + 0.85.
     const doorX = 0.52;
     door(shell, doorX, P, d / 2, 0.7, 1.75, doorColor, { surround: dress, landing: 0.25, width: 1.0 });
@@ -68,7 +89,7 @@ export function createHomes(kit: Kit, nature: Nature) {
     const fx = site.x + (Math.sin(site.rotation) * d) / 2,
       fz = site.z + (Math.cos(site.rotation) * d) / 2;
     const room = plan.distanceToStreets(fx, fz) - plan.PAVEMENT_WIDTH - 0.05;
-    if (room >= 1.2) flowerBed(shell, bayX, 0, d / 2 + 0.9, 1.0, 0.4, seed * 31);
+    if (room >= 1.2) flowerBed(shell, red ? bay.x : bayX, 0, d / 2 + 0.9, 1.0, 0.4, seed * 31);
     if (room >= 1.75) hedge(shell, -0.1, 0, d / 2 + Math.min(1.4, room - 0.35), w - 0.5, 0, 0.55, { at: doorX + 0.1, width: 1.0 });
     if (room - 0.85 >= 0.2) box(shell, doorX, 0.03, d / 2 + (0.85 + room) / 2, 0.8, 0.06, room - 0.85, palette.plaza, 'paving');
   }
