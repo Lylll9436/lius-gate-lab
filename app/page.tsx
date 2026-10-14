@@ -536,17 +536,28 @@ export default function Home() {
     );
     return () => window.clearTimeout(timer);
   }, [shot, settledShot]);
+  // The chapter the reading camera last framed. The address follows the reading line at once
+  // but the camera only once it settles, so for a moment the address is already in the next
+  // chapter: the camera then keeps its shot rather than fit the chapter being left again.
+  const framedShot = useRef<string | null>(null);
   useEffect(() => {
     const engine = api.current;
-    if (mode !== 'reading' || !engine) return;
+    if (mode !== 'reading' || !engine) {
+      framedShot.current = null;
+      return;
+    }
     if (settledShot === READ_END) {
+      framedShot.current = READ_END;
       // Beside the last chapter's panel, in the part of the stage the footer leaves in view.
       engine.setFrameShift(wide ? 0.21 : 0, endFrame());
       engine.overview(true);
       return;
     }
-    const chapter = settledShot;
-    const focusContent = chapterFor(content) === chapter ? content : chapter;
+    const chapter = settledShot,
+      ahead = readingChapter(content) !== chapter;
+    if (ahead && framedShot.current === chapter) return;
+    framedShot.current = chapter;
+    const focusContent = ahead ? chapter : content;
     engine.setYaw(bearings[chapter] ?? Math.PI / 4);
     if (chapter === 'overview') {
       engine.reset();
