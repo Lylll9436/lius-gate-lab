@@ -24,11 +24,15 @@ const BAKE_RANGE = 4;
  */
 type WindowRole = 'home' | 'civic' | 'studio' | 'kiosk' | 'beacon' | 'dial' | 'vehicle' | 'unlit';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
-/** Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers. */
+/**
+ * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
+ * Cool stays an accent (about one lit room in ten, besides the phone box): the pale cool white reads as a flat grey
+ * card beside the warm panes, so a whole ribbon or a row of arches in it looks like a blank board.
+ */
 const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
-  home: { lit: 0.55, dim: 0.2, cool: 0.15, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
-  civic: { lit: 0.4, dim: 0, cool: 0.5, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
-  studio: { lit: 0.85, dim: 0, cool: 0.4, goes: 0.5, span: [0.6, 0.98], risers: 0 }, // 00:42-02:25
+  home: { lit: 0.55, dim: 0.25, cool: 0.1, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
+  civic: { lit: 0.4, dim: 0.25, cool: 0.1, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
+  studio: { lit: 0.85, dim: 0, cool: 0.1, goes: 0.5, span: [0.6, 0.98], risers: 0 }, // 00:42-02:25
 };
 /** [level, tint, off, wake] for panes that never change (1 = never). */
 const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {

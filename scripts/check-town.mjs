@@ -486,6 +486,9 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
 {
   const evening = lit(rooms, 20).length / rooms.length;
   assert(evening >= 0.35 && evening <= 0.65, `${Math.round(evening * 100)}% of the rooms are lit at 20:00.`);
+  // Most lit rooms are warm or today's glow; the pale cool white is an accent, not a grey board on every civic front.
+  const cool = lit(rooms, 20).filter((p) => Math.round(p.light[1] * 255) === 255).length;
+  assert(cool <= 0.15 * lit(rooms, 20).length, `${cool} of the ${lit(rooms, 20).length} rooms lit at 20:00 are cool.`);
   for (const id of ['pengyuan-liu', 'yunlong-liu', 'qin-li'])
     assert(lit(rooms.filter((p) => p.place === id), 23.5).length, `${id}'s home is dark at 23:30.`);
   assert(lit(rooms.filter((p) => p.place === 'research-studio'), 1).length, 'The studio is dark at 01:00.');
