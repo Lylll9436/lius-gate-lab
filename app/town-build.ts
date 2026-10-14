@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { createCityMaterials } from './city-materials';
-import { createResident } from './city-people';
+import { animateResident, createDog, createResident } from './city-people';
 import { buildings, type BuildingId } from './city-data';
 import * as plan from './town-plan';
 import type { XZ } from './town-plan';
@@ -237,6 +237,45 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       speed: (inner ? 0.85 : -0.85) * (0.85 + hash(i + 3) * 0.3),
     });
   }
+  // A dog walker and a Border collie on the open lawn east of the corner park: a generic
+  // townsperson in muted clothes and a flat cap. Every 15 s they stop for 4 while the dog sniffs
+  // and wags faster; the walker's hand on the dog's side is held forward, as if on a lead (a lead
+  // itself would be too thin to draw). Both pose from town time, so reduced motion holds them.
+  const dogWalk = new T.Group(),
+    dogWalker = createResident(7, material, { coat: '#7a6a52', legs: '#3a4654', hair: '#8c8577', scarf: '#c4a878' }),
+    dog = createDog(material);
+  dogWalk.name = 'dog-walk';
+  dogWalk.userData.prebatched = true; // batched with the walkers below, not by the animated loop
+  dogWalk.add(dogWalker, dog);
+  city.add(dogWalk);
+  {
+    const head = dog.getObjectByName('dog-head')!,
+      tail = dog.getObjectByName('dog-tail')!,
+      leadArm = dogWalker.getObjectByName('arm-left')!; // the -x arm: the dog's side
+    let last = 0,
+      lastS = 0,
+      wag = 0;
+    const update = (time: number) => {
+      // Clamped steps absorb jumps in time; paused, time stands still and so does everything.
+      const dt = Math.min(0.1, Math.max(0, time - last)),
+        pose = plan.dogWalkPose(time),
+        { walker: w, dog: d } = pose;
+      last = time;
+      animateResident(dogWalker, Math.abs(pose.s - lastS), dt, dt === 0);
+      lastS = pose.s;
+      dogWalker.position.set(w.x, plan.terrainHeight(w.x, w.z) - dogWalker.userData.sole, w.z);
+      dogWalker.rotation.y = w.heading;
+      leadArm.rotation.x = -0.45;
+      dog.position.set(d.x, plan.terrainHeight(d.x, d.z) + 0.012 * Math.abs(Math.sin(pose.s * 26)) * (1 - pose.sniff), d.z);
+      dog.rotation.y = d.heading;
+      head.rotation.x = 0.55 * pose.sniff; // nose down while they stand
+      // The wag's phase adds up, so its speed (6 rad/s walking, 10 standing) changes without a jump.
+      wag += dt * (6 + 4 * pose.sniff);
+      tail.rotation.y = 0.5 * Math.sin(wag);
+    };
+    update(0);
+    animated.push({ object: dogWalk, update });
+  }
   // Three ducks on the gate's pool; the animated list's batching makes each one mesh.
   pondDucks(city);
   // The bike rack by the Research Studio: three hoops on the pad and two bikes, front to the
@@ -268,8 +307,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     batch(m.shell);
     yield `batch ${id}`;
   }
-  for (const walker of walkers)
-    for (const part of walker.root.children) {
+  /** A figure batched part by part (the body, each hip and knee, each arm), so its joints still bend. */
+  function batchFigure(root: T.Object3D) {
+    for (const part of root.children) {
       const joints = part.children.filter((o) => o instanceof T.Group);
       for (const joint of joints) {
         part.remove(joint);
@@ -278,9 +318,16 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       batch(part as T.Group, { contact: 'none' });
       if (joints.length) part.add(...joints);
     }
+  }
+  for (const walker of walkers) batchFigure(walker.root);
+  batchFigure(dogWalker);
+  for (const name of ['dog-head', 'dog-tail']) batch(dog.getObjectByName(name)!, { contact: 'none' });
+  batch(dog, { contact: 'none' });
   batch(tram, { contact: 'local', localFloor: 0 });
   batch(boat, { contact: 'none' });
-  for (const entry of animated) if (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)) batch(entry.object, { contact: 'none' });
+  for (const entry of animated)
+    if (!entry.object.userData.prebatched && (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)))
+      batch(entry.object, { contact: 'none' });
   city.updateMatrixWorld(true);
 
   // Sprinkle a soft "lit window" marker for night: glass materials are shared, so one toggle lights the town.

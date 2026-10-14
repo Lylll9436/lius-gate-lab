@@ -579,6 +579,27 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     }
   }
 }
+// The people are batched part by part, as before (13 or 14 meshes each, the satchel's wood making
+// the difference). The dog walker is one more of them; the dog is four meshes (its body, the only
+// part that casts, its legs, its head and its tail) and keeps its pivots apart from its body.
+{
+  const meshesIn = (o) => {
+    let n = 0;
+    o.traverse((c) => (n += c.isMesh ? 1 : 0));
+    return n;
+  };
+  for (const w of walkers) assert([13, 14].includes(meshesIn(w.root)), `A walker is ${meshesIn(w.root)} meshes`);
+  const dogWalk = model.animated.find((e) => e.object.name === 'dog-walk');
+  assert(dogWalk && dogWalk.object.userData.prebatched, 'The dog walk is batched with the people.');
+  const [figure, dog] = dogWalk.object.children;
+  assert.equal(dog.name, 'dog');
+  assert([13, 14].includes(meshesIn(figure)), `The dog walker is ${meshesIn(figure)} meshes`);
+  assert.equal(meshesIn(dog), 4, 'The dog is four meshes.');
+  const cast = [];
+  dog.traverse((c) => c.isMesh && c.castShadow && cast.push(c));
+  assert(cast.length === 1 && cast[0].parent === dog, 'Only the dog’s body casts a shadow.');
+  for (const name of ['dog-head', 'dog-tail']) assert(dog.getObjectByName(name).children.every((c) => c.isMesh), `${name} is batched`);
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>
