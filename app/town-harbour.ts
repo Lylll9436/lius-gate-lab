@@ -132,9 +132,12 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
   function mooring(p: T.Object3D, moor: typeof plan.harbour.dinghy, pitch: number) {
     const H = plan.harbour,
       up = new T.Vector3(0, 1, 0);
+    // The eyes round the pile heads are wet and worn darker than the lines: a pale ring there
+    // framed the pier-head lamp's lantern like a halo at the default view.
+    const pileEye = '#' + new T.Color(palette.rope).multiplyScalar(0.3).getHexString();
     for (const line of H.lines) {
       const [px, pz] = line.pile;
-      eye(p, px, 0.44, pz, 0.19); // 0.06 under the pile top, its inner edge clear of the pile
+      eye(p, px, 0.44, pz, 0.19, pileEye); // 0.06 under the pile top, its inner edge clear of the pile
       const end = new T.Vector3(...line.fairlead).applyAxisAngle(up, moor.turn).add(new T.Vector3(moor.x, WATER, moor.z)),
         axis = new T.Vector3(px, 0.44, pz),
         h = new T.Vector3(px - end.x, 0, pz - end.z).normalize(),

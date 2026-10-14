@@ -128,8 +128,8 @@ export function createKit(ctx: TownContext) {
     return m;
   }
   /** A rope eye of radius R lying flat round a post at (x, y, z): its tube is 0.08 thick, 0.005 fatter than the rope spliced into it. */
-  function eye(g: T.Object3D, x: number, y: number, z: number, R: number) {
-    const m = new T.Mesh(new T.TorusGeometry(R, 0.04, 5, 12), material(palette.rope, 'fabric'));
+  function eye(g: T.Object3D, x: number, y: number, z: number, R: number, colour = palette.rope) {
+    const m = new T.Mesh(new T.TorusGeometry(R, 0.04, 5, 12), material(colour, 'fabric'));
     m.position.set(x, y, z);
     m.rotation.x = Math.PI / 2;
     m.receiveShadow = true;
