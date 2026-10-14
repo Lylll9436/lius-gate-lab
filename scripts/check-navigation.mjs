@@ -297,6 +297,45 @@ assert(
   moved <= offsetLength * turned + 1e-9,
   `A turning frame moved the view centre ${moved.toFixed(2)} (offset ${offsetLength.toFixed(2)}): a sideways jump.`,
 );
+// Rotate pressed quickly keeps turning the button's way: three presses 0.3 s apart end three
+// quarter turns round, never swinging back the short way; a burst queues one turn at most.
+let rotateSource;
+function findRotate(node) {
+  if (ts.isMethodDeclaration(node) && node.name.getText(syntax) === 'rotate')
+    rotateSource = `function rotate() ${node.body.getText(syntax)}`;
+  ts.forEachChild(node, findRotate);
+}
+findRotate(syntax);
+assert(rotateSource, 'The rotate check must find the Rotate button’s method.');
+Object.assign(turn, {
+  performance: { now: () => 0 },
+  inspectionAutoFit: false,
+  fitOverview() {},
+  lastInteraction: 0,
+});
+const rotateNow = runInNewContext(
+  `${ts.transpileModule(rotateSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};rotate;`,
+  turn,
+);
+turning.turnStep();
+for (let frame = 0; frame < 600 && Math.abs(turn.targetYaw - turn.yaw) > 0.0001; frame++)
+  turning.turnStep();
+const startBearing = turn.yaw;
+for (let frame = 0; frame < 900; frame++) {
+  if (frame % 18 === 0 && frame <= 36) rotateNow();
+  const was = turn.yaw;
+  turning.turnStep();
+  assert(turn.yaw >= was - 1e-12, `Quick Rotate presses turned the camera back at frame ${frame}.`);
+}
+assert(
+  Math.abs(turn.yaw - startBearing - (3 * Math.PI) / 2) < 1e-6,
+  'Three Rotate presses end three quarter turns round.',
+);
+for (let press = 0; press < 8; press++) rotateNow();
+assert(
+  turn.targetYaw - turn.yaw <= Math.PI * 2 + 1e-6,
+  'A burst of Rotate presses queues one full turn at most.',
+);
 // Leaving Inspect from a study zoom closer than the town's limit eases all the way out: the
 // real OrbitControls clamps the zoom to its limit on every update, so the limit must come
 // down with the glide, not before it.
@@ -438,5 +477,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, an eased zoom out of Inspect.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, an eased zoom out of Inspect.`,
 );

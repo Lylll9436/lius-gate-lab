@@ -989,8 +989,9 @@ export async function createCity(
     if (!paused) time += dt;
     if (Math.abs(targetYaw - yaw) > 0.0001) {
       // The bearing eases in more slowly than the glide and never whips round; a reduced-motion
-      // turn is a cut.
-      const left = shortestAngle(yaw, targetYaw);
+      // turn is a cut. The bearings asked for already take the shortest way round; quick Rotate
+      // presses queue their quarter turns, which keep turning the way the button turns.
+      const left = targetYaw - yaw;
       if (reduced || Math.abs(left) < 0.0005) yaw = targetYaw = yaw + left;
       else
         yaw +=
@@ -1242,7 +1243,8 @@ export async function createCity(
     reset,
     overview,
     rotate() {
-      targetYaw += Math.PI / 2;
+      // A quarter turn more, never more than a full turn still to go.
+      if (targetYaw - yaw <= (Math.PI * 3) / 2 + 1e-6) targetYaw += Math.PI / 2;
       inspectionAutoFit = true;
       if (overviewFit) fitOverview();
       lastInteraction = performance.now();
