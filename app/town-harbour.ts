@@ -421,30 +421,30 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
         sleeve.userData.noShadow = true;
         p.add(sleeve);
       }
-    // Driftwood on the strand line: a bleached log, thick end at `from` with a root flare, and a
-    // stub branch 0.3 along it, raised 50 degrees toward the thin end in the log's own plane.
+    // Driftwood on the strand line: a silvered log, thinning toward `to` and swelling into a
+    // rounded root end at `from` (within rootFoot), with a short broken branch 0.35 along it,
+    // raised 50 degrees toward the thin end in the log's own plane. Log and branch are one
+    // mesh, so the branch casts with the log rather than opening a no-shadow wood group.
     const D = S.driftwood,
       [fx, fz] = plan.shoreAt(D.from.i, D.from.w),
       [tx, tz] = plan.shoreAt(D.to.i, D.to.w),
       y = (shoreHeight(D.from.w) + shoreHeight(D.to.w)) / 2 + 0.07,
-      from = new T.Vector3(fx, y, fz),
       along = new T.Vector3(tx - fx, 0, tz - fz),
       length = along.length(),
       up = new T.Vector3(0, 1, 0);
     along.normalize();
-    const log = cylinder(g, 0, 0, 0, 0.075, 0.095, length, palette.driftwood, 'wood');
-    log.position.copy(from).addScaledVector(along, length / 2);
-    log.quaternion.setFromUnitVectors(up, along);
-    const branch = along.clone().multiplyScalar(Math.cos(T.MathUtils.degToRad(50))).addScaledVector(up, Math.sin(T.MathUtils.degToRad(50))),
-      stub = cylinder(g, 0, 0, 0, 0.035, 0.05, 0.34, palette.driftwood, 'wood');
-    stub.position.copy(from).addScaledVector(along, 0.3).addScaledVector(branch, 0.17);
-    stub.quaternion.setFromUnitVectors(up, branch);
-    const root = new T.Mesh(new T.IcosahedronGeometry(0.15, 0), material(palette.driftwood, 'wood'));
-    root.position.copy(from);
-    root.scale.set(0.7, 0.9, 1.1);
-    root.rotation.y = Math.atan2(along.x, along.z) + Math.PI / 2; // short along the log, wide across it: a knob, not a point
-    root.castShadow = root.receiveShadow = true;
-    g.add(root);
+    // The profile up the log's axis (radius, distance from `from`), closed at both ends.
+    const profile = [[0, -0.01], [0.1, -0.005], [0.13, 0.04], [0.115, 0.1], [0.092, 0.2], [0.075, length - 0.03], [0.055, length], [0, length]],
+      log = new T.LatheGeometry(profile.map(([r, h]) => new T.Vector2(r, h)), 8).applyQuaternion(new T.Quaternion().setFromUnitVectors(up, along)),
+      branch = along.clone().multiplyScalar(Math.cos(T.MathUtils.degToRad(50))).addScaledVector(up, Math.sin(T.MathUtils.degToRad(50))),
+      stub = new T.CylinderGeometry(0.035, 0.045, 0.2, 6)
+        .translate(0, 0.1, 0)
+        .applyQuaternion(new T.Quaternion().setFromUnitVectors(up, branch))
+        .translate(along.x * 0.35, 0.04, along.z * 0.35),
+      drift = new T.Mesh(mergeGeometries([log, stub])!, material(palette.driftwood, 'wood'));
+    drift.position.set(fx, y, fz);
+    drift.castShadow = drift.receiveShadow = true;
+    g.add(drift);
   }
   function lighthouse(g: T.Object3D) {
     const [x, z] = plan.lighthouseRock;
