@@ -68,6 +68,45 @@ export function createResident(index: number, material: Material, look: Partial<
   root.userData.sole = 0;
   return root;
 }
+/** A rider's legs: the hip and knee groups pedalRider turns. */
+export type RiderJoints = { hips: T.Object3D[]; knees: T.Object3D[] };
+/**
+ * Seat a resident on a bicycle's saddle (its root placed 0.05 up and 0.1 back on the bike, so the
+ * hips sit on the saddle at bike-local y 0.36): the body leans 0.35 forward about the hip line
+ * and both hands reach the handlebar. Returns the leg joints, found once, for pedalRider.
+ */
+export function seatRider(root: T.Object3D): RiderJoints {
+  const body = root.getObjectByName('body')!;
+  body.rotation.x = 0.35;
+  body.position.set(0, 0.019, -0.106); // keeps the hip line (y 0.31) where it was
+  for (const [side, name] of [[-1, 'arm-left'], [1, 'arm-right']] as const) {
+    const arm = root.getObjectByName(name)!;
+    arm.position.set(side * 0.165, 0.582, 0.1);
+    arm.rotation.set(-1.2, 0, side * 0.05);
+  }
+  const hips = ['leg-left', 'leg-right'].map((name) => root.getObjectByName(name)!);
+  return { hips, knees: hips.map((hip) => hip.getObjectByName('knee')!) };
+}
+// The leg's two bones: hip to knee, and knee to the shoe's centre (which sits 0.025 forward of
+// the shin's axis, hence the tilt the knee adds back).
+const THIGH = 0.14,
+  SHIN = Math.hypot(0.135, 0.025),
+  SHOE_TILT = Math.atan2(0.025, 0.135);
+/**
+ * Pedal: put each shoe's centre on the crank's circle (bike-local centre y 0.185, radius 0.065,
+ * the shoe's half-height above a 0.065 crank on the bottom bracket), the two feet half a turn
+ * apart, by a two-bone solve from the hip with the knee bending forward.
+ */
+export function pedalRider(joints: RiderJoints, crank: number) {
+  for (let k = 0; k < 2; k++) {
+    const c = crank + k * Math.PI,
+      dz = 0.1 + 0.065 * Math.sin(c),
+      dy = -0.175 - 0.065 * Math.cos(c),
+      d = Math.min(Math.hypot(dz, dy), 0.27);
+    joints.hips[k].rotation.x = -(Math.atan2(dz, -dy) + Math.acos((THIGH * THIGH + d * d - SHIN * SHIN) / (2 * THIGH * d)));
+    joints.knees[k].rotation.x = Math.PI - Math.acos((THIGH * THIGH + SHIN * SHIN - d * d) / (2 * THIGH * SHIN)) + SHOE_TILT;
+  }
+}
 export function animateResident(
   root: T.Group,
   distance: number,

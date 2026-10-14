@@ -538,13 +538,19 @@ export const tramPose = (time: number) => samplePolyline(tramLoop, (TRAM_SPEED *
 export const cyclistLane = offsetPolyline(ringLine, -0.6);
 const LANE_LENGTH = polylineLength(cyclistLane, true);
 /**
- * The cyclist at `time`: half a lap from the tram (by lap fraction, so the two never meet),
+ * Where the cyclist sets off: half a lap from the tram's start, and 1.5 further on, into the
+ * south-west corner, where the Life chapter's camera sees the whole bike at time 0 (the pose
+ * reduced motion holds) rather than half of it behind an outer ring tree.
+ */
+const CYCLIST_START = LANE_LENGTH / 2 + 1.5;
+/**
+ * The cyclist at `time`: about half a lap from the tram (by lap fraction, so the two never meet),
  * leaning into the four corner arcs (eased over a unit either side of each arc's start), the
  * crank turning with the distance ridden (the pedals level at time 0).
  */
 export function cyclistPose(time: number) {
   const d = (TRAM_SPEED * time * LANE_LENGTH) / RING_LENGTH,
-    p = samplePolyline(cyclistLane, d + LANE_LENGTH / 2, true);
+    p = samplePolyline(cyclistLane, d + CYCLIST_START, true);
   const k = Math.min(Math.abs(p.x) - (ring.hw - ring.radius), Math.abs(p.z - ring.cz) - (ring.hd - ring.radius)),
     t = Math.min(1, Math.max(0, k + 0.6));
   return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * d + Math.PI / 2 };

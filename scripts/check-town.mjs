@@ -599,6 +599,27 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   dog.traverse((c) => c.isMesh && c.castShadow && cast.push(c));
   assert(cast.length === 1 && cast[0].parent === dog, 'Only the dog’s body casts a shadow.');
   for (const name of ['dog-head', 'dog-tail']) assert(dog.getObjectByName(name).children.every((c) => c.isMesh), `${name} is batched`);
+  // The cyclist: one rigid rig (the bike, the body and the arms, in a few batches and none of them
+  // masonry, plus the lamp) and two pedalling legs, whose shoes stay on the crank's circle
+  // (bike-local centre y 0.185, radius 0.065) all the way round.
+  const cyclist = model.animated.find((e) => e.object.name === 'cyclist');
+  assert(cyclist && cyclist.object.userData.prebatched, 'The cyclist is batched with the people.');
+  const [rig, ...legs] = cyclist.object.children;
+  assert.deepEqual(legs.map((l) => l.name), ['leg-left', 'leg-right']);
+  assert(rig.children.every((c) => c.isMesh) && rig.children.length <= 5, 'The cyclist’s rig is a few batched meshes.');
+  assert(!rig.children.some((c) => c.material.userData.surfaceKind === 'stone'), 'The cyclist’s rig has a stone batch.');
+  assert.equal(rig.children.filter((c) => lamps.includes(c)).length, 1, 'The bike has one lamp.');
+  assert.equal(meshesIn(cyclist.object), 10, `The cyclist is ${meshesIn(cyclist.object)} meshes`);
+  const shoe = new T.Vector3();
+  for (let t = 0; t < 4; t += 0.02) {
+    cyclist.update(t, 0);
+    cyclist.object.updateMatrixWorld(true);
+    for (const leg of legs) {
+      const knee = leg.getObjectByName('knee');
+      cyclist.object.worldToLocal(knee.localToWorld(shoe.set(0, -0.135, 0.025)));
+      assert(Math.abs(Math.hypot(shoe.z, shoe.y - 0.185) - 0.065) <= 0.005 && Math.abs(shoe.x) < 0.1, `The cyclist's ${leg.name} misses its pedal at t=${t.toFixed(2)}`);
+    }
+  }
 }
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.

@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { createCityMaterials } from './city-materials';
-import { animateResident, createDog, createResident } from './city-people';
+import { animateResident, createDog, createResident, pedalRider, seatRider } from './city-people';
 import { buildings, type BuildingId } from './city-data';
 import * as plan from './town-plan';
 import type { XZ } from './town-plan';
@@ -276,6 +276,36 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     update(0);
     animated.push({ object: dogWalk, update });
   }
+  // A cyclist on the ring, keeping left on its outer side half a lap from the tram: a generic
+  // rider in an oat jacket and a slate helmet on a red bike with a front lamp (a dot the frame
+  // loop lights at night). The bike, the body and the arms are one rigid rig; the legs pedal.
+  const cyclist = new T.Group(),
+    rig = new T.Group(),
+    rider = createResident(8, material, { coat: '#cdb48d', legs: '#3a4654', hair: '#7d91a5', scarf: '#f5efe0' });
+  cyclist.name = 'cyclist';
+  cyclist.userData.prebatched = true; // batched with the people below
+  cyclist.add(rig);
+  city.add(cyclist);
+  const bike = bicycle(rig, palette.redDoor, { lamp: true });
+  cyclist.add(rider);
+  rider.position.set(0, 0.05, -0.1);
+  const riderJoints = seatRider(rider);
+  cyclist.updateMatrixWorld(true);
+  for (const part of [bike, rider.getObjectByName('body')!, rider.getObjectByName('arm-left')!, rider.getObjectByName('arm-right')!])
+    for (const mesh of part.children.filter((o) => o instanceof T.Mesh)) rig.attach(mesh);
+  for (const hip of riderJoints.hips) cyclist.attach(hip);
+  bike.removeFromParent();
+  rider.removeFromParent();
+  {
+    const update = (time: number) => {
+      const p = plan.cyclistPose(time);
+      cyclist.position.set(p.x, plan.levels.road, p.z);
+      cyclist.rotation.set(0, p.heading, p.lean); // the lean is about the bike's own axis, into the turn
+      pedalRider(riderJoints, p.crank);
+    };
+    update(0);
+    animated.push({ object: cyclist, update });
+  }
   // Three ducks on the gate's pool; the animated list's batching makes each one mesh.
   pondDucks(city);
   // The bike rack by the Research Studio: three hoops on the pad and two bikes, front to the
@@ -321,6 +351,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
   for (const walker of walkers) batchFigure(walker.root);
   batchFigure(dogWalker);
+  batchFigure(cyclist);
   for (const name of ['dog-head', 'dog-tail']) batch(dog.getObjectByName(name)!, { contact: 'none' });
   batch(dog, { contact: 'none' });
   batch(tram, { contact: 'local', localFloor: 0 });
