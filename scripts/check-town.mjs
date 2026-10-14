@@ -233,7 +233,7 @@ for (const animal of plan.herd) {
       assert(out >= 2.4, `The cyclist passes ${out.toFixed(2)} from ${id}`);
     }
   }
-  assert.deepEqual([...lean].sort(), [false, true], 'The cyclist rides straights upright and leans on the corners.');
+  assert.deepEqual([...lean].sort((a, b) => Number(a) - Number(b)), [false, true], 'The cyclist rides straights upright and leans on the corners.');
 }
 // The dog walk keeps to the open lawn east of the corner park: off the plot, the pavements and
 // the trunks, both the walker's loop and the dog's lane inside it.
