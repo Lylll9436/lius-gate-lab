@@ -56,10 +56,10 @@ pnpm content remove events example-event
 - 新增建筑：在 `town-plan.ts` 增加 `sites` 条目并保证不压到街道，在 `town-build.ts` 写对应的 `build*` 函数，然后在 `city-data.ts` 与 `content-schema.ts` 的 `buildingIds` 中登记。
 - 造型与颜色：建筑零件（窗、门、屋顶、基座、隅石、烟囱）、种植零件（花坛、树篱、造型灌木）和配色 `palette` 都在 `app/town-build.ts`；材质的粗糙度、金属度和反光强度在 `app/city-materials.ts` 的 `finish`：`spec` 放大朝上的环境反光（顶面、圆角），`specFloor` 管朝下看到地面的那部分（竖直墙面），所以珐琅（enamel）墙面保持本色、只在圆角和顶面有光。玻璃的反光带：合批时 `paneUV()` 把每块玻璃的窗格坐标写进 uv，`city-materials.ts` 的 `GLINT_PATCH` 让窗面法线自下而上逐渐上仰，只作用于环境光（反光和少量补光），阳光与路灯仍照在平的玻璃上，所以每块窗下暗上亮、拱窗的亮部落在拱顶；整面的玻璃幕墙标 `paneSpan`（整面一道渐变），钟面标 `flatGlass`（保持匀净）。强弱用 `finish.glass` 的 `spec`（上）与 `specFloor`（下）调，在 `?debug` 页面可用 `__city.model.materialLibrary.setSpec('glass', 上, 下)` 试；夜里只保留暖色窗光。铁、黄铜、珐琅只给小件道具用，砖石、粉墙和地面保持哑光；`roofKind()` 按屋顶颜色选石板、铜绿或釉面瓦。接触阴影与檐下阴影在合批时烘焙进顶点（`batch()` 的 bake），不要再加屏幕空间 AO，它会在树冠和细杆周围产生重影。地面的深色垫块、树影圆斑与草坪格纹来自 `buildGroundMasks` 生成的一张地面贴图，随规划数据自动更新。
 - 整体饱和度：`app/city-scene.ts` 里的 `SATURATION`（当前 0.72），在最终合成里统一调整，改一个数即可；1 为调色板原色。三位成员的住宅是一排并列的联排（`app/town-plan.ts` 的 `terraceRow`），间距由 `spacing` 控制。联排两端的背景小屋（`cottages`）退到这条线后约 3 个单位并转向，`check-town` 会检查它们不接在联排的线上。阅读「成员」一章时，三栋住宅上方显示名字标签（`app/city-stage.tsx` 的 `home-tag`，由 `city-scene.ts` 的 `setHomeTags` 每帧投影到屋顶上方），悬停成员卡片只描边对应的那一栋。
-- 天气、时刻与季节：主光方向来自 `app/city-atmosphere.ts` 的 `sunOffsetFor`，白天抬高到 50–57°；真实太阳高度低于约 12° 时（`lowSun`，即清晨与黄昏前），主光降到约 40°，并在调色之前让主光与雾变暖（`city-scene.ts` 的 `sunGolden`、`fogGolden`）。下雨时阴影变淡（`sun.shadow.intensity` 降到 0.35）、海鸥停飞、雨丝为 `#7f8f9c`。树木按格拉斯哥的月份换季（`app/glasgow-sun.ts` 的 `glasgowSeason`，`town-build.ts` 的 `treeLook`）：春季开花，秋季变色，夏季全绿，冬季是更沉的绿；地址加 `?season=spring|summer|autumn|winter` 可预览某一季。热气球绕岛心、沿半径 32 的圈在海岸与海面上空飞（`town-build.ts` 的 `BALLOON`），不会挡住各章的主体；`start` 让它从东北方海面出发，首屏打开时不在标题与导语后面。
+- 天气、时刻与季节：主光方向来自 `app/city-atmosphere.ts` 的 `sunOffsetFor`，白天抬高到 50–57°；真实太阳高度低于约 12° 时（`lowSun`，即清晨与黄昏前），主光降到约 40°，并在调色之前让主光与雾变暖（`city-scene.ts` 的 `sunGolden`、`fogGolden`）。手动「白天」不用真实太阳，而是固定的午后太阳（`app/use-sky.ts` 的 `sceneSky`、`DAYLIGHT_SUN`），黄昏或夜里切到白天也不会出现暮色暖光；主光的左右偏转在夜里经过正北时平滑回到基准方向，不会在午夜跳转。下雨时阴影变淡（`sun.shadow.intensity` 降到 0.35）、雨丝为 `#7f8f9c`；海鸥在雨中和夜里逐渐缩小隐去（`city-atmosphere.ts` 的 `gullPresence`）。树木按格拉斯哥的月份换季（`app/glasgow-sun.ts` 的 `glasgowSeason`，`town-build.ts` 的 `treeLook`）：春季开花，秋季变色，夏季全绿，冬季是更沉的绿；地址加 `?season=spring|summer|autumn|winter` 可预览某一季。热气球在以岛心为圆心、半径 32 的圈上（`town-build.ts` 的 `BALLOON`），不绕整圈，只沿首屏视角的远侧来回飘（`middle`、`reach`、`rate`）：从东北方海面出发，在首屏右上与左上的空处慢下来折返，中途从岛的上方出画，所以不会挡住各章主体，也不会飘到首屏文字与新闻卡后面（`check-town` 把它投影到 1440×900 的首屏检查）。
 - 规划视图的四个分区在 `app/city-districts.ts`：名称、说明（en / zh）、颜色与地面轮廓 `outline`。分区由 `city-scene.ts` 的 `buildDistrictZones` 画在路缘之上（`DISTRICT_LIFT`），打开规划视图时，图例列出每个分区的名称与说明（手机上是顶部一行可横向滑动的卡片）。移动建筑、公园或预留地块后，`check-town` 会检查每个分区仍然包住它说明里的地方、留在平地上、不碰海岸且互不重叠。
 - 城市模式的目录与导览：目录每行写出这个地方装的是什么（`city-data.ts` 的 `category`），当前打开的地方标 `aria-current`，指向某一行会在模型上描边那栋建筑（`setAccent`）。导览的站点是 `app/lab-navigation.ts` 的 `tourStops`：七个地方按目录顺序，最后一站是街角公园；导览只在开始时记一条浏览历史，之后每站替换地址，焦点留在「下一站」上。城市模式里按 Esc 依次退出近看、关闭目录、规划视图和导览，最后才收起资料（`app/page.tsx` 的 keydown 处理）；再次选中已打开的地方也会重新取景。
-- `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移（减少动态效果时关闭）、真实日照（`setSky`）、雨、悬停射线与标签、单栋建筑近看、设备分级与帧率调节。`createCity` 的 API 由 `app/page.tsx` 调用。
+- `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移（减少动态效果时关闭；暂停、拖动或刚按过按钮时停在当前角度）、真实日照（`setSky`，收到第一次天色之前不绘制）、雨、悬停射线与标签、单栋建筑近看（近看的是复制的模型，钟表指针与风向标每帧跟随原模型）、设备分级与帧率调节（掉档后帧率回到接近刷新率或 50 fps 以上即回升）。路灯在黄昏加入场景会改变所有受光材质的着色器，`warmLighting` 在小城画出后于空闲时后台预编译这些版本，首次入夜不再卡顿。`createCity` 的 API 由 `app/page.tsx` 调用。
 - 加载不卡页面：`app/page.tsx` 在模块执行时就开始下载 city-scene（仍是动态 `import()`，不进首包）；`createCity` 是异步的，用 `buildTownInPhases` 分阶段建城，每个阶段（以及 PMREM 环境光之前）都把主线程交还浏览器。新增较重的建模或合批步骤时，在 `town-build.ts` 的装配部分加一个 `yield`，让单个阶段保持在几十毫秒内；`buildTown` 一次跑完全部阶段，供 Node 检查使用。
 
 ## 交付前检查
@@ -70,7 +70,7 @@ pnpm check
 pnpm build:pages
 ```
 
-`check-town` 在 Node 中生成整座小城，验证建筑位置、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器、夜间窗灯、热气球航线、季节树色和晨昏的低角度主光；`check-navigation`、`check-hover`、`check-content` 验证地址解析、镜头动作（连按旋转不回摆、过渡中缩放、离开近看时缓出）、悬停与点选（拖出又拖回的平移不算点选）和内容增删改。这些检查不代替在目标设备上的视觉验收。
+`check-town` 在 Node 中生成整座小城，验证建筑位置、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器、夜间窗灯、热气球航线（含首屏不挡文字）、季节树色、晨昏的低角度主光、手动白天的固定太阳、夜里平滑经过正北的主光、海鸥的渐隐和近看模型跟随的钟表与风向标；`check-navigation`、`check-hover`、`check-content` 验证地址解析、镜头动作（连按旋转不回摆、过渡中缩放、离开近看时缓出、暂停或拖动时漂移停住、阴影贴图更换后立即重绘、帧率调节的回升、第一次天色之前不绘制）、悬停与点选（拖出又拖回的平移不算点选）和内容增删改。这些检查不代替在目标设备上的视觉验收。
 
 ## GitHub Pages 发布
 
