@@ -380,8 +380,8 @@ for (const [id, m] of models) {
     assert(tris < 6000, `${id}: ${Math.round(tris)} triangles`);
     if (!bodies) continue;
     assert(walls >= 4 && capped >= 9, `${id}: found ${walls} main-wall and ${capped} capped bay vertices`);
-    // Once per-pane night lights land (model.windows): each bay storey (Pengyuan's upper band is the balcony) is one
-    // light, and the ground storey is forced on (level 255, out no earlier than byte 191, 01:22).
+    // Once per-pane night lights land (model.windows): each bay storey is one light, and the ground storey is forced
+    // on (level 255, out no earlier than byte 191, 01:22). Pengyuan's one-storey bay has no glass above its cornice.
     if (model.windows)
       for (const [y0, y1, forced] of [
         [0.6, 1.8, true],
@@ -395,7 +395,9 @@ for (const [id, m] of models) {
             for (let i = 0; i < p.count; i++)
               if (v.fromBufferAttribute(p, i).x < -0.03 && v.z > d / 2 + 0.02 && v.y > y0 && v.y < y1) seen.add(a.slice(i * 4, i * 4 + 4).join());
           }
-        assert.equal(seen.size, 1, `${id}: the bay's band ${y0}–${y1} has ${seen.size} lights`);
+        const lights = forced || bodies.length > 1 ? 1 : 0;
+        assert.equal(seen.size, lights, `${id}: the bay's band ${y0}–${y1} has ${seen.size} lights`);
+        if (!lights) continue;
         const [level, , off] = [...seen][0].split(',').map(Number);
         if (forced) assert(level === 255 && off >= 191, `${id}: the ground storey is not lit late (${[...seen][0]})`);
       }

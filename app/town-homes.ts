@@ -35,8 +35,8 @@ export function createHomes(kit: Kit, nature: Nature) {
     // door-side frame keeps 0.07 of stone clear of the lintel end. Each home's bay differs in its top: Pengyuan's villa bay is one storey under a stone
     // balustrade, Yunlong's rises two storeys to the main eave, Qin's two under its own slate roof.
     // Window groups (stable ids, read by the night lights; each group is one light, drawn from
-    // its first pane, the front's lower one): `<id>-bay-0` the ground storey (kept lit late),
-    // `<id>-bay-1` the upper storey, `<id>-balcony` the villa's sash behind the balustrade.
+    // its first pane, the front's lower one): `<id>-bay-0` the ground storey (kept lit late) and
+    // `<id>-bay-1` the upper storey (Yunlong's and Qin's two-storey bays only).
     const first = shell.children.length; // from here to the bay's top, everything is bay (tagged at the end)
     const bay: Bay = { x: -0.68, z0: d / 2, root: 1.06, depth: 0.55, cant: 0.23 },
       faces = bayFaces(shell, bay);
@@ -67,11 +67,9 @@ export function createHomes(kit: Kit, nature: Nature) {
         box(face, -arris * 0.035, 2.29, 0, arris ? length - 0.01 : length - 0.08, 0.1, 0.16, dress, 'stone'); // 2.24-2.34
         cylinder(face, 0, 2.1, 0, 0.042, 0.055, 0.28, dress, 'stone', 8); // 1.96-2.24
       }
-      // The balcony: a cream sash on the wall behind the balustrade, its sill on the cornice. The
-      // main eave (lower edge at y 2.90, 0.55 out) hides the wall above about 2.37 from the People
-      // bearing and 2.19 from the overview, so the sash sits low enough to show its lower half.
-      sash(shell, bay.x, 2.36, d / 2, 0.44, 0.48, dress, { group: `${site.id}-balcony` }); // glass 2.12-2.60, frame 2.04-2.68
-      box(shell, bay.x, 2.0, d / 2 + 0.08, 0.64, 0.08, 0.16, dress, 'stone'); // its sill, 1.96-2.04
+      // No window on the wall behind the balustrade: the main eave (lower edge at y 2.90, 0.55 out)
+      // hides the wall above about 2.37 from the People bearing and 2.19 from the overview, so any
+      // sash there shows only as a strip cut off by the roof (and a lit sliver at night).
     } else {
       // Two storeys. The red bay rises to the wallhead: the main eave caps it and its cornice stops
       // under the eave lip. Qin's stops lower, under its own piended slate roof below the gable window.
