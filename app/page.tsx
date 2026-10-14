@@ -666,6 +666,27 @@ export default function Home() {
     else if (destination.building) engine.select(destination.building);
     else engine.reset();
   }, [settledShot, mode, ready, wide, content]);
+  // The whole island is fitted to the part of the stage the footer leaves in view, so a window
+  // made shorter (or a footer that grows) while it shows fits it again; the shot stays.
+  useEffect(() => {
+    const engine = api.current;
+    if (mode !== 'reading' || settledShot !== READ_END || !engine) return;
+    let drop = endFrame();
+    const refit = () => {
+      const next = endFrame();
+      if (Math.abs(next - drop) < 0.002) return;
+      drop = next;
+      engine.setFrameShift(wide ? 0.21 : 0, drop);
+    };
+    const footer = document.querySelector<HTMLElement>('.site-footer'),
+      watch = new ResizeObserver(refit);
+    if (footer) watch.observe(footer);
+    window.addEventListener('resize', refit);
+    return () => {
+      watch.disconnect();
+      window.removeEventListener('resize', refit);
+    };
+  }, [settledShot, mode, ready, wide]);
 
   // The People chapter names the three homes on the model while its camera is on them.
   useEffect(() => {
