@@ -1087,8 +1087,8 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     }
   }
 }
-// The people are batched part by part, as before (13 or 14 meshes each, the satchel's wood making
-// the difference). The dog walker is one more of them; the dog is four meshes (its body, the only
+// The people are batched part by part (9 or 10 meshes each, the satchel's wood making the
+// difference: each limb is one mesh, its shoe or hand matte like it). The dog walker is one more of them; the dog is four meshes (its body, the only
 // part that casts, its legs, its head and its tail) and keeps its pivots apart from its body.
 {
   const meshesIn = (o) => {
@@ -1096,12 +1096,12 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     o.traverse((c) => (n += c.isMesh ? 1 : 0));
     return n;
   };
-  for (const w of walkers) assert([13, 14].includes(meshesIn(w.root)), `A walker is ${meshesIn(w.root)} meshes`);
+  for (const w of walkers) assert([9, 10].includes(meshesIn(w.root)), `A walker is ${meshesIn(w.root)} meshes`);
   const dogWalk = model.animated.find((e) => e.object.name === 'dog-walk');
   assert(dogWalk && dogWalk.object.userData.prebatched, 'The dog walk is batched with the people.');
   const [figure, dog] = dogWalk.object.children;
   assert.equal(dog.name, 'dog');
-  assert([13, 14].includes(meshesIn(figure)), `The dog walker is ${meshesIn(figure)} meshes`);
+  assert([9, 10].includes(meshesIn(figure)), `The dog walker is ${meshesIn(figure)} meshes`);
   assert.equal(meshesIn(dog), 4, 'The dog is four meshes.');
   const cast = [];
   dog.traverse((c) => c.isMesh && c.castShadow && cast.push(c));
@@ -1117,7 +1117,7 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   assert(rig.children.every((c) => c.isMesh) && rig.children.length <= 5, 'The cyclist’s rig is a few batched meshes.');
   assert(!rig.children.some((c) => c.material.userData.surfaceKind === 'stone'), 'The cyclist’s rig has a stone batch.');
   assert.equal(rig.children.filter((c) => lamps.includes(c)).length, 1, 'The bike has one lamp.');
-  assert.equal(meshesIn(cyclist.object), 10, `The cyclist is ${meshesIn(cyclist.object)} meshes`);
+  assert.equal(meshesIn(cyclist.object), 8, `The cyclist is ${meshesIn(cyclist.object)} meshes`);
   const shoe = new T.Vector3();
   for (let t = 0; t < 4; t += 0.02) {
     cyclist.update(t, 0);

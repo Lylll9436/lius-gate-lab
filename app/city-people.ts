@@ -37,7 +37,9 @@ export function createResident(index: number, material: Material, look: Partial<
     g.add(m);
     return m;
   }
-  // Limbs are small enough that 10-segment spheres look the same as 12.
+  // Limbs are small enough that 10-segment spheres look the same as 12. Shoes and hands are matte
+  // like the limb they end, so each moving limb batches into one mesh (in paint they were a second
+  // draw call on every knee and arm of every figure, too small to show the difference).
   const limb = 10;
   shape(body, 0, 0.47, 0, 0.15, 0.2, 0.12, coat, 'fabric', 16); // coat 0.27..0.67
   shape(body, 0, 0.635, 0, 0.125, 0.04, 0.105, scarf); // collar
@@ -55,14 +57,14 @@ export function createResident(index: number, material: Material, look: Partial<
     knee.position.y = -0.14;
     hip.add(knee);
     shape(knee, 0, -0.07, 0, 0.055, 0.08, 0.06, legs, 'fabric', limb);
-    shape(knee, 0, -0.135, 0.025, 0.06, 0.035, 0.085, '#2d2a28', 'paint', limb).name = 'shoe';
+    shape(knee, 0, -0.135, 0.025, 0.06, 0.035, 0.085, '#2d2a28', 'fabric', limb).name = 'shoe';
     const arm = new T.Group();
     arm.name = side < 0 ? 'arm-left' : 'arm-right';
     arm.position.set(side * 0.165, 0.6, 0);
     arm.rotation.z = side * 0.12;
     root.add(arm);
     shape(arm, 0, -0.1, 0, 0.05, 0.11, 0.055, coat, 'fabric', limb);
-    shape(arm, 0, -0.21, 0.005, 0.045, 0.045, 0.045, skin, 'paint', limb);
+    shape(arm, 0, -0.21, 0.005, 0.045, 0.045, 0.045, skin, 'fabric', limb);
   }
   root.userData.gait = { phase: index * 1.7, amount: 0 };
   root.userData.sole = 0;
