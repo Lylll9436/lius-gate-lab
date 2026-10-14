@@ -595,16 +595,18 @@ export function sheepFeet(s: SheepSpec): XZ[] {
 export type StandingStone = { x: number; z: number; ry: number; w: number; h: number; recumbent: boolean };
 /**
  * The ring's stones: seven on eight slots, one long gone. As in the recumbent circles of
- * Aberdeenshire, a long stone lies on its side in the south-south-west between the two tallest.
- * `ry` (rotation.y) turns each stone's broad face to the centre and its length along the ring.
+ * Aberdeenshire, a long stone lies on its side between the two tallest; here it is on the seaward
+ * (north-north-west) side, so the opening camera sees it framed by its flankers against the sand
+ * rather than behind tree-71, and the empty slot is the one that tree hides. `ry` (rotation.y)
+ * turns each stone's broad face to the centre and its length along the ring.
  */
 export function standingStones(): StandingStone[] {
   const stones: StandingStone[] = [];
   for (let k = 0; k < 8; k++) {
-    if (k === 6) continue;
+    if (k === 2) continue;
     const a = (k * Math.PI) / 4 + 0.3,
-      recumbent = k === 2,
-      flanker = k === 1 || k === 3;
+      recumbent = k === 5,
+      flanker = k === 4 || k === 6;
     stones.push({
       x: stoneRing.x + Math.cos(a) * stoneRing.r,
       z: stoneRing.z + Math.sin(a) * stoneRing.r,
