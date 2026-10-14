@@ -996,7 +996,9 @@ export async function createCity(
   function step(now: number, force: boolean) {
     const dt = last ? Math.min((now - last) / 1000, 0.05) : 0;
     last = now;
-    if (!force && (document.hidden || !inViewport)) return;
+    // Nothing is drawn before the first sky (the page sends it once the town is ready, a task
+    // or two after the first frame may come): no daylit town flashing up at night.
+    if (!force && (document.hidden || !inViewport || !skyKnown)) return;
     if (dt > 0 && dt < 0.05) intervals[intervalCount++ % intervals.length] = dt;
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
     if (!paused) time += dt;

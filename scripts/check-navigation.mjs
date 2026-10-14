@@ -569,6 +569,23 @@ assert(!shadows.renderer.shadowMap.needsUpdate, 'An unchanged focus costs no ext
 shadows.quality = 2;
 focusing();
 redrawn('A quality step');
+// The frame loop draws nothing until the first sky has arrived, so a town opened at night
+// never shows a daylit frame first.
+let frameGuard;
+function findFrameGuard(node) {
+  if (ts.isIfStatement(node) && node.expression.getText(syntax).startsWith('!force && (document.hidden'))
+    frameGuard = node.getText(syntax);
+  ts.forEachChild(node, findFrameGuard);
+}
+findFrameGuard(syntax);
+assert(frameGuard, 'The first-sky check must find the frame loop’s guard.');
+const drawsFrame = (skyKnown) =>
+  runInNewContext(
+    `${ts.transpileModule(`function frameRuns() { ${frameGuard} return true; }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};frameRuns();`,
+    { force: false, document: { hidden: false }, inViewport: true, skyKnown },
+  );
+assert.equal(drawsFrame(false), undefined, 'A frame was drawn before the first sky.');
+assert.equal(drawsFrame(true), true, 'Frames are drawn once the sky is known.');
 // The frame-time governor: a slow moment lowers the quality, and it comes back once frames are
 // fast again, on a 120 Hz screen too, without stepping to and fro.
 const governPieces = [];
@@ -706,5 +723,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky.`,
 );
