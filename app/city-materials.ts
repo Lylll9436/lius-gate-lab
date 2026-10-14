@@ -125,7 +125,9 @@ function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, glass = false
 /**
  * The beach's wet band: a swash mark at about 2.2 out from the outline, wandering +-0.13 on a
  * smooth 1.25-unit value noise and anti-aliased by the width's own derivative, then darker sand
- * down to the waterline (2.87), fading out under the foam. vShoreW is the shore mesh's uv.x.
+ * down to the waterline (2.87), fading out under the foam. The step at the mark (x0.88) carries
+ * the read; below it the sand only darkens to x0.85, so the band stays calm. vShoreW is the
+ * shore mesh's uv.x.
  */
 const SHORE_PARS = `
 varying float vShoreW;
@@ -134,7 +136,7 @@ const SHORE_WET = `vec2 wq=vGroundP.xz*.8,wi=floor(wq),wf=fract(wq);wf=wf*wf*(3.
 float wob=mix(mix(shoreHash(wi),shoreHash(wi+vec2(1.,0.)),wf.x),mix(shoreHash(wi+vec2(0.,1.)),shoreHash(wi+1.),wf.x),wf.y);
 float edge=2.2+.26*(wob-.5),fw=fwidth(vShoreW)+.02;
 shoreWet=smoothstep(edge-fw,edge+fw,vShoreW)*(1.-smoothstep(2.88,3.,vShoreW));
-diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.93,.92,.91),vec3(.85,.84,.83),smoothstep(edge,2.85,vShoreW)),shoreWet);`;
+diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.88,.87,.86),vec3(.85,.84,.83),smoothstep(edge,2.85,vShoreW)),shoreWet);`;
 
 /** The ground masks' A channel stores terrain height over this range (units). */
 export const GROUND_HEIGHT_RANGE = 2;
