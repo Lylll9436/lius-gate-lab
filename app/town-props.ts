@@ -27,6 +27,20 @@ export function createProps(ctx: TownContext, kit: Kit) {
     box(b, 0, 0.7, -0.19, 1.3, 0.26, 0.1, palette.wood, 'wood');      // back board, 108
     return b;
   }
+  /** A Sheffield cycle hoop (0.5 wide, 0.58 tall) along the local x axis; thin, so it casts no shadow. */
+  function cycleHoop(g: T.Object3D, x: number, y: number, z: number) {
+    const h = new T.Group(); h.position.set(x, y, z); g.add(h);
+    const parts = [-0.25, 0.25].map((sx) => cylinder(h, sx, 0.165, 0, 0.035, 0.035, 0.33, palette.metal, 'iron'));
+    const bow = new T.Mesh(new T.TorusGeometry(0.25, 0.035, 6, 12, Math.PI), material(palette.metal, 'iron'));
+    bow.position.y = 0.33;
+    h.add(bow);
+    for (const m of [...parts, bow]) {
+      m.castShadow = false;
+      m.receiveShadow = true;
+      m.userData.noShadow = true;
+    }
+    return h;
+  }
   // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
   const lanternGlass = lampGlass();
   lanternGlass.emissiveIntensity = 0;
@@ -280,6 +294,6 @@ export function createProps(ctx: TownContext, kit: Kit) {
     cylinder(hat, 0, 0.03 + 0.4 * 0.36, 0, 0.105, 0.105, 0.06, palette.white, 'enamel', 12);
     return root;
   }
-  return { bench, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington };
+  return { bench, cycleHoop, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington };
 }
 export type Props = ReturnType<typeof createProps>;

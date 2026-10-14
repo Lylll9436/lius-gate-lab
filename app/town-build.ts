@@ -110,10 +110,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { pierAndHarbour, lighthouse } = createHarbour(ctx, kit, props);
   const { buildTerrace, buildCottage } = createHomes(kit, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
-  const { hotAirBalloon, buildTram, buildBoat } = createMovers(ctx, kit);
+  const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing } = createCountry(ctx, kit);
   const { batch } = createBatch(ctx);
-  const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
+  const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
   /**
    * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
    * the Highland-cow outing lives) through an invisible box under the park's own hit box. The
@@ -237,6 +237,16 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       speed: (inner ? 0.85 : -0.85) * (0.85 + hash(i + 3) * 0.3),
     });
   }
+  // The bike rack by the Research Studio: three hoops on the pad and two bikes, front to the
+  // plaza, leaning on the first two. Two, not three: three bikes by the studio of a three-member
+  // group would read as theirs.
+  plan.bikeRack.hoops.forEach((z, i) => {
+    cycleHoop(land, plan.bikeRack.x, 0.08, z);
+    if (!plan.bikeRack.parked.includes(i)) return;
+    const bike = bicycle(land, i === 0 ? palette.greenDoor : palette.tramCream, { basket: i === 1 });
+    bike.position.set(plan.bikeRack.x + 0.025, 0.08, z + 0.2);
+    bike.rotation.set(0, -Math.PI / 2, 0.07);
+  });
   const tram = buildTram();
   city.add(tram);
   const boat = buildBoat();

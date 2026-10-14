@@ -243,6 +243,11 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     // The studio's path: from the east avenue's pavement edge (z -1.95) along the plinth front
     // (x 7.35) to the entrance apron (z -4.5), its top 0.02 under the pavement's.
     slab(land, [[6.1, -4.6], [6.1, -1.95]], [[7.3, -4.6], [7.3, -1.95]], 0.08, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
+    // The bike rack's pad against the path's west edge, at the same height (the hoops stand on it).
+    {
+      const { x0, x1, z0, z1 } = plan.bikeRack.pad;
+      slab(land, [[x0, z0], [x0, z1]], [[x1, z0], [x1, z1]], 0.08, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
+    }
     // The plaza: an inner island for the gate, a reflecting pool ring with four causeways,
     // an outer paved ring and a darker border band under a lathed kerb. Pieces meet at shared edges.
     const poolInner = POOL.inner,
