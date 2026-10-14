@@ -127,22 +127,46 @@ export function polylineLength(points: XZ[], closed = false) {
     total += Math.hypot(points[0][0] - points.at(-1)![0], points[0][1] - points.at(-1)![1]);
   return total;
 }
-/** Position and heading at a distance along a polyline. */
-export function samplePolyline(points: XZ[], distance: number, closed = false) {
+/**
+ * Position and heading at a distance along a polyline. The heading is the segment's, so it steps
+ * at each vertex; with `smooth` it turns evenly through each vertex instead, over half the
+ * shorter of its two segments either side, so a mover rounds a sampled arc as it would a true one.
+ */
+export function samplePolyline(points: XZ[], distance: number, closed = false, smooth = false) {
   const total = polylineLength(points, closed);
   let d = ((distance % total) + total) % total;
-  const count = closed ? points.length : points.length - 1;
+  const n = points.length,
+    count = closed ? n : n - 1;
+  // A neighbouring segment's length and heading, and a heading part-way from one to another.
+  const segment = (i: number) => {
+    const a = points[(i + n) % n],
+      b = points[(i + 1) % n];
+    return { length: Math.hypot(b[0] - a[0], b[1] - a[1]), heading: Math.atan2(b[0] - a[0], b[1] - a[1]) };
+  };
+  const turn = (from: number, to: number, w: number) => {
+    const h = from + angleDiff(to, from) * w;
+    return Math.atan2(Math.sin(h), Math.cos(h));
+  };
   for (let i = 0; i < count; i++) {
     const a = points[i],
-      b = points[(i + 1) % points.length];
+      b = points[(i + 1) % n];
     const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (d <= length || i === count - 1) {
-      const t = length ? Math.min(1, d / length) : 0;
-      return {
-        x: a[0] + (b[0] - a[0]) * t,
-        z: a[1] + (b[1] - a[1]) * t,
-        heading: Math.atan2(b[0] - a[0], b[1] - a[1]),
-      };
+      const t = length ? Math.min(1, d / length) : 0,
+        along = t * length,
+        heading = Math.atan2(b[0] - a[0], b[1] - a[1]);
+      let h = heading;
+      if (smooth && (closed || i > 0)) {
+        const prev = segment(i - 1),
+          half = Math.min(prev.length, length) / 2;
+        if (along < half) h = turn(prev.heading, heading, 0.5 + (0.5 * along) / half);
+      }
+      if (smooth && (closed || i < count - 1)) {
+        const next = segment(i + 1),
+          half = Math.min(next.length, length) / 2;
+        if (length - along < half) h = turn(heading, next.heading, 0.5 - (0.5 * (length - along)) / half);
+      }
+      return { x: a[0] + (b[0] - a[0]) * t, z: a[1] + (b[1] - a[1]) * t, heading: h };
     }
     d -= length;
   }
@@ -616,12 +640,13 @@ const LANE_LENGTH = polylineLength(cyclistLane, true);
 const CYCLIST_START = LANE_LENGTH / 2 + 1.5;
 /**
  * The cyclist at `time`: about half a lap from the tram (by lap fraction, so the two never meet),
- * leaning into the four corner arcs (eased over a unit either side of each arc's start), the
- * crank turning with the distance ridden (the pedals level at time 0).
+ * steering evenly round the four corner arcs (a smooth heading, not one 9° step per sample) and
+ * leaning into them (eased over a unit either side of each arc's start), the crank turning with
+ * the distance ridden (the pedals level at time 0).
  */
 export function cyclistPose(time: number) {
   const d = (TRAM_SPEED * time * LANE_LENGTH) / RING_LENGTH,
-    p = samplePolyline(cyclistLane, d + CYCLIST_START, true);
+    p = samplePolyline(cyclistLane, d + CYCLIST_START, true, true);
   const k = Math.min(Math.abs(p.x) - (ring.hw - ring.radius), Math.abs(p.z - ring.cz) - (ring.hd - ring.radius)),
     t = Math.min(1, Math.max(0, k + 0.6));
   return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * d + Math.PI / 2 };
@@ -639,8 +664,10 @@ const WALK_LENGTH = polylineLength(dogLoop, true),
 export const DOG_WALK = { speed: 0.5, walk: 11, stop: 4, lead: 0.45 };
 /**
  * The walker and the dog at `time`: every 15 s they walk for 11 and stand for 4 while the dog
- * sniffs (`sniff` eases 0 to 1 and back over half a second). Time 0 falls mid-stop at the
- * loop's south end, nearest the Life camera, so reduced motion holds a still pose there.
+ * sniffs (`sniff` eases 0 to 1 and back over half a second). Both turn evenly round the loop's
+ * ends (smooth headings: the corners are sampled in 15° steps, too coarse to show close up). Time 0
+ * falls mid-stop at the loop's south end, nearest the Life camera, so reduced motion holds a still
+ * pose there.
  */
 export function dogWalkPose(time: number) {
   const { speed, walk, stop, lead } = DOG_WALK,
@@ -652,8 +679,8 @@ export function dogWalkPose(time: number) {
   return {
     s,
     sniff,
-    walker: samplePolyline(dogLoop, s, true),
-    dog: samplePolyline(dogLane, ((s + lead) / WALK_LENGTH) * DOG_LENGTH, true),
+    walker: samplePolyline(dogLoop, s, true, true),
+    dog: samplePolyline(dogLane, ((s + lead) / WALK_LENGTH) * DOG_LENGTH, true, true),
   };
 }
 /**

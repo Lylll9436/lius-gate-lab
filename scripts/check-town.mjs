@@ -245,6 +245,32 @@ for (const [x, z] of [...plan.dogLoop, ...plan.dogLane]) {
   for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) >= 0.95, `The dog walk runs into ${t.id}`);
   assert(plan.terrainHeight(x, z) === 0, 'The dog walk climbs a hill');
 }
+// The cyclist, the walker and the dog turn evenly round their sampled corners. Their true arcs
+// turn them about 0.37°, 0.95° and 2.3° a frame at 60 fps; a heading that stepped at each vertex
+// jumped 9°, 15° and 16.6° and held still between. Each heading also stays with the way it moves.
+{
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)),
+    deg = Math.PI / 180;
+  for (const { name, pose, most } of [
+    { name: 'cyclist', pose: (t) => plan.cyclistPose(t), most: 0.5 },
+    { name: 'dog walker', pose: (t) => plan.dogWalkPose(t).walker, most: 1.2 },
+    { name: 'dog', pose: (t) => plan.dogWalkPose(t).dog, most: 3 },
+  ]) {
+    let last = pose(0);
+    for (let f = 1; f <= 60 * 60; f++) {
+      const p = pose(f / 60),
+        turn = Math.abs(wrap(p.heading - last.heading));
+      assert(turn <= most * deg, `The ${name} turns ${(turn / deg).toFixed(1)}° in one frame at t=${(f / 60).toFixed(2)}`);
+      if (Math.hypot(p.x - last.x, p.z - last.z) > 1e-6)
+        assert(Math.abs(wrap(Math.atan2(p.x - last.x, p.z - last.z) - p.heading)) <= 9 * deg, `The ${name} faces off its path at t=${(f / 60).toFixed(2)}`);
+      last = p;
+    }
+  }
+  // Without `smooth`, samplePolyline keeps the segment's own heading (the tram and the walkers).
+  const square = [[0, 0], [0, 1], [1, 1], [1, 0]];
+  assert.equal(plan.samplePolyline(square, 0.9, true).heading, 0, 'The plain heading is the segment’s.');
+  assert(Math.abs(plan.samplePolyline(square, 1, true, true).heading - Math.PI / 4) < 1e-12, 'A smooth heading is halfway round at the vertex.');
+}
 // Ducks paddle inside their sectors of the pool, clear of the causeways' faces, and the pair
 // never swims through each other.
 {
