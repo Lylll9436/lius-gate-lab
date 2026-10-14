@@ -290,7 +290,8 @@ export const cottages: { x: number; z: number; rotation: number; color: string }
  * outer trees and the south shore: on flat ground, 3.35 from the road, about 3.9 inside the
  * coast, 16 from the nearest cottage and far from the terrace row. From the Life chapter's
  * bearing (-0.35) it lies in front of the park, below it on the page. The rectangle is the
- * dykes' centre lines; the field gate opens in the north wall, toward the park.
+ * dykes' centre lines; the field gate opens in the north wall, toward the park. The heather,
+ * thistles and other moorland props keep 1.0 clear of it.
  */
 export const paddock = { x: -11.6, z: 20.9, w: 5.2, d: 3.4, wall: 0.34, gate: { x: -10.2, width: 1.1 } };
 /**
@@ -307,6 +308,20 @@ export const herd: HerdMember[] = [
 ];
 /** The hay rack against the paddock's west wall, its long side along z and its feeding side to +x. */
 export const hayRack = { x: -13.65, z: 20.7 };
+/**
+ * A ring of standing stones (stone centre lines) at the tip of the north-west headland: flat
+ * ground about 2.2 inside the coast, clear of the canopies and far from every chapter's view.
+ */
+export const stoneRing = { x: -23.75, z: -23.25, r: 1.15 };
+/**
+ * Glasgow's Duke of Wellington, cone and all, on the civic lawn west of the Town Hall: 4.75 from
+ * the streets, 6.7 from the hall's footprint and well to the side of its front, on flat ground.
+ * He rides east towards the hall steps (rotation.y, so the horse faces along (sin h, cos h)),
+ * about 58 degrees off the opening bearing (pi/4) and 52 off the hall chapter's (0.9): a side
+ * three-quarter view from both, never the head-on blob a smaller turn gives.
+ */
+export const statueSpot: XZ = [-10.4, -5.6];
+export const statueHeading = 1.8;
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
@@ -503,3 +518,123 @@ export function walkFloor(x: number, z: number) {
   );
 }
 export const tramLoop = ringLine;
+
+/**
+ * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
+ * gardens and the gaps between them); the moorland props keep out of it too.
+ */
+const terraceClearing = { x: terraceRow.x, z: terraceRow.z, w: 11, d: 2 * (terraceRow.spacing + 4) };
+/**
+ * Thistles by the paddock, in two tight clumps of four plants off its south (sea) corners: just
+ * beyond its 1.0 margin, off the mown lawn and away from the gate in the north wall.
+ */
+export const thistles: XZ[] = [
+  [-14.46, 23.91],
+  [-14.18, 23.85],
+  [-14.28, 24.09],
+  [-14.08, 24.05],
+  [-8.56, 23.81],
+  [-8.28, 23.75],
+  [-8.38, 23.99],
+  [-8.18, 23.95],
+];
+export type HeatherDrift = {
+  id: string;
+  x: number;
+  z: number;
+  /** The small, low tufts (world x, z and radius) that make up the drift's mat. */
+  lumps: { x: number; z: number; r: number }[];
+};
+/** How far a drift's lumps reach from its centre. */
+export const heatherReach = (d: HeatherDrift) => Math.max(...d.lumps.map((l) => Math.hypot(l.x - d.x, l.z - d.z) + l.r));
+/**
+ * Heather on the moor: at most 12 drifts on the four hills (never on the beach), most of them
+ * small cushions of six to eight tufts and about one in three a wider patch of twelve. Candidates are
+ * seeded round each hill in turn; a drift stays off the mown town lawn, the terrace, the streets
+ * and the buildings, clear of the trees' trunks, the paddock, the thistles, the sheep, the stone
+ * ring and, by 3.5, the other drifts.
+ */
+export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] {
+  const drifts: HeatherDrift[] = [];
+  for (let i = 0; i < 1500 && drifts.length < 12; i++) {
+    const m = mounds[i % mounds.length],
+      ma = hash(i * 7 + 3) * Math.PI * 2,
+      md = Math.sqrt(hash(i * 7 + 4)) * m.r * 0.85;
+    const x = m.x + Math.cos(ma) * md,
+      z = m.z + Math.sin(ma) * md,
+      spin = hash(i * 7 + 6) * Math.PI * 2;
+    const wide = hash(i * 7 + 2) < 0.3,
+      n = wide ? 12 : 6 + Math.floor(hash(i * 7 + 1) * 3),
+      spread = wide ? 0.55 : 0.3;
+    // A sunflower spiral of overlapping tufts, so the drift reads as one bumpy cushion.
+    const lumps = Array.from({ length: n }, (_, k) => {
+      const a = spin + k * 2.4 + 0.6 * hash(i * 7 + 5 + k),
+        d = spread * Math.sqrt((k + 0.3 * hash(i * 11 + k)) / n),
+        r = (k === 0 ? 0.2 : 0.14) + 0.07 * hash(i * 13 + k * 5);
+      return { x: x + Math.cos(a) * d, z: z + Math.sin(a) * d, r };
+    });
+    const drift = { id: 'heather-' + drifts.length, x, z, lumps },
+      reach = heatherReach(drift);
+    if (!onIsland(x, z, 0.3 + reach) || !(terrainHeight(x, z) > 0.2)) continue;
+    if (lumps.some((l) => lawnCore(l.x, l.z) > 0.02) || distanceToStreets(x, z) < 2.5) continue;
+    if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 0.35 * t.size + 0.5 + reach)) continue;
+    if (cottages.some((c) => Math.hypot(c.x - x, c.z - z) < 3.4 + reach)) continue;
+    if (nearSite(x, z, 1.5 + reach) || Math.hypot(x - pier.start[0], z - pier.start[1]) < 5.5) continue;
+    if (insideRect(x, z, terraceClearing, reach) || insideRect(x, z, paddock, 1.0 + reach)) continue;
+    if (insideRect(x, z, reservedPlot, 1.5 + reach)) continue;
+    if (thistles.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < 0.5 + reach)) continue;
+    if (flock.some((s) => Math.hypot(s.x - x, s.z - z) < 0.8 + reach)) continue;
+    if (Math.hypot(x - stoneRing.x, z - stoneRing.z) < stoneRing.r + 2.2) continue;
+    if (drifts.some((o) => Math.hypot(o.x - x, o.z - z) < 3.5)) continue;
+    drifts.push(drift);
+  }
+  return drifts;
+}
+
+export type SheepSpec = { id: string; x: number; z: number; heading: number; grazing: boolean };
+/**
+ * Blackface sheep on the two empty hilltops, three on the north-west hill and two on the
+ * north-east one: at least 0.9 clear of the canopies, 1.6 of the coast, 7 of the streets and
+ * about 10 of the cottages. `heading` is rotation.y, so the nose points along (sin h, cos h);
+ * the ones on the steeper flanks stand along the slope.
+ */
+export const flock: SheepSpec[] = [
+  { id: 'sheep-0', x: -20.35, z: -19.75, heading: 2.3, grazing: true },
+  { id: 'sheep-1', x: -21.2, z: -20.95, heading: -1.0, grazing: false },
+  { id: 'sheep-2', x: -17.3, z: -20.3, heading: -2.7, grazing: true },
+  { id: 'sheep-3', x: 22.5, z: -19.75, heading: -1.9, grazing: true },
+  { id: 'sheep-4', x: 21.3, z: -18.6, heading: 0.6, grazing: false },
+];
+/** A sheep's four hooves in world x, z (local x ±0.1, z ±0.18). */
+export function sheepFeet(s: SheepSpec): XZ[] {
+  const c = Math.cos(s.heading),
+    n = Math.sin(s.heading);
+  return [[-0.1, 0.18], [0.1, 0.18], [-0.1, -0.18], [0.1, -0.18]].map(([lx, lz]) => [s.x + lx * c + lz * n, s.z - lx * n + lz * c]);
+}
+
+export type StandingStone = { x: number; z: number; ry: number; w: number; h: number; recumbent: boolean };
+/**
+ * The ring's stones: seven on eight slots, one long gone. As in the recumbent circles of
+ * Aberdeenshire, a long stone lies on its side between the two tallest; here it is on the seaward
+ * (north-north-west) side, so the opening camera sees it framed by its flankers against the sand
+ * rather than behind tree-71, and the empty slot is the one that tree hides. `ry` (rotation.y)
+ * turns each stone's broad face to the centre and its length along the ring.
+ */
+export function standingStones(): StandingStone[] {
+  const stones: StandingStone[] = [];
+  for (let k = 0; k < 8; k++) {
+    if (k === 2) continue;
+    const a = (k * Math.PI) / 4 + 0.3,
+      recumbent = k === 5,
+      flanker = k === 4 || k === 6;
+    stones.push({
+      x: stoneRing.x + Math.cos(a) * stoneRing.r,
+      z: stoneRing.z + Math.sin(a) * stoneRing.r,
+      ry: Math.PI / 2 - a,
+      recumbent,
+      w: recumbent ? 1.0 : 0.38 + 0.12 * hash(k * 3 + 1),
+      h: recumbent ? 0.3 : flanker ? 1.18 + 0.07 * hash(k * 3 + 2) : 0.75 + 0.3 * hash(k * 3 + 2),
+    });
+  }
+  return stones;
+}

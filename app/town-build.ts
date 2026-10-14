@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   createCityMaterials,
   GROUND_HEIGHT_RANGE,
@@ -193,6 +193,17 @@ function bakeRamp(m: T.Mesh, colour: string, bottom: number, top: number, tint =
   }
   geo.setAttribute('color', new T.BufferAttribute(out, 3)); return m;
 }
+/**
+ * Heather keeps its own season, like the trees: a muted mauve bloom in late summer, greyer as it
+ * fades in autumn, plain green shoots in spring and a dull olive in winter, so the bare drifts
+ * recede. `stem` is the dark heather green of the sides; `bloom` speckles the up-facing tops.
+ */
+export function heatherLook(season: Season) {
+  if (season === 'spring') return { stem: '#5f7a3e', bloom: '#8e9a58' };
+  if (season === 'winter') return { stem: '#5c6a40', bloom: '#727050' };
+  if (season === 'autumn') return { stem: '#5a6c3c', bloom: '#937391' };
+  return { stem: '#586e3c', bloom: '#9a7499' };
+}
 
 /* ------------------------------------------------------------------ */
 /* Layout shared by the town and its ground masks                      */
@@ -320,6 +331,9 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
     disc(t.x, t.z, 0.3 * t.size, 0.85, 0.3);
   }
   paddockMasks(rect, disc);
+  for (const s of plan.flock) disc(s.x, s.z, 0.3, 0.4, 0.3); // a soft trodden patch under each sheep
+  for (const s of plan.standingStones()) disc(s.x, s.z, 0.3, 0.6, 0.25);
+  disc(plan.statueSpot[0], plan.statueSpot[1], 1.6, 0.6, 0.5); // the statue's pad
   const scratch = new Float32Array(N * N);
   for (let pass = 0; pass < 2; pass++) {
     boxBlur(ao, scratch, true);
@@ -2475,6 +2489,334 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Scottish touches                                                  */
+  /* ---------------------------------------------------------------- */
+  const groundRay = new T.Raycaster(),
+    down = new T.Vector3(0, -1, 0);
+  /** The built island ground's height at (x, z): its triangles, not the smooth terrainHeight they sample. */
+  function groundY(x: number, z: number) {
+    const ground = land.getObjectByName('island-ground');
+    groundRay.set(new T.Vector3(x, 10, z), down);
+    const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
+    return hit ? hit.point.y : plan.terrainHeight(x, z);
+  }
+  /** The terrain's surface normal at (x, z), for props that lie along a slope. */
+  function terrainNormal(x: number, z: number) {
+    const e = 0.05;
+    return new T.Vector3(
+      plan.terrainHeight(x - e, z) - plan.terrainHeight(x + e, z),
+      2 * e,
+      plan.terrainHeight(x, z - e) - plan.terrainHeight(x, z + e),
+    ).normalize();
+  }
+  /**
+   * A heather drift: a low cushion of small, overlapping, knobbly tufts laid along the slope, dark
+   * heather green with the tops speckled in the season's bloom, so it reads as scrub and not as
+   * a pile of stones. No shadow.
+   */
+  function heatherDrift(g: T.Object3D, drift: plan.HeatherDrift, index: number) {
+    const look = heatherLook(season),
+      stem = new T.Color(look.stem),
+      bloom = new T.Color(look.bloom),
+      c = new T.Color(),
+      up = new T.Vector3(0, 1, 0),
+      // The built hill runs a little under the smooth terrainHeight; follow it, measured once per drift.
+      drop = groundY(drift.x, drift.z) - plan.terrainHeight(drift.x, drift.z);
+    const geos = drift.lumps.map((l, k) => {
+      const ico = new T.IcosahedronGeometry(l.r, 1);
+      ico.deleteAttribute('normal');
+      ico.deleteAttribute('uv');
+      // Shared corners, so the knobbly displacement cannot open cracks; smooth normals after it.
+      const geo = mergeVertices(ico),
+        p = geo.getAttribute('position'),
+        speck = new Float32Array(p.count);
+      ico.dispose();
+      for (let i = 0; i < p.count; i++) {
+        const v = new T.Vector3().fromBufferAttribute(p, i),
+          seed = hash(index * 31 + k * 7 + i * 1.7);
+        v.multiplyScalar(1 + (seed - 0.5) * 0.2);
+        p.setXYZ(i, v.x, v.y, v.z);
+        speck[i] = hash(index * 17 + k * 5 + i * 2.3);
+      }
+      geo.rotateY(hash(index * 5 + k) * Math.PI);
+      geo.scale(1, 0.75, 1);
+      geo.translate(0, 0.1 * l.r, 0); // a low dome, about 0.85r showing
+      geo.applyQuaternion(new T.Quaternion().setFromUnitVectors(up, terrainNormal(l.x, l.z)));
+      geo.translate(l.x, plan.terrainHeight(l.x, l.z) + drop, l.z);
+      geo.computeVertexNormals();
+      const n = geo.getAttribute('normal'),
+        out = new Float32Array(p.count * 3),
+        tone = 0.94 + 0.1 * hash(index * 7 + k * 3);
+      for (let i = 0; i < p.count; i++) {
+        const top = sstep(n.getY(i), 0.3, 0.85),
+          f = tone * mix(0.84, 1.04, top) * (0.92 + 0.12 * hash(index * 3 + k * 11 + i * 0.7));
+        // Speckled: a top corner flowers or stays green, so the crown is mottled, never a solid cap.
+        c.copy(speck[i] < 0.9 * top ? bloom : stem);
+        out[i * 3] = c.r * f;
+        out[i * 3 + 1] = c.g * f;
+        out[i * 3 + 2] = c.b * f;
+      }
+      geo.setAttribute('color', new T.BufferAttribute(out, 3));
+      return geo;
+    });
+    const m = new T.Mesh(mergeGeometries(geos)!, material('#ffffff', 'foliage'));
+    m.castShadow = false;
+    m.receiveShadow = true;
+    m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * A thistle plant: a dark, spiky rosette of three flat leaves and one or two stems, each with a
+   * faceted green bulb under a flared purple brush (the emblem's silhouette). No shadow.
+   */
+  function thistle(g: T.Object3D, x: number, z: number, seed: number) {
+    const t = new T.Group();
+    t.position.set(x, plan.terrainHeight(x, z), z);
+    t.rotation.y = hash(seed) * Math.PI;
+    g.add(t);
+    const leaf = '#5d7a45',
+      quiet = (m: T.Mesh) => {
+        m.castShadow = false;
+        m.userData.noShadow = true;
+        return m;
+      };
+    for (let k = 0; k < 3; k++) quiet(cone(t, 0, 0.02, 0, 0.17, 0.05, leaf, 'foliage', 4, (k * Math.PI) / 6));
+    const stems = hash(seed + 1) < 0.5 ? 1 : 2;
+    for (let k = 0; k < stems; k++) {
+      const a = k * 2.3 + hash(seed + k) * 0.6,
+        sx = Math.cos(a) * 0.04,
+        sz = Math.sin(a) * 0.04,
+        rz = (hash(seed + k * 3 + 2) - 0.5) * 0.4,
+        h = 0.3 - k * 0.07 - 0.05 * hash(seed + k * 5 + 4);
+      quiet(box(t, sx, h / 2, sz, 0.05, h, 0.05, leaf, 'foliage', { rz }));
+      const tx = sx - (Math.sin(rz) * h) / 2,
+        ty = h / 2 + (Math.cos(rz) * h) / 2;
+      const bulb = quiet(cone(t, tx, ty + 0.03, sz, 0.06, 0.08, leaf, 'foliage', 6, 0)); // flat facets read as spines
+      bulb.rotation.x = Math.PI; // apex down, into the stem
+      quiet(cylinder(t, tx, ty + 0.095, sz, 0.06, 0.035, 0.06, '#9b6aa6', 'foliage')); // thistle purple, s 0.36
+    }
+    return t;
+  }
+  /** Moorland on the outskirts: heather drifts on the hills, two clumps of thistles by the paddock. */
+  function moorland(g: T.Object3D, trees: plan.TreeSpec[]) {
+    plan.heatherPlan(trees).forEach((drift, i) => heatherDrift(g, drift, i));
+    plan.thistles.forEach(([x, z], i) => thistle(g, x, z, 31 + i * 7));
+  }
+  /**
+   * A static Scottish Blackface sheep, about 0.66 tall at the fleece: three lumpy cream fleece
+   * lumps (a creamy top, a darker belly and creases where they meet, a ragged hem), a black face
+   * with curled pale horns and little ears, black legs and a tail. Grazing ones hold the nose to
+   * the grass. Everything is 'fabric', so the whole flock batches with the land.
+   */
+  function blackfaceSheep(g: T.Object3D, spec: plan.SheepSpec, index: number) {
+    const root = new T.Group();
+    // Stand 0.02 into the built ground under the lowest hoof: the terrain mesh runs a little below
+    // the smooth terrainHeight it samples on a hilltop, so a hoof placed by that would float.
+    root.position.set(spec.x, Math.min(...plan.sheepFeet(spec).map(([x, z]) => groundY(x, z))) - 0.02, spec.z);
+    root.rotation.y = spec.heading;
+    g.add(root);
+    const face = '#3b3633',
+      horn = '#cfc6b0',
+      top = new T.Color(palette.white),
+      tone = new T.Color('#ece3cf'),
+      under = new T.Color('#c9bfa6'),
+      c = new T.Color();
+    // Fleece: body, shoulders and rump as [x, y, z, r, sx, sy, sz].
+    const lumps = [[0, 0.42, 0, 0.24, 1, 0.85, 1.35], [0, 0.47, 0.17, 0.19, 1, 1, 1], [0, 0.46, -0.17, 0.2, 1, 1, 1]];
+    const geos = lumps.map(([x, y, z, r, sx, sy, sz], k) => {
+      const geo = new T.IcosahedronGeometry(r, 1),
+        p = geo.getAttribute('position');
+      // A ragged hem: lower vertices pushed down by a hash of their position (shared corners move together).
+      for (let i = 0; i < p.count; i++)
+        if (p.getY(i) < -0.4 * r) p.setY(i, p.getY(i) - 0.035 * hash(Math.round(p.getX(i) * 997) + Math.round(p.getZ(i) * 613) * 3 + k * 7));
+      return geo.scale(sx, sy, sz).rotateY(hash(index * 3 + k) * 0.6).translate(x, y, z);
+    });
+    for (const geo of geos) {
+      const p = geo.getAttribute('position'),
+        n = geo.getAttribute('normal'),
+        out = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i),
+          y = p.getY(i),
+          z = p.getZ(i),
+          v = sstep(y, 0.24, 0.66);
+        let f = mix(0.8, 1.04, sstep(v, 0.1, 0.9)); // from 0.8: the batch bake already darkens the belly
+        lumps.forEach(([lx, ly, lz, r, sx, sy, sz], j) => {
+          if (geos[j] === geo) return;
+          const gap = Math.hypot((x - lx) / sx, (y - ly) / sy, (z - lz) / sz) - r;
+          if (gap > 0) f *= 1 - 0.18 * (1 - sstep(gap, 0, 0.3 * r));
+        });
+        c.copy(tone).lerp(under, 0.4 * (1 - v)).lerp(top, 0.5 * sstep(v, 0.5, 1) * Math.max(0, n.getY(i)));
+        out[i * 3] = c.r * f;
+        out[i * 3 + 1] = c.g * f;
+        out[i * 3 + 2] = c.b * f;
+      }
+      geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    }
+    const fleece = new T.Mesh(mergeGeometries(geos)!, material('#ffffff', 'fabric'));
+    fleece.castShadow = fleece.receiveShadow = true;
+    root.add(fleece);
+    for (const [lx, lz] of [[-0.1, 0.18], [0.1, 0.18], [-0.1, -0.18], [0.1, -0.18]]) box(root, lx, 0.13, lz, 0.08, 0.26, 0.08, face, 'fabric'); // legs, into the fleece
+    box(root, 0, 0.44, -0.38, 0.08, 0.13, 0.06, palette.white, 'fabric', { rx: -0.35 }); // tail
+    // Head: a pivot inside the shoulder lump, nose down to the grass when grazing.
+    const head = new T.Group();
+    head.position.set(0, spec.grazing ? 0.33 : 0.5, spec.grazing ? 0.31 : 0.3);
+    head.rotation.x = spec.grazing ? 1.25 : 0.45;
+    root.add(head);
+    box(head, 0, 0.02, 0.1, 0.17, 0.19, 0.26, face, 'fabric', { bevel: 0.06 });
+    for (const s of [-1, 1]) {
+      box(head, s * 0.11, 0.05, 0.03, 0.1, 0.03, 0.05, face, 'fabric', { rz: s * 0.3 }); // ear
+      // A curled horn in the side plane: the arc runs back, over the top and forward, open at the cheek.
+      const geo = new T.TorusGeometry(0.06, 0.028, 6, 10, 1.5 * Math.PI).rotateZ(1.5 * Math.PI).rotateY(Math.PI / 2);
+      const m = new T.Mesh(geo, material(horn, 'fabric'));
+      m.position.set(s * 0.1, 0.07, 0.02);
+      m.castShadow = m.receiveShadow = true;
+      head.add(m);
+    }
+    return root;
+  }
+  /**
+   * The standing-stone ring: grey slabs a little askew, broad faces to the centre, slightly
+   * tapered, buried 0.08, paler and lichen-tinted towards the top; the recumbent lies on its side.
+   */
+  function standingStoneRing(g: T.Object3D) {
+    const greys = ['#8f9a92', '#868f86', '#9aa196'],
+      lichen = '#a9ad8c';
+    plan.standingStones().forEach((s, k) => {
+      const y = groundY(s.x, s.z),
+        colour = greys[k % 3];
+      const m = s.recumbent
+        ? box(g, s.x, y + s.h / 2 - 0.05, s.z, s.w, s.h, 0.38, '#ffffff', 'stone', { bevel: 0.08, ry: s.ry, rz: 0.03 })
+        : box(g, s.x, y + s.h / 2 - 0.08, s.z, s.w, s.h, 0.26, '#ffffff', 'stone', {
+            bevel: 0.08,
+            taper: 0.04,
+            ry: s.ry,
+            rz: (hash(k * 5 + 3) - 0.5) * 0.12,
+            rx: (hash(k * 5 + 4) - 0.5) * 0.08,
+          });
+      bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
+    });
+  }
+  /**
+   * A tartan picnic blanket and a hamper on the park turf, front-left of the bandstand under the
+   * edge of the west tree: 0.27 clear of the bandstand plinth, 0.5 of the bench (so the bench back
+   * hides no more than a corner from the Life chapter's camera) and 0.48 of the trunk.
+   * The tartan is one flat colour per triangle on a 0.05 grid, the mix of a muted red, navy, green
+   * and cream sett across and along it (0.5 repeat), so no texture can shimmer. It lies 0.012 over
+   * the turf (top 0.10), casts no shadow and takes no contact bake.
+   */
+  function picnic(g: T.Object3D) {
+    const spot = { x: -12.25, z: 10.08, ry: 0.12 },
+      W = 1.1,
+      D = 0.8,
+      cell = 0.05;
+    const red = new T.Color('#a94a3e'),
+      navy = new T.Color('#34506e'),
+      green = new T.Color('#3d6450'),
+      cream = new T.Color(palette.white);
+    // The sett in 0.05 cells: red 4, navy 2, red 1, green 2, cream 1.
+    const sett = [red, red, red, red, navy, navy, red, green, green, cream];
+    const stripe = (t: number) => sett[((Math.floor(t / cell + 1e-6) % sett.length) + sett.length) % sett.length];
+    const geo = new T.PlaneGeometry(W, D, Math.round(W / cell), Math.round(D / cell)).rotateX(-Math.PI / 2).toNonIndexed();
+    const p = geo.getAttribute('position'),
+      out = new Float32Array(p.count * 3),
+      c = new T.Color();
+    for (let i = 0; i < p.count; i += 3) {
+      const u = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3 + W / 2,
+        v = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3 + D / 2;
+      c.copy(stripe(u)).lerp(stripe(v), 0.5);
+      for (let k = 0; k < 3; k++) c.toArray(out, (i + k) * 3);
+    }
+    geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    const rug = new T.Group();
+    rug.position.set(spot.x, 0.112, spot.z);
+    rug.rotation.y = spot.ry;
+    g.add(rug);
+    const blanket = new T.Mesh(geo, material('#ffffff', 'fabric'));
+    blanket.castShadow = false;
+    blanket.receiveShadow = true;
+    blanket.userData.noShadow = true;
+    rug.add(blanket);
+    // A wicker hamper on the back corner, away from the Life chapter's camera: a pale wicker basket,
+    // a slightly darker lid and an arched cane handle over it, so it reads as a basket, not a box.
+    const hamper = new T.Group();
+    hamper.position.set(-0.32, 0, -0.17);
+    hamper.rotation.y = -0.18;
+    rug.add(hamper);
+    box(hamper, 0, 0.12, 0, 0.42, 0.24, 0.3, '#b08a5c', 'wood');
+    box(hamper, 0, 0.265, 0, 0.45, 0.05, 0.33, '#9c7850', 'wood');
+    const handle = new T.Mesh(new T.TorusGeometry(0.1, 0.016, 6, 12, Math.PI), material(palette.woodDark, 'wood'));
+    handle.position.y = 0.29; // the arch stands on the lid along the basket's length
+    handle.castShadow = handle.receiveShadow = true;
+    hamper.add(handle);
+    return rug;
+  }
+  /**
+   * The Duke of Wellington as Glasgow knows him: a dark bronze rider on a chunky standing horse, an
+   * orange traffic cone on his head, on a plain stone plinth (a base course, a battered die and a
+   * cornice; no inscription) over a 12-sided paved pad. About 3.6 to the cone's tip.
+   */
+  function wellington(g: T.Object3D) {
+    const [x, z] = plan.statueSpot,
+      bronze = '#5f5a4a'; // dark, cool bronze (s 0.22)
+    const root = new T.Group();
+    root.position.set(x, 0, z);
+    root.rotation.y = plan.statueHeading;
+    g.add(root);
+    const pad = new T.Mesh(new T.CylinderGeometry(1.6, 1.6, 0.1, 12), material(palette.plazaDark, 'paving'));
+    pad.position.y = 0.05;
+    pad.receiveShadow = true;
+    root.add(pad);
+    box(root, 0, 0.21, 0, 1.5, 0.22, 2.3, palette.plinth, 'stone'); // base course 0.10..0.32
+    box(root, 0, 0.795, 0, 1.2, 0.95, 2.0, palette.blonde, 'stone', { taper: 0.05 }); // die 0.32..1.27
+    box(root, 0, 1.35, 0, 1.38, 0.16, 2.18, palette.trim, 'stone'); // cornice 1.27..1.43
+    const y0 = 1.43;
+    // The horse, chunky and nose to the hall steps: a deep barrel on short, stout legs (the near
+    // foreleg stepping forward), the neck leaning well forward and the head bowed.
+    for (const sx of [-0.16, 0.16])
+      for (const sz of [-0.42, 0.42]) {
+        const step = sx > 0 && sz > 0 ? 0.18 : 0;
+        box(root, sx, y0 + 0.28, sz + step * 0.25, 0.17, 0.56, 0.17, bronze, 'brass', { rx: -step }); // leg
+      }
+    box(root, 0, y0 + 0.78, 0, 0.56, 0.56, 1.3, bronze, 'brass', { bevel: 0.18 }); // barrel
+    const neck = new T.Group();
+    neck.position.set(0, y0 + 0.92, 0.48);
+    neck.rotation.x = 0.75;
+    root.add(neck);
+    box(neck, 0, 0.22, 0, 0.32, 0.55, 0.34, bronze, 'brass');
+    box(neck, 0, 0.24, -0.17, 0.07, 0.5, 0.07, bronze, 'brass'); // mane
+    const head = new T.Group();
+    head.position.set(0, y0 + 1.3, 0.82);
+    head.rotation.x = 1.0;
+    root.add(head);
+    box(head, 0, 0.02, 0.12, 0.24, 0.26, 0.5, bronze, 'brass'); // head, nose down
+    for (const s of [-1, 1]) box(head, s * 0.07, 0.16, -0.1, 0.05, 0.12, 0.05, bronze, 'brass', { rx: -0.8 }); // ear, upright on the poll
+    const tail = new T.Group();
+    tail.position.set(0, y0 + 0.95, -0.64);
+    tail.rotation.x = -0.3;
+    root.add(tail);
+    box(tail, 0, -0.22, 0, 0.1, 0.45, 0.12, bronze, 'brass');
+    // The rider, smaller than the horse: saddle cloth, legs down the flanks, torso, arms forward to the reins, head.
+    box(root, 0, y0 + 1.07, -0.05, 0.64, 0.04, 0.5, bronze, 'brass');
+    for (const s of [-1, 1]) {
+      box(root, s * 0.31, y0 + 0.88, 0.04, 0.14, 0.4, 0.18, bronze, 'brass'); // leg
+      box(root, s * 0.21, y0 + 1.3, 0.06, 0.1, 0.32, 0.12, bronze, 'brass', { rx: -0.6 }); // arm, hands forward to the reins
+    }
+    box(root, 0, y0 + 1.31, -0.05, 0.34, 0.45, 0.25, bronze, 'brass'); // torso
+    sphere(root, 0, y0 + 1.67, -0.03, 0.15, bronze, 'brass');
+    // The cone, knocked a little askew: a square foot, the cone and its white band.
+    const hat = new T.Group();
+    hat.position.set(0, y0 + 1.79, -0.03);
+    hat.rotation.z = 0.15;
+    root.add(hat);
+    box(hat, 0, 0.015, 0, 0.28, 0.03, 0.28, palette.tramOrange, 'enamel');
+    cone(hat, 0, 0.21, 0, 0.15, 0.36, palette.tramOrange, 'enamel', 12, 0);
+    cylinder(hat, 0, 0.03 + 0.4 * 0.36, 0, 0.105, 0.105, 0.06, palette.white, 'enamel', 12);
+    return root;
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
   buildTerrain();
@@ -2531,6 +2873,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     flowerBed(parkGroup, P.x + 2.6, 0.1, P.z - 1.2, 1.4, 0.7, 19);
     bin(parkGroup, P.x + 3.3, 0.13, P.z + 2.2);
   }
+  picnic(parkGroup);
   // Plaza furniture.
   phoneBox(land, plan.phoneBoxSpot[0], plan.levels.plaza, plan.phoneBoxSpot[1], -0.6);
   bin(land, 0.9, plan.levels.plaza, 4.9);
@@ -2542,6 +2885,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   crane(land, plan.reservedPlot.x, plan.reservedPlot.z);
   pierAndHarbour(land);
   lighthouse(land);
+  moorland(land, trees);
+  plan.flock.forEach((spec, i) => blackfaceSheep(land, spec, i));
+  standingStoneRing(land);
+  wellington(land);
   hotAirBalloon(city);
   highlandPaddock(land);
   yield 'park, harbour and landmarks';

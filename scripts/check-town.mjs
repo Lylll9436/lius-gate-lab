@@ -415,6 +415,102 @@ assert(part('cow-a-head').rotation.x > 0.1 && part('cow-a-head').rotation.x < 0.
 assert(part('calf-head').rotation.x > 0.4, 'The calf grazes.');
 for (const name of ['cow-a-tail', 'cow-b-tail']) assert(Math.abs(part(name).rotation.z) < 1e-9, name + ' hangs still.');
 for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.children.every((c) => c.isMesh), 'Batched: ' + e.object.name);
+// Moorland: a few heather drifts on the hills only and thistles by the paddock, never on the mown
+// town lawn, the terrace, the streets, the beach or within 1.0 of the herd's paddock.
+const nearPaddock = (x, z, margin) =>
+  Math.abs(x - plan.paddock.x) < plan.paddock.w / 2 + margin && Math.abs(z - plan.paddock.z) < plan.paddock.d / 2 + margin;
+const heather = plan.heatherPlan(trees);
+assert(heather.length >= 8 && heather.length <= 12, 'Heather drifts: ' + heather.length);
+for (const d of heather) {
+  assert(plan.terrainHeight(d.x, d.z) > 0.2, `${d.id} is not on a hill`);
+  for (const o of heather) assert(o === d || Math.hypot(o.x - d.x, o.z - d.z) >= 3.5, `${d.id} crowds ${o.id}`);
+}
+for (const d of heather)
+  for (const l of d.lumps)
+    for (const [ex, ez] of [[0, 0], [l.r, 0], [-l.r, 0], [0, l.r], [0, -l.r]]) {
+      const x = l.x + ex,
+        z = l.z + ez;
+      assert(plan.onIsland(x, z, 0.2), `${d.id} runs onto the beach`);
+      assert(plan.lawnCore(x, z) < 0.05, `${d.id} on the town lawn`);
+      assert(plan.distanceToStreets(x, z) > 1.5, `${d.id} by a street`);
+      assert(!nearPaddock(x, z, 1.0), `${d.id} in the paddock`);
+      assert(!(Math.abs(x - row.x) < 5.5 && Math.abs(z - row.z) < row.spacing + 4), `${d.id} by the terrace`);
+      for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) > 0.3 * t.size, `${d.id} round the trunk of ${t.id}`);
+    }
+for (const [x, z] of plan.thistles) {
+  assert(plan.onIsland(x, z, 1) && plan.lawnCore(x, z) < 0.02 && plan.distanceToStreets(x, z) > 2, `Thistle astray at ${x}, ${z}`);
+  assert(!nearPaddock(x, z, 1.0), `Thistle in the paddock at ${x}, ${z}`);
+}
+// Blackface sheep graze the two empty hilltops, clear of the trees, the shore, the streets and the
+// cottages, and every hoof stands on (or just in) the built ground: none floats over the slope.
+const grass = [],
+  fabric = [];
+city.traverse((o) => {
+  if (o.isMesh && o.material.userData?.surfaceKind === 'grass') grass.push(o);
+  if (o.isMesh && o.material.userData?.surfaceKind === 'fabric') fabric.push(o);
+});
+assert(plan.flock.length === 5, 'Five sheep: ' + plan.flock.length);
+for (const s of plan.flock) {
+  assert(plan.terrainHeight(s.x, s.z) > 0.2, `${s.id} is not on a hill`);
+  assert(plan.islandRadius(Math.atan2(s.z, s.x)) - Math.hypot(s.x, s.z) > 1.6, `${s.id} by the shore`);
+  assert(plan.distanceToStreets(s.x, s.z) > 7, `${s.id} by a street`);
+  for (const c of plan.cottages) assert(Math.hypot(c.x - s.x, c.z - s.z) > 9.5, `${s.id} by a cottage`);
+  for (const t of trees) assert(Math.hypot(t.x - s.x, t.z - s.z) - 0.9 * t.size - 0.35 > 0.9, `${s.id} under ${t.id}`);
+  for (const [x, z] of plan.sheepFeet(s)) {
+    ray.set(new T.Vector3(x, 10, z), new T.Vector3(0, -1, 0));
+    const ground = ray.intersectObjects(grass, false)[0];
+    assert(ground, `No ground under ${s.id}`);
+    // The leg's underside, found from below the ground (the turf is one-sided).
+    ray.set(new T.Vector3(x, ground.point.y - 0.5, z), new T.Vector3(0, 1, 0));
+    const leg = ray.intersectObjects(fabric, false)[0];
+    assert(leg && leg.point.y < ground.point.y + 0.3, `${s.id} has no leg at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+    const above = leg.point.y - ground.point.y;
+    assert(above <= 0.005, `${s.id} has a hoof ${above.toFixed(3)} above the ground`);
+    assert(above > -0.15, `${s.id} has a hoof sunk ${(-above).toFixed(3)} into the hill`);
+  }
+}
+// The standing stones ring the north-west headland on flat grass, clear of the canopies; seven
+// stones on eight slots, one of them recumbent.
+const stones = plan.standingStones();
+assert.equal(stones.length, 7, 'Seven standing stones');
+assert.equal(stones.filter((s) => s.recumbent).length, 1, 'One recumbent stone');
+for (const s of stones) {
+  assert(plan.onIsland(s.x, s.z, 0.8), `A standing stone on the beach at ${s.x.toFixed(2)}, ${s.z.toFixed(2)}`);
+  assert(plan.terrainHeight(s.x, s.z) < 0.01, 'The stone ring stands on flat ground');
+  for (const t of trees) assert(Math.hypot(t.x - s.x, t.z - s.z) - 0.9 * t.size > 0.6, `A standing stone under ${t.id}`);
+}
+// The Duke of Wellington stands on the civic lawn on flat ground: his 1.6 pad stays off the streets
+// and the canopies, well clear of the hall, never in front of it and never on the plaza.
+{
+  const [x, z] = plan.statueSpot,
+    hall = plan.sites['town-hall'],
+    pad = 1.6;
+  assert(plan.distanceToStreets(x, z) > pad + 2, 'The statue crowds a street');
+  assert(Math.hypot(x, z) > plan.PLAZA_RADIUS + 5, 'The statue crowds the plaza');
+  for (const [dx, dz] of [[0, 0], [pad, 0], [-pad, 0], [0, pad], [0, -pad]])
+    assert(plan.terrainHeight(x + dx, z + dz) < 0.01, 'The statue stands on a slope');
+  const outX = Math.max(0, Math.abs(x - hall.x) - hall.w / 2),
+    outZ = Math.max(0, Math.abs(z - hall.z) - hall.d / 2);
+  assert(Math.hypot(outX, outZ) > 5, 'The statue crowds the Town Hall');
+  assert(Math.abs(x - hall.x) > hall.w / 2 + pad + 2, 'The statue stands in front of the Town Hall');
+  for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) - 0.9 * t.size > pad + 0.3, `The statue under ${t.id}`);
+}
+// Heather keeps its own season in muted colours: a mauve bloom in late summer and autumn only.
+const { heatherLook } = await load('town-build');
+const hsv = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
+    max = Math.max(r, g, b),
+    d = max - Math.min(r, g, b);
+  const h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s: max ? d / max : 0 };
+};
+for (const season of ['spring', 'summer', 'autumn', 'winter']) {
+  const look = heatherLook(season),
+    bloom = hsv(look.bloom);
+  assert(bloom.s <= 0.45 && hsv(look.stem).s <= 0.5, `${season} heather is too loud`);
+  const mauve = bloom.h > 270 && bloom.h < 320;
+  assert.equal(mauve, season === 'summer' || season === 'autumn', `${season} heather ${mauve ? 'blooms' : 'does not bloom'}`);
+}
 // The season shows on the trees: blossom only in spring, autumn tones only in autumn.
 const { glasgowSeason } = await load('glasgow-sun');
 const { treeLook } = await load('town-build');
