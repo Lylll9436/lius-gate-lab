@@ -106,6 +106,17 @@ export function CityStage({
     }
     wasTouring.current = touring;
   }, [touring]);
+  // Closing the Directory from inside it (Escape, its X) gives the focus back to its button.
+  const directoryOpen = explore && ctl.directory,
+    wasDirectory = useRef(directoryOpen),
+    directoryButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!directoryOpen && wasDirectory.current) {
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (lost) directoryButton.current?.focus();
+    }
+    wasDirectory.current = directoryOpen;
+  }, [directoryOpen]);
   const lastStop = tourStops.length - 1,
     onPark = !b && !!sceneTarget(ctl.content).park,
     place = placeFor(ctl.content),
@@ -278,7 +289,11 @@ export function CityStage({
               <Route size={15} />
               {tr('City tour', '城市导览')}
             </button>
-            <button onClick={ctl.toggleDirectory} aria-expanded={ctl.directory}>
+            <button
+              ref={directoryButton}
+              onClick={ctl.toggleDirectory}
+              aria-expanded={ctl.directory}
+            >
               <List size={15} />
               {tr('Directory', '目录')}
             </button>
