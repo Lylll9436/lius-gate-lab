@@ -16,6 +16,7 @@ import {
   createGulls,
   sunOffsetFor,
   lowSun,
+  warmSun,
   glasgowSky,
   glasgowSeason,
 } from './city-atmosphere';
@@ -1285,7 +1286,7 @@ export async function createCity(
     setSky({ night: amount, elevation, azimuth }) {
       targetNight = T.MathUtils.clamp(amount, 0, 1);
       targetSunOffset.copy(sunOffsetFor(elevation, azimuth));
-      targetWarmth = T.MathUtils.clamp((0.5 - elevation) / 0.42, 0, 1);
+      targetWarmth = warmSun(elevation);
       targetGolden = lowSun(elevation);
       // The first sky arrives before the first frame: no flash of noon at midnight.
       if (!skyKnown) {

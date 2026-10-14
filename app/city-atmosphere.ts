@@ -23,6 +23,15 @@ export function lowSun(elevation: number) {
 }
 
 /**
+ * How warm the key light and the sky are, 0..1: none from about 29 degrees of real elevation up,
+ * full from about 4.6 degrees down (late afternoon and the night's light, which the night tint
+ * then covers).
+ */
+export function warmSun(elevation: number) {
+  return T.MathUtils.clamp((0.5 - elevation) / 0.42, 0, 1);
+}
+
+/**
  * Stylised key-light offset for the overview bearing (the scene turns it with the camera yaw).
  * The real sun only nudges it: elevation is lifted to 50-57 degrees (lowered to 40 at dawn and
  * golden hour, for longer shadows) and the sideways swing is capped at +-35 degrees around the

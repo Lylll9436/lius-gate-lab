@@ -17,7 +17,7 @@ import {
   type BrowseMode,
 } from './lab-navigation';
 import type { CityAPI, HoverTarget } from './city-scene';
-import { useGlasgowSky, effectiveNight, type SkyMode } from './use-sky';
+import { useGlasgowSky, effectiveNight, sceneSky, type SkyMode } from './use-sky';
 import { Masthead, SiteFooter, chapterMeta } from './site-chrome';
 import { CityStage, type StageController } from './city-stage';
 import { Hero, Chapters } from './chapters';
@@ -672,15 +672,12 @@ export default function Home() {
     api.current?.setHomeTags(mode === 'reading' && settledShot === 'people');
   }, [mode, settledShot, ready]);
 
-  // The sky, the weather, the clock and the theme.
+  // The sky, the weather, the clock and the theme. Manual Day lights the town with a fixed
+  // daytime sun, never the real one setting.
   useEffect(() => {
-    api.current?.setSky({
-      night,
-      elevation: sky.elevation,
-      azimuth: sky.azimuth,
-    });
+    api.current?.setSky(sceneSky(sky, skyMode));
     document.documentElement.dataset.theme = night > 0.55 ? 'night' : 'day';
-  }, [sky, night, ready]);
+  }, [sky, skyMode, night, ready]);
   useEffect(() => {
     api.current?.setRain(rain);
   }, [rain, ready]);

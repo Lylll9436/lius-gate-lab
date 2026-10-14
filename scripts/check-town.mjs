@@ -26,6 +26,7 @@ for (const name of [
   'city-water',
   'city-lighting',
   'glasgow-sun',
+  'use-sky',
   'city-atmosphere',
   'town-plan',
   'town-build',
@@ -541,7 +542,7 @@ for (const season of ['summer', 'winter'])
   assert(!looks(season).has(blossomTop) && !looks(season).has(autumnTop), season + ' trees stay green.');
 // The key light stays high all day, comes down to about 40 degrees at dawn and golden hour, and
 // goes back up for the night light.
-const { sunOffsetFor, lowSun } = await load('city-atmosphere');
+const { sunOffsetFor, lowSun, warmSun } = await load('city-atmosphere');
 const degrees = (v) => (Math.atan2(v.y, Math.hypot(v.x, v.z)) * 180) / Math.PI,
   rad = (d) => (d * Math.PI) / 180;
 assert(degrees(sunOffsetFor(rad(30), Math.PI)) > 50, 'A high key light by day.');
@@ -550,6 +551,25 @@ assert(degrees(sunOffsetFor(rad(-12), Math.PI * 1.6)) > 49, 'The night light sta
 assert.equal(lowSun(rad(15)), 0);
 assert.equal(lowSun(rad(2)), 1);
 assert.equal(lowSun(rad(-10)), 0);
+// Manual Day is plain daylight at every hour: never the real sun's golden hour or its warm low
+// light, the key light high. Auto and Night keep the real sun.
+{
+  const { sceneSky } = await load('use-sky');
+  const { glasgowSky } = await load('glasgow-sun');
+  for (const month of [0, 5, 9])
+    for (let minute = 0; minute < 24 * 60; minute += 20) {
+      const real = glasgowSky(new Date(Date.UTC(2026, month, 14, 0, minute))),
+        day = sceneSky(real, 'day');
+      assert.equal(day.night, 0);
+      assert.equal(lowSun(day.elevation), 0, `Manual Day at ${real.clock} has a golden-hour sun.`);
+      assert.equal(warmSun(day.elevation), 0, `Manual Day at ${real.clock} has a warm low sun.`);
+      assert(degrees(sunOffsetFor(day.elevation, day.azimuth)) > 50, 'Manual Day keeps a high key light.');
+      for (const mode of ['auto', 'night']) {
+        const lit = sceneSky(real, mode);
+        assert.deepEqual([lit.elevation, lit.azimuth], [real.elevation, real.azimuth]);
+      }
+    }
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

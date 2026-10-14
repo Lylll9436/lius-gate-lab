@@ -27,6 +27,21 @@ export function effectiveNight(sky: SkyState, mode: SkyMode) {
   return mode === 'auto' ? sky.night : mode === 'night' ? 1 : 0;
 }
 
+/**
+ * Manual Day's sun: a fixed early-afternoon sun due south (about 34 degrees up), so daylight
+ * chosen at dusk or after dark is plain daylight, not the real sun's golden hour or warm low
+ * light.
+ */
+export const DAYLIGHT_SUN = { elevation: 0.6, azimuth: Math.PI };
+
+/** What the town is lit by: the real sun, except in manual Day. */
+export function sceneSky(sky: SkyState, mode: SkyMode) {
+  const night = effectiveNight(sky, mode);
+  return mode === 'day'
+    ? { night, ...DAYLIGHT_SUN }
+    : { night, elevation: sky.elevation, azimuth: sky.azimuth };
+}
+
 /** "21:42 · lamps on" — the city keeps Glasgow time. */
 export function skyCaption(sky: SkyState, mode: SkyMode, locale: Locale) {
   const zh = locale === 'zh';
