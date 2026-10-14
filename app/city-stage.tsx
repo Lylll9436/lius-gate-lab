@@ -233,6 +233,7 @@ export function CityStage({
               onClick={ctl.togglePlan}
               disabled={!ctl.ready}
               aria-pressed={ctl.plan}
+              data-plan-toggle
               aria-label={tr('Plan view', '规划视图')}
               title={tr('The town’s four districts', '小城的四个分区')}
             >

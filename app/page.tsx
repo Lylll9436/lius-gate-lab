@@ -703,6 +703,13 @@ export default function Home() {
         setInspect(false);
         api.current?.select(b.id);
       } else if (directory) closeDirectory();
+      // Plan view and the tour lie over the town: Escape ends them before it touches the file.
+      else if (plan) {
+        setPlan(false);
+        document
+          .querySelector<HTMLButtonElement>('[data-plan-toggle]')
+          ?.focus();
+      } else if (tour >= 0) setTour(-1);
       else if (sheetFull) setSheetFull(false);
       else if (panelOpen) {
         setPanelOpen(false);
@@ -713,7 +720,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [mode, inspect, b, panelOpen, sheetFull, directory]);
+  }, [mode, inspect, b, panelOpen, sheetFull, directory, plan, tour]);
 
   const ctl: StageController = {
     locale,
