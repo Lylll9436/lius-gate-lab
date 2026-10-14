@@ -1206,14 +1206,22 @@ export async function createCity(
         refresh = T.MathUtils.clamp(filled[Math.floor(filled.length * 0.1)], 1 / 165, 1 / 30);
       }
       // Step down when frames take about twice the refresh interval (never chase more than 33 fps
-      // with resolution); step back up once frames have held close to the refresh rate.
+      // with resolution); step back up once frames have held close to the refresh rate, or at
+      // 50 fps or better: on a 120 Hz screen "close to the refresh rate" is 107 fps, which most
+      // machines never reach, so one slow moment would lower the quality for the whole visit.
+      // Each step changes the cost by well under the 1.5 times between 50 and 33 fps, so a
+      // step back up does not bring the next step down.
       if (frameCost > Math.max(refresh * 1.9, 0.03) && quality < 4) {
         quality++;
         qualityChanged = now;
         lastGovern = now;
         frameCost = refresh;
         applyQuality();
-      } else if (frameCost < refresh * 1.12 && quality > 0 && now - qualityChanged > 12000) {
+      } else if (
+        frameCost < Math.max(refresh * 1.12, 1 / 50) &&
+        quality > 0 &&
+        now - qualityChanged > 12000
+      ) {
         quality--;
         qualityChanged = now;
         lastGovern = now;

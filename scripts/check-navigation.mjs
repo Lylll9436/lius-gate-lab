@@ -555,6 +555,63 @@ assert(!shadows.renderer.shadowMap.needsUpdate, 'An unchanged focus costs no ext
 shadows.quality = 2;
 focusing();
 redrawn('A quality step');
+// The frame-time governor: a slow moment lowers the quality, and it comes back once frames are
+// fast again, on a 120 Hz screen too, without stepping to and fro.
+const governPieces = [];
+function collectGovern(node) {
+  const text = node.getText?.(syntax) ?? '';
+  if (ts.isExpressionStatement(node) && text.startsWith('frameCost = T.MathUtils.lerp(frameCost, dt'))
+    governPieces.push(text);
+  if (
+    ts.isIfStatement(node) &&
+    ['dt > 0 && dt < 0.05', 'now - lastGovern > 2500'].includes(node.expression.getText(syntax))
+  )
+    governPieces.push(text);
+  ts.forEachChild(node, collectGovern);
+}
+collectGovern(syntax);
+assert.equal(governPieces.length, 3, 'The governor check must find every piece it runs.');
+function runGovernor(costOf, seconds, dip = () => 0) {
+  const g = {
+    T,
+    Math,
+    intervals: new Float32Array(120),
+    intervalCount: 0,
+    frameCost: 0.016,
+    refresh: 1 / 60,
+    lastGovern: 0,
+    quality: 0,
+    qualityChanged: 0,
+    changes: [],
+    applyQuality() {
+      g.changes.push(g.quality);
+    },
+  };
+  const govern = runInNewContext(
+    `${ts.transpileModule(`function govern(dt, now) { ${governPieces.join('\n')} }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};govern;`,
+    g,
+  );
+  let now = 1000;
+  for (let frame = 0; now < 1000 + seconds * 1000; frame++) {
+    const dt = Math.min((dip(now / 1000) || costOf(g.quality, frame)) / 1000, 0.05);
+    now += dt * 1000;
+    govern(dt, now);
+  }
+  return g;
+}
+// A 120 Hz screen and a machine that draws about 80 fps (shadow frames miss a vsync, the others
+// make it), at full quality and one step down alike; two seconds at 25 fps (a window resize).
+const vsync = 1000 / 120,
+  mixed = (_quality, frame) => (frame % 2 ? vsync : 2 * vsync),
+  dipped = runGovernor(mixed, 120, (t) => (t > 20 && t < 22 ? 40 : 0));
+assert(dipped.changes[0] === 1, 'A slow moment lowers the quality.');
+assert.equal(dipped.quality, 0, 'Fast frames bring the quality back on a 120 Hz screen.');
+assert.deepEqual(dipped.changes, [1, 0], 'The governor stepped to and fro.');
+// A slow machine on a 60 Hz screen (frames of one to three vsyncs, about 23, 27, 33, 40 and
+// 60 fps from full quality down) settles where it holds 33 fps, and stays there.
+const steps = [[1, 3, 3, 3, 3], [1, 3, 2, 3, 2], [1, 2, 2, 2, 2], [1, 2, 1, 2, 1], [1, 1, 1, 1, 1]],
+  slow = runGovernor((quality, frame) => (steps[quality][frame % 5] * 1000) / 60, 300);
+assert.deepEqual(slow.changes, [1, 2], 'A slow machine steps down once to each level it needs, and no further.');
 // Selection adds one depth-aware mask pass; all renderer state survives failure.
 const { createCityInk } = await import(
   pathToFileURL(path.join(output, 'city-ink.mjs')).href
@@ -626,5 +683,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion, a sun shadow redrawn whenever its map is replaced.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment.`,
 );
