@@ -106,6 +106,31 @@ export function buildCityModel() {
 }
 
 /**
+ * Inspect stands a copy of the building: pair each of its moving parts (the hall's clock hands
+ * and vane, among `moving`) with that part's copy, walking both trees together, so the copies
+ * can follow the originals the town keeps animating.
+ */
+export function pairMovingParts(original: T.Object3D, copy: T.Object3D, moving: Set<T.Object3D>) {
+  const pairs: [T.Object3D, T.Object3D][] = [];
+  const walk = (from: T.Object3D, to: T.Object3D) => {
+    if (moving.has(from)) pairs.push([from, to]);
+    from.children.forEach((child, i) => {
+      if (to.children[i]) walk(child, to.children[i]);
+    });
+  };
+  walk(original, copy);
+  return pairs;
+}
+/** Each copy takes its original's pose. */
+export function followMovingParts(pairs: [T.Object3D, T.Object3D][]) {
+  for (const [from, to] of pairs) {
+    to.position.copy(from.position);
+    to.quaternion.copy(from.quaternion);
+    to.scale.copy(from.scale);
+  }
+}
+
+/**
  * Plan view's districts lie this far above the flat ground: over the kerbs (plan.levels.kerb,
  * the highest paving), so the roads and pavements cannot hide them. Buildings, trees and
  * lamps still stand in front.
@@ -298,6 +323,12 @@ export async function createCity(
     // starts below sea level, and a positive near plane would cut the sea off there.
     camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180);
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
+  // Everything the frame loop turns: Inspect's copy of a building follows these parts of it.
+  const movingParts = new Set<T.Object3D>([
+    ...animated.map((entry) => entry.object),
+    ...clocks.flatMap((clock) => [clock.hour, clock.minute]),
+  ]);
+  let inspectParts: [T.Object3D, T.Object3D][] = [];
   const ink = createCityInk(renderer, scene, camera, tier === 'low' ? 2 : 4);
   // The palette is modelled at full Clash saturation; the grade mutes it to a calmer,
   // contemporary look (sage lawns, grey-blue sea) while accents still read. One number.
@@ -755,6 +786,7 @@ export async function createCity(
     if (inspect) {
       scene.remove(inspect, studyGround);
       inspect = null;
+      inspectParts = [];
     }
     city.visible = true;
     zones.visible = planMode;
@@ -1095,6 +1127,8 @@ export async function createCity(
       clockChecked = now;
       setClocks();
     }
+    // Inspect's copy keeps time and turns its vane with the town.
+    followMovingParts(inspectParts);
     // Raycasting the town is the costliest thing a frame can do: only repeat it when
     // the pointer or the camera has actually moved.
     const hoverKey =
@@ -1281,6 +1315,7 @@ export async function createCity(
       exitInspection();
       const m: Model = models.get(id)!;
       inspect = m.root.clone(true);
+      inspectParts = pairMovingParts(m.root, inspect, movingParts);
       m.root.getWorldPosition(inspect.position);
       inspect.rotation.copy(m.root.rotation);
       m.root.updateMatrixWorld(true);

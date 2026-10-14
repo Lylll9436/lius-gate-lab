@@ -51,7 +51,7 @@ const load = (name) => import(pathToFileURL(path.join(output, name + '.mjs')).hr
 const { buildings } = await load('city-data');
 const { districts } = await load('city-districts');
 const plan = await load('town-plan');
-const { buildCityModel } = await load('city-scene');
+const { buildCityModel, pairMovingParts, followMovingParts } = await load('city-scene');
 const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
@@ -446,6 +446,26 @@ for (let i = 0; i < 720; i++) {
         assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the opening view.`);
     }
   }
+}
+// Inspect's copy of the Town Hall keeps time and turns its vane with the town: its four pairs
+// of clock hands and its vane follow the originals the frame loop moves.
+{
+  const hall = model.models.get('town-hall').root,
+    study = hall.clone(true),
+    moving = new Set([...model.animated.map((e) => e.object), ...clocks.flatMap((c) => [c.hour, c.minute])]),
+    pairs = pairMovingParts(hall, study, moving);
+  assert.equal(pairs.length, 9, 'Inspect must find the hall’s eight clock hands and its vane.');
+  for (const e of model.animated) e.update(37, 0);
+  clocks.forEach((c, i) => {
+    c.hour.rotation.z = -0.4 - i;
+    c.minute.rotation.z = -2.1 - i;
+  });
+  followMovingParts(pairs);
+  for (const [from, to] of pairs) {
+    assert(from !== to && !hall.getObjectById(to.id), 'A copy is paired, not the original.');
+    assert(to.quaternion.angleTo(from.quaternion) < 1e-6, 'The study copy’s clock or vane stands still.');
+  }
+  for (const [from] of pairs) from.rotation.set(0, 0, 0);
 }
 // The herd idles with five small animated meshes (three heads, two adult tails). At time 0, the
 // pose reduced motion holds, cow-b looks up at the Life camera, cow-a feeds at the rack, the
