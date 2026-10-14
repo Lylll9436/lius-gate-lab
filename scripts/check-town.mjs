@@ -419,6 +419,24 @@ const balloon = model.animated.find((e) => {
   return e.object.position.y > 11;
 });
 assert(balloon, 'The town has a balloon.');
+// It darkens with the night like the town (no glow), on its own materials: nothing else dims.
+{
+  const { BALLOON_NIGHT_DIM } = await load('town-movers'),
+    parts = balloon.object.children.filter((o) => o.isMesh),
+    others = new Set();
+  assert(BALLOON_NIGHT_DIM >= 0.3 && BALLOON_NIGHT_DIM < 1, 'The balloon hardly darkens at night.');
+  city.traverse((o) => {
+    if (o.isMesh && !parts.includes(o)) others.add(o.material);
+  });
+  balloon.update(0, 1);
+  assert(parts.length > 0 && parts.every((o) => o.material.vertexColors), 'The balloon is batched.');
+  for (const o of parts) {
+    assert(!others.has(o.material), 'The balloon dims a material the town shares.');
+    assert(Math.abs(o.material.color.r - (1 - BALLOON_NIGHT_DIM)) < 1e-6 && o.material.emissive.getHex() === 0, 'The balloon stays bright (or glows) at night.');
+  }
+  balloon.update(0, 0);
+  for (const o of parts) assert.equal(o.material.color.getHex(), 0xffffff, 'The balloon is dimmed by day.');
+}
 // It sets off north-east over the sea (the opening view's open top right), not behind the hero text.
 balloon.update(0, 0);
 assert(balloon.object.position.x > 10 && balloon.object.position.z < -20, 'The balloon starts north-east, over the sea.');
