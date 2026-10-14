@@ -28,10 +28,11 @@ export function createCountry(ctx: TownContext, kit: Kit) {
    */
   const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#c4a86c' };
   /**
-   * Highland coats: a muted ginger-russet (HSV s ≤ 0.61, no louder than the wood and the red
-   * sandstone), a paler back and fringe, a dark belly and legs, a dark muzzle.
+   * Highland coats, judged after the 0.72 grade: a muted russet (HSV s ≤ 0.61, no louder than
+   * the wood and the red sandstone) with paler ginger tips on every lock, a darker russet belly
+   * and legs, and a dark muzzle. The calf's coat is a shade lighter, never pink.
    */
-  const COAT = { coat: '#ab6a42', light: '#c58a5c', dark: '#7a4b31', calf: '#b97a4c', muzzle: '#4f423a' };
+  const COAT = { coat: '#a0603f', tips: '#c4935f', dark: '#74472e', calf: '#a66a43', muzzle: '#4f423a' };
   /** The paddock, its gate and hay rack, and the herd in it. */
   function highlandPaddock(g: T.Object3D) {
     dyke(g);
@@ -49,27 +50,182 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     return geo;
   }
   /**
-   * The coat's two-tone paint, after paintCanopy: a warm, paler back, a darker belly and creases
-   * where the lumps meet. Lumps are [x, y, z, r, sx, sy, sz]; the value ramp starts at 0.8, not
-   * 0.45, because the batch bake already darkens the belly.
+   * A chunky lock (of hair, or a straw): a wedge from a root `w` wide (along `across`) and `t`
+   * thick to a chisel tip `len` along `dir`, `point` of the root's width (0.2 when absent), with
+   * a crest down its outer face, so one side catches the light and the other falls into shade;
+   * `base` colours the root and `tip` the tip. A lock lying on a coat gives the coat's outward
+   * normal as `out`: its crest faces that way and its facets are shaded partly toward it, so a
+   * coat reads as clumps of hair rather than loose cards.
    */
-  function paintCoat(geos: T.BufferGeometry[], lumps: number[][], tone: string, y0: number, y1: number) {
-    const base = new T.Color(tone), top = new T.Color(COAT.light), under = new T.Color(COAT.dark), c = new T.Color();
-    geos.forEach((geo, k) => {
-      const p = geo.getAttribute('position'), n = geo.getAttribute('normal'), out = new Float32Array(p.count * 3);
-      for (let i = 0; i < p.count; i++) {
-        const x = p.getX(i), y = p.getY(i), z = p.getZ(i), v = sstep(y, y0, y1);
-        let f = mix(0.8, 1.05, sstep(v, 0.12, 0.88));
-        lumps.forEach(([lx, ly, lz, r, sx, sy, sz], j) => {
-          if (j === k) return;
-          const gap = Math.hypot((x - lx) / sx, (y - ly) / sy, (z - lz) / sz) - r;
-          if (gap > 0) f *= 1 - 0.14 * (1 - sstep(gap, 0, 0.3 * r));
-        });
-        c.copy(base).lerp(under, 0.3 * (1 - v)).lerp(top, 0.22 * sstep(v, 0.55, 1) * Math.max(0, n.getY(i)));
-        out.set([c.r * f, c.g * f, c.b * f], i * 3);
+  type Lock = { root: T.Vector3; dir: T.Vector3; across: T.Vector3; len: number; w: number; t: number; base: T.Color; tip: T.Color; point?: number; out?: T.Vector3 };
+  /** Locks as one geometry (eleven flat faces each, wound outward from the wedge's middle). */
+  function lockGeometry(locks: Lock[]) {
+    const position: number[] = [],
+      normal: number[] = [],
+      colour: number[] = [],
+      d = new T.Vector3(),
+      a = new T.Vector3(),
+      n = new T.Vector3(),
+      middle = new T.Vector3(),
+      e1 = new T.Vector3(),
+      e2 = new T.Vector3();
+    for (const lock of locks) {
+      d.copy(lock.dir).normalize();
+      a.copy(lock.across).addScaledVector(d, -lock.across.dot(d)).normalize();
+      n.crossVectors(a, d);
+      if (lock.out && n.dot(lock.out) < 0) {
+        a.negate();
+        n.negate();
       }
-      geo.setAttribute('color', new T.BufferAttribute(out, 3));
-    });
+      const end = lock.root.clone().addScaledVector(d, lock.len),
+        // Root corners (across, through), the raised crest at the root, the chisel tip and its middle.
+        R = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => lock.root.clone().addScaledVector(a, (i * lock.w) / 2).addScaledVector(n, (j * lock.t) / 2)),
+        crest = lock.root.clone().addScaledVector(n, lock.t),
+        P = [-1, 1].map((i) => end.clone().addScaledVector(a, i * lock.w * (lock.point ?? 0.2))),
+        tips = [...P, end];
+      middle.copy(lock.root).addScaledVector(d, lock.len * 0.3);
+      const faces = [
+        [R[3], crest, end], [R[3], end, P[0]], [crest, R[2], P[1]], [crest, P[1], end], // the crested outer face
+        [R[0], R[1], P[1]], [R[0], P[1], P[0]], // the inner face
+        [R[1], R[2], P[1]], [R[0], R[3], P[0]], // the edges
+        [R[0], R[1], R[2]], [R[0], R[2], R[3]], [R[3], R[2], crest], // the root
+      ];
+      for (const [p, q0, r0] of faces) {
+        e1.subVectors(q0, p);
+        e2.subVectors(r0, p);
+        e1.cross(e2).normalize();
+        const inward = e1.dot(e2.copy(p).add(q0).add(r0).divideScalar(3).sub(middle)) < 0;
+        if (inward) e1.negate();
+        if (lock.out) e1.addScaledVector(lock.out, 0.6).normalize();
+        for (const v of inward ? [p, r0, q0] : [p, q0, r0]) {
+          const c = tips.includes(v) ? lock.tip : lock.base;
+          position.push(v.x, v.y, v.z);
+          normal.push(e1.x, e1.y, e1.z);
+          colour.push(c.r, c.g, c.b);
+        }
+      }
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.Float32BufferAttribute(position, 3));
+    geo.setAttribute('normal', new T.Float32BufferAttribute(normal, 3));
+    geo.setAttribute('color', new T.Float32BufferAttribute(colour, 3));
+    return geo;
+  }
+  /**
+   * The shape a coat lies on: an ellipsoid round (0, cy, 0) with half-axes ax, ay and az (the
+   * nose along +z), its back lifted a little over the shoulders.
+   */
+  type CoatShape = { cy: number; ax: number; ay: number; az: number };
+  const backLift = (s: CoatShape, z: number) => s.ay * (1 + 0.12 * Math.exp(-(((z / s.az - 0.45) / 0.35) ** 2)));
+  /** The point on a coat shape `theta` down from its back line (0 on the spine), on one side (±1), at z. */
+  function coatPoint(s: CoatShape, side: number, theta: number, z: number, out = new T.Vector3()) {
+    const k = Math.sqrt(Math.max(0, 1 - (z / s.az) ** 2));
+    return out.set(side * s.ax * k * Math.sin(theta), s.cy + backLift(s, z) * k * Math.cos(theta), z);
+  }
+  /** The smooth coat under the locks: the shape itself, darker toward the belly and a touch paler along the back. */
+  function coatCore(s: CoatShape, tone: T.Color) {
+    const geo = new T.IcosahedronGeometry(1, 2),
+      p = geo.getAttribute('position'),
+      n = geo.getAttribute('normal'),
+      out = new Float32Array(p.count * 3),
+      under = new T.Color(COAT.dark),
+      top = new T.Color(COAT.tips),
+      c = new T.Color(),
+      normal = new T.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      const ux = p.getX(i), uy = p.getY(i), uz = p.getZ(i), z = s.az * uz, ly = backLift(s, z), v = (uy + 1) / 2;
+      p.setXYZ(i, s.ax * ux, s.cy + ly * uy, z);
+      normal.set(ux / s.ax, uy / ly, uz / s.az).normalize();
+      n.setXYZ(i, normal.x, normal.y, normal.z);
+      c.copy(tone).lerp(under, 0.5 * (1 - sstep(v, 0.2, 0.7))).lerp(top, 0.14 * sstep(v, 0.75, 1));
+      out.set([c.r, c.g, c.b], i * 3);
+    }
+    geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    return geo;
+  }
+  /**
+   * The shaggy coat: on each flank two rows of locks combed down from the spine (where they
+   * part) and a little back, each tipped paler ginger, over a ragged hem of longer locks hanging
+   * all round below the belly line. `rows` gives each row's middle (radians down from the
+   * spine), length, width and count; `hem` the hem's count and length.
+   */
+  function shaggyCoat(s: CoatShape, tone: T.Color, seed: number, rows: { theta: number; len: number; w: number; count: number }[], hem: { count: number; len: number }) {
+    const locks: Lock[] = [],
+      tips = new T.Color(COAT.tips),
+      t = 0.09,
+      e = 1e-3,
+      back = new T.Vector3(0, 0, -0.12);
+    let k = 0;
+    for (const side of [-1, 1])
+      rows.forEach((row, r) => {
+        for (let i = 0; i < row.count; i++) {
+          // Each lock a little off its row and turned a little about the coat's normal, so the
+          // locks never line up like scales.
+          const h = hash(seed + ++k * 7),
+            h2 = hash(seed + k * 7 + 5),
+            theta = row.theta + (h2 - 0.5) * 0.24,
+            z = s.az * mix(-0.8, 0.8, (i + (r % 2 ? 0.75 : 0.35) + (h - 0.5) * 0.4) / row.count),
+            at = coatPoint(s, side, theta, z),
+            down = coatPoint(s, side, theta + e, z).sub(coatPoint(s, side, theta - e, z)).normalize(),
+            along = coatPoint(s, side, theta, z + e).sub(coatPoint(s, side, theta, z - e)).normalize(),
+            out = new T.Vector3().crossVectors(down, along).normalize();
+          if (out.dot(new T.Vector3(at.x, at.y - s.cy, at.z)) < 0) out.negate();
+          const dir = down.clone().addScaledVector(out, 0.14).add(back).normalize().applyAxisAngle(out, (h2 - 0.5) * 0.6),
+            len = row.len * (0.8 + 0.4 * h);
+          locks.push({
+            root: at.addScaledVector(dir, -len * 0.45).addScaledVector(out, t / 2),
+            dir,
+            across: along,
+            len,
+            w: row.w * (0.85 + 0.3 * h2),
+            t,
+            base: tone.clone().multiplyScalar(0.94 + 0.12 * h),
+            tip: tips.clone().multiplyScalar(0.95 + 0.1 * hash(seed + k * 7 + 3)),
+            out,
+          });
+        }
+      });
+    // The hem: a ring round the widest line, every lock hanging straight down and a little out.
+    const ring = 1.55,
+      girth = 2 * Math.PI * Math.sqrt((s.ax ** 2 + s.az ** 2) / 2) * Math.sin(ring);
+    for (let j = 0; j < hem.count; j++) {
+      const h = hash(seed + 300 + j * 5),
+        phi = ((j + 0.4 * h) / hem.count) * Math.PI * 2,
+        z = s.az * Math.cos(phi) * Math.sin(ring),
+        at = new T.Vector3(s.ax * Math.sin(phi) * Math.sin(ring), s.cy + backLift(s, z) * Math.cos(ring), z),
+        out = new T.Vector3(at.x / s.ax ** 2, 0, z / s.az ** 2).normalize(),
+        dir = new T.Vector3(0, -1, 0).addScaledVector(out, 0.22).normalize(),
+        len = hem.len * (0.8 + 0.4 * h);
+      locks.push({
+        root: at.addScaledVector(dir, -0.06).addScaledVector(out, t / 2),
+        dir,
+        across: new T.Vector3(-out.z, 0, out.x),
+        len,
+        w: (girth / hem.count) * 1.15,
+        t,
+        base: tone.clone().multiplyScalar(0.9 + 0.08 * h),
+        tip: tips.clone().multiplyScalar(0.9 + 0.08 * hash(seed + 301 + j * 5)),
+        out,
+      });
+    }
+    return lockGeometry(locks);
+  }
+  /**
+   * The forelock: a fan of long locks rooted on the poll between the horns, falling forward over
+   * the brow and the eyes to just above the muzzle, and a lock down each cheek. Head space: the
+   * skull's front face is at z 0.42, its crown at y 0.15; the muzzle's top is at y -0.03.
+   */
+  function forelock(tone: T.Color, seed: number) {
+    const base = tone.clone().lerp(new T.Color(COAT.tips), 0.4),
+      tip = new T.Color(COAT.tips).multiplyScalar(1.04),
+      locks: Lock[] = [];
+    for (let i = -2; i <= 2; i++) {
+      const h = hash(seed + 40 + i * 3);
+      locks.push({ root: new T.Vector3(i * 0.07, 0.25, 0.2), dir: new T.Vector3(i * 0.12, -0.56, 0.83), across: new T.Vector3(1, 0, 0), len: 0.28 + 0.09 * h, w: 0.12, t: 0.07, base, tip, out: new T.Vector3(0, 0.83, 0.56) });
+    }
+    for (const s of [-1, 1])
+      locks.push({ root: new T.Vector3(s * 0.17, 0.15, 0.22), dir: new T.Vector3(s * 0.35, -0.85, 0.4), across: new T.Vector3(0, 0, 1), len: 0.24, w: 0.14, t: 0.07, base, tip, out: new T.Vector3(s, 0, 0) });
+    return lockGeometry(locks);
   }
   /** A horn: a tube along a smooth curve, tapering from r0 to a point, cream at the root and dark at the tip. */
   function horn(g: T.Object3D, points: T.Vector3[], r0: number, colour: string, tip: string) {
@@ -102,14 +258,29 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     return m;
   }
   /**
-   * A Highland cow (local +z is the nose, about 1.65 nose to tail and 0.95 at the withers): a shaggy
-   * barrel with shoulder and rump lumps on short legs, a head with a fringe over the eyes, a
-   * dark muzzle and long upswept horns (nubs on a calf), and a tufted tail. Every part is
-   * 'fabric'. The head and tail hang from their own pivots, so they can move.
+   * A Highland cow's build (local +z is the nose, about 1.65 nose to tail and 0.95 at the
+   * withers): short dark legs, the coat's shape and its rows of locks, the head pivot (its rest
+   * height and its scale) and the tail pivot.
+   */
+  const ADULT = {
+    legs: { h: 0.3, w: 0.17, x: 0.2, z: 0.34 },
+    shape: { cy: 0.58, ax: 0.37, ay: 0.33, az: 0.6 },
+    rows: [{ theta: 0.42, len: 0.38, w: 0.25, count: 5 }, { theta: 1.0, len: 0.36, w: 0.25, count: 5 }],
+    hem: { count: 13, len: 0.4 },
+    head: { y: 0.72, z: 0.5, scale: 1 },
+    tail: { y: 0.8, z: -0.6 },
+  };
+  /**
+   * A Highland cow: a shaggy coat of chunky locks over a smooth russet barrel, its ragged hem
+   * hanging over the tops of short dark legs; a head with a long forelock falling over the eyes,
+   * a dark muzzle and long upswept cream horns with dark tips (nubs on a calf), and a tufted
+   * tail. Every part is 'fabric'. The head and tail hang from their own pivots, so they can move.
    */
   function highlandCow(g: T.Object3D, spec: plan.HerdMember) {
     const calf = spec.scale < 0.8,
-      tone = calf ? COAT.calf : COAT.coat;
+      build = ADULT,
+      tone = new T.Color(calf ? COAT.calf : COAT.coat),
+      seed = plan.herd.indexOf(spec) * 1000 + 17;
     const cow = new T.Group();
     cow.name = spec.id;
     cow.position.set(spec.x, plan.terrainHeight(spec.x, spec.z), spec.z);
@@ -122,41 +293,32 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       parent.add(m);
       return m;
     };
-    // Barrel, shoulder and rump: one coat, painted across the three lumps, with a ragged hem
-    // that hangs over the tops of the legs. The shoulder and rump lumps stay inside the barrel's
-    // outline seen from above and only lift its back line at the withers and the hips.
-    const lumps = [[0, 0.58, 0, 0.44, 0.85, 0.74, 1.3], [0, 0.72, 0.3, 0.3, 0.9, 0.85, 1.0], [0, 0.7, -0.36, 0.3, 0.9, 0.8, 0.95]];
-    const body = lumps.map(([x, y, z, r, sx, sy, sz]) => shag(new T.IcosahedronGeometry(r, 1), -0.06, 0.13).scale(sx, sy, sz).translate(x, y, z));
-    paintCoat(body, lumps, tone, 0.3, 0.95);
-    body.forEach((geo) => coat(geo));
-    for (const sx of [-0.2, 0.2]) for (const sz of [-0.34, 0.34]) box(cow, sx, 0.15, sz, 0.17, 0.3, 0.17, COAT.dark, 'fabric'); // short legs; the bake darkens the feet
+    coat(coatCore(build.shape, tone));
+    coat(shaggyCoat(build.shape, tone, seed, build.rows, build.hem));
+    const L = build.legs;
+    for (const sx of [-L.x, L.x]) for (const sz of [-L.z, L.z]) box(cow, sx, L.h / 2, sz, L.w, L.h, L.w, COAT.dark, 'fabric'); // the bake darkens the feet
     const head = new T.Group();
     head.name = spec.id + '-head';
-    head.position.set(0, 0.72, 0.5);
+    head.position.set(0, build.head.y, build.head.z);
+    head.scale.setScalar(build.head.scale);
+    head.userData.restY = build.head.y;
     cow.add(head);
-    box(head, 0, -0.02, 0.22, 0.38, 0.34, 0.4, tone, 'fabric', { bevel: 0.1 }); // skull
+    box(head, 0, -0.02, 0.22, 0.38, 0.34, 0.4, tone.getStyle(), 'fabric', { bevel: 0.1 }); // skull
     box(head, 0, -0.13, 0.44, 0.32, 0.2, 0.16, COAT.muzzle, 'fabric', { bevel: 0.06 }); // muzzle
-    const f = calf ? 1.2 : 1;
-    // The fringe over the eyes, drooping forward with a ragged hem (no separate locks: pointed
-    // ones below it read as fangs over the muzzle).
-    const fringe = shag(new T.IcosahedronGeometry(0.2, 1), -0.02, 0.12).scale(1.3 * f, 0.6 * f, 0.85 * f),
-      forelock = new T.Color(tone).lerp(new T.Color(COAT.light), 0.45).getStyle(),
-      bud = new T.Color(palette.trim).lerp(new T.Color(tone), 0.35).getStyle();
-    const lock = coat(paintByHeight(fringe, forelock, (y) => mix(0.88, 1.04, sstep(y, -0.12, 0.12))), head);
-    lock.position.set(0, 0.11, 0.35);
-    lock.rotation.x = 0.3;
+    coat(forelock(tone, seed), head);
+    const bud = new T.Color(palette.trim).lerp(tone, 0.35).getStyle();
     for (const s of [-1, 1]) {
-      box(head, s * 0.25, 0.04, 0.16, 0.18, 0.06, 0.1, tone, 'fabric', { rz: -s * 0.35 }); // ears, drooping out under the horns
-      // A calf's horn buds: small, muted and well back on the crown, behind the fringe, so they
-      // never sit where eyes would be.
+      box(head, s * 0.25, 0.04, 0.16, 0.18, 0.06, 0.1, tone.getStyle(), 'fabric', { rz: -s * 0.35 }); // ears, drooping out under the horns
+      // A calf's horn buds: small, muted and well back on the crown, behind the forelock, so
+      // they never sit where eyes would be.
       if (calf) cone(head, s * 0.12, 0.16, 0.07, 0.03, 0.07, bud, 'fabric', 6, 0).rotation.z = -s * 0.4;
       else horn(head, [[0.15, 0.12, 0.14], [0.42, 0.17, 0.24], [0.55, 0.38, 0.28], [0.59, 0.5, 0.29]].map(([x, y, z]) => new T.Vector3(s * x, y, z)), 0.065, palette.trim, palette.woodDark);
     }
     const tail = new T.Group();
     tail.name = spec.id + '-tail';
-    tail.position.set(0, 0.8, -0.6);
+    tail.position.set(0, build.tail.y, build.tail.z);
     cow.add(tail);
-    box(tail, 0, -0.21, 0, 0.07, 0.42, 0.07, tone, 'fabric').userData.noShadow = true; // strand: like the tuft it casts no shadow, so a tail is one mesh
+    box(tail, 0, -0.21, 0, 0.07, 0.42, 0.07, tone.getStyle(), 'fabric').userData.noShadow = true; // strand: like the tuft it casts no shadow, so a tail is one mesh
     coat(paintByHeight(new T.IcosahedronGeometry(0.09, 1).scale(1, 1.4, 1), COAT.dark, () => 1), tail).position.y = -0.45; // tuft
     headPose(spec, head, 0);
     tailPose(spec, tail, 0);
@@ -178,9 +340,10 @@ export function createCountry(ctx: TownContext, kit: Kit) {
   function headPose(spec: plan.HerdMember, head: T.Object3D, time: number) {
     const { phase } = spec,
       s = sstep(0.5 + 0.5 * Math.sin(time * 0.16 + phase), 0.2, 0.8);
-    // A grazing head drops (from 0.72) as well as dips, so the muzzle comes down to about 0.05
-    // over the grass instead of hanging over its own shadow.
-    head.position.y = spec.eating ? 0.72 : 0.72 - 0.12 * s;
+    // A grazing head drops (from its rest height) as well as dips, so the muzzle comes down to
+    // about 0.05 over the grass instead of hanging over its own shadow.
+    const rest = head.userData.restY as number;
+    head.position.y = spec.eating ? rest : rest - 0.12 * s;
     head.rotation.x = (spec.eating ? mix(-0.06, 0.12, s) : mix(-0.08, 0.85, s)) + 0.03 * s * Math.sin(time * 5 + phase);
     // Both start from rest, so the held pose looks straight ahead along the body.
     head.rotation.y = 0.15 * (1 - s) * Math.cos(time * 0.23 + phase);
@@ -361,5 +524,5 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
     });
   }
-  return { highlandPaddock, shag, paintCoat, horn, highlandCow, headPose, tailPose, dyke, fieldGate, hayRack, blackfaceSheep, standingStoneRing };
+  return { highlandPaddock, shag, lockGeometry, coatCore, shaggyCoat, forelock, horn, highlandCow, headPose, tailPose, dyke, fieldGate, hayRack, blackfaceSheep, standingStoneRing };
 }
