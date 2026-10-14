@@ -98,11 +98,23 @@ for (const hash of [
   '#constructor',
   '#toString',
   '#__proto__',
-  '#read/constructor',
   '#city/missing',
 ])
   assert.deepEqual(nav.parseLocation(hash), {
     mode: 'city',
+    content: 'overview',
+  });
+// A reading address that names nothing (a renamed record, a bare #read) stays on the page.
+for (const hash of [
+  '#read',
+  '#read/',
+  '#read/constructor',
+  '#read/__proto__',
+  '#read/research:renamed-project',
+  '#read/person:missing',
+])
+  assert.deepEqual(nav.parseLocation(hash), {
+    mode: 'reading',
     content: 'overview',
   });
 // The reading page: every chapter is its own address, and the hero's overview is not About,

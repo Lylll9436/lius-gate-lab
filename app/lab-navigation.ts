@@ -111,8 +111,14 @@ export function parseLocation(hash: string): {
   content: ContentId;
 } {
   const [prefix, entry] = hash.replace(/^#/, '').split('/');
-  if ((prefix === 'city' || prefix === 'read') && entry && isContentId(entry))
-    return { mode: prefix === 'city' ? 'city' : 'reading', content: entry };
+  if (prefix === 'city' && entry && isContentId(entry))
+    return { mode: 'city', content: entry };
+  // A reading address to a record since renamed or removed still opens the reading page.
+  if (prefix === 'read')
+    return {
+      mode: 'reading',
+      content: entry && isContentId(entry) ? entry : 'overview',
+    };
   const legacy: Record<string, ContentId> = {
     about: 'town-hall',
     people: 'people',
