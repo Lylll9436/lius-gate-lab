@@ -50,7 +50,8 @@ pnpm content remove events example-event
 ## 小城模型
 
 - `app/town-plan.ts` 是唯一的规划来源：岛屿轮廓（`islandRadius`，含东南港湾与西北岬角）、山丘（`terrainHeight`）、广场半径、环路与大道、七个建筑位置（`sites`，含朝向）、公园、预留地块、背景小屋、码头与船只航线、灯塔礁石，以及树木与路灯的生成规则。
-- `app/town-build.ts` 读取规划生成几何：地形与海岸、街道（路面、人行道、路缘、斑马线）、倒影池广场、七栋建筑（墙体与屋顶在同一分组内合批）、树木、街具、塔吊、码头、灯塔、热气球、电车、小船与行人。所有静态几何按材质家族合批；需要动画的部件标记 `userData.keepSeparate`。
+- `app/town-build.ts` 读取规划生成几何：地形与海岸、街道（路面、人行道、路缘、斑马线）、倒影池广场、七栋建筑（墙体与屋顶在同一分组内合批）、树木、街具、塔吊、码头、灯塔、热气球、电车、小船、行人，以及围栏牛群与苏格兰小景（见下一条）。所有静态几何按材质家族合批；需要动画的部件标记 `userData.keepSeparate`。
+- 高地牛与苏格兰小景：`town-plan.ts` 的 `paddock`（干石墙中心线矩形，北墙开门）、`herd`（两头牛一头小牛，`heading`、`phase` 决定朝向与吃草节奏，减少动态效果时停在 time 0 的姿势）和 `hayRack`；`plantingPlan` 生成后再滤掉围栏里的那棵树，树的旋转、色调与季节都按 `id` 取种子，删一棵不影响其余。牛群的悬停与点击通过 `parkHit` 下的隐形盒子归到街角公园（打开「生活」一章）。石楠（`heatherPlan`，季节色在 `town-build.ts` 的 `heatherLook`）只长在四座山丘上，并与围栏保持 1.0 以上；蓟（`thistles`）贴着围栏南侧两角的墙脚。黑脸羊（`flock`）、立石圈（`stoneRing`、`standingStones`）和威灵顿像（`statueSpot`、`statueHeading`）也在规划里；山坡上的道具用 `groundY()` 对建好的地形射线取高，不要直接用 `terrainHeight`（山顶网格比它低约 0.06）。野餐毯在 `parkGroup` 里，所以公园的选中描边会包含它。`check-town` 检查这些道具的位置与间距。
 - 几何约定：同一高度的面不能重叠（否则闪烁）。路面 0.02、人行道与广场 0.06，装饰件至少高出 0.004；门与山墙封板须凸出墙面 / 屋顶端面 0.02 以上。
 - 新增建筑：在 `town-plan.ts` 增加 `sites` 条目并保证不压到街道，在 `town-build.ts` 写对应的 `build*` 函数，然后在 `city-data.ts` 与 `content-schema.ts` 的 `buildingIds` 中登记。
 - 造型与颜色：建筑零件（窗、门、屋顶、基座、隅石、烟囱）、种植零件（花坛、树篱、造型灌木）和配色 `palette` 都在 `app/town-build.ts`；材质的粗糙度、金属度和反光强度在 `app/city-materials.ts` 的 `finish`：`spec` 放大朝上的环境反光（顶面、圆角），`specFloor` 管朝下看到地面的那部分（竖直墙面），所以珐琅（enamel）墙面保持本色、只在圆角和顶面有光。铁、黄铜、珐琅只给小件道具用，砖石、粉墙和地面保持哑光；`roofKind()` 按屋顶颜色选石板、铜绿或釉面瓦。接触阴影与檐下阴影在合批时烘焙进顶点（`batch()` 的 bake），不要再加屏幕空间 AO，它会在树冠和细杆周围产生重影。地面的深色垫块、树影圆斑与草坪格纹来自 `buildGroundMasks` 生成的一张地面贴图，随规划数据自动更新。
