@@ -227,9 +227,11 @@ export function CityStage({
           >
             {ctl.paused ? <Play size={14} /> : <Pause size={14} />}
           </button>
+          {/* Plan view tints the model, so it waits for the town, as the tour does. */}
           {explore && (
             <button
               onClick={ctl.togglePlan}
+              disabled={!ctl.ready}
               aria-pressed={ctl.plan}
               aria-label={tr('Plan view', '规划视图')}
               title={tr('The town’s four districts', '小城的四个分区')}

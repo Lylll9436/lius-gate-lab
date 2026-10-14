@@ -147,7 +147,9 @@ export default function Home() {
     viewRef = useRef<View>({ mode: 'reading', content: 'overview' }),
     wideRef = useRef(true),
     // On a narrow screen the Directory takes the file's place; closing it brings the file back.
-    fileBeforeDirectory = useRef(false);
+    fileBeforeDirectory = useRef(false),
+    // The visitor has pressed Pause or Resume: the town keeps their choice once it is built.
+    pauseChosen = useRef(false);
   const [locale, setLocale] = useState<Locale>(() =>
     typeof navigator !== 'undefined' && /^zh/i.test(navigator.language)
       ? 'zh'
@@ -443,9 +445,12 @@ export default function Home() {
         api.current = city;
         city.setDrift(true);
         setReady(true);
-        setPaused(
-          window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-        );
+        // Still now, if the visitor prefers reduced motion; a Pause pressed while the town
+        // was going up stands.
+        if (!pauseChosen.current)
+          setPaused(
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+          );
       })
       .catch(() => {
         if (!disposed) setError(true);
@@ -737,7 +742,10 @@ export default function Home() {
       setSkyMode((m) => (m === 'auto' ? 'day' : m === 'day' ? 'night' : 'auto')),
     toggleRain: () => setRain((v) => !v),
     togglePlan,
-    togglePause: () => setPaused((v) => !v),
+    togglePause: () => {
+      pauseChosen.current = true;
+      setPaused((v) => !v);
+    },
     inspectBuilding,
     exitInspection,
     tourStop,
