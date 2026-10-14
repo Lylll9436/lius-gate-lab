@@ -219,14 +219,15 @@ const hoardingWalls = (plot: typeof plan.reservedPlot) =>
   ] as const;
 /**
  * The paddock's dry-stone dykes as straight runs on the plan's centre lines: centre x, z,
- * length and rotation. The north and south runs reach over the corners; the field gate cuts the north one.
+ * length and rotation. The north and south runs reach over the corners; the field gate cuts the
+ * north one, which stops at the outer faces of the gate posts (0.16 square, on the gateway's ends).
  */
 const paddockRuns = (): (readonly [number, number, number, number])[] => {
   const P = plan.paddock,
     x0 = P.x - P.w / 2 - P.wall / 2,
     x1 = P.x + P.w / 2 + P.wall / 2,
-    g0 = P.gate.x - P.gate.width / 2,
-    g1 = P.gate.x + P.gate.width / 2,
+    g0 = P.gate.x - P.gate.width / 2 - 0.08,
+    g1 = P.gate.x + P.gate.width / 2 + 0.08,
     north = P.z - P.d / 2;
   return [
     [(x0 + g0) / 2, north, g0 - x0, 0],
@@ -2377,7 +2378,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
   /**
    * Dry-stone dykes: battered, rounded blocks about 0.7 long in the two greys (jittered in
-   * height and turn), under a close row of cope stones set on edge. The top is about 0.5, so
+   * height and turn), under a row of rounded cope stones set on edge. The top is about 0.5, so
    * the cows read over it.
    */
   function dyke(g: T.Object3D) {
@@ -2396,14 +2397,19 @@ export function* buildTownInPhases(options: TownOptions = {}) {
         tops.push(top);
         box(run, -length / 2 + (i + 0.5) * block, top / 2, 0, block, top, wall, PADDOCK.stone[hash(k * 3 + 3) < 0.5 ? 0 : 1], 'stone', { bevel: 0.06, taper: 0.035, ry: (hash(k * 3 + 2) - 0.5) * 0.06 });
       }
-      // Copes stand close on the block under them, sunk 0.02 so a tilted one never shows a gap.
-      const copes = Math.round(length / 0.12),
-        pitch = length / copes;
+      // Copes about 0.3 long, abutting with no gaps: a finer row with gaps between the stones
+      // falls below a pixel at overview zoom and flickers as the camera drifts. Each cope sinks
+      // 0.02 into the lower of the blocks under it and stands over the higher; every other one
+      // stands 0.0075 prouder, so abutting faces never share a plane.
+      const copes = Math.max(1, Math.round(length / 0.3)),
+        pitch = length / copes,
+        under = (along: number) => tops[Math.min(blocks - 1, Math.max(0, Math.floor((along + length / 2) / block)))];
       for (let i = 0; i < copes; i++) {
         const along = -length / 2 + (i + 0.5) * pitch,
-          h = 0.12 + 0.05 * hash(r * 101 + i * 7 + 1),
-          top = tops[Math.min(blocks - 1, Math.floor((along + length / 2) / block))];
-        box(run, along, top + h / 2 - 0.02, 0, 0.095, h, wall - 0.04, PADDOCK.cope, 'stone', { rz: (hash(r * 101 + i * 7) - 0.5) * 0.24 });
+          ends = [under(along - pitch / 2 + 0.01), under(along + pitch / 2 - 0.01)],
+          bottom = Math.min(...ends) - 0.02,
+          top = Math.max(...ends) + 0.1 + 0.04 * hash(r * 101 + i * 7 + 1);
+        box(run, along, (bottom + top) / 2, 0, pitch + 0.01, top - bottom, wall - (i % 2 ? 0.04 : 0.055), PADDOCK.cope, 'stone', { rz: (hash(r * 101 + i * 7) - 0.5) * 0.08 });
       }
     });
   }
