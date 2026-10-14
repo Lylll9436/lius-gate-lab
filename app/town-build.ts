@@ -2203,9 +2203,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   /* ---------------------------------------------------------------- */
   /**
    * The paddock's own colours, judged after the 0.72 grade: the dyke takes the beach boulders'
-   * greys and the hay a pale straw (HSV s 0.44).
+   * greys and the hay a dull straw (HSV s 0.45; a paler one read as an egg in the trough).
    */
-  const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#d8bd7a' };
+  const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#c4a86c' };
   /**
    * Highland coats: a muted ginger-russet (HSV s ≤ 0.61, no louder than the wood and the red
    * sandstone), a paler back and fringe, a dark belly and legs, a dark muzzle.
@@ -2427,7 +2427,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       rise = 0.4;
     box(gate, 0, 0.4, 0.06, Math.hypot(run, rise), 0.07, 0.05, palette.wood, 'wood', { rz: Math.atan2(rise, run) }); // brace, clear of the rails' faces
   }
-  /** The hay rack against the west wall: a trough of hay on four legs, under a small pantile hat on two back posts. */
+  /**
+   * The hay rack against the west wall: an open trough of hay on four legs. (A pantile hat on it
+   * caught the sun as the brightest thing in the paddock, and the horns of the cow at the rack
+   * crossed it on screen.)
+   */
   function hayRack(g: T.Object3D) {
     const { x, z } = plan.hayRack;
     const rack = new T.Group();
@@ -2436,16 +2440,16 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     g.add(rack);
     for (const sx of [-0.42, 0.42]) for (const sz of [-0.18, 0.18]) box(rack, sx, 0.275, sz, 0.1, 0.55, 0.1, palette.woodDark, 'wood');
     box(rack, 0, 0.42, 0, 1.0, 0.28, 0.5, palette.wood, 'wood'); // trough 0.28-0.56
-    const hay = new T.IcosahedronGeometry(0.42, 1).scale(1.15, 0.5, 0.7); // bulging over the feeding side
-    paintByHeight(hay, PADDOCK.hay, (y) => mix(0.84, 1.04, sstep(y, -0.21, 0.21)));
+    // The trough heaped with hay: a low, faceted pile inside its rim with a tufted top (shag()
+    // hangs a hem, so the pile is flipped for it).
+    const hay = shag(new T.IcosahedronGeometry(0.42, 1).rotateX(Math.PI), 0, 0.4).rotateX(Math.PI).scale(1.05, 0.3, 0.55);
+    hay.computeVertexNormals();
+    paintByHeight(hay, PADDOCK.hay, (y) => mix(0.8, 1.0, sstep(y, -0.12, 0.24)));
     const mound = new T.Mesh(hay, material('#ffffff', 'foliage'));
-    mound.position.y = 0.62;
+    mound.position.y = 0.56;
     mound.userData.noShadow = true;
     mound.receiveShadow = true;
     rack.add(mound);
-    // Back posts just inside the wall carry the hat high and narrow enough to clear the horns of a cow at the rack.
-    for (const sx of [-0.5, 0.5]) box(rack, sx, 0.6, -0.3, 0.08, 1.2, 0.08, palette.woodDark, 'wood');
-    pitchedRoof(rack, 0, 1.2, 0, 1.2, 0.72, 0.28, palette.pantile, { ridgeColor: palette.pantileLight });
   }
 
   /* ---------------------------------------------------------------- */
