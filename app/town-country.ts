@@ -600,11 +600,13 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     rack.add(loose);
   }
   /**
-   * A small square bale beside the rack, 0.3 wide, 0.26 high and 0.44 long (along local z): five
-   * pressed flakes of straw, each a little off in height, width and tone, so the seams between
-   * them read as the bale's grooves; two thin sisal twines running lengthwise over the top and
-   * down the cut ends; and short straws bristling from the ends. (A single pillow-bevelled block
-   * with dark straps across it read as a suitcase.)
+   * A small square bale beside the rack, 0.3 wide, 0.26 high and 0.44 long (along local z): three
+   * chunky pressed flakes of straw in the rack hay's own tone, well rounded and each a little off
+   * in height, width, turn and shade, so the seams between them are soft and uneven; two thin
+   * sisal twines running lengthwise over the top and down the cut ends; and loose straws bristling
+   * from the ends and poking up off the top edges, breaking the box's outline. (A single
+   * pillow-bevelled block with dark straps across it read as a suitcase; five even flakes with
+   * crisp seams, pale tan, as a slatted crate.)
    */
   function hayBale(g: T.Object3D) {
     const { x, z, ry } = plan.hayBale,
@@ -612,44 +614,45 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       W = 0.3,
       H = 0.26,
       L = 0.44,
-      flakes = 5,
       twine = '#b59a6c',
       tones = [PADDOCK.hayShade, PADDOCK.hay, PADDOCK.hayPale].map((c) => new T.Color(c)),
-      flakeTone = (i: number) => new T.Color(PADDOCK.hay).lerp(tones[hash(i * 7 + 711) < 0.5 ? 0 : 2], 0.12 + 0.12 * hash(i * 7 + 712)).getStyle();
+      // A flake's tone: the rack hay, a touch toward the shade (t < 0) or the pale straw (t > 0).
+      flakeTone = (t: number) => new T.Color(PADDOCK.hay).lerp(tones[t < 0 ? 0 : 2], Math.abs(t)).getStyle();
     bale.position.set(x, plan.terrainHeight(x, z), z);
     bale.rotation.y = ry;
     g.add(bale);
-    let top = 0;
-    for (let i = 0; i < flakes; i++) {
-      const h = H + (hash(i * 7 + 713) - 0.5) * 0.016;
-      top = Math.max(top, h);
-      box(bale, (hash(i * 7 + 714) - 0.5) * 0.008, h / 2, -L / 2 + (i + 0.5) * (L / flakes), W + (hash(i * 7 + 715) - 0.5) * 0.014, h, L / flakes, flakeTone(i), 'foliage', { bevel: 0.016 });
+    let top = 0,
+      at = -L / 2;
+    for (const f of [
+      { l: 0.155, h: H + 0.004, w: W + 0.004, dx: 0.004, turn: 0.035, t: 0.1 },
+      { l: 0.14, h: H - 0.01, w: W - 0.008, dx: -0.006, turn: -0.045, t: -0.12 },
+      { l: 0.145, h: H, w: W, dx: 0.002, turn: 0.02, t: 0.04 },
+    ]) {
+      top = Math.max(top, f.h);
+      box(bale, f.dx, f.h / 2, at + f.l / 2, f.w, f.h, f.l + 0.004, flakeTone(f.t), 'foliage', { bevel: 0.045, segments: 2, ry: f.turn });
+      at += f.l;
     }
     // Twines, lengthwise over the top and down both cut ends, standing just proud of the straw.
     for (const tx of [-0.075, 0.075]) {
-      box(bale, tx, top + 0.003, 0, 0.022, 0.008, L + 0.014, twine, 'fabric', { bevel: 0 });
+      box(bale, tx, top + 0.002, 0, 0.022, 0.008, L + 0.014, twine, 'fabric', { bevel: 0 });
       for (const s of [-1, 1]) box(bale, tx, top / 2, s * (L / 2 + 0.003), 0.022, top + 0.008, 0.008, twine, 'fabric', { bevel: 0 });
     }
-    // Short cut straws bristling from each end, mostly outward, a few drooping.
-    const straws: Lock[] = [];
+    // Short cut straws bristling from each end, mostly outward, a few drooping; and loose ones
+    // poking up and out off the top's long edges.
+    const straws: Lock[] = [],
+      straw = (k: number, root: T.Vector3, dir: T.Vector3, len: number, out: T.Vector3) => {
+        const tone = tones[Math.floor(hash(k) * 3)];
+        straws.push({ root, dir: dir.normalize(), across: new T.Vector3(1, 0, 0).cross(dir).lengthSq() > 0.01 ? new T.Vector3(1, 0, 0) : new T.Vector3(0, 0, 1), len, w: 0.03, t: 0.016, base: tone.clone().multiplyScalar(0.92), tip: tone, point: 0.25, out, soft: 1.5 });
+      };
     for (const s of [-1, 1])
       for (let i = 0; i < 6; i++) {
-        const k = (s + 1) * 50 + i * 7 + 720,
-          tone = tones[Math.floor(hash(k) * 3)],
-          dir = new T.Vector3((hash(k + 1) - 0.5) * 0.9, (hash(k + 2) - 0.6) * 0.8, s).normalize(),
-          len = 0.045 + 0.04 * hash(k + 3);
-        straws.push({
-          root: new T.Vector3((hash(k + 4) - 0.5) * (W - 0.06), 0.03 + hash(k + 5) * (H - 0.06), s * (L / 2 - 0.02)),
-          dir,
-          across: new T.Vector3(1, 0, 0),
-          len: len + 0.02,
-          w: 0.03,
-          t: 0.016,
-          base: tone.clone().multiplyScalar(0.92),
-          tip: tone,
-          point: 0.25,
-          out: new T.Vector3(0, 0, s),
-        });
+        const k = (s + 1) * 50 + i * 7 + 720;
+        straw(k, new T.Vector3((hash(k + 4) - 0.5) * (W - 0.06), 0.03 + hash(k + 5) * (H - 0.06), s * (L / 2 - 0.02)), new T.Vector3((hash(k + 1) - 0.5) * 0.9, (hash(k + 2) - 0.6) * 0.8, s), 0.065 + 0.04 * hash(k + 3), new T.Vector3(0, 0, s));
+      }
+    for (const s of [-1, 1])
+      for (let i = 0; i < 5; i++) {
+        const k = (s + 1) * 50 + i * 7 + 860;
+        straw(k, new T.Vector3(s * (W / 2 - 0.03), top - 0.012, -L / 2 + 0.05 + ((i + hash(k + 4)) / 5) * (L - 0.1)), new T.Vector3(s * (0.5 + 0.5 * hash(k + 1)), 0.5 + 0.6 * hash(k + 2), (hash(k + 5) - 0.5) * 1.2), 0.06 + 0.05 * hash(k + 3), new T.Vector3(s, 1, 0).normalize());
       }
     const loose = new T.Mesh(lockGeometry(straws), material('#ffffff', 'foliage'));
     loose.userData.noShadow = true;
