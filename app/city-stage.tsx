@@ -212,17 +212,21 @@ export function CityStage({
       </div>
 
       {/* Top-left: where you are, what you point at, what the sky is doing. */}
-      <div className="stage-caption" aria-live="polite">
+      <div className="stage-caption">
+        {/* The sky chip keeps Glasgow time, so it stays out of the live region: read aloud, its
+            clock would interrupt every minute. The sky button names the mode instead. */}
         <span className="sky-chip">
           <i aria-hidden="true" />
           {skyCaption(ctl.sky, ctl.skyMode, locale)}
         </span>
-        {caption && <span className="hover-chip">{caption}</span>}
-        {ctl.inspect && b && (
-          <span className="hover-chip">
-            {b.name[locale]} · {tr('Architecture study', '建筑模型')}
-          </span>
-        )}
+        <div className="caption-live" aria-live="polite">
+          {caption && <span className="hover-chip">{caption}</span>}
+          {ctl.inspect && b && (
+            <span className="hover-chip">
+              {b.name[locale]} · {tr('Architecture study', '建筑模型')}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* The sky and camera bars; on phones in City mode they share one row. */}
@@ -231,7 +235,13 @@ export function CityStage({
         <div className="hud hud-sky" aria-label={tr('Sky', '天空')}>
           <button
             onClick={ctl.cycleSky}
-            aria-label={tr('Day and night: auto, day, night', '昼夜：自动、白天、夜晚')}
+            aria-label={
+              ctl.skyMode === 'auto'
+                ? tr('Day and night: auto, Glasgow time', '昼夜：自动，格拉斯哥时间')
+                : ctl.skyMode === 'day'
+                  ? tr('Day and night: day', '昼夜：白天')
+                  : tr('Day and night: night', '昼夜：夜晚')
+            }
             title={tr('Follows Glasgow time unless you override it', '默认跟随格拉斯哥时间')}
           >
             {ctl.skyMode === 'auto' ? (
