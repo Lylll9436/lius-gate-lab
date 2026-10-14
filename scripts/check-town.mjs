@@ -50,7 +50,7 @@ const load = (name) => import(pathToFileURL(path.join(output, name + '.mjs')).hr
 const { buildings } = await load('city-data');
 const { districts } = await load('city-districts');
 const plan = await load('town-plan');
-const { buildCityModel, pairMovingParts, followMovingParts } = await load('city-scene');
+const { buildCityModel, pairMovingParts, followMovingParts, addHitBoxes, pickTarget } = await load('city-scene');
 const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
@@ -669,14 +669,79 @@ for (const [id, m] of models) {
   assert(hit, 'Nothing to click on: ' + id);
 }
 assert.equal(model.parkHit.userData.placeId, 'corner-park');
-// The herd answers the pointer as the park does: straight down on the paddock, the pick (the
-// models' hit targets and the park's, recursively) finds the Corner park.
+// The pointer's boxes, as the scene adds them (here outside the town, which stands untransformed).
+addHitBoxes(new T.Group(), models);
+// The herd answers the pointer as the park does: straight down on the paddock, the pick finds
+// the Corner park.
 {
   const pad = plan.paddock;
   ray.set(new T.Vector3(pad.x, 40, pad.z), new T.Vector3(0, -1, 0));
-  let picked = ray.intersectObjects([...Array.from(models.values(), (m) => m.hit ?? m.root), model.parkHit], true)[0]?.object;
-  while (picked && !picked.userData.placeId && !picked.userData.buildingId) picked = picked.parent;
-  assert.equal(picked?.userData.placeId, 'corner-park', 'Pointing at the herd finds the Corner park.');
+  assert.equal(pickTarget(ray, models, model.parkHit), 'corner-park', 'Pointing at the herd finds the Corner park.');
+}
+// The pointer answers for what it is on. At a slant a building's box has empty corners in front
+// of its neighbours (over the gate's attic, beside a home's bay), so wherever a building's own
+// surface is the first one on a view ray (the frame's parallel rays, from the camera's offset),
+// the pick is that building: every visible bit of the bike rack picks the studio, from its
+// chapter, the idle drift's turn either side and the four Rotate stops, and each bay its home.
+{
+  const roots = Array.from(models.values(), (m) => m.root),
+    stops = [0, 1, 2, 3].map((k) => Math.PI / 4 + (k * Math.PI) / 2),
+    from = new T.Vector3(),
+    dir = new T.Vector3(),
+    tri = [new T.Vector3(), new T.Vector3(), new T.Vector3()];
+  /**
+   * The centre (in the town) of every third triangle of a building's meshes whose corners all pass
+   * `keep`, which sees them in shell space, or in the town's if `town`.
+   */
+  function centres(id, keep, town = false) {
+    const out = [];
+    for (const o of models.get(id).shell.children) {
+      if (!o.isMesh) continue;
+      const p = o.geometry.attributes.position,
+        index = o.geometry.index,
+        count = (index?.count ?? p.count) / 3;
+      for (let t = 0; t < count; t += 3) {
+        tri.forEach((v, k) => {
+          v.fromBufferAttribute(p, index ? index.getX(t * 3 + k) : t * 3 + k);
+          if (town) v.applyMatrix4(o.matrixWorld);
+        });
+        if (!tri.every(keep)) continue;
+        const centre = new T.Vector3().add(tri[0]).add(tri[1]).add(tri[2]).divideScalar(3);
+        out.push(town ? centre : centre.applyMatrix4(o.matrixWorld));
+      }
+    }
+    return out;
+  }
+  /** Each of `points` that the view at each bearing sees picks `id`; returns how many it saw at each. */
+  function picksAs(id, points, bearings) {
+    return bearings.map((bearing) => {
+      dir.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize().negate();
+      let seen = 0;
+      for (const point of points) {
+        ray.set(from.copy(point).addScaledVector(dir, -200), dir);
+        if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(point) ?? 1) > 0.01) continue; // something stands in front
+        seen++;
+        const picked = pickTarget(ray, models, model.parkHit);
+        assert.equal(picked, id, `At bearing ${bearing.toFixed(2)} the pointer on ${id} at ${point.toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
+      }
+      return seen;
+    });
+  }
+  const { y } = plan.bikeRack,
+    { x0, x1, z0, z1 } = rackFootprint,
+    studio = plan.chapterBearings['research-studio'],
+    rack = centres('research-studio', (v) => v.x >= x0 && v.x <= x1 && v.z >= z0 && v.z <= z1 && v.y > y + 0.015, true);
+  assert(rack.length > 150, `Only ${rack.length} bike rack triangles found on the studio.`);
+  const seen = picksAs('research-studio', rack, [studio - 0.16, studio, studio + 0.16, ...stops]);
+  assert(seen[1] > rack.length / 4, `The studio chapter sees only ${seen[1]} of the rack's ${rack.length} triangles.`);
+  // The bays (BAY above), in front of each home's wall: from the People chapter (and its drift) and the Rotate stops.
+  const people = plan.chapterBearings.people;
+  for (const id of plan.chapterSubjects.people) {
+    const { d } = plan.sites[id],
+      bay = centres(id, (v) => Math.abs(v.x + 0.68) < 0.6 && v.z > d / 2 + 0.01 && v.z < d / 2 + 0.6 && v.y > 0.42 && v.y < 3.1);
+    assert(bay.length > 20, `${id}: only ${bay.length} bay triangles found.`);
+    assert(picksAs(id, bay, [people - 0.16, people, people + 0.16, ...stops])[1] > 0, `${id}: the People chapter sees none of the bay.`);
+  }
 }
 // Open water around the island, and a water shader that still compiles.
 const water = createIslandWater(model.waterLevel, -0.5);
@@ -1384,5 +1449,5 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   for (const p of panes) assert.equal(windowLevel(p.light, state), windowLevel(p.light, windowClock(12)), `A pane at ${p.place} misses the noon reset.`);
 }
 console.log(
-  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

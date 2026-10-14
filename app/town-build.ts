@@ -67,7 +67,7 @@ export type Model = {
   shell: T.Group;
   fade: T.MeshStandardMaterial[];
   center: T.Vector3;
-  /** Invisible box for pointer picking, set by the scene. */
+  /** Invisible box for pointer picking, set by the scene: the broad phase (see pickTarget in city-scene). */
   hit?: T.Mesh;
 };
 export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: number };

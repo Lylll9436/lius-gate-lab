@@ -26,6 +26,7 @@ const syntax = ts.createSourceFile(
   true,
 );
 const names = [
+  'pickTarget',
   'pickAt',
   'down',
   'strayed',
@@ -38,7 +39,7 @@ const names = [
 const functions = new Map();
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
-    functions.set(node.name.text, node.getText(syntax));
+    functions.set(node.name.text, node.getText(syntax).replace(/^export /, ''));
   ts.forEachChild(node, visit);
 }
 visit(syntax);

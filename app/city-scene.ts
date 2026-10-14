@@ -143,6 +143,63 @@ export function followMovingParts(pairs: [T.Object3D, T.Object3D][]) {
 }
 
 /**
+ * Pointer picking's broad phase: one invisible box per building (its bounds in the town, which
+ * stands untransformed under `parent`), set as the model's `hit`. See pickTarget.
+ */
+export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) {
+  for (const [id, m] of models) {
+    const bounds = new T.Box3().setFromObject(m.root),
+      size = bounds.getSize(new T.Vector3()),
+      centre = bounds.getCenter(new T.Vector3());
+    const hit = new T.Mesh(
+      new T.BoxGeometry(size.x, size.y, size.z),
+      new T.MeshBasicMaterial({ visible: false }),
+    );
+    hit.position.copy(centre);
+    hit.userData.buildingId = id;
+    parent.add(hit);
+    hit.updateMatrixWorld();
+    m.hit = hit;
+  }
+}
+
+/**
+ * The place a pointer ray is on. A building's box only nominates it: seen at a slant, a box's
+ * empty corners (above the gate's attic, beside a bay) lie in front of the building behind, so
+ * a building counts where the ray meets its own geometry, and the nearest such meeting wins
+ * (the bike rack, seen past the gate's attic, picks the studio). Where the ray meets no
+ * building at all, the nearest box still answers, so the pointer keeps the boxes' slack round
+ * each silhouette. The park's boxes (and a model the scene gave no box) are taken as they are.
+ */
+export function pickTarget(
+  ray: T.Raycaster,
+  models: Map<BuildingId, Model>,
+  parkHit: T.Object3D,
+): HoverTarget {
+  const boxes = ray.intersectObjects(
+    [...Array.from(models.values(), (m) => m.hit ?? m.root), parkHit],
+    true,
+  );
+  let best: { id: HoverTarget; distance: number } | null = null,
+    nearest: HoverTarget = null;
+  for (const hit of boxes) {
+    if (best && hit.distance >= best.distance) break;
+    let object: T.Object3D | null = hit.object;
+    while (object && !object.userData.buildingId && !object.userData.placeId)
+      object = object.parent;
+    const id = (object?.userData.buildingId ?? object?.userData.placeId ?? null) as HoverTarget;
+    if (!id) continue;
+    nearest ??= id;
+    const m = id === 'corner-park' ? undefined : models.get(id);
+    const meets =
+      m?.hit && hit.object === m.hit ? ray.intersectObject(m.root, true)[0] : hit;
+    if (meets && (!best || meets.distance < best.distance))
+      best = { id, distance: meets.distance };
+  }
+  return best ? best.id : nearest;
+}
+
+/**
  * Plan view's districts lie this far above the flat ground: over the kerbs (plan.levels.kerb,
  * the highest paving), so the roads and pavements cannot hide them. Buildings, trees and
  * lamps still stand in front.
@@ -374,21 +431,9 @@ export async function createCity(
     shadows: tier === 'low' ? 0 : 1,
     shadowSize: 512,
   });
-  // Pointer picking uses one invisible box per building, never the merged geometry.
+  // Pointer picking: an invisible box per building, then that building's own meshes (pickTarget).
   city.updateMatrixWorld(true);
-  for (const [id, m] of models) {
-    const bounds = new T.Box3().setFromObject(m.root),
-      size = bounds.getSize(new T.Vector3()),
-      centre = bounds.getCenter(new T.Vector3());
-    const hit = new T.Mesh(
-      new T.BoxGeometry(size.x, size.y, size.z),
-      new T.MeshBasicMaterial({ visible: false }),
-    );
-    hit.position.copy(centre);
-    hit.userData.buildingId = id;
-    city.add(hit);
-    m.hit = hit;
-  }
+  addHitBoxes(city, models);
   const sky = new T.HemisphereLight('#bcd4f2', '#7f8f44', 0.85);
   scene.add(sky);
   const sunOffset = new T.Vector3(-16, 32, 20),
@@ -929,19 +974,7 @@ export async function createCity(
     // can sit behind that plane (low on tall frames), so start the ray at the near plane.
     ray.ray.origin.addScaledVector(ray.ray.direction, camera.near);
     ray.far = camera.far - camera.near;
-    // Each model carries an invisible hit box; the merged geometry is never raycast.
-    const hit = ray.intersectObjects(
-      [...Array.from(models.values(), (m) => m.hit ?? m.root), parkHit],
-      true,
-    )[0];
-    if (!hit) return null;
-    let object: T.Object3D | null = hit.object;
-    while (object && !object.userData.buildingId && !object.userData.placeId)
-      object = object.parent;
-    return (object?.userData.buildingId ?? object?.userData.placeId) as
-      | BuildingId
-      | 'corner-park'
-      | null;
+    return pickTarget(ray, models, parkHit);
   }
   function down(e: PointerEvent) {
     clearHover();
