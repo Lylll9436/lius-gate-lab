@@ -371,6 +371,75 @@ export function boatPose(time: number) {
   };
 }
 export const lighthouseRock: XZ = [-8, 31.5];
+/** A pier-local point (x across, + towards the hut; z out to sea) in world x, z. */
+export const pierPoint = (x: number, z: number): XZ => [
+  pier.start[0] + pierDir[0] * z + pierDir[1] * x,
+  pier.start[1] + pierDir[1] * z - pierDir[0] * x,
+];
+/**
+ * Out from outline sample i (fractional) by `width` along the outline's normal, smoothed over two
+ * neighbours each side as the shore mesh is; between samples it is lerped. At an integer i this
+ * is exactly the shore mesh's own point.
+ */
+export function shoreAt(i: number, width: number): XZ {
+  const n = OUTLINE_SAMPLES,
+    at = (k: number): XZ => {
+      const j = ((k % n) + n) % n,
+        p = islandOutline[j],
+        prev = islandOutline[(j + n - 2) % n],
+        next = islandOutline[(j + 2) % n];
+      const dx = next[0] - prev[0],
+        dz = next[1] - prev[1],
+        l = Math.hypot(dx, dz) || 1;
+      return [p[0] + (dz / l) * width, p[1] - (dx / l) * width];
+    };
+  const k = Math.floor(i),
+    t = i - k,
+    a = at(k);
+  if (t === 0) return a;
+  const b = at(k + 1);
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+/** rotation.y turning local +z out to sea at sample i (local +x then runs along the shore). */
+export const shoreTurn = (i: number) => {
+  const [ax, az] = shoreAt(i, 0),
+    [bx, bz] = shoreAt(i, 1);
+  return Math.atan2(bx - ax, bz - az);
+};
+/**
+ * The harbour's working details, pier-local (x across, + towards the hut; z out to sea). The
+ * dinghy is moored to the pile heads at z 3.5 and 6.1 (the code's bollards) by two lines from
+ * fairleads inside its hull (dinghy-local x, y, z). The boat never rests, so its berth at the
+ * pier head is an empty bollard with a coiled line on the planks beside it; the coil shares the
+ * bollard's world x, so the lead between them runs along world z (see pierAndHarbour).
+ */
+export const harbour = {
+  dinghy: { x: -1.4, z: 5.3, turn: 0.06 },
+  lines: [
+    { fairlead: [0.1, 0.1, -0.6], pile: [-0.72, 3.5] }, // stern line, aft
+    { fairlead: [0.12, 0.1, 0.5], pile: [-0.72, 6.1] }, // bow line, forward to the head pile
+  ] as { fairlead: [number, number, number]; pile: XZ }[],
+  headBollard: [0.2, 5.95] as XZ,
+  berthCoil: [0.5, 5.48] as XZ,
+  pileWrack: [[-0.98, 3.6], [0.98, 3.4]] as XZ[],
+};
+/**
+ * Beach details either side of the pier, in shore coordinates: outline sample i (fractional) and
+ * width w out from the outline. `foot` is the plan radius every part stays inside. The hut side
+ * (samples 29-31) is the working quay: creels, floats and a coil on the dry sand. The dinghy side
+ * (37-43) has a net drying on a frame, a strand line of wrack and driftwood, and rock pools on the
+ * wet sand round the boulder at sample 42.
+ */
+export const shoreProps = {
+  creelStack: { i: 30.3, w: 0.8, foot: 0.51 },
+  creel: { i: 30.7, w: 1.65, turn: 0.4, foot: 0.31 },
+  floats: [{ i: 29.6, w: 0.62, foot: 0.12 }, { i: 29.25, w: 0.95, foot: 0.12 }],
+  coil: { i: 29.6, w: 1.45, foot: 0.23 },
+  netFrame: { from: { i: 37.4, w: 0.65 }, to: { i: 39.2, w: 0.65 }, foot: 0.3 }, // a capsule: the hangs splay to 0.24, the hem floats to 0.3
+  driftwood: { from: { i: 40.05, w: 1.45 }, to: { i: 41.2, w: 1.38 }, foot: 0.1, rootFoot: 0.17 }, // a capsule, the root flare at `from`
+  rockPools: [{ i: 42, w: 2.42, r: 0.32, foot: 0.6 }, { i: 43.1, w: 2.3, r: 0.26, foot: 0.53 }], // foot = 1.15 r + 0.23 (stretched along the shore, rim rocks)
+  wrack: [{ i: 42.4, w: 2.0, s: 1, foot: 0.17 }, { i: 40.3, w: 2.68, s: 0.8, foot: 0.136 }, { i: 39.3, w: 1.6, s: 0.9, foot: 0.153 }, { i: 38.7, w: 1.7, s: 0.7, foot: 0.119 }], // foot = 0.17 s
+};
 
 /* ------------------------------------------------------------------ */
 /* Planting and street furniture                                       */

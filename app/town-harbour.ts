@@ -1,6 +1,8 @@
 import * as T from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as plan from './town-plan';
 import { palette, hash, WATER, type TownContext } from './town-shared';
+import { shoreHeight } from './town-ground';
 import type { Kit } from './town-kit';
 import type { Props } from './town-props';
 
@@ -9,7 +11,7 @@ import type { Props } from './town-props';
 /* ------------------------------------------------------------------ */
 export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
   const { material, lamps, animated } = ctx;
-  const { box, cylinder, cone, sphere, hullShape, hullSolid, pitchedRoof, windowAt, lampGlass } = kit;
+  const { box, cylinder, strut, cone, sphere, bollard, rope, eye, coilPoints, hullShape, hullSolid, pitchedRoof, windowAt, lampGlass } = kit;
   const { lamp } = props;
   function pierAndHarbour(g: T.Object3D) {
     const [sx, sz] = plan.pier.start,
@@ -91,9 +93,11 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     }
     // A dinghy moored alongside the deck, on the side away from the hut, its stern past the foam:
     // a shaped white hull with a blue rubbing band, a visible wooden floor and a seated thwart.
-    const dinghy = new T.Group();
-    dinghy.position.set(sx + dx * 5.3 + plan.pier.tangent[0] * 1.4, WATER, sz + dz * 5.3 + plan.pier.tangent[1] * 1.4);
-    dinghy.rotation.y = heading + 0.06;
+    const moor = plan.harbour.dinghy,
+      dinghy = new T.Group();
+    dinghy.name = 'harbour-dinghy';
+    dinghy.position.set(sx + dx * moor.z + dz * moor.x, WATER, sz + dz * moor.z - dx * moor.x);
+    dinghy.rotation.y = heading + moor.turn;
     dinghy.userData.keepSeparate = true;
     g.add(dinghy);
     // The hull's top cap sits 0.005 under the band's, so the two caps don't z-fight on the gunwale.
@@ -111,6 +115,351 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
         dinghy.rotation.x = Math.sin(time * 0.8) * 0.02;
       },
     });
+    mooring(p, moor, pitch);
+    quay(g);
+    dryingNet(g);
+    strand(g, p);
+  }
+  /**
+   * The dinghy's lines and the boat's empty berth, pier-local. Each line runs from a fairlead
+   * buried in the dinghy's hull (taken at its rest pose), out level through the side, sagging to
+   * a rope eye round a pile head on the dinghy's side of the pile, and ends inside the pile. The
+   * lines stay put while the dinghy bobs: its buried ends never leave the hull (check-town). The
+   * boat never rests, so its berth at the pier head is a bollard with a coiled blue line on the
+   * planks beside it; the coil shares the bollard's world x, so the lead between them runs along
+   * world z and batch() never takes its box for an eave.
+   */
+  function mooring(p: T.Object3D, moor: typeof plan.harbour.dinghy, pitch: number) {
+    const H = plan.harbour,
+      up = new T.Vector3(0, 1, 0);
+    // The eyes round the pile heads are wet and worn darker than the lines: a pale ring there
+    // framed the pier-head lamp's lantern like a halo at the default view.
+    const pileEye = '#' + new T.Color(palette.rope).multiplyScalar(0.3).getHexString();
+    for (const line of H.lines) {
+      const [px, pz] = line.pile;
+      eye(p, px, 0.44, pz, 0.19, pileEye); // 0.06 under the pile top, its inner edge clear of the pile
+      const end = new T.Vector3(...line.fairlead).applyAxisAngle(up, moor.turn).add(new T.Vector3(moor.x, WATER, moor.z)),
+        axis = new T.Vector3(px, 0.44, pz),
+        h = new T.Vector3(px - end.x, 0, pz - end.z).normalize(),
+        out = end.clone().addScaledVector(h, 0.25),
+        ring = axis.clone().addScaledVector(h, -0.19),
+        mid = out.clone().lerp(ring, 0.5);
+      mid.y -= 0.05;
+      rope(p, [end, out, mid, ring, axis]);
+    }
+    // The planks' own jitter, so the bollard stands on its plank (14) and the coil on 12 and 13.
+    const plankTop = (z: number) => 0.2 + (hash(Math.floor(z / pitch) * 5 + 2) - 0.5) * 0.02;
+    const [bx, bz] = H.headBollard,
+      [cx, cz] = H.berthCoil;
+    bollard(p, bx, plankTop(bz), bz);
+    eye(p, bx, 0.36, bz, 0.135); // round the waist, under the head's flare
+    const lead = new T.Vector3(bx - cx, 0, bz - cz).normalize(),
+      // The coil's underside lies on plank 12 (top 0.194) and 0.01 into plank 13 (0.204).
+      coil = coilPoints(cx, 0.199, cz, 0.06, 0.19, 3, Math.atan2(-lead.x, lead.z)),
+      last = coil[coil.length - 1],
+      lift = last.clone().addScaledVector(lead, 0.2).setY(0.29),
+      head = new T.Vector3(bx, 0.36, bz),
+      onEye = head.clone().addScaledVector(lift.clone().setY(0.36).sub(head).normalize(), 0.135);
+    rope(p, [new T.Vector3(cx, 0.144, cz), ...coil, lift, onEye, head], palette.ropeBlue);
+  }
+  /**
+   * A Scottish creel, about 1.6x real like the crates: a D-shaped net body on a flat base, 0.46
+   * long (local z) x 0.34 wide x 0.285 tall, its netted ends a little in shade; three soft
+   * charcoal rubber-coated hoops stand 0.035 proud of the vault as ribs, and the entrance ring in
+   * the +z end is the netting's own colour, darker, so it reads as the opening (a white ring read
+   * as an eye, the brightest thing on the quay).
+   */
+  let creelBody: T.BufferGeometry | undefined;
+  function creel(g: T.Object3D, x: number, y: number, z: number, ry: number, net: string) {
+    if (!creelBody) {
+      const base = new T.BoxGeometry(0.34, 0.115, 0.44).translate(0, 0.0575, 0),
+        vault = new T.CylinderGeometry(0.17, 0.17, 0.44, 8, 1, false, Math.PI / 2, Math.PI).rotateX(Math.PI / 2).translate(0, 0.115, 0),
+        merged = mergeGeometries([base, vault])!,
+        n = merged.getAttribute('normal'),
+        tone = new Float32Array(n.count * 3);
+      for (let k = 0; k < n.count; k++) tone.fill(Math.abs(n.getZ(k)) > 0.9 ? 0.85 : n.getY(k) < 0.3 ? 0.9 : 1, k * 3, k * 3 + 3);
+      merged.setAttribute('color', new T.BufferAttribute(tone, 3));
+      creelBody = merged;
+    }
+    const c = new T.Group();
+    c.position.set(x, y, z);
+    c.rotation.y = ry;
+    g.add(c);
+    const body = new T.Mesh(creelBody, material(net, 'fabric'));
+    body.castShadow = body.receiveShadow = true;
+    c.add(body);
+    for (const hz of [-0.19, 0, 0.19]) {
+      // Paint, not iron: thin arcs keep iron's specular off them.
+      const hoop = new T.Mesh(new T.TorusGeometry(0.175, 0.035, 4, 6, Math.PI), material('#565c60', 'paint'));
+      hoop.position.set(0, 0.115, hz);
+      hoop.castShadow = hoop.receiveShadow = true;
+      c.add(hoop);
+    }
+    cylinder(c, 0, 0.17, 0.225, 0.07, 0.07, 0.03, '#' + new T.Color(net).multiplyScalar(0.45).getHexString(), 'paint').rotation.x = Math.PI / 2;
+  }
+  /** A beach detail's root at shore coordinates (i, w), standing 0.01 into the sand. */
+  const onShore = (i: number, w: number) => {
+    const [x, z] = plan.shoreAt(i, w);
+    return new T.Vector3(x, shoreHeight(w) - 0.01, z);
+  };
+  /**
+   * The working quay on the hut side of the pier: a stack of five creels and one more beside it,
+   * two orange floats and a coil of rope on the dry sand, its end trailing toward the water.
+   */
+  function quay(g: T.Object3D) {
+    const S = plan.shoreProps,
+      [blue, green, orange] = palette.creel;
+    const stack = new T.Group();
+    stack.position.copy(onShore(S.creelStack.i, S.creelStack.w));
+    stack.rotation.y = plan.shoreTurn(S.creelStack.i); // local +z out to sea
+    g.add(stack);
+    // Two on the sand, two more each sunk 0.03 into a crown below, one on top across both.
+    const tiers: [number, number, number, number, string][] = [
+      [-0.2, 0, 0, 0, blue], [0.2, 0, 0.02, 0, green],
+      [-0.18, 0.255, 0.01, 0.05, orange], [0.21, 0.255, -0.02, -0.05, blue],
+      [0, 0.51, 0, 0.1, green],
+    ];
+    for (const [x, y, z, ry, net] of tiers) creel(stack, x, y, z, ry, net);
+    const lone = onShore(S.creel.i, S.creel.w);
+    creel(g, lone.x, lone.y, lone.z, plan.shoreTurn(S.creel.i) + S.creel.turn, blue);
+    for (const f of S.floats) {
+      const at = onShore(f.i, f.w);
+      sphere(g, at.x, at.y + 0.11, at.z, 0.12, palette.tramOrange, 'enamel'); // 0.02 into the sand
+    }
+    // A coil on the sand: the inner end rises out of the sand at its middle, and the outer end
+    // leaves the last turn heading out to sea and dives back in.
+    const c = onShore(S.coil.i, S.coil.w).setY(shoreHeight(S.coil.w)),
+      seaward = plan.shoreTurn(S.coil.i),
+      turns = coilPoints(c.x, c.y, c.z, 0.06, 0.19, 3, -seaward),
+      last = turns[turns.length - 1],
+      along = new T.Vector3(Math.sin(seaward), 0, Math.cos(seaward));
+    rope(g, [new T.Vector3(c.x, c.y - 0.055, c.z), ...turns, last.clone().addScaledVector(along, 0.12), last.clone().addScaledVector(along, 0.22).setY(c.y - 0.055)]);
+  }
+  /**
+   * A net hung to dry over a bar between two posts on the upper beach, on the dinghy side of the
+   * pier: its long side hangs toward the sea with a few small orange floats on the hem, the short
+   * side behind. The sheet wraps the bar on a circle 0.015 clear of it, so the bar never shows
+   * through; both hangs splay out as they fall, so they face the sky rather than standing as a
+   * flat board, and fall in loose folds to ragged hems of uneven length. It is a solid veil:
+   * cut-out mesh holes shrink below a pixel at the zooms the town is mostly seen at and twinkle
+   * there as it pans. Its back faces are built in, so it batches with the other cloth instead of
+   * needing a two-sided program of its own.
+   */
+  function dryingNet(g: T.Object3D) {
+    const F = plan.shoreProps.netFrame,
+      [ax, az] = plan.shoreAt(F.from.i, F.from.w),
+      [bx, bz] = plan.shoreAt(F.to.i, F.to.w),
+      span = Math.hypot(bx - ax, bz - az);
+    const frame = new T.Group();
+    frame.position.set((ax + bx) / 2, shoreHeight(F.from.w) - 0.01, (az + bz) / 2);
+    frame.rotation.y = Math.atan2(az - bz, bx - ax); // local +x runs from -> to, so local -z is out to sea
+    g.add(frame);
+    for (const s of [-1, 1]) box(frame, (s * span) / 2, 0.525, 0, 0.09, 1.05, 0.09, palette.woodDark, 'wood');
+    strut(frame, new T.Vector3(-span / 2, 0.95, 0), new T.Vector3(span / 2, 0.95, 0), 0.045, palette.wood, 'wood');
+    // The sheet: 14 columns along the bar and 10 rows across it, from the seaward hem (row 0) up
+    // and over the bar (rows 3-7, at 45 degree steps round it) and down to the landward hem.
+    // It is 1.05 long and pushed toward the `from` post, so the bar shows bare toward the other.
+    const R = 0.06,
+      length = 1.05,
+      along = (u: number) => (u - 0.5) * length - 0.12,
+      sheet = new T.PlaneGeometry(1.3, 1, 13, 9),
+      pos = sheet.getAttribute('position'),
+      tone = new Float32Array(pos.count * 3);
+    // A hang f of the way down (f 1 at the hem): it leaves the bar, splays out by `spread` and
+    // folds by up to 0.03 as it falls, to a hem `long` below the bar, less where the hem lifts.
+    const hang = (u: number, f: number, long: number, lift: number, spread: number, phase: number): [number, number] => [
+      R + spread * f ** 1.3 + 0.03 * f * Math.sin(2 * Math.PI * 3.2 * u + phase),
+      0.95 - f * (long - lift * (0.5 + 0.5 * Math.sin(2 * Math.PI * (1.3 * u + phase)))) * (0.8 + 0.2 * Math.sin(Math.PI * u)),
+    ];
+    const at = (u: number, row: number): [number, number, number] => {
+      if (row <= 2) {
+        const f = 1 - row / 3,
+          [out, y] = hang(u, f, 0.74, 0.24, 0.15, 0.4);
+        return [-out, y, f];
+      }
+      if (row <= 7) {
+        const a = ((row - 5) * Math.PI) / 4;
+        return [R * Math.sin(a), 0.95 + R * Math.cos(a), 0];
+      }
+      const f = (row - 7) / 2,
+        [out, y] = hang(u, f, 0.5, 0.12, 0.11, 2.1);
+      return [out, y, f];
+    };
+    for (let k = 0; k < pos.count; k++) {
+      const ix = k % 14,
+        row = Math.floor(k / 14),
+        u = ix / 13,
+        [across, y, f] = at(u, row);
+      pos.setXYZ(k, along(u), y, across);
+      tone.fill(1.04 - 0.08 * f, k * 3, k * 3 + 3); // a little lighter over the fold; the batch's contact bake darkens the hems
+    }
+    sheet.setAttribute('color', new T.BufferAttribute(tone, 3));
+    sheet.computeVertexNormals();
+    // The other side: the same sheet wound the other way round with its normals reversed.
+    const back = sheet.clone(),
+      index = back.getIndex()!,
+      normal = back.getAttribute('normal');
+    for (let k = 0; k < index.count; k += 3) {
+      const a = index.getX(k + 1);
+      index.setX(k + 1, index.getX(k + 2));
+      index.setX(k + 2, a);
+    }
+    for (let k = 0; k < normal.count; k++) normal.setXYZ(k, -normal.getX(k), -normal.getY(k), -normal.getZ(k));
+    const net = new T.Mesh(mergeGeometries([sheet, back])!, material(palette.net, 'fabric'));
+    net.receiveShadow = true;
+    net.userData.noShadow = true; // a thin sheet ghosts in the shadow map
+    frame.add(net);
+    // Floats on the seaward hem, hanging just below it.
+    const blob = lump(0.055);
+    for (const u of [0.1, 0.32, 0.55, 0.78, 0.93]) {
+      const [across, y] = at(u, 0),
+        float = new T.Mesh(blob, material(palette.tramOrange, 'enamel'));
+      float.position.set(along(u), y - 0.03, across);
+      float.receiveShadow = true;
+      frame.add(float);
+    }
+  }
+  /** The icosahedron as a smooth little lump: low detail, but with sphere normals. */
+  function lump(r: number, detail = 0) {
+    const geo = new T.IcosahedronGeometry(r, detail),
+      p = geo.getAttribute('position'),
+      n = geo.getAttribute('normal');
+    for (let k = 0; k < p.count; k++) n.setXYZ(k, p.getX(k) / r, p.getY(k) / r, p.getZ(k) / r);
+    return geo;
+  }
+  /**
+   * A clump of wrack s across 0.34: three low lumps of mixed size round the middle, their long
+   * axes pointing out, and two or three flat fronds of mixed length lying roughly along `trail`
+   * (the strand line), each turned a little its own way, so no clump is a regular star. Nothing
+   * reaches past 0.17 s.
+   */
+  function wrack(g: T.Object3D, x: number, y: number, z: number, s: number, seed: number, trail: number, colours: [string, string]) {
+    const [weed, kelp] = colours,
+      h = (k: number) => hash(Math.floor(seed * 1000) + k * 7);
+    for (let k = 0; k < 3; k++) {
+      const a = seed + (k * Math.PI * 2) / 3 + (h(k) - 0.5) * 0.8,
+        out = 0.05 * s * (0.5 + 0.5 * h(k + 3)),
+        size = 0.75 + 0.25 * h(k + 6),
+        blob = new T.Mesh(lump(1), material(k === 1 ? kelp : weed, 'foliage'));
+      blob.position.set(x + Math.cos(a) * out, y, z + Math.sin(a) * out);
+      blob.scale.set(0.12 * s * size, 0.045 * s, 0.09 * s * size);
+      blob.rotation.y = -a; // local x along the radius
+      blob.userData.noShadow = true;
+      g.add(blob);
+    }
+    // Fronds 0.18-0.3 s long, slid along themselves by up to the length they lack (so every tip
+    // stays within 0.15 s), each 0.004 above the last so the crossing tops never meet.
+    const fronds = h(9) < 0.5 ? 2 : 3;
+    for (let k = 0; k < fronds; k++) {
+      const long = 0.3 * s * (0.6 + 0.4 * h(k + 10)),
+        ry = trail + (h(k + 13) - 0.5) * 1.0 + (k * Math.PI) / 2 * (h(k + 16) < 0.3 ? 1 : 0),
+        slide = (h(k + 19) - 0.5) * (0.3 * s - long);
+      box(g, x + Math.cos(ry) * slide, y + 0.01 + 0.004 * k, z - Math.sin(ry) * slide, long, 0.02, 0.1 * s, k === 1 ? weed : kelp, 'foliage', { ry }).userData.noShadow = true;
+    }
+  }
+  /** The sand's height out from the outline at a world point (its distance from the outline). */
+  const sandAt = (x: number, z: number) => shoreHeight(plan.distanceToPolyline([x, z], plan.islandOutline, true));
+  /**
+   * The strand on the dinghy side of the pier: rock pools ringed by wet rocks on the wet sand
+   * round the boulder at sample 42, clumps of wrack (older and browner on the strand line up the
+   * beach), a bleached driftwood log, and weed on the piles that stand in the tide (pier-local).
+   */
+  function strand(g: T.Object3D, p: T.Object3D) {
+    const S = plan.shoreProps,
+      // The beach boulders' greige, a little darker for being wet.
+      rockGreys = ['#a3a08f', '#8d9385'];
+    S.rockPools.forEach((pool, n) => {
+      const [x, z] = plan.shoreAt(pool.i, pool.w),
+        y = shoreHeight(pool.w),
+        turn = plan.shoreTurn(pool.i), // local x along the shore, +z out to sea
+        stretch = [1.15, 0.85]; // a little longer along the shore than across it
+      // A matte bed, the shelf's turquoise in the middle paling to the shallows' at its ragged rim.
+      const bed = new T.CircleGeometry(pool.r, 9).rotateX(-Math.PI / 2),
+        bp = bed.getAttribute('position'),
+        tone = new Float32Array(bp.count * 3),
+        deep = new T.Color('#5fb8c8').multiplyScalar(0.85),
+        rim = new T.Color('#a8d8cf');
+      for (let k = 1; k < bp.count; k++) {
+        const jitter = 0.88 + 0.24 * hash(n * 31 + ((k - 1) % 9));
+        bp.setXYZ(k, bp.getX(k) * jitter * stretch[0], 0, bp.getZ(k) * jitter * stretch[1]);
+      }
+      for (let k = 0; k < bp.count; k++) tone.set((k === 0 ? deep : rim).toArray(), k * 3);
+      bed.setAttribute('color', new T.BufferAttribute(tone, 3));
+      const bedMesh = new T.Mesh(bed, material('#ffffff', 'stone'));
+      bedMesh.position.set(x, y + 0.008, z);
+      bedMesh.rotation.y = turn;
+      bedMesh.receiveShadow = true;
+      bedMesh.userData.ground = true;
+      bedMesh.userData.noShadow = true;
+      g.add(bedMesh);
+      // Three or four wet rocks of mixed sizes on the landward side, the rim left open toward the
+      // sea, 40% sunk and darker at the foot.
+      const count = 4 - (n % 2),
+        local = new T.Vector3();
+      for (let k = 0; k < count; k++) {
+        const t = (k + 0.5 + (hash(n * 17 + k) - 0.5) * 0.6) / count,
+          a = Math.PI / 2 + 1 + t * (2 * Math.PI - 2), // round from the seaward gap (2 radians wide) back to it
+          r = 0.07 + 0.09 * hash(n * 23 + k * 3),
+          geo = lump(r, 1),
+          rp = geo.getAttribute('position'),
+          shade = new Float32Array(rp.count * 3);
+        for (let q = 0; q < rp.count; q++) shade.fill(0.85 + 0.17 * T.MathUtils.smoothstep(rp.getY(q), -r * 0.2, r), q * 3, q * 3 + 3);
+        geo.setAttribute('color', new T.BufferAttribute(shade, 3));
+        const rock = new T.Mesh(geo, material(rockGreys[(n + k) % 2], 'stone'));
+        local.set(Math.cos(a) * (pool.r * stretch[0] + 0.02), 0, Math.sin(a) * (pool.r * stretch[1] + 0.02)).applyAxisAngle(new T.Vector3(0, 1, 0), turn);
+        rock.position.set(x + local.x, y + 0.11 * r, z + local.z);
+        rock.scale.set(1.25, 0.55, 1);
+        rock.rotation.y = turn - a + Math.PI / 2 + (hash(n * 5 + k) - 0.5) * 0.8; // roughly along the rim
+        rock.receiveShadow = true;
+        rock.userData.noShadow = true;
+        g.add(rock);
+      }
+    });
+    const weed = palette.weed,
+      kelp = palette.kelp,
+      dry = '#' + new T.Color(palette.kelp).multiplyScalar(0.9).getHexString();
+    S.wrack.forEach((w, n) => {
+      const [x, z] = plan.shoreAt(w.i, w.w);
+      wrack(g, x, shoreHeight(w.w), z, w.s, hash(n * 7 + 5) * Math.PI * 2, plan.shoreTurn(w.i), w.w < 1.8 ? [dry, dry] : [weed, kelp]);
+    });
+    // Wrack at the feet of the two piles that stand in the wet sand (pier-local).
+    plan.harbour.pileWrack.forEach(([lx, lz], n) => {
+      const [wx, wz] = plan.pierPoint(lx, lz);
+      wrack(p, lx, sandAt(wx, wz), lz, 0.8, n * 2.1 + 0.4, 0, [weed, kelp]); // the tide line runs roughly across the pier
+    });
+    // Weed sleeves on the six piles that stand in the tide, just proud of each pile's taper.
+    for (let z = 3.5; z < plan.pier.length + 0.2; z += 1.3)
+      for (const side of [-1, 1]) {
+        const sleeve = new T.Mesh(new T.CylinderGeometry(0.152, 0.158, 0.17, 18, 1, true), material(weed, 'foliage'));
+        sleeve.position.set(side * 0.72, 0.035, z);
+        sleeve.receiveShadow = true;
+        sleeve.userData.noShadow = true;
+        p.add(sleeve);
+      }
+    // Driftwood on the strand line: a silvered log, thinning toward `to` and swelling into a
+    // rounded root end at `from` (within rootFoot), with a short broken branch 0.35 along it,
+    // raised 50 degrees toward the thin end in the log's own plane. Log and branch are one
+    // mesh, so the branch casts with the log rather than opening a no-shadow wood group.
+    const D = S.driftwood,
+      [fx, fz] = plan.shoreAt(D.from.i, D.from.w),
+      [tx, tz] = plan.shoreAt(D.to.i, D.to.w),
+      y = (shoreHeight(D.from.w) + shoreHeight(D.to.w)) / 2 + 0.07,
+      along = new T.Vector3(tx - fx, 0, tz - fz),
+      length = along.length(),
+      up = new T.Vector3(0, 1, 0);
+    along.normalize();
+    // The profile up the log's axis (radius, distance from `from`), closed at both ends.
+    const profile = [[0, -0.01], [0.1, -0.005], [0.13, 0.04], [0.115, 0.1], [0.092, 0.2], [0.075, length - 0.03], [0.055, length], [0, length]],
+      log = new T.LatheGeometry(profile.map(([r, h]) => new T.Vector2(r, h)), 8).applyQuaternion(new T.Quaternion().setFromUnitVectors(up, along)),
+      branch = along.clone().multiplyScalar(Math.cos(T.MathUtils.degToRad(50))).addScaledVector(up, Math.sin(T.MathUtils.degToRad(50))),
+      stub = new T.CylinderGeometry(0.035, 0.045, 0.2, 6)
+        .translate(0, 0.1, 0)
+        .applyQuaternion(new T.Quaternion().setFromUnitVectors(up, branch))
+        .translate(along.x * 0.35, 0.04, along.z * 0.35),
+      drift = new T.Mesh(mergeGeometries([log, stub])!, material(palette.driftwood, 'wood'));
+    drift.position.set(fx, y, fz);
+    drift.castShadow = drift.receiveShadow = true;
+    g.add(drift);
   }
   function lighthouse(g: T.Object3D) {
     const [x, z] = plan.lighthouseRock;
