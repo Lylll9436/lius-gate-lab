@@ -27,11 +27,13 @@ type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
  * Cool stays an accent (about one lit room in ten, besides the phone box): the pale cool white reads as a flat grey
- * card beside the warm panes, so a whole ribbon or a row of arches in it looks like a blank board.
+ * card beside the warm panes, so a whole ribbon or a row of arches in it looks like a blank board. The evening starts
+ * full (about two rooms in three) and thins after 22:00: at 0.4 and 0.55 the town hall and the archive were nearly
+ * dark subjects in their own chapters and the evening town read as half-dark and grey.
  */
 const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
-  home: { lit: 0.55, dim: 0.25, cool: 0.1, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
-  civic: { lit: 0.4, dim: 0.25, cool: 0.1, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
+  home: { lit: 0.7, dim: 0.25, cool: 0.1, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
+  civic: { lit: 0.65, dim: 0.25, cool: 0.1, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
   studio: { lit: 0.85, dim: 0, cool: 0.1, goes: 0.5, span: [0.6, 0.98], risers: 0 }, // 00:42-02:25
 };
 /** [level, tint, off, wake] for panes that never change (1 = never). */
@@ -66,13 +68,15 @@ function claim(set: Set<number>, lo: number, hi: number, u: number) {
 }
 /**
  * A pane's four aWindow bytes. `windowLit` panes are lit at today's colour (at full level, or at
- * the level `windowLit` gives as a number) and go out no earlier than 01:22. Only a pane that is
- * dark by morning can be an early riser, so every riser comes on from dark rather than brightening
- * a lamp left on all night.
+ * the level `windowLit` gives as a number) and go out no earlier than 01:22. A `nightLight` pane
+ * is a dim warm lamp left on all night (the dim look, never out, never a riser), so the deep night
+ * keeps a few warm points. Only a pane that is dark by morning can be an early riser, so every
+ * riser comes on from dark rather than brightening a lamp left on all night.
  */
 function windowLight(o: T.Object3D, role: WindowRole, at: T.Vector3, claimed: Claimed) {
   const fixed = WINDOW_FIXED[role];
   if (fixed) return fixed.map(byte);
+  if (o.userData.nightLight) return [byte(0.45), 0, 255, 255];
   const m = WINDOW_MIX[role]!,
     [u0, u1, u2, u3, u4] = paneDraws(at),
     forced = !!o.userData.windowLit,

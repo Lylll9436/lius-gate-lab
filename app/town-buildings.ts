@@ -114,7 +114,9 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       face.rotation.y = (sx * Math.PI) / 2;
       shell.add(face);
       for (const z of [-0.95, 0.95]) {
-        windowAt(face, z, 1.5, 0, 0.85, 1.15, { arched: true });
+        const pane = windowAt(face, z, 1.5, 0, 0.85, 1.15, { arched: true });
+        // The east side's front arch (seen from the overview and the chapter) keeps a dim lamp all night.
+        if (sx === 1 && z === -0.95) pane.userData.nightLight = true;
         windowAt(face, z, 3.55, 0, 0.85, 0.95, { sill: false, lintel: false });
       }
     }
@@ -124,8 +126,13 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       box(shell, sx * 1.2, 3.05, tz + 1.2, 0.5, 5.1, 0.5, palette.trim, 'stone');
       cone(shell, sx * 1.2, 5.8, tz + 1.2, 0.4, 0.4, palette.trim, 'stone', 4);
     }
+    // The fanlight and the tower window are lit late (at today's colour, 0.8), so the hall's front
+    // shows a lit entrance and tower all evening in its chapter, not three panes on a dark block.
+    const beforeDoor = shell.children.length,
+      glassOf = (o: T.Object3D) => o instanceof T.Mesh && (o.material as T.Material).userData?.surfaceKind === 'glass';
     door(shell, 0, 0.52, tz + tw / 2, 1.3, 2.2, palette.greenDoor, { arched: true, landing: 0.25, width: 2.0 });
-    windowAt(shell, 0, 4.65, tz + tw / 2, 0.8, 1.2, { arched: true, mullion: true });
+    for (const o of shell.children.slice(beforeDoor)) if (glassOf(o)) o.userData.windowLit = 0.8;
+    windowAt(shell, 0, 4.65, tz + tw / 2, 0.8, 1.2, { arched: true, mullion: true }).userData.windowLit = 0.8;
     box(shell, 0, 6.1, tz, tw + 0.3, 0.2, tw + 0.3, palette.trim, 'stone');
     // Four clocks at 70% of the face: an iron rim, a cream dial that glows after dusk like the
     // windows, four iron markers, a fixed brass hub and iron hands that keep Glasgow time.
@@ -275,12 +282,20 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       }
     // Arched, metal-framed windows. The rear is seen at overview, so it is a secondary front.
     const arched = { arched: true, frame: palette.metal, dress: palette.brickLight, mullion: true };
-    for (const x of [-2.01, 2.01]) windowAt(shell, x, 1.75, d / 2, 0.9, 1.3, arched);
+    // One front window is lit late (today's colour, 0.8), so the chapter's subject shows a lit front
+    // all evening; the rear's middle window (the face the overview sees) keeps a dim lamp all night.
+    for (const x of [-2.01, 2.01]) {
+      const pane = windowAt(shell, x, 1.75, d / 2, 0.9, 1.3, arched);
+      if (x > 0) pane.userData.windowLit = 0.8;
+    }
     const rear = new T.Group();
     rear.position.z = -d / 2;
     rear.rotation.y = Math.PI;
     shell.add(rear);
-    for (const x of [-2.01, 0, 2.01]) windowAt(rear, x, 1.75, 0, 0.9, 1.3, arched);
+    for (const x of [-2.01, 0, 2.01]) {
+      const pane = windowAt(rear, x, 1.75, 0, 0.9, 1.3, arched);
+      if (x === 0) pane.userData.nightLight = true;
+    }
     for (const side of [-1, 1]) {
       const face = new T.Group();
       face.position.x = (side * w) / 2;

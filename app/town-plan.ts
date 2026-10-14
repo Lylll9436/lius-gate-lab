@@ -301,13 +301,15 @@ export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
 /**
  * Cottages around the town. The two by the terrace stand about 3 back from the row's line
  * (x -22), turned in toward it, so the row reads as the three members' homes and not five.
+ * `nightLight` keeps a dim warm lamp in the window all night: the three whose fronts face the
+ * overview camera, so the island at 02:30 (09:30 in Beijing) still shows a few warm points.
  */
-export const cottages: { x: number; z: number; rotation: number; color: string }[] = [
-  { x: -24.6, z: -10.6, rotation: Math.PI / 2 - 0.55, color: '#e1cfa8' },
+export const cottages: { x: number; z: number; rotation: number; color: string; nightLight?: boolean }[] = [
+  { x: -24.6, z: -10.6, rotation: Math.PI / 2 - 0.55, color: '#e1cfa8', nightLight: true },
   { x: -24.6, z: 11.6, rotation: Math.PI / 2 + 0.55, color: '#d9c39a' },
   { x: 20.5, z: 1.5, rotation: -Math.PI / 2, color: '#e4d2ad' },
-  { x: 5, z: -17.5, rotation: 0, color: '#cdb48d' },
-  { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8' },
+  { x: 5, z: -17.5, rotation: 0, color: '#cdb48d', nightLight: true },
+  { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8', nightLight: true },
 ];
 /**
  * A dry-stone paddock for a small Highland herd, in the south-west outskirts between the ring's

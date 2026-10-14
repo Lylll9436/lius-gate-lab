@@ -800,10 +800,22 @@ const panes = model.windows,
   Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
   todayGlow = new T.Color('#ffd29a');
 assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) => [p.place, p.light]), 'Every build lights the same panes.');
-// Evening: about half the rooms lit; the members' homes are lit late, and the studio works later.
+// Evening: about two rooms in three lit (at half, the town hall and the archive were nearly dark subjects in their own
+// chapters); the members' homes are lit late, and the studio works later.
 {
   const evening = lit(rooms, 20).length / rooms.length;
-  assert(evening >= 0.35 && evening <= 0.65, `${Math.round(evening * 100)}% of the rooms are lit at 20:00.`);
+  assert(evening >= 0.55 && evening <= 0.8, `${Math.round(evening * 100)}% of the rooms are lit at 20:00.`);
+  // Every civic chapter subject keeps a lit front until after 01:00 (windowLit at today's colour, 0.8): the hall's
+  // fanlight and tower window, an archive front window.
+  for (const [id, least] of [['town-hall', 2], ['city-archive', 1]]) {
+    const kept = rooms.filter((p) => p.place === id && Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128);
+    assert(kept.length >= least && lit(kept, 1.25).length === kept.length, `${id} has no front lit late.`);
+  }
+  // The deep night keeps a few warm points (09:30 in Beijing): dim warm lamps that never go out, on fronts the overview sees.
+  const lamps = rooms.filter((p) => Math.round(p.light[0] * 255) === 115 && p.light[1] === 0 && p.light[2] === 1 && p.light[3] === 1);
+  assert(lamps.length >= 4 && lamps.length <= 6, `${lamps.length} night lamps.`);
+  for (const h of [2.5, 4, 5.4]) assert(lit(lamps, h).length === lamps.length, `A night lamp is out at ${h}.`);
+  assert(new Set(lamps.map((p) => p.place)).size >= 3, 'The night lamps bunch in one place.');
   // Most lit rooms are warm or today's glow; the pale cool white is an accent, not a grey board on every civic front.
   const cool = lit(rooms, 20).filter((p) => Math.round(p.light[1] * 255) === 255).length;
   assert(cool <= 0.15 * lit(rooms, 20).length, `${cool} of the ${lit(rooms, 20).length} rooms lit at 20:00 are cool.`);

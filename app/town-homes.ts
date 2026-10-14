@@ -130,7 +130,8 @@ export function createHomes(kit: Kit, nature: Nature) {
     box(root,0,P+h/2,0,w,h,d,c.color,'stone');
     const pan=index%2===1, ridge=slabRoof(root,0,top,0,w,d,1.4,pan?palette.pantile:palette.slate,{eave:0.25,verge:0.25,inset:0,ridge:pan?palette.pantileLight:palette.slateLight,gable:c.color});
     door(root,0.6,P,d/2,0.75,1.5,[palette.greenDoor,palette.blueDoor,palette.redDoor][index%3],{landing:0.2,width:1.0});
-    windowAt(root,-0.65,1.2,d/2,0.7,0.75,{frame:palette.trim});
+    const pane = windowAt(root,-0.65,1.2,d/2,0.7,0.75,{frame:palette.trim});
+    if (c.nightLight) pane.userData.nightLight = true; // a dim lamp left on all night (town-batch)
     chimney(root,-(w/2-0.35),ridge-0.8,ridge+0.45,0,c.color,palette.trim,1);
     // Front garden sized to the room before the pavement: a hedge with a gap at the door, and a path from the step.
     const fx = c.x + (Math.sin(c.rotation) * d) / 2,
