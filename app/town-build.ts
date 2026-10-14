@@ -111,7 +111,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildTerrace, buildCottage } = createHomes(kit, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
-  const { highlandPaddock, blackfaceSheep, standingStoneRing } = createCountry(ctx, kit);
+  const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
   const { batch } = createBatch(ctx);
   const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
   /**
@@ -237,6 +237,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       speed: (inner ? 0.85 : -0.85) * (0.85 + hash(i + 3) * 0.3),
     });
   }
+  // Three ducks on the gate's pool; the animated list's batching makes each one mesh.
+  pondDucks(city);
   // The bike rack by the Research Studio: three hoops on the pad and two bikes, front to the
   // plaza, leaning on the first two. Two, not three: three bikes by the studio of a three-member
   // group would read as theirs.

@@ -361,5 +361,52 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
     });
   }
-  return { highlandPaddock, shag, paintCoat, horn, highlandCow, headPose, tailPose, dyke, fieldGate, hayRack, blackfaceSheep, standingStoneRing };
+  /**
+   * Mallards on the gate's pool (plan.ducks): a brown hen and a drake with a dark green head in
+   * the south-east sector, a lone hen in the south-west. Each is a small rigid group (about 0.32
+   * long), its origin the body's centre so the occasional tip toward the water pivots there; the
+   * pool's surface cuts the body below the centre. The heading turns about the world's y and the
+   * tip about the duck's own x (Euler order YXZ). Every part is matte fabric and casts nothing,
+   * so the animated list's batching makes each duck one mesh. They paddle slowly on town time,
+   * so reduced motion holds them still, and drift slower without tipping at night (roosting).
+   */
+  function pondDucks(g: T.Object3D) {
+    const looks = {
+      hen: { body: '#a98563', head: '#a98563', tail: palette.woodDark, bill: palette.pantile },
+      drake: { body: '#cfc6b0', head: palette.greenDoor, tail: '#3b3633', bill: '#d8bd7a' },
+    };
+    plan.ducks.forEach((spec, i) => {
+      const look = looks[spec.look],
+        duck = new T.Group();
+      duck.name = 'duck-' + i;
+      duck.rotation.order = 'YXZ';
+      g.add(duck);
+      const body = new T.Mesh(new T.IcosahedronGeometry(0.1, 1).scale(1, 0.7, 1.6), material(look.body, 'fabric'));
+      const head = new T.Mesh(new T.IcosahedronGeometry(0.06, 1), material(look.head, 'fabric'));
+      head.position.set(0, 0.12, 0.11);
+      duck.add(body, head);
+      const bill = box(duck, 0, 0.105, 0.19, 0.07, 0.035, 0.08, look.bill, 'fabric'),
+        tail = cone(duck, 0, 0.05, -0.17, 0.045, 0.09, look.tail, 'fabric', 4);
+      tail.rotation.x = -1.2; // tipped back and up
+      for (const m of [body, head, bill, tail]) {
+        m.castShadow = false;
+        m.receiveShadow = true;
+        m.userData.noShadow = true;
+      }
+      let u = 0,
+        last = 0;
+      const update = (time: number, night: number) => {
+        // Clamped steps, so a jump in time (a check, a long pause) never sends a duck flying.
+        u += Math.min(0.1, Math.max(0, time - last)) * spec.rate * (1 - 0.6 * night);
+        last = time;
+        const p = plan.duckPose(i, u),
+          b = plan.duckBob(i, time, night);
+        duck.position.set(p.x, b.y, p.z);
+        duck.rotation.set(b.dip, p.heading, 0);
+      };
+      update(0, 0);
+      animated.push({ object: duck, update });
+    });
+  }
+  return { highlandPaddock, shag, paintCoat, horn, highlandCow, headPose, tailPose, dyke, fieldGate, hayRack, blackfaceSheep, standingStoneRing, pondDucks };
 }

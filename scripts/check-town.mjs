@@ -552,6 +552,33 @@ assert(part('cow-a-head').rotation.x > 0.1 && part('cow-a-head').rotation.x < 0.
 assert(part('calf-head').rotation.x > 0.4, 'The calf grazes.');
 for (const name of ['cow-a-tail', 'cow-b-tail']) assert(Math.abs(part(name).rotation.z) < 1e-9, name + ' hangs still.');
 for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.children.every((c) => c.isMesh), 'Batched: ' + e.object.name);
+// The ducks on the gate's pool: each one mesh, its colours baked once (a hen's brightest red is
+// its bill's top face, pantile x 1.04; a second bake would make it x 1.04 squared). Through two
+// tips each, the body stays off the pool's bed (0.02) and the surface (0.07) cuts it between its
+// lowest point and its centre (the group's origin): afloat, never on top of the water.
+{
+  const { palette } = await load('town-build');
+  const ducks = model.animated.filter((e) => /^duck-\d$/.test(e.object.name));
+  assert.deepEqual(ducks.map((e) => e.object.name), ['duck-0', 'duck-1', 'duck-2']);
+  for (const e of ducks) assert(e.object.children.length === 1 && e.object.children[0].isMesh, `${e.object.name} is not one mesh`);
+  const colour = ducks[0].object.children[0].geometry.getAttribute('color');
+  let red = 0;
+  for (let i = 0; i < colour.count; i++) red = Math.max(red, colour.getX(i));
+  assert(Math.abs(red - new T.Color(palette.pantile).r * 1.04) < 1e-3, `duck-0's colours are baked ${red.toFixed(3)}, not once`);
+  const corner = new T.Vector3();
+  for (const e of ducks) {
+    const mesh = e.object.children[0],
+      position = mesh.geometry.getAttribute('position');
+    for (let step = 0; step <= 1000; step++) {
+      e.update(step * 0.05, 0);
+      e.object.updateMatrixWorld(true);
+      let low = Infinity;
+      for (let i = 0; i < position.count; i++) low = Math.min(low, corner.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld).y);
+      assert(low >= 0.02, `${e.object.name} touches the pool's bed (${low.toFixed(3)}) at t=${(step * 0.05).toFixed(2)}`);
+      assert(low < 0.07 && e.object.position.y > 0.07, `${e.object.name} floats on top of the water at t=${(step * 0.05).toFixed(2)}`);
+    }
+  }
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>
