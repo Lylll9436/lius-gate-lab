@@ -49,9 +49,11 @@ export function createCountry(ctx: TownContext, kit: Kit) {
    * a crest down its outer face, so one side catches the light and the other falls into shade;
    * `base` colours the root and `tip` the tip. A lock lying on a coat gives the coat's outward
    * normal as `out`: its crest faces that way and its facets are shaded partly toward it, so a
-   * coat reads as clumps of hair rather than loose cards.
+   * coat reads as clumps of hair rather than loose cards. `rootShade` darkens the blunt root
+   * faces: a hem lock's root faces up, and a ring of them in the coat's own colour read as a
+   * smooth shelf round the barrel; shaded, they read as the depth of the coat.
    */
-  type Lock = { root: T.Vector3; dir: T.Vector3; across: T.Vector3; len: number; w: number; t: number; base: T.Color; tip: T.Color; point?: number; out?: T.Vector3 };
+  type Lock = { root: T.Vector3; dir: T.Vector3; across: T.Vector3; len: number; w: number; t: number; base: T.Color; tip: T.Color; point?: number; out?: T.Vector3; rootShade?: number };
   /** Locks as one geometry (eleven flat faces each, wound outward from the wedge's middle). */
   function lockGeometry(locks: Lock[]) {
     const position: number[] = [],
@@ -84,7 +86,8 @@ export function createCountry(ctx: TownContext, kit: Kit) {
         [R[1], R[2], P[1]], [R[0], R[3], P[0]], // the edges
         [R[0], R[1], R[2]], [R[0], R[2], R[3]], [R[3], R[2], crest], // the root
       ];
-      for (const [p, q0, r0] of faces) {
+      const root = lock.base.clone().multiplyScalar(lock.rootShade ?? 1);
+      faces.forEach(([p, q0, r0], f) => {
         e1.subVectors(q0, p);
         e2.subVectors(r0, p);
         e1.cross(e2).normalize();
@@ -92,12 +95,12 @@ export function createCountry(ctx: TownContext, kit: Kit) {
         if (inward) e1.negate();
         if (lock.out) e1.addScaledVector(lock.out, 0.6).normalize();
         for (const v of inward ? [p, r0, q0] : [p, q0, r0]) {
-          const c = tips.includes(v) ? lock.tip : lock.base;
+          const c = tips.includes(v) ? lock.tip : f >= 8 ? root : lock.base;
           position.push(v.x, v.y, v.z);
           normal.push(e1.x, e1.y, e1.z);
           colour.push(c.r, c.g, c.b);
         }
-      }
+      });
     }
     const geo = new T.BufferGeometry();
     geo.setAttribute('position', new T.Float32BufferAttribute(position, 3));
@@ -116,22 +119,28 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     const k = Math.sqrt(Math.max(0, 1 - (z / s.az) ** 2));
     return out.set(side * s.ax * k * Math.sin(theta), s.cy + backLift(s, z) * k * Math.cos(theta), z);
   }
-  /** The smooth coat under the locks: the shape itself, darker toward the belly and a touch paler along the back. */
+  /**
+   * The barrel under the locks: the coat's shape drawn in a little, so it stays under the locks,
+   * and in the dark undercoat's tone, darker still toward the belly, so wherever it shows
+   * between locks it reads as the shade deep in the coat. (Paler along the back, it showed
+   * through the parting as pale chips.)
+   */
   function coatCore(s: CoatShape, tone: T.Color) {
     const geo = new T.IcosahedronGeometry(1, 2),
       p = geo.getAttribute('position'),
       n = geo.getAttribute('normal'),
       out = new Float32Array(p.count * 3),
-      under = new T.Color(COAT.dark),
-      top = new T.Color(COAT.tips),
+      inset = 0.94,
+      base = tone.clone().lerp(new T.Color(COAT.dark), 0.55),
+      under = new T.Color(COAT.dark).multiplyScalar(0.85),
       c = new T.Color(),
       normal = new T.Vector3();
     for (let i = 0; i < p.count; i++) {
-      const ux = p.getX(i), uy = p.getY(i), uz = p.getZ(i), z = s.az * uz, ly = backLift(s, z), v = (uy + 1) / 2;
-      p.setXYZ(i, s.ax * ux, s.cy + ly * uy, z);
+      const ux = p.getX(i), uy = p.getY(i), uz = p.getZ(i), z = s.az * inset * uz, ly = backLift(s, z) * inset, v = (uy + 1) / 2;
+      p.setXYZ(i, s.ax * inset * ux, s.cy + ly * uy, z);
       normal.set(ux / s.ax, uy / ly, uz / s.az).normalize();
       n.setXYZ(i, normal.x, normal.y, normal.z);
-      c.copy(tone).lerp(under, 0.5 * (1 - sstep(v, 0.2, 0.7))).lerp(top, 0.14 * sstep(v, 0.75, 1));
+      c.copy(base).lerp(under, 0.6 * (1 - sstep(v, 0.2, 0.7)));
       out.set([c.r, c.g, c.b], i * 3);
     }
     geo.setAttribute('color', new T.BufferAttribute(out, 3));
@@ -174,13 +183,17 @@ export function createCountry(ctx: TownContext, kit: Kit) {
             w: row.w * (0.85 + 0.3 * h2),
             t,
             base: tone.clone().multiplyScalar(0.94 + 0.12 * h),
-            tip: tips.clone().multiplyScalar(0.95 + 0.1 * hash(seed + k * 7 + 3)),
+            // Paler toward the tip, but only part way to the ginger: full-ginger tips that peeked
+            // out under the next lock read as loose chips.
+            tip: tone.clone().lerp(tips, 0.75).multiplyScalar(0.95 + 0.1 * hash(seed + k * 7 + 3)),
             out,
+            rootShade: 0.6,
           });
         }
       });
-    // The hem: a ring round the widest line, every lock hanging straight down and a little out.
-    const ring = 1.55,
+    // The hem: a ring just above the widest line (so it covers it), every lock hanging straight
+    // down and a little out; `hem.len` is measured from the widest line, as before.
+    const ring = 1.4,
       girth = 2 * Math.PI * Math.sqrt((s.ax ** 2 + s.az ** 2) / 2) * Math.sin(ring);
     for (let j = 0; j < hem.count; j++) {
       const h = hash(seed + 300 + j * 5),
@@ -189,7 +202,7 @@ export function createCountry(ctx: TownContext, kit: Kit) {
         at = new T.Vector3(s.ax * Math.sin(phi) * Math.sin(ring), s.cy + backLift(s, z) * Math.cos(ring), z),
         out = new T.Vector3(at.x / s.ax ** 2, 0, z / s.az ** 2).normalize(),
         dir = new T.Vector3(0, -1, 0).addScaledVector(out, 0.22).normalize(),
-        len = hem.len * (0.8 + 0.4 * h);
+        len = (hem.len + s.ay * Math.cos(ring)) * (0.8 + 0.4 * h);
       locks.push({
         root: at.addScaledVector(dir, -0.06).addScaledVector(out, t / 2),
         dir,
@@ -198,8 +211,9 @@ export function createCountry(ctx: TownContext, kit: Kit) {
         w: (girth / hem.count) * 1.15,
         t,
         base: tone.clone().multiplyScalar(0.9 + 0.08 * h),
-        tip: tips.clone().multiplyScalar(0.9 + 0.08 * hash(seed + 301 + j * 5)),
+        tip: tone.clone().lerp(tips, 0.75).multiplyScalar(0.9 + 0.08 * hash(seed + 301 + j * 5)),
         out,
+        rootShade: 0.6,
       });
     }
     return lockGeometry(locks);
