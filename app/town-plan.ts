@@ -310,6 +310,8 @@ export const herd: HerdMember[] = [
 ];
 /** The hay rack against the paddock's west wall, its long side along z and its feeding side to +x. */
 export const hayRack = { x: -13.65, z: 20.7 };
+/** A small square bale beside the rack's south end, its long side along z, clear of the wall and of the calf. */
+export const hayBale = { x: -13.8, z: 21.62, ry: 0.12 };
 /**
  * A ring of standing stones (stone centre lines) at the tip of the north-west headland: flat
  * ground about 2.2 inside the coast, clear of the canopies and far from every chapter's view.

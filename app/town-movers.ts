@@ -14,8 +14,20 @@ import type { Kit } from './town-kit';
  * frame above the island in between. `middle` and `reach` are angles on the ring (radians),
  * `rate` the swing's pace (radians per second, a swing there and back in about six and a
  * half minutes). It sets off from the north-east end, over the sea.
+ * The ends (2.75 and 5.05) rest in the band between the masthead and the hero copy or the
+ * News card even on a short wide screen (1280 x 720), where those reach far up the frame: a
+ * wider swing (2.45 to 5.15) came to rest behind the hero's eyebrow and title there, and
+ * dipped behind a full News card.
  */
-export const BALLOON = { radius: 32, middle: 3.8, reach: 1.35, rate: 0.016 };
+export const BALLOON = { radius: 32, middle: 3.9, reach: 1.15, rate: 0.016 };
+/**
+ * How much darker the balloon's own colours go at full night. It is lit like the town, but it
+ * is the one big, pale, round thing hanging unshadowed over the darkest part of the frame, with
+ * no ground under it to darken its foot: under the same moonlight its cream gores still read
+ * as bright as by day against the night sea. Dimmed this far it sits with the town's moonlit
+ * walls. No glow and no burner light.
+ */
+export const BALLOON_NIGHT_DIM = 0.5;
 
 export function createMovers(ctx: TownContext, kit: Kit) {
   const { material, lamps, animated } = ctx;
@@ -50,9 +62,30 @@ export function createMovers(ctx: TownContext, kit: Kit) {
       for (const sz of [-1, 1])
         strut(b, new T.Vector3(sx * 0.32, 0.5, sz * 0.32), new T.Vector3(sx * 0.17, 1.02, sz * 0.17), 0.035, palette.woodDark, 'wood');
     b.userData.keepSeparate = true;
+    /**
+     * The balloon's batched meshes take their own copies of the shared batch materials (the same
+     * shader program), so their colour can follow the night without darkening everything else
+     * made of fabric or wood.
+     */
+    function dim(night: number) {
+      const f = 1 - BALLOON_NIGHT_DIM * night;
+      for (const part of b.children) {
+        if (!(part instanceof T.Mesh) || !(part.material instanceof T.MeshStandardMaterial) || !part.material.vertexColors) continue;
+        if (!part.material.userData.balloonOwn) {
+          const shared = part.material,
+            own = shared.clone();
+          own.onBeforeCompile = (shader, renderer) => shared.onBeforeCompile(shader, renderer);
+          own.customProgramCacheKey = () => shared.customProgramCacheKey();
+          own.userData.balloonOwn = true;
+          part.material = own;
+        }
+        part.material.color.setScalar(f);
+      }
+    }
     animated.push({
       object: b,
-      update(time) {
+      update(time, night) {
+        dim(night);
         // To and fro on the ring's far side, out over the shore and the sea, so it never drifts
         // across a chapter's subject or comes down past the hero text; it eases to a stop at
         // each end, as in a lull, and turns back.

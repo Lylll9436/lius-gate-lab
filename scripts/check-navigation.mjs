@@ -480,11 +480,11 @@ assert.equal(driftAt(true), 0, 'With reduced motion the camera must not drift.')
 // The drift stops where it is when the visitor acts: Pause, a drag or a button just pressed.
 // Turning back to the bearing would keep the town moving after Pause and turn it under a drag.
 const swayed = 0.15;
-for (const [action, state] of [
-  ['Pause', { paused: true }],
-  ['A drag', { hover: { dragging: true } }],
-  ['A button just pressed', { lastInteraction: 59000 }],
-])
+for (const [action, state] of Object.entries({
+  Pause: { paused: true },
+  'A drag': { hover: { dragging: true } },
+  'A button just pressed': { lastInteraction: 59000 },
+}))
   assert.equal(driftAt(false, { ...state, driftAngle: swayed }), swayed, `${action} turned the drifted camera.`);
 assert(
   driftAt(false, { inspect: {}, driftAngle: swayed }) < swayed - 0.01,
@@ -942,7 +942,7 @@ const renderer = {
     clearAlpha = a;
   },
   clear() {},
-  compileAsync(s, c) {
+  compileAsync(s) {
     compiledInto = currentTarget;
     return Promise.resolve(s);
   },

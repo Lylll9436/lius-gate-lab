@@ -197,10 +197,11 @@ function shoreMasks(rect: RectStamp, disc: DiscStamp) {
     [tx, tz] = at(S.driftwood.to);
   rect((fx + tx) / 2, (fz + tz) / 2, Math.hypot(tx - fx, tz - fz), 0.2, Math.atan2(fz - tz, tx - fx), 0.35, 0.15);
 }
-/** The paddock's ground shade (stamped before the blur): a soft band under every dyke run, a pad under the hay rack and one under each animal. */
+/** The paddock's ground shade (stamped before the blur): a soft band under every dyke run, a pad under the hay rack and its bale and one under each animal. */
 function paddockMasks(rect: RectStamp, disc: DiscStamp) {
   for (const [x, z, length, ry] of paddockRuns()) rect(x, z, length, plan.paddock.wall, ry, 0.5, 0.3);
   rect(plan.hayRack.x, plan.hayRack.z, 0.5, 1.0, 0, 0.6, 0.3);
+  rect(plan.hayBale.x, plan.hayBale.z, 0.3, 0.44, plan.hayBale.ry, 0.5, 0.15);
   for (const animal of plan.herd) disc(animal.x, animal.z, 0.45 * animal.scale, 0.5, 0.3);
 }
 

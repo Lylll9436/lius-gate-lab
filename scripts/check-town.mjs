@@ -127,7 +127,8 @@ const covers = {
   civic: [[plan.sites['lius-gate'].x, plan.sites['lius-gate'].z]],
   residential: [],
   research: [[plan.reservedPlot.x, plan.reservedPlot.z]],
-  waterfront: [[plan.park.x, plan.park.z]],
+  // The herd answers the pointer as the corner park, so its paddock (to the dykes' outer faces) is the park's district too.
+  waterfront: [[plan.park.x, plan.park.z], ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => [plan.paddock.x + sx * (plan.paddock.w + plan.paddock.wall) / 2, plan.paddock.z + sz * (plan.paddock.d + plan.paddock.wall) / 2]))],
 };
 for (const d of districts) {
   for (const locale of ['en', 'zh']) assert(d.name[locale] && d.description[locale]);
@@ -282,6 +283,20 @@ const rackFootprint = (() => {
     }
   for (const t of trees)
     assert(Math.hypot(Math.max(x0 - t.x, 0, t.x - x1), Math.max(z0 - t.z, 0, t.z - z1)) >= 1.5, `${t.id} stands on the bike rack`);
+}
+// The square bale beside the hay rack (0.3 by 0.44) stands inside the dykes, clear of the herd.
+{
+  const bale = plan.hayBale,
+    c = Math.cos(bale.ry),
+    s = Math.sin(bale.ry);
+  for (const [u, v] of [[0.15, 0.22], [0.15, -0.22], [-0.15, 0.22], [-0.15, -0.22]]) {
+    const x = bale.x + u * c + v * s,
+      z = bale.z - u * s + v * c;
+    assert(inPaddock(x, z) >= 0.05, `The hay bale leans into the dyke at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+  }
+  for (const animal of plan.herd)
+    assert(Math.hypot(animal.x - bale.x, animal.z - bale.z) > 0.27 + 0.7 * animal.scale, `The hay bale stands in ${animal.id}`);
+  assert(Math.abs(bale.z - plan.hayRack.z) > 0.5 + 0.22, 'The hay bale stands in the rack.');
 }
 for (let i = 0; i < 400; i++) {
   const pose = plan.boatPose(i * 0.37);
@@ -787,6 +802,24 @@ const balloon = model.animated.find((e) => {
   return e.object.position.y > 11;
 });
 assert(balloon, 'The town has a balloon.');
+// It darkens with the night like the town (no glow), on its own materials: nothing else dims.
+{
+  const { BALLOON_NIGHT_DIM } = await load('town-movers'),
+    parts = balloon.object.children.filter((o) => o.isMesh),
+    others = new Set();
+  assert(BALLOON_NIGHT_DIM >= 0.3 && BALLOON_NIGHT_DIM < 1, 'The balloon hardly darkens at night.');
+  city.traverse((o) => {
+    if (o.isMesh && !parts.includes(o)) others.add(o.material);
+  });
+  balloon.update(0, 1);
+  assert(parts.length > 0 && parts.every((o) => o.material.vertexColors), 'The balloon is batched.');
+  for (const o of parts) {
+    assert(!others.has(o.material), 'The balloon dims a material the town shares.');
+    assert(Math.abs(o.material.color.r - (1 - BALLOON_NIGHT_DIM)) < 1e-6 && o.material.emissive.getHex() === 0, 'The balloon stays bright (or glows) at night.');
+  }
+  balloon.update(0, 0);
+  for (const o of parts) assert.equal(o.material.color.getHex(), 0xffffff, 'The balloon is dimmed by day.');
+}
 // It sets off north-east over the sea (the opening view's open top right), not behind the hero text.
 balloon.update(0, 0);
 assert(balloon.object.position.x > 10 && balloon.object.position.z < -20, 'The balloon starts north-east, over the sea.');
@@ -798,35 +831,54 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
-// On the opening view (1440 x 900: bearing pi/4 swayed by the idle drift's +-0.16, the hero's
-// frame shift of -0.06) the balloon keeps to the top band: never behind the hero copy on the
-// left or the News card on the right (their boxes as laid out at that size).
+// On the opening view (bearing pi/4 swayed by the idle drift's +-0.16, the hero's frame shift
+// of -0.06) the balloon keeps to the top band at every common wide screen size: never behind
+// the hero copy on the left (eyebrow to lede, as laid out at that size, 8 px to spare) or the
+// News card on the right. The card is centred a little above the middle (translateY(-42%))
+// and its height follows the news, so it is taken at its tallest, three items with pictures
+// (400 px), not as it happens to be today.
 {
-  const W = 1440,
-    H = 900,
-    vertical = Math.max(53, (76 * H) / W),
-    view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
-    yaw = Math.PI / 4,
-    shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
-    boxes = { 'hero copy': [56, 377, 736, 780], 'News card': [1039, 282, 1384, 682] },
-    bounds = new T.Box3(),
-    corner = new T.Vector3();
-  for (let t = 0; t < 900; t += 0.5) {
-    balloon.update(t, 0);
-    balloon.object.updateWorldMatrix(true, true);
-    bounds.setFromObject(balloon.object);
-    for (const drift of [-0.16, 0, 0.16]) {
-      view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
-      view.lookAt(shifted);
-      view.updateMatrixWorld();
-      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-      for (let i = 0; i < 8; i++) {
-        corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z).project(view);
-        const x = ((corner.x + 1) / 2) * W, y = ((1 - corner.y) / 2) * H;
-        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+  // Each size's hero copy box, and the News card's left and right.
+  const screens = [
+    { W: 1024, H: 768, copy: [41, 285, 721, 613], news: [693, 983] },
+    { W: 1280, H: 720, copy: [51, 219, 731, 590], news: [922, 1229] },
+    { W: 1280, H: 800, copy: [51, 288, 731, 670], news: [922, 1229] },
+    { W: 1366, H: 768, copy: [55, 251, 735, 638], news: [984, 1311] },
+    { W: 1440, H: 800, copy: [56, 271, 736, 670], news: [1038, 1384] },
+    { W: 1440, H: 900, copy: [56, 360, 736, 770], news: [1038, 1384] },
+    { W: 1536, H: 864, copy: [56, 322, 736, 734], news: [1120, 1480] },
+    { W: 1600, H: 900, copy: [56, 357, 736, 770], news: [1184, 1544] },
+    { W: 1680, H: 1050, copy: [56, 507, 736, 920], news: [1264, 1624] },
+    { W: 1920, H: 1080, copy: [56, 537, 736, 950], news: [1504, 1864] },
+  ];
+  const bounds = new T.Box3(),
+    corner = new T.Vector3(),
+    yaw = Math.PI / 4;
+  for (const { W, H, copy: [cx0, cy0, cx1, cy1], news: [nx0, nx1] } of screens) {
+    const vertical = Math.max(53, (76 * H) / W),
+      view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
+      shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
+      boxes = {
+        'hero copy': [cx0 - 8, cy0 - 8, cx1 + 8, cy1 + 8],
+        'News card': [nx0, H / 2 - 0.42 * 400, nx1, H / 2 + 0.58 * 400],
+      };
+    for (let t = 0; t < 900; t += 0.5) {
+      balloon.update(t, 0);
+      balloon.object.updateWorldMatrix(true, true);
+      bounds.setFromObject(balloon.object);
+      for (const drift of [-0.16, 0, 0.16]) {
+        view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
+        view.lookAt(shifted);
+        view.updateMatrixWorld();
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (let i = 0; i < 8; i++) {
+          corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z).project(view);
+          const x = ((corner.x + 1) / 2) * W, y = ((1 - corner.y) / 2) * H;
+          left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+        }
+        for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
+          assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the ${W} x ${H} opening view.`);
       }
-      for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
-        assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the opening view.`);
     }
   }
 }
@@ -1145,7 +1197,7 @@ assert.equal(lowSun(rad(-10)), 0);
   assert.equal(gullPresence(0, 0), 1);
   assert.equal(gullPresence(1, 0), 0);
   assert.equal(gullPresence(0, 1), 0);
-  for (const [name, at] of [['night', (v) => gullPresence(v, 0)], ['rain', (v) => gullPresence(0, v)]])
+  for (const [name, at] of Object.entries({ night: (v) => gullPresence(v, 0), rain: (v) => gullPresence(0, v) }))
     for (let v = 0; v < 1; v += 0.01)
       assert(Math.abs(at(v + 0.01) - at(v)) < 0.06, `The gulls pop out of sight as the ${name} comes on (at ${v.toFixed(2)}).`);
   const birds = createGulls();
