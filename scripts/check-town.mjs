@@ -542,6 +542,27 @@ for (const s of plan.flock) {
     assert(above > -0.15, `${s.id} has a hoof sunk ${(-above).toFixed(3)} into the hill`);
   }
 }
+// From the opening bearing no sheep seems to perch on a tree: hooves that land on screen within 0.9
+// of a nearer tree's axis and from 0.5 below to 0.6 above its top read as standing on the canopy.
+// The camera looks down at atan(35 / 38), as viewOffset in city-scene.ts places it.
+{
+  const yaw = plan.chapterBearings.overview,
+    rise = Math.atan2(35, 38);
+  for (const s of plan.flock)
+    for (const t of trees) {
+      const dx = t.x - s.x,
+        dz = t.z - s.z,
+        nearer = dx * Math.sin(yaw) + dz * Math.cos(yaw),
+        across = dx * Math.cos(yaw) - dz * Math.sin(yaw),
+        // A pine's tip is at 2.27 x size; a round crown tops out at about 2.39 x size.
+        top = plan.terrainHeight(t.x, t.z) - plan.terrainHeight(s.x, s.z) + (t.kind === 'pine' ? 2.27 : 2.39) * t.size,
+        onScreen = top * Math.cos(rise) - nearer * Math.sin(rise);
+      assert(
+        !(nearer > 0 && Math.abs(across) < 0.9 && onScreen > -0.5 && onScreen < 0.6),
+        `${s.id} seems to stand on top of ${t.id} from the opening bearing (${across.toFixed(2)} across, ${onScreen.toFixed(2)} up)`,
+      );
+    }
+}
 // The standing stones ring the north-west headland on flat grass, clear of the canopies; seven
 // stones on eight slots, one of them recumbent.
 const stones = plan.standingStones();

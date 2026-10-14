@@ -599,10 +599,12 @@ export type SheepSpec = { id: string; x: number; z: number; heading: number; gra
  * Blackface sheep on the two empty hilltops, three on the north-west hill and two on the
  * north-east one: at least 0.9 clear of the canopies, 1.6 of the coast, 7 of the streets and
  * about 10 of the cottages. `heading` is rotation.y, so the nose points along (sin h, cos h);
- * the ones on the steeper flanks stand along the slope.
+ * the ones on the steeper flanks stand along the slope. From the opening bearing none stands
+ * just behind a tree's top, or it would seem to perch on the canopy (sheep-0 stands beside the
+ * pine tree-46, not straight behind it).
  */
 export const flock: SheepSpec[] = [
-  { id: 'sheep-0', x: -20.35, z: -19.75, heading: 2.3, grazing: true },
+  { id: 'sheep-0', x: -19.3, z: -19.8, heading: 2.3, grazing: true },
   { id: 'sheep-1', x: -21.2, z: -20.95, heading: -1.0, grazing: false },
   { id: 'sheep-2', x: -17.3, z: -20.3, heading: -2.7, grazing: true },
   { id: 'sheep-3', x: 22.5, z: -19.75, heading: -1.9, grazing: true },
