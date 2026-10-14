@@ -325,21 +325,33 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     return geo;
   }
   /**
-   * A clump of wrack s across 0.34 (96 triangles): three low lumps round the middle, their long
-   * axes pointing out, and three flat fronds crossing under them. Nothing reaches past 0.17 s.
+   * A clump of wrack s across 0.34: three low lumps of mixed size round the middle, their long
+   * axes pointing out, and two or three flat fronds of mixed length lying roughly along `trail`
+   * (the strand line), each turned a little its own way, so no clump is a regular star. Nothing
+   * reaches past 0.17 s.
    */
-  function wrack(g: T.Object3D, x: number, y: number, z: number, s: number, seed: number, colours: [string, string]) {
-    const [weed, kelp] = colours;
+  function wrack(g: T.Object3D, x: number, y: number, z: number, s: number, seed: number, trail: number, colours: [string, string]) {
+    const [weed, kelp] = colours,
+      h = (k: number) => hash(Math.floor(seed * 1000) + k * 7);
     for (let k = 0; k < 3; k++) {
-      const a = seed + (k * Math.PI * 2) / 3,
+      const a = seed + (k * Math.PI * 2) / 3 + (h(k) - 0.5) * 0.8,
+        out = 0.05 * s * (0.5 + 0.5 * h(k + 3)),
+        size = 0.75 + 0.25 * h(k + 6),
         blob = new T.Mesh(lump(1), material(k === 1 ? kelp : weed, 'foliage'));
-      blob.position.set(x + Math.cos(a) * 0.05 * s, y, z + Math.sin(a) * 0.05 * s);
-      blob.scale.set(0.12 * s, 0.045 * s, 0.09 * s);
+      blob.position.set(x + Math.cos(a) * out, y, z + Math.sin(a) * out);
+      blob.scale.set(0.12 * s * size, 0.045 * s, 0.09 * s * size);
       blob.rotation.y = -a; // local x along the radius
       blob.userData.noShadow = true;
       g.add(blob);
-      // A frond 0.3 s long, each one 0.004 above the last so the crossing tops never meet.
-      box(g, x, y + 0.01 + 0.004 * k, z, 0.3 * s, 0.02, 0.1 * s, k === 1 ? weed : kelp, 'foliage', { ry: -(seed + Math.PI / 6 + (k * Math.PI) / 3) }).userData.noShadow = true;
+    }
+    // Fronds 0.18-0.3 s long, slid along themselves by up to the length they lack (so every tip
+    // stays within 0.15 s), each 0.004 above the last so the crossing tops never meet.
+    const fronds = h(9) < 0.5 ? 2 : 3;
+    for (let k = 0; k < fronds; k++) {
+      const long = 0.3 * s * (0.6 + 0.4 * h(k + 10)),
+        ry = trail + (h(k + 13) - 0.5) * 1.0 + (k * Math.PI) / 2 * (h(k + 16) < 0.3 ? 1 : 0),
+        slide = (h(k + 19) - 0.5) * (0.3 * s - long);
+      box(g, x + Math.cos(ry) * slide, y + 0.01 + 0.004 * k, z - Math.sin(ry) * slide, long, 0.02, 0.1 * s, k === 1 ? weed : kelp, 'foliage', { ry }).userData.noShadow = true;
     }
   }
   /** The sand's height out from the outline at a world point (its distance from the outline). */
@@ -405,12 +417,12 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       dry = '#' + new T.Color(palette.kelp).multiplyScalar(0.9).getHexString();
     S.wrack.forEach((w, n) => {
       const [x, z] = plan.shoreAt(w.i, w.w);
-      wrack(g, x, shoreHeight(w.w), z, w.s, hash(n * 7 + 5) * Math.PI * 2, w.w < 1.8 ? [dry, dry] : [weed, kelp]);
+      wrack(g, x, shoreHeight(w.w), z, w.s, hash(n * 7 + 5) * Math.PI * 2, plan.shoreTurn(w.i), w.w < 1.8 ? [dry, dry] : [weed, kelp]);
     });
     // Wrack at the feet of the two piles that stand in the wet sand (pier-local).
     plan.harbour.pileWrack.forEach(([lx, lz], n) => {
       const [wx, wz] = plan.pierPoint(lx, lz);
-      wrack(p, lx, sandAt(wx, wz), lz, 0.8, n * 2.1 + 0.4, [weed, kelp]);
+      wrack(p, lx, sandAt(wx, wz), lz, 0.8, n * 2.1 + 0.4, 0, [weed, kelp]); // the tide line runs roughly across the pier
     });
     // Weed sleeves on the six piles that stand in the tide, just proud of each pile's taper.
     for (let z = 3.5; z < plan.pier.length + 0.2; z += 1.3)
