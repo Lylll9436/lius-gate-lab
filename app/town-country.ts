@@ -496,34 +496,58 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     loose.receiveShadow = true;
     rack.add(loose);
   }
-  /** A small square bale beside the rack: a straw block bound by two dark twines, a few loose straws on top. */
+  /**
+   * A small square bale beside the rack, 0.3 wide, 0.26 high and 0.44 long (along local z): five
+   * pressed flakes of straw, each a little off in height, width and tone, so the seams between
+   * them read as the bale's grooves; two thin sisal twines running lengthwise over the top and
+   * down the cut ends; and short straws bristling from the ends. (A single pillow-bevelled block
+   * with dark straps across it read as a suitcase.)
+   */
   function hayBale(g: T.Object3D) {
     const { x, z, ry } = plan.hayBale,
       bale = new T.Group(),
-      tones = [PADDOCK.hayShade, PADDOCK.hayPale].map((c) => new T.Color(c));
+      W = 0.3,
+      H = 0.26,
+      L = 0.44,
+      flakes = 5,
+      twine = '#b59a6c',
+      tones = [PADDOCK.hayShade, PADDOCK.hay, PADDOCK.hayPale].map((c) => new T.Color(c)),
+      flakeTone = (i: number) => new T.Color(PADDOCK.hay).lerp(tones[hash(i * 7 + 711) < 0.5 ? 0 : 2], 0.12 + 0.12 * hash(i * 7 + 712)).getStyle();
     bale.position.set(x, plan.terrainHeight(x, z), z);
     bale.rotation.y = ry;
     g.add(bale);
-    box(bale, 0, 0.13, 0, 0.3, 0.26, 0.44, PADDOCK.hay, 'foliage', { bevel: 0.05 });
-    for (const bz of [-0.11, 0.11]) box(bale, 0, 0.13, bz, 0.312, 0.272, 0.025, palette.woodDark, 'fabric', { bevel: 0 }); // twines
-    const straws: Lock[] = [];
-    for (let i = 0; i < 5; i++) {
-      const h = hash(i * 7 + 701),
-        a = h * Math.PI * 2,
-        tone = tones[i % 2];
-      straws.push({
-        root: new T.Vector3((hash(i * 7 + 702) - 0.5) * 0.12, 0.265, (hash(i * 7 + 703) - 0.5) * 0.2),
-        dir: new T.Vector3(Math.cos(a), 0, Math.sin(a)),
-        across: new T.Vector3(-Math.sin(a), 0, Math.cos(a)),
-        len: 0.1 + 0.04 * h,
-        w: 0.038,
-        t: 0.02,
-        base: tone,
-        tip: tone,
-        point: 0.25,
-        out: new T.Vector3(0, 1, 0),
-      });
+    let top = 0;
+    for (let i = 0; i < flakes; i++) {
+      const h = H + (hash(i * 7 + 713) - 0.5) * 0.016;
+      top = Math.max(top, h);
+      box(bale, (hash(i * 7 + 714) - 0.5) * 0.008, h / 2, -L / 2 + (i + 0.5) * (L / flakes), W + (hash(i * 7 + 715) - 0.5) * 0.014, h, L / flakes, flakeTone(i), 'foliage', { bevel: 0.016 });
     }
+    // Twines, lengthwise over the top and down both cut ends, standing just proud of the straw.
+    for (const tx of [-0.075, 0.075]) {
+      box(bale, tx, top + 0.003, 0, 0.022, 0.008, L + 0.014, twine, 'fabric', { bevel: 0 });
+      for (const s of [-1, 1]) box(bale, tx, top / 2, s * (L / 2 + 0.003), 0.022, top + 0.008, 0.008, twine, 'fabric', { bevel: 0 });
+    }
+    // Short cut straws bristling from each end, mostly outward, a few drooping.
+    const straws: Lock[] = [];
+    for (const s of [-1, 1])
+      for (let i = 0; i < 6; i++) {
+        const k = (s + 1) * 50 + i * 7 + 720,
+          tone = tones[Math.floor(hash(k) * 3)],
+          dir = new T.Vector3((hash(k + 1) - 0.5) * 0.9, (hash(k + 2) - 0.6) * 0.8, s).normalize(),
+          len = 0.045 + 0.04 * hash(k + 3);
+        straws.push({
+          root: new T.Vector3((hash(k + 4) - 0.5) * (W - 0.06), 0.03 + hash(k + 5) * (H - 0.06), s * (L / 2 - 0.02)),
+          dir,
+          across: new T.Vector3(1, 0, 0),
+          len: len + 0.02,
+          w: 0.03,
+          t: 0.016,
+          base: tone.clone().multiplyScalar(0.92),
+          tip: tone,
+          point: 0.25,
+          out: new T.Vector3(0, 0, s),
+        });
+      }
     const loose = new T.Mesh(lockGeometry(straws), material('#ffffff', 'foliage'));
     loose.userData.noShadow = true;
     loose.receiveShadow = true;
