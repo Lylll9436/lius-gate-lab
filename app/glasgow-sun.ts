@@ -56,7 +56,8 @@ export type WindowClock = { out: number; wake: number };
  * next byte's, so between moves every pane rests fully on or fully off. 0 and 1 stay exact. */
 const settle = (v: number) => (v <= 0 ? 0 : Math.min(1, (Math.floor(v * 255) + 0.6) / 255));
 /** The windows' night from Glasgow wall-clock hours, in whole bytes: `out` 0 → 1 from 22:00 to 02:30, `wake` 0 → 1
- * from 05:30 to 07:30. Both hold until noon and are 0 from noon to 22:00 (the reset happens unseen, in daylight). */
+ * from 05:30 to 07:30. Both hold until noon and are 0 from noon to 22:00 (the reset happens in daylight, unseen, except
+ * in Manual night, where followWindows walks it back pane by pane). */
 export function windowClock(hours: number): WindowClock {
   const n = (((hours + 6) % 24) + 24) % 24; // 0 at 18:00, 4 at 22:00, 18 at noon
   return n >= 18
@@ -65,16 +66,27 @@ export function windowClock(hours: number): WindowClock {
 }
 /** Per second: one byte (at most one pane) in 6.5 s, and one pane's 0.002-wide fade in 3.3 s. */
 export const WINDOW_RATE = 0.0006;
-/** One frame of the panes following the clock. In daylight they copy it, unseen. The noon reset copies it too, even in
- * Manual night: it is the only drop over 0.5, since DST's is at most 0.23. Through twilight they hold, so none goes out
- * at dusk or comes on at dawn. Otherwise they only move forward: at once with reduced motion, else at WINDOW_RATE. */
+/** Per second, the noon reset in the dark: ten times WINDOW_RATE, so the whole night walks back in under three minutes,
+ * each pane switching in a third of a second. */
+export const RESET_RATE = 10 * WINDOW_RATE;
+/** One frame of the panes following the clock. In daylight they copy it, unseen. Through twilight they hold, so none goes
+ * out at dusk or comes on at dawn. In the dark they only move forward (the clocks going back hold them), except for the
+ * noon reset, the one time the clock is 0 with panes ahead of it: in Manual night it walks both back at RESET_RATE, so
+ * the evening's panes come back on and the early risers go off one at a time, not all in one frame. Reduced motion
+ * takes either move at once. */
 export function followWindows(state: WindowClock, goal: WindowClock, night: number, dt: number, snap: boolean) {
-  if (night < 0.05 || goal.out < state.out - 0.5) {
+  if (night < 0.05) {
     state.out = goal.out;
     state.wake = goal.wake;
     return;
   }
   if (night < 0.97) return;
+  if (goal.out === 0 && goal.wake === 0) {
+    const back = snap ? Infinity : RESET_RATE * dt;
+    state.out = Math.max(0, state.out - back);
+    state.wake = Math.max(0, state.wake - back);
+    return;
+  }
   const step = snap ? Infinity : WINDOW_RATE * dt;
   state.out = Math.max(state.out, Math.min(goal.out, state.out + step));
   state.wake = Math.max(state.wake, Math.min(goal.wake, state.wake + step));

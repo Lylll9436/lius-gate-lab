@@ -703,7 +703,7 @@ water.update(8, 1, new T.PerspectiveCamera(), { rain: 1, sun: new T.Vector3(1, 1
 // The moon's glint follows the moon the frame loop turns with the camera.
 assert.deepEqual(shader.uniforms.moonPosition.value.toArray(), [160, 320, -200], 'The sea takes the moon it is handed.');
 // Night: windows glow pane by pane, lanterns light up, spotlights point down.
-const { windowClock, followWindows, WINDOW_RATE } = await load('glasgow-sun');
+const { windowClock, followWindows, WINDOW_RATE, RESET_RATE } = await load('glasgow-sun');
 const { windowLevel, windowGlow } = await load('city-materials');
 model.materialLibrary.setNight(1);
 let windows = 0,
@@ -1251,8 +1251,9 @@ assert.equal(lowSun(rad(-10)), 0);
     }
 }
 // The windows' night clock: evening until 22:00, panes going out until 02:30, early risers from
-// 05:30 to 07:30, reset unseen at noon. The follower only moves forward in the dark, holds through
-// twilight and the autumn clock change, and copies the clock by day and at the noon reset.
+// 05:30 to 07:30, reset at noon. The follower only moves forward in the dark, holds through twilight
+// and the autumn clock change, and copies the clock by day; in Manual night it walks the noon reset
+// back (below, pane by pane), and with reduced motion takes it at once.
 {
   for (const h of [21.9, 12, 17.5]) assert.deepEqual(windowClock(h), { out: 0, wake: 0 }, `The windows' night has begun at ${h}.`);
   assert.equal(windowClock(2.5).out, 1, 'Every pane that goes out is out by 02:30.');
@@ -1272,7 +1273,14 @@ assert.equal(lowSun(rad(-10)), 0);
   assert(Math.abs(moved.out - 0.1 - WINDOW_RATE) < 1e-12 && Math.abs(moved.wake - 0.1 - WINDOW_RATE) < 1e-12, 'The panes follow at WINDOW_RATE.');
   assert.deepEqual(follow(early, ahead, 1, 1, true), ahead, 'Reduced motion jumps to the clock.');
   assert.deepEqual(follow({ out: 0.5, wake: 0.2 }, { out: 0.3, wake: 0 }, 0.01, 1, false), { out: 0.3, wake: 0 }, 'By day the panes copy the clock.');
-  assert.deepEqual(follow({ out: 1, wake: 1 }, { out: 0, wake: 0 }, 1, 1, false), { out: 0, wake: 0 }, 'Manual night resets at noon.');
+  const night = { out: 1, wake: 1 },
+    noon = { out: 0, wake: 0 };
+  assert.deepEqual(follow(night, noon, 0.01, 1 / 60, false), noon, 'By day the noon reset is a copy, unseen.');
+  assert.deepEqual(follow(night, noon, 1, 1 / 60, true), noon, 'Reduced motion takes the noon reset at once.');
+  assert.deepEqual(follow(night, noon, 0.6, 1, false), night, 'Twilight holds the noon reset.');
+  const back = follow(night, noon, 1, 1, false);
+  assert(Math.abs(back.out - 1 + RESET_RATE) < 1e-12 && Math.abs(back.wake - 1 + RESET_RATE) < 1e-12, 'Manual night walks the noon reset back at RESET_RATE.');
+  assert(RESET_RATE / 60 < 0.5 / 255, 'The noon reset moves a clock less than half a byte a frame.');
 }
 // Through the night (20:00 to 07:30 in 20 s steps): the rooms go out one at a time until 05:30 and
 // never come back on, then early risers come on one at a time; every pane rests fully on or off,
@@ -1343,6 +1351,37 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     const seen = switches.get(key);
     assert(seen && seen.frames >= 115 && seen.frames <= 128 && seen.calls.size === 1, `The pane at ${key} switches over ${seen?.frames ?? 0} frames in ${seen?.calls.size ?? 0} calls.`);
   }
+}
+// Manual night across noon, at 60 fps: the clock walks from (1, 1) back to (0, 0) in under three
+// minutes; per frame at most one pane from each clock is mid-switch, each switch a lamp (about a
+// fifth of a second between 10% and 90%), not all of the night's panes in one frame.
+{
+  const state = { out: 1, wake: 1 },
+    evening = (p, out) => windowLevel([p.light[0], p.light[1], p.light[2], 1], { out, wake: 0 }) / p.light[0],
+    riser = (p, wake) => windowLevel([0, p.light[1], 1, p.light[3]], { out: 1, wake }) / 0.8,
+    goingOut = panes.filter((p) => p.light[0] > 0 && p.light[2] < 1),
+    waking = panes.filter((p) => p.light[3] < 0.999),
+    switching = new Map();
+  let frames = 0;
+  while (state.out > 0 || state.wake > 0) {
+    followWindows(state, { out: 0, wake: 0 }, 1, 1 / 60, false);
+    frames++;
+    assert(frames <= 180 * 60, 'The noon reset in Manual night takes over three minutes.');
+    let mid = 0;
+    for (const [list, of, clock, kind] of [[goingOut, evening, state.out, 'out'], [waking, riser, state.wake, 'wake']])
+      for (const p of list) {
+        const f = of(p, clock);
+        if (f <= 0.1 || f >= 0.9) continue;
+        mid++;
+        const key = kind + ' ' + panes.indexOf(p);
+        switching.set(key, (switching.get(key) ?? 0) + 1);
+      }
+    assert(mid <= 2, `${mid} panes switch at once in frame ${frames} of the noon reset.`);
+  }
+  assert(frames >= 150 * 60, `The noon reset in Manual night is over in ${(frames / 60).toFixed(0)} s.`);
+  assert.equal(switching.size, goingOut.length + waking.length, 'Every pane of the night switches back at the noon reset.');
+  for (const [key, count] of switching) assert(count >= 9 && count <= 16, `The pane at ${key} switches over ${count} frames at the noon reset.`);
+  for (const p of panes) assert.equal(windowLevel(p.light, state), windowLevel(p.light, windowClock(12)), `A pane at ${p.place} misses the noon reset.`);
 }
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
