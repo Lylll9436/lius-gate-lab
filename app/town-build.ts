@@ -1984,7 +1984,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     const aw = 3.4,
       ah = 4.0,
       ax = -1.1;
-    box(shell, ax, 2.35, 0, aw - 0.24, ah, d - 0.24, palette.studioGlass, 'glass');
+    box(shell, ax, 2.35, 0, aw - 0.24, ah, d - 0.24, palette.studioGlass, 'glass').userData.paneSpan = true; // one gentle glint over both storeys
     for (const sx of [-1, 1])
       for (const sz of [-1, 1]) box(shell, ax + sx * (aw / 2 - 0.11), 2.35, sz * (d / 2 - 0.11), 0.22, ah, 0.22, white, 'paint');
     // The front bands stop at the door surround (0.83 either side of it) instead of crossing the door.
@@ -2298,17 +2298,21 @@ export function* buildTownInPhases(options: TownOptions = {}) {
    * Pane coordinates for the glass glint, in units from the pane's middle: x across the face
    * (to the right seen from outside, so every pane leans the same way on screen), y up. The
    * middle is the whole opening's, so an arched pane's band runs over the arch too.
+   * A curtain wall (`paneSpan`) is one sheet several units tall, and measured in units its whole
+   * upper storey would sit in the shader's clamped top lean (a pale strip). Its height maps
+   * instead onto one gentle sweep, -0.6 at the foot to 0.2 at the head.
    */
-  function paneUV(geometry: T.BufferGeometry, bounds: T.Box3) {
+  function paneUV(geometry: T.BufferGeometry, bounds: T.Box3, look: { paneSpan?: boolean }) {
     const p = geometry.getAttribute('position'),
       n = geometry.getAttribute('normal'),
       mid = bounds.getCenter(new T.Vector3()),
+      tall = Math.max(1e-3, bounds.max.y - bounds.min.y),
       uv = new Float32Array(p.count * 2);
     for (let i = 0; i < p.count; i++) {
       // Across = up x normal; a face looking straight up or down has no across.
       const ax = n.getZ(i), az = -n.getX(i), len = Math.hypot(ax, az);
       uv[i * 2] = len > 0.1 ? ((p.getX(i) - mid.x) * ax + (p.getZ(i) - mid.z) * az) / len : 0;
-      uv[i * 2 + 1] = p.getY(i) - mid.y;
+      uv[i * 2 + 1] = look.paneSpan ? -0.6 + (0.8 * (p.getY(i) - bounds.min.y)) / tall : p.getY(i) - mid.y;
     }
     geometry.setAttribute('uv', new T.BufferAttribute(uv, 2));
   }
@@ -2378,7 +2382,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       const key = mat.uuid + (cast ? '|c' : '|n');
       if (source.userData.surfaceKind === 'grass') projectMaterialUV(geometry, 'grass');
       if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
-      if (k === 'glass') paneUV(geometry, bb);
+      if (k === 'glass') paneUV(geometry, bb, o.userData);
       const count = geometry.getAttribute('position').count,
         previous = geometry.getAttribute('color'),
         positions = geometry.getAttribute('position'),
