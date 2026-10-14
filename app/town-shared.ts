@@ -25,8 +25,9 @@ export const palette = {
   flowers: ['#e5483c', '#f6c63f', '#f18fb0', '#f5efe0', '#8e6ad0'],
   white: '#f5efe0', lantern: '#ffd48a', tram: '#2f6b4a', tramOrange: '#e07a2c', tramCream: '#efe2c2',
   boat: '#c9412f', balloon: '#c9412f', balloonBand: '#efe2c2',
-  // Harbour and shore details, each no more saturated than its family (sand, blueDoor, greenDoor, tramOrange, hedge).
+  // Harbour and shore details, each no more saturated than its family (sand, blueDoor, greenDoor, tramOrange, hedge, woodDark, wood).
   rope: '#c8b086', ropeBlue: '#46617a', creel: ['#3e6a87', '#3f6e55', '#b8703f'], net: '#4d6f66',
+  weed: '#5d6b3a', kelp: '#5c4a2c', driftwood: '#b9ab92',
 };
 export const hash = plan.hash;
 export function noise2(x: number, z: number) {

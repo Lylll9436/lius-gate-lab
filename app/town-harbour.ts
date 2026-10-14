@@ -118,6 +118,7 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     mooring(p, moor, pitch);
     quay(g);
     dryingNet(g);
+    strand(g, p);
   }
   /**
    * The dinghy's lines and the boat's empty berth, pier-local. Each line runs from a fairlead
@@ -297,6 +298,127 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       float.receiveShadow = true;
       frame.add(float);
     }
+  }
+  /** The icosahedron as a smooth little lump: detail 0, but with sphere normals. */
+  function lump(r: number) {
+    const geo = new T.IcosahedronGeometry(r, 0),
+      p = geo.getAttribute('position'),
+      n = geo.getAttribute('normal');
+    for (let k = 0; k < p.count; k++) n.setXYZ(k, p.getX(k) / r, p.getY(k) / r, p.getZ(k) / r);
+    return geo;
+  }
+  /**
+   * A clump of wrack s across 0.34 (96 triangles): three low lumps round the middle, their long
+   * axes pointing out, and three flat fronds crossing under them. Nothing reaches past 0.17 s.
+   */
+  function wrack(g: T.Object3D, x: number, y: number, z: number, s: number, seed: number, colours: [string, string]) {
+    const [weed, kelp] = colours;
+    for (let k = 0; k < 3; k++) {
+      const a = seed + (k * Math.PI * 2) / 3,
+        blob = new T.Mesh(lump(1), material(k === 1 ? kelp : weed, 'foliage'));
+      blob.position.set(x + Math.cos(a) * 0.05 * s, y, z + Math.sin(a) * 0.05 * s);
+      blob.scale.set(0.12 * s, 0.045 * s, 0.09 * s);
+      blob.rotation.y = -a; // local x along the radius
+      blob.userData.noShadow = true;
+      g.add(blob);
+      // A frond 0.3 s long, each one 0.004 above the last so the crossing tops never meet.
+      box(g, x, y + 0.01 + 0.004 * k, z, 0.3 * s, 0.02, 0.1 * s, k === 1 ? weed : kelp, 'foliage', { ry: -(seed + Math.PI / 6 + (k * Math.PI) / 3) }).userData.noShadow = true;
+    }
+  }
+  /** The sand's height out from the outline at a world point (its distance from the outline). */
+  const sandAt = (x: number, z: number) => shoreHeight(plan.distanceToPolyline([x, z], plan.islandOutline, true));
+  /**
+   * The strand on the dinghy side of the pier: rock pools ringed by wet rocks on the wet sand
+   * round the boulder at sample 42, clumps of wrack (older and browner on the strand line up the
+   * beach), a bleached driftwood log, and weed on the piles that stand in the tide (pier-local).
+   */
+  function strand(g: T.Object3D, p: T.Object3D) {
+    const S = plan.shoreProps,
+      rockGreys = ['#717b75', '#646f69'];
+    S.rockPools.forEach((pool, n) => {
+      const [x, z] = plan.shoreAt(pool.i, pool.w),
+        y = shoreHeight(pool.w);
+      // A matte bed, the shelf's turquoise in the middle paling to the shallows' at its ragged rim.
+      const bed = new T.CircleGeometry(pool.r, 9).rotateX(-Math.PI / 2),
+        bp = bed.getAttribute('position'),
+        tone = new Float32Array(bp.count * 3),
+        deep = new T.Color('#5fb8c8').multiplyScalar(0.85),
+        rim = new T.Color('#a8d8cf');
+      for (let k = 1; k < bp.count; k++) {
+        const jitter = 0.88 + 0.24 * hash(n * 31 + ((k - 1) % 9));
+        bp.setXYZ(k, bp.getX(k) * jitter, 0, bp.getZ(k) * jitter);
+      }
+      for (let k = 0; k < bp.count; k++) tone.set((k === 0 ? deep : rim).toArray(), k * 3);
+      bed.setAttribute('color', new T.BufferAttribute(tone, 3));
+      const bedMesh = new T.Mesh(bed, material('#ffffff', 'stone'));
+      bedMesh.position.set(x, y + 0.008, z);
+      bedMesh.receiveShadow = true;
+      bedMesh.userData.ground = true;
+      bedMesh.userData.noShadow = true;
+      g.add(bedMesh);
+      // Five wet rocks round it, unevenly spaced, 40% sunk, darker at the foot.
+      for (let k = 0; k < 5; k++) {
+        const a = n * 1.7 + (k * Math.PI * 2) / 5 + (hash(n * 17 + k) - 0.5) * 0.8,
+          r = 0.1 + 0.06 * hash(n * 23 + k * 3),
+          geo = lump(r),
+          rp = geo.getAttribute('position'),
+          shade = new Float32Array(rp.count * 3);
+        for (let q = 0; q < rp.count; q++) shade.fill(0.85 + 0.17 * T.MathUtils.smoothstep(rp.getY(q), -r * 0.2, r), q * 3, q * 3 + 3);
+        geo.setAttribute('color', new T.BufferAttribute(shade, 3));
+        const rock = new T.Mesh(geo, material(rockGreys[(n + k) % 2], 'stone'));
+        rock.position.set(x + Math.cos(a) * (pool.r + 0.03), y + 0.11 * r, z + Math.sin(a) * (pool.r + 0.03));
+        rock.scale.set(1.25, 0.55, 1);
+        rock.rotation.y = Math.PI / 2 - a; // the long axis runs round the pool, not out from it
+        rock.receiveShadow = true;
+        rock.userData.noShadow = true;
+        g.add(rock);
+      }
+    });
+    const weed = palette.weed,
+      kelp = palette.kelp,
+      dry = '#' + new T.Color(palette.kelp).multiplyScalar(0.9).getHexString();
+    S.wrack.forEach((w, n) => {
+      const [x, z] = plan.shoreAt(w.i, w.w);
+      wrack(g, x, shoreHeight(w.w), z, w.s, hash(n * 7 + 5) * Math.PI * 2, w.w < 1.8 ? [dry, dry] : [weed, kelp]);
+    });
+    // Wrack at the feet of the two piles that stand in the wet sand (pier-local).
+    plan.harbour.pileWrack.forEach(([lx, lz], n) => {
+      const [wx, wz] = plan.pierPoint(lx, lz);
+      wrack(p, lx, sandAt(wx, wz), lz, 0.8, n * 2.1 + 0.4, [weed, kelp]);
+    });
+    // Weed sleeves on the six piles that stand in the tide, just proud of each pile's taper.
+    for (let z = 3.5; z < plan.pier.length + 0.2; z += 1.3)
+      for (const side of [-1, 1]) {
+        const sleeve = new T.Mesh(new T.CylinderGeometry(0.152, 0.158, 0.17, 18, 1, true), material(weed, 'foliage'));
+        sleeve.position.set(side * 0.72, 0.035, z);
+        sleeve.receiveShadow = true;
+        sleeve.userData.noShadow = true;
+        p.add(sleeve);
+      }
+    // Driftwood on the strand line: a bleached log, thick end at `from` with a root flare, and a
+    // stub branch 0.3 along it, raised 50 degrees toward the thin end in the log's own plane.
+    const D = S.driftwood,
+      [fx, fz] = plan.shoreAt(D.from.i, D.from.w),
+      [tx, tz] = plan.shoreAt(D.to.i, D.to.w),
+      y = (shoreHeight(D.from.w) + shoreHeight(D.to.w)) / 2 + 0.07,
+      from = new T.Vector3(fx, y, fz),
+      along = new T.Vector3(tx - fx, 0, tz - fz),
+      length = along.length(),
+      up = new T.Vector3(0, 1, 0);
+    along.normalize();
+    const log = cylinder(g, 0, 0, 0, 0.075, 0.095, length, palette.driftwood, 'wood');
+    log.position.copy(from).addScaledVector(along, length / 2);
+    log.quaternion.setFromUnitVectors(up, along);
+    const branch = along.clone().multiplyScalar(Math.cos(T.MathUtils.degToRad(50))).addScaledVector(up, Math.sin(T.MathUtils.degToRad(50))),
+      stub = cylinder(g, 0, 0, 0, 0.035, 0.05, 0.34, palette.driftwood, 'wood');
+    stub.position.copy(from).addScaledVector(along, 0.3).addScaledVector(branch, 0.17);
+    stub.quaternion.setFromUnitVectors(up, branch);
+    const root = new T.Mesh(new T.IcosahedronGeometry(0.15, 0), material(palette.driftwood, 'wood'));
+    root.position.copy(from);
+    root.scale.set(0.7, 0.9, 1.1);
+    root.rotation.y = Math.atan2(along.x, along.z) + Math.PI / 2; // short along the log, wide across it: a knob, not a point
+    root.castShadow = root.receiveShadow = true;
+    g.add(root);
   }
   function lighthouse(g: T.Object3D) {
     const [x, z] = plan.lighthouseRock;

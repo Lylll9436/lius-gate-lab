@@ -138,6 +138,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   // Features about a texel wide go in after the blur, which would flatten them to nothing;
   // their own falloffs and the texture's linear filtering keep them soft.
   for (const l of lampSpecs) disc(l.x, l.z, 0.25, 0.5, 0.2);
+  shoreMasks(rect, disc);
   // A darker grass lip along the pavements and the plaza rim; only texels near the ring can have one.
   // The 0.4-unit ramp is barely wider than a texel, so it starts half a texel out: the first grass
   // texel then always carries the full 0.35, wherever the edge falls between texel centres.
@@ -183,6 +184,19 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
 }
 type RectStamp = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => void;
 type DiscStamp = (cx: number, cz: number, r: number, strength: number, feather: number) => void;
+/** Damp, darker sand under the harbour's beach details (stamped after the blur: each is only a texel or two wide). */
+function shoreMasks(rect: RectStamp, disc: DiscStamp) {
+  const S = plan.shoreProps,
+    at = (s: { i: number; w: number }) => plan.shoreAt(s.i, s.w);
+  for (const pool of S.rockPools) disc(...at(pool), pool.r + 0.12, 0.3, 0.25);
+  rect(...at(S.creelStack), 0.9, 0.55, plan.shoreTurn(S.creelStack.i), 0.4, 0.25);
+  disc(...at(S.creel), 0.32, 0.35, 0.2);
+  disc(...at(S.coil), 0.22, 0.25, 0.2);
+  for (const post of [S.netFrame.from, S.netFrame.to]) disc(...at(post), 0.2, 0.3, 0.15);
+  const [fx, fz] = at(S.driftwood.from),
+    [tx, tz] = at(S.driftwood.to);
+  rect((fx + tx) / 2, (fz + tz) / 2, Math.hypot(tx - fx, tz - fz), 0.2, Math.atan2(fz - tz, tx - fx), 0.35, 0.15);
+}
 /** The paddock's ground shade (stamped before the blur): a soft band under every dyke run, a pad under the hay rack and one under each animal. */
 function paddockMasks(rect: RectStamp, disc: DiscStamp) {
   for (const [x, z, length, ry] of paddockRuns()) rect(x, z, length, plan.paddock.wall, ry, 0.5, 0.3);
