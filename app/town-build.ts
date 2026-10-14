@@ -2261,40 +2261,39 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     g.add(m);
     return m;
   }
-  /** A thistle clump: a spiky rosette of three flat leaves, two or three stems, each with a green cup and a purple head. No shadow. */
+  /**
+   * A thistle plant: a dark, spiky rosette of three flat leaves and one or two stems, each with a
+   * faceted green bulb under a flared purple brush (the emblem's silhouette). No shadow.
+   */
   function thistle(g: T.Object3D, x: number, z: number, seed: number) {
     const t = new T.Group();
     t.position.set(x, plan.terrainHeight(x, z), z);
     t.rotation.y = hash(seed) * Math.PI;
     g.add(t);
-    const leaf = '#78935c',
+    const leaf = '#5d7a45',
       quiet = (m: T.Mesh) => {
         m.castShadow = false;
         m.userData.noShadow = true;
         return m;
       };
-    for (let k = 0; k < 3; k++) quiet(cone(t, 0, 0.02, 0, 0.2, 0.05, leaf, 'foliage', 4, (k * Math.PI) / 6));
-    const stems = hash(seed + 1) < 0.5 ? 2 : 3;
+    for (let k = 0; k < 3; k++) quiet(cone(t, 0, 0.02, 0, 0.17, 0.05, leaf, 'foliage', 4, (k * Math.PI) / 6));
+    const stems = hash(seed + 1) < 0.5 ? 1 : 2;
     for (let k = 0; k < stems; k++) {
       const a = k * 2.3 + hash(seed + k) * 0.6,
-        sx = Math.cos(a) * 0.05,
-        sz = Math.sin(a) * 0.05,
+        sx = Math.cos(a) * 0.04,
+        sz = Math.sin(a) * 0.04,
         rz = (hash(seed + k * 3 + 2) - 0.5) * 0.4,
-        h = 0.32 - k * 0.04;
-      quiet(box(t, sx, h / 2, sz, 0.07, h, 0.07, leaf, 'foliage', { rz }));
+        h = 0.3 - k * 0.07 - 0.05 * hash(seed + k * 5 + 4);
+      quiet(box(t, sx, h / 2, sz, 0.05, h, 0.05, leaf, 'foliage', { rz }));
       const tx = sx - (Math.sin(rz) * h) / 2,
         ty = h / 2 + (Math.cos(rz) * h) / 2;
-      const cup = quiet(cone(t, tx, ty + 0.03, sz, 0.07, 0.08, leaf, 'foliage', 12, 0));
-      cup.rotation.x = Math.PI; // apex down, into the stem
-      const head = quiet(new T.Mesh(bloomGeometry, material('#9b6aa6', 'foliage'))); // thistle purple, s 0.36
-      head.position.set(tx, ty + 0.1, sz);
-      head.scale.setScalar(0.9);
-      head.receiveShadow = true;
-      t.add(head);
+      const bulb = quiet(cone(t, tx, ty + 0.03, sz, 0.06, 0.08, leaf, 'foliage', 6, 0)); // flat facets read as spines
+      bulb.rotation.x = Math.PI; // apex down, into the stem
+      quiet(cylinder(t, tx, ty + 0.095, sz, 0.06, 0.035, 0.06, '#9b6aa6', 'foliage')); // thistle purple, s 0.36
     }
     return t;
   }
-  /** Moorland on the outskirts: heather drifts on the hills and the coast, thistles by the paddock. */
+  /** Moorland on the outskirts: heather drifts on the hills, two clumps of thistles by the paddock. */
   function moorland(g: T.Object3D, trees: plan.TreeSpec[]) {
     plan.heatherPlan(trees).forEach((drift, i) => heatherDrift(g, drift, i));
     plan.thistles.forEach(([x, z], i) => thistle(g, x, z, 31 + i * 7));
