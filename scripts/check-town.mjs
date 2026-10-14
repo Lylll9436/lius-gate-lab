@@ -472,9 +472,9 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
   assert(Math.abs(widest - 7.2) < 0.05, `The shore's uv.x reaches ${widest}, not the shore width.`);
   const sand = patchedShader(sands[0].material);
   assert(varyings(sand.vertexShader).has('vShoreW') && varyings(sand.fragmentShader).has('vShoreW') && sand.fragmentShader.includes('shoreWet'), 'The sand has no wet band.');
-  // The drying net: a solid veil with its back faces built in, so it batches with the other cloth.
-  // Nothing on the land is two-sided (that costs a program of its own) or cuts holes (cut-out
-  // mesh twinkles once under a pixel), and the net is there: cloth over the bar, casting nothing.
+  // The drying net: gathered swags of solid netting, so it batches with the other cloth. Nothing on
+  // the land is two-sided (that costs a program of its own) or cuts holes (cut-out mesh twinkles
+  // once under a pixel), and the net is there: heaped over the bar, casting nothing.
   model.land.traverse((o) => {
     if (!o.isMesh) return;
     assert.notEqual(o.material.side, T.DoubleSide, `${o.material.name} on the land is two-sided.`);

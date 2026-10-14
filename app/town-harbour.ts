@@ -163,65 +163,69 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     rope(p, [new T.Vector3(cx, 0.144, cz), ...coil, lift, onEye, head], palette.ropeBlue);
   }
   /**
-   * A Scottish creel, about 1.6x real like the crates: a D-shaped net body on a flat base, 0.46
-   * long (local z) x 0.34 wide x 0.285 tall, its netted ends a little in shade; three soft
-   * charcoal rubber-coated hoops stand 0.035 proud of the vault as ribs, and the entrance ring in
-   * the +z end is the netting's own colour, darker, so it reads as the opening (a white ring read
-   * as an eye, the brightest thing on the quay).
+   * A Scottish creel, about 1.6x real like the crates, low and long: a D-shaped net body 0.5 long
+   * (local z) x 0.32 wide x 0.22 tall on a flat base frame. The base and three hoops are pale
+   * rope-tan; the netting between them is one dark, weathered colour, recessed under the hoops and
+   * soft-checked with lighter twine (a vertex pattern, so it never twinkles), so it reads as a
+   * see-through cage. (Dark charcoal hoops over solid blue, green and orange panels with a dark
+   * round entrance in one end read as banded chests, a pile of luggage.)
    */
-  let creelBody: T.BufferGeometry | undefined;
-  function creel(g: T.Object3D, x: number, y: number, z: number, ry: number, net: string) {
+  let creelBody: T.BufferGeometry | undefined, creelHoop: T.BufferGeometry | undefined;
+  function creel(g: T.Object3D, x: number, y: number, z: number, ry: number) {
     if (!creelBody) {
-      const base = new T.BoxGeometry(0.34, 0.115, 0.44).translate(0, 0.0575, 0),
-        vault = new T.CylinderGeometry(0.17, 0.17, 0.44, 8, 1, false, Math.PI / 2, Math.PI).rotateX(Math.PI / 2).translate(0, 0.115, 0),
-        merged = mergeGeometries([base, vault])!,
-        n = merged.getAttribute('normal'),
+      const radial = 10,
+        rows = 6,
+        vault = new T.CylinderGeometry(0.15, 0.15, 0.48, radial, rows, false, Math.PI / 2, Math.PI),
+        n = vault.getAttribute('normal'),
+        torso = (rows + 1) * (radial + 1),
         tone = new Float32Array(n.count * 3);
-      for (let k = 0; k < n.count; k++) tone.fill(Math.abs(n.getZ(k)) > 0.9 ? 0.85 : n.getY(k) < 0.3 ? 0.9 : 1, k * 3, k * 3 + 3);
-      merged.setAttribute('color', new T.BufferAttribute(tone, 3));
-      creelBody = merged;
+      // Twine where the checks meet, the open mesh darker between; the end panels (caps) in shade.
+      for (let k = 0; k < n.count; k++) tone.fill(k >= torso ? 0.78 : ((Math.floor(k / (radial + 1)) + (k % (radial + 1))) % 2 ? 0.82 : 1.22), k * 3, k * 3 + 3);
+      vault.setAttribute('color', new T.BufferAttribute(tone, 3));
+      creelBody = vault.rotateX(Math.PI / 2).translate(0, 0.07, 0);
+      creelHoop = new T.TorusGeometry(0.155, 0.016, 4, 8, Math.PI);
     }
     const c = new T.Group();
     c.position.set(x, y, z);
     c.rotation.y = ry;
     g.add(c);
-    const body = new T.Mesh(creelBody, material(net, 'fabric'));
+    const body = new T.Mesh(creelBody, material(CREEL.net, 'fabric'));
     body.castShadow = body.receiveShadow = true;
     c.add(body);
-    for (const hz of [-0.19, 0, 0.19]) {
-      // Paint, not iron: thin arcs keep iron's specular off them.
-      const hoop = new T.Mesh(new T.TorusGeometry(0.175, 0.035, 4, 6, Math.PI), material('#565c60', 'paint'));
-      hoop.position.set(0, 0.115, hz);
+    box(c, 0, 0.035, 0, 0.32, 0.07, 0.5, CREEL.frame, 'wood'); // the base frame
+    for (const hz of [-0.22, 0, 0.22]) {
+      const hoop = new T.Mesh(creelHoop, material(CREEL.frame, 'fabric'));
+      hoop.position.set(0, 0.07, hz);
       hoop.castShadow = hoop.receiveShadow = true;
       c.add(hoop);
     }
-    cylinder(c, 0, 0.17, 0.225, 0.07, 0.07, 0.03, '#' + new T.Color(net).multiplyScalar(0.45).getHexString(), 'paint').rotation.x = Math.PI / 2;
   }
+  /** The creels' colours: a weathered blue-grey netting (HSV s 0.24, under the old creel blue's 0.44) and a rope-tan frame. */
+  const CREEL = { net: '#55706f', frame: palette.rope };
   /** A beach detail's root at shore coordinates (i, w), standing 0.01 into the sand. */
   const onShore = (i: number, w: number) => {
     const [x, z] = plan.shoreAt(i, w);
     return new T.Vector3(x, shoreHeight(w) - 0.01, z);
   };
   /**
-   * The working quay on the hut side of the pier: a stack of five creels and one more beside it,
-   * two orange floats and a coil of rope on the dry sand, its end trailing toward the water.
+   * The working quay on the hut side of the pier: creels stacked two high and two wide, square to
+   * the shore, one more waiting on the sand beside them, square too, one orange float and a coil of
+   * rope on the dry sand, its end trailing toward the water.
    */
   function quay(g: T.Object3D) {
-    const S = plan.shoreProps,
-      [blue, green, orange] = palette.creel;
+    const S = plan.shoreProps;
     const stack = new T.Group();
     stack.position.copy(onShore(S.creelStack.i, S.creelStack.w));
     stack.rotation.y = plan.shoreTurn(S.creelStack.i); // local +z out to sea
     g.add(stack);
-    // Two on the sand, two more each sunk 0.03 into a crown below, one on top across both.
-    const tiers: [number, number, number, number, string][] = [
-      [-0.2, 0, 0, 0, blue], [0.2, 0, 0.02, 0, green],
-      [-0.18, 0.255, 0.01, 0.05, orange], [0.21, 0.255, -0.02, -0.05, blue],
-      [0, 0.51, 0, 0.1, green],
+    // Two on the sand, two more on them, each a hair off square, as stacked by hand.
+    const tiers: [number, number, number, number][] = [
+      [-0.165, 0, 0, 0.02], [0.165, 0, 0.01, -0.015],
+      [-0.165, 0.215, -0.01, -0.03], [0.165, 0.215, 0.015, 0.025],
     ];
-    for (const [x, y, z, ry, net] of tiers) creel(stack, x, y, z, ry, net);
+    for (const [x, y, z, ry] of tiers) creel(stack, x, y, z, ry);
     const lone = onShore(S.creel.i, S.creel.w);
-    creel(g, lone.x, lone.y, lone.z, plan.shoreTurn(S.creel.i) + S.creel.turn, blue);
+    creel(g, lone.x, lone.y, lone.z, plan.shoreTurn(S.creel.i) + S.creel.turn);
     for (const f of S.floats) {
       const at = onShore(f.i, f.w);
       sphere(g, at.x, at.y + 0.11, at.z, 0.12, palette.tramOrange, 'enamel'); // 0.02 into the sand
@@ -236,14 +240,40 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     rope(g, [new T.Vector3(c.x, c.y - 0.055, c.z), ...turns, last.clone().addScaledVector(along, 0.12), last.clone().addScaledVector(along, 0.22).setY(c.y - 0.055)]);
   }
   /**
-   * A net hung to dry over a bar between two posts on the upper beach, on the dinghy side of the
-   * pier: its long side hangs toward the sea with a few small orange floats on the hem, the short
-   * side behind. The sheet wraps the bar on a circle 0.015 clear of it, so the bar never shows
-   * through; both hangs splay out as they fall, so they face the sky rather than standing as a
-   * flat board, and fall in loose folds to ragged hems of uneven length. It is a solid veil:
-   * cut-out mesh holes shrink below a pixel at the zooms the town is mostly seen at and twinkle
-   * there as it pans. Its back faces are built in, so it batches with the other cloth instead of
-   * needing a two-sided program of its own.
+   * A bundle of gathered netting along `points` (a smooth curve): a tube `r(u)` thick at u along
+   * it (0..1), its colour twisted in faint light and dark strands (±6%), so it reads as heaped
+   * mesh or rope, not as cloth. Smooth normals; its ends taper into whatever it hangs from.
+   */
+  function netBundle(points: T.Vector3[], r: (u: number) => number) {
+    const curve = new T.CatmullRomCurve3(points),
+      segments = 14,
+      sides = 7,
+      geo = new T.TubeGeometry(curve, segments, 1, sides, false),
+      p = geo.getAttribute('position'),
+      tone = new Float32Array(p.count * 3),
+      at = new T.Vector3();
+    for (let j = 0; j <= segments; j++) {
+      const u = j / segments,
+        radius = r(u);
+      curve.getPointAt(u, at);
+      for (let i = 0; i <= sides; i++) {
+        const k = j * (sides + 1) + i;
+        p.setXYZ(k, at.x + (p.getX(k) - at.x) * radius, at.y + (p.getY(k) - at.y) * radius, at.z + (p.getZ(k) - at.z) * radius);
+        tone.fill(1 + 0.06 * Math.sin(Math.PI * 2 * ((2 * i) / sides + u * 3.5)), k * 3, k * 3 + 3);
+      }
+    }
+    geo.setAttribute('color', new T.BufferAttribute(tone, 3));
+    return geo;
+  }
+  /**
+   * A fishing net hung to dry over a bar between two posts on the upper beach, on the dinghy side
+   * of the pier. The net is heaped over the bar along its cork line (orange floats strung along the
+   * top, where a net's floats are) and hangs off it in slack, gathered swags, two seaward (local -z)
+   * and one landward, with one end fallen to the sand in a loose heap: rope-like bundles of a pale,
+   * grey netting, so it reads as a net from every bearing. (A single sheet with floats on its hem
+   * read as a towel on a rail, or from the archive's bearing, edge on, as a flag on a pole; cut-out
+   * mesh holes shrink below a pixel at the zooms the town is mostly seen at and twinkle.) The net
+   * is cloth that casts nothing, so it batches with the other no-shadow fabric.
    */
   function dryingNet(g: T.Object3D) {
     const F = plan.shoreProps.netFrame,
@@ -256,65 +286,40 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     g.add(frame);
     for (const s of [-1, 1]) box(frame, (s * span) / 2, 0.525, 0, 0.09, 1.05, 0.09, palette.woodDark, 'wood');
     strut(frame, new T.Vector3(-span / 2, 0.95, 0), new T.Vector3(span / 2, 0.95, 0), 0.045, palette.wood, 'wood');
-    // The sheet: 14 columns along the bar and 10 rows across it, from the seaward hem (row 0) up
-    // and over the bar (rows 3-7, at 45 degree steps round it) and down to the landward hem.
-    // It is 1.05 long and pushed toward the `from` post, so the bar shows bare toward the other.
-    const R = 0.06,
-      length = 1.05,
-      along = (u: number) => (u - 0.5) * length - 0.12,
-      sheet = new T.PlaneGeometry(1.3, 1, 13, 9),
-      pos = sheet.getAttribute('position'),
-      tone = new Float32Array(pos.count * 3);
-    // A hang f of the way down (f 1 at the hem): it leaves the bar, splays out by `spread` and
-    // folds by up to 0.03 as it falls, to a hem `long` below the bar, less where the hem lifts.
-    const hang = (u: number, f: number, long: number, lift: number, spread: number, phase: number): [number, number] => [
-      R + spread * f ** 1.3 + 0.03 * f * Math.sin(2 * Math.PI * 3.2 * u + phase),
-      0.95 - f * (long - lift * (0.5 + 0.5 * Math.sin(2 * Math.PI * (1.3 * u + phase)))) * (0.8 + 0.2 * Math.sin(Math.PI * u)),
-    ];
-    const at = (u: number, row: number): [number, number, number] => {
-      if (row <= 2) {
-        const f = 1 - row / 3,
-          [out, y] = hang(u, f, 0.74, 0.24, 0.15, 0.4);
-        return [-out, y, f];
-      }
-      if (row <= 7) {
-        const a = ((row - 5) * Math.PI) / 4;
-        return [R * Math.sin(a), 0.95 + R * Math.cos(a), 0];
-      }
-      const f = (row - 7) / 2,
-        [out, y] = hang(u, f, 0.5, 0.12, 0.11, 2.1);
-      return [out, y, f];
-    };
-    for (let k = 0; k < pos.count; k++) {
-      const ix = k % 14,
-        row = Math.floor(k / 14),
-        u = ix / 13,
-        [across, y, f] = at(u, row);
-      pos.setXYZ(k, along(u), y, across);
-      tone.fill(1.04 - 0.08 * f, k * 3, k * 3 + 3); // a little lighter over the fold; the batch's contact bake darkens the hems
-    }
-    sheet.setAttribute('color', new T.BufferAttribute(tone, 3));
-    sheet.computeVertexNormals();
-    // The other side: the same sheet wound the other way round with its normals reversed.
-    const back = sheet.clone(),
-      index = back.getIndex()!,
-      normal = back.getAttribute('normal');
-    for (let k = 0; k < index.count; k += 3) {
-      const a = index.getX(k + 1);
-      index.setX(k + 1, index.getX(k + 2));
-      index.setX(k + 2, a);
-    }
-    for (let k = 0; k < normal.count; k++) normal.setXYZ(k, -normal.getX(k), -normal.getY(k), -normal.getZ(k));
-    const net = new T.Mesh(mergeGeometries([sheet, back])!, material(palette.net, 'fabric'));
+    const V = (x: number, y: number, z: number) => new T.Vector3(x, y, z),
+      bar = 0.95,
+      belly = (u: number) => 4 * u * (1 - u),
+      parts: T.BufferGeometry[] = [];
+    // The heap along the bar's top: the cork line, from near the `from` post to 0.5 (the bar bare beyond).
+    const heap = [-0.64, 0.5];
+    parts.push(netBundle([-0.66, -0.4, -0.1, 0.2, 0.52].map((x, k) => V(x, bar + 0.04 + 0.01 * Math.sin(k * 2.1), 0.008 * (k % 2 ? 1 : -1))), (u) => 0.065 * (0.55 + 0.45 * Math.sin(Math.PI * u) ** 0.4) * (1 + 0.15 * Math.sin(u * 19))));
+    // Slack swags: each from one point on the bar to another, sagging `sag` and swinging `out` off the
+    // bar; each is three gathered folds of the net side by side (a full one and two slimmer ones,
+    // sagging a little more and less), lumpy along their length, so a swag is a heavy bunch of mesh.
+    for (const [n, { a, b, sag, out, r, side }] of [
+      { a: -0.6, b: 0.04, sag: 0.46, out: 0.1, r: 0.085, side: -1 },
+      { a: -0.06, b: 0.48, sag: 0.32, out: 0.09, r: 0.07, side: -1 },
+      { a: -0.44, b: 0.36, sag: 0.27, out: 0.08, r: 0.068, side: 1 },
+    ].entries())
+      for (const [fold, k0, deeper, wide] of [[0, 0, 1, 1], [1, 0.04, 1.14, 0.62], [2, -0.03, 0.86, 0.66]] as const)
+        parts.push(netBundle(Array.from({ length: 7 }, (_, k) => {
+          const u = k / 6;
+          return V(a + k0 + (b - a) * u, bar + 0.02 - sag * deeper * belly(u) * (1 + 0.15 * (u - 0.5)), side * (0.045 + (out + 0.035 * (fold - 1)) * belly(u)));
+        }), (u) => r * wide * (0.4 + 0.6 * Math.sin(Math.PI * u) ** 0.6) * (1 + 0.22 * Math.sin(u * 17 + n * 2.3 + fold * 1.7))));
+    // One end fallen to the sand by the `from` post, heaped where it lies.
+    for (const [dx, wide] of [[0, 1], [0.05, 0.7]])
+      parts.push(netBundle([V(-0.62 + dx, bar + 0.02, -0.04), V(-0.6 + dx, 0.62, -0.12), V(-0.55 + dx, 0.3, -0.17), V(-0.48 + dx, 0.08, -0.2)], (u) => wide * (0.04 + 0.035 * u) * (1 + 0.2 * Math.sin(u * 13 + dx * 40))));
+    const pile = lump(1, 1).scale(0.17, 0.06, 0.12).translate(-0.45, 0.04, -0.19);
+    parts.push(pile.setAttribute('color', new T.BufferAttribute(new Float32Array(pile.getAttribute('position').count * 3).fill(0.94), 3)));
+    const net = new T.Mesh(mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)))!, material(palette.net, 'fabric'));
     net.receiveShadow = true;
-    net.userData.noShadow = true; // a thin sheet ghosts in the shadow map
+    net.userData.noShadow = true;
     frame.add(net);
-    // Floats on the seaward hem, hanging just below it.
-    const blob = lump(0.055);
-    for (const u of [0.1, 0.32, 0.55, 0.78, 0.93]) {
-      const [across, y] = at(u, 0),
-        float = new T.Mesh(blob, material(palette.tramOrange, 'enamel'));
-      float.position.set(along(u), y - 0.03, across);
+    // Floats strung along the cork line on top of the heap.
+    const blob = lump(0.045);
+    for (const x of [heap[0] + 0.08, -0.32, -0.04, 0.24, heap[1] - 0.04]) {
+      const float = new T.Mesh(blob, material(palette.tramOrange, 'enamel'));
+      float.position.set(x, bar + 0.11, 0);
       float.receiveShadow = true;
       frame.add(float);
     }

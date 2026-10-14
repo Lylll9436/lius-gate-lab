@@ -454,14 +454,14 @@ export const harbour = {
 /**
  * Beach details either side of the pier, in shore coordinates: outline sample i (fractional) and
  * width w out from the outline. `foot` is the plan radius every part stays inside. The hut side
- * (samples 29-31) is the working quay: creels, floats and a coil on the dry sand. The dinghy side
+ * (samples 29-31) is the working quay: creels, a float and a coil on the dry sand. The dinghy side
  * (37-43) has a net drying on a frame, a strand line of wrack and driftwood, and rock pools on the
  * wet sand round the boulder at sample 42.
  */
 export const shoreProps = {
   creelStack: { i: 30.3, w: 0.8, foot: 0.51 },
-  creel: { i: 30.7, w: 1.65, turn: 0.4, foot: 0.31 },
-  floats: [{ i: 29.6, w: 0.62, foot: 0.12 }, { i: 29.25, w: 0.95, foot: 0.12 }],
+  creel: { i: 30.7, w: 1.65, turn: 0, foot: 0.31 }, // square to the stack: a creel set at an angle on its own read as a chest
+  floats: [{ i: 29.6, w: 0.62, foot: 0.12 }],
   coil: { i: 29.6, w: 1.45, foot: 0.23 },
   netFrame: { from: { i: 37.4, w: 0.65 }, to: { i: 39.2, w: 0.65 }, foot: 0.3 }, // a capsule: the hangs splay to 0.24, the hem floats to 0.3
   driftwood: { from: { i: 40.05, w: 1.45 }, to: { i: 41.2, w: 1.38 }, foot: 0.1, rootFoot: 0.17 }, // a capsule, the root flare at `from`
