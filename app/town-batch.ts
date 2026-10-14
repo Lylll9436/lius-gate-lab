@@ -109,7 +109,16 @@ export function createBatch(ctx: TownContext) {
       const key = mat.uuid + (cast ? '|c' : '|n');
       if (source.userData.surfaceKind === 'grass') projectMaterialUV(geometry, 'grass');
       if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
-      if (k === 'glass') paneUV(geometry, bb, o.userData);
+      if (k === 'glass') {
+        paneUV(geometry, bb, o.userData);
+        if (o.userData.sashPane) {
+          // A sash pane (0.2-0.4 tall) reads its glint as a 0.95-tall window would: the shared
+          // glint constants stay, the pane's coordinates stretch to about +-0.475.
+          const uv = geometry.getAttribute('uv') as T.BufferAttribute,
+            stretch = 0.95 / Math.max(1e-3, size.y);
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * stretch, uv.getY(i) * stretch);
+        }
+      }
       const count = geometry.getAttribute('position').count,
         previous = geometry.getAttribute('color'),
         positions = geometry.getAttribute('position'),
