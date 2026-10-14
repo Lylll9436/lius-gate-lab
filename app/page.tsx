@@ -231,8 +231,10 @@ export default function Home() {
   }
   function toggleDirectory() {
     if (directory) return closeDirectory();
-    // The Directory and Plan view's key are two ways through the town: one at a time.
+    // The Directory and Plan view's key are two ways through the town: one at a time. Inspect
+    // ends too, as it does for Plan view: the Directory would cover its way back.
     if (plan) setPlan(false);
+    if (inspect) exitInspection();
     setDirectory(true);
     if (!wide) {
       fileBeforeDirectory.current = panelOpen;
