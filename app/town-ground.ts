@@ -152,10 +152,11 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
 }
 type RectStamp = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => void;
 type DiscStamp = (cx: number, cz: number, r: number, strength: number, feather: number) => void;
-/** The paddock's ground shade (stamped before the blur): a soft band under every dyke run, a pad under the hay rack and one under each animal. */
+/** The paddock's ground shade (stamped before the blur): a soft band under every dyke run, a pad under the hay rack and its bale and one under each animal. */
 function paddockMasks(rect: RectStamp, disc: DiscStamp) {
   for (const [x, z, length, ry] of paddockRuns()) rect(x, z, length, plan.paddock.wall, ry, 0.5, 0.3);
   rect(plan.hayRack.x, plan.hayRack.z, 0.5, 1.0, 0, 0.6, 0.3);
+  rect(plan.hayBale.x, plan.hayBale.z, 0.3, 0.44, plan.hayBale.ry, 0.5, 0.15);
   for (const animal of plan.herd) disc(animal.x, animal.z, 0.45 * animal.scale, 0.5, 0.3);
 }
 

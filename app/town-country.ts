@@ -4,6 +4,7 @@ import * as plan from './town-plan';
 import {
   palette,
   hash,
+  noise2,
   sstep,
   mix,
   paddockRuns,
@@ -24,9 +25,11 @@ export function createCountry(ctx: TownContext, kit: Kit) {
   const { box, cone, groundY } = kit;
   /**
    * The paddock's own colours, judged after the 0.72 grade: the dyke takes the beach boulders'
-   * greys and the hay a dull straw (HSV s 0.45; a paler one read as an egg in the trough).
+   * greys; the hay is a straw gold from the brass and gold family (HSV s 0.51, under the gold's
+   * 0.68), shading to a deeper straw at the foot and paler at the tops (a pale, even one read
+   * as an egg, then as a stone, in the trough).
    */
-  const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#c4a86c' };
+  const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#d2ae66', hayShade: '#a9843f', hayPale: '#e2c78a' };
   /**
    * Highland coats, judged after the 0.72 grade: a muted russet (HSV s ≤ 0.61, no louder than
    * the wood and the red sandstone) with paler ginger tips on every lock, a darker russet belly
@@ -39,15 +42,6 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     fieldGate(g);
     hayRack(g);
     for (const animal of plan.herd) highlandCow(g, animal);
-  }
-  /** Hang the hem of a lump: vertices below `below` drop by a hashed amount up to `drop`; coincident corners drop together. */
-  function shag(geo: T.BufferGeometry, below: number, drop: number) {
-    const p = geo.getAttribute('position');
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      if (y < below) p.setY(i, y - drop * hash(Math.round(x * 97) * 7 + Math.round(y * 89) * 13 + Math.round(z * 83) * 3));
-    }
-    return geo;
   }
   /**
    * A chunky lock (of hair, or a straw): a wedge from a root `w` wide (along `across`) and `t`
@@ -420,9 +414,9 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     box(gate, 0, 0.4, 0.06, Math.hypot(run, rise), 0.07, 0.05, palette.wood, 'wood', { rz: Math.atan2(rise, run) }); // brace, clear of the rails' faces
   }
   /**
-   * The hay rack against the west wall: an open trough of hay on four legs. (A pantile hat on it
-   * caught the sun as the brightest thing in the paddock, and the horns of the cow at the rack
-   * crossed it on screen.)
+   * The hay rack against the west wall: an open trough on four legs, heaped with loose hay, and
+   * a small square bale beside it. (A pantile hat on it caught the sun as the brightest thing in
+   * the paddock, and the horns of the cow at the rack crossed it on screen.)
    */
   function hayRack(g: T.Object3D) {
     const { x, z } = plan.hayRack;
@@ -432,16 +426,108 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     g.add(rack);
     for (const sx of [-0.42, 0.42]) for (const sz of [-0.18, 0.18]) box(rack, sx, 0.275, sz, 0.1, 0.55, 0.1, palette.woodDark, 'wood');
     box(rack, 0, 0.42, 0, 1.0, 0.28, 0.5, palette.wood, 'wood'); // trough 0.28-0.56
-    // The trough heaped with hay: a low, faceted pile inside its rim with a tufted top (shag()
-    // hangs a hem, so the pile is flipped for it).
-    const hay = shag(new T.IcosahedronGeometry(0.42, 1).rotateX(Math.PI), 0, 0.4).rotateX(Math.PI).scale(1.05, 0.3, 0.55);
-    hay.computeVertexNormals();
-    paintByHeight(hay, PADDOCK.hay, (y) => mix(0.8, 1.0, sstep(y, -0.12, 0.24)));
-    const mound = new T.Mesh(hay, material('#ffffff', 'foliage'));
-    mound.position.y = 0.56;
+    hayMound(rack);
+    hayBale(g);
+  }
+  /**
+   * Loose hay heaped over the trough's rim (top 0.56): a soft, lumpy mound, smooth-shaded so it
+   * never reads as a cut stone, thatched all over with straws lying every which way in three
+   * straw tones and a fringe of straws drooping over the rim.
+   */
+  function hayMound(rack: T.Object3D) {
+    const tones = [PADDOCK.hayShade, PADDOCK.hay, PADDOCK.hayPale].map((c) => new T.Color(c)),
+      geo = new T.IcosahedronGeometry(1, 2),
+      p = geo.getAttribute('position'),
+      n = geo.getAttribute('normal'),
+      out = new Float32Array(p.count * 3),
+      half = new T.Vector3(0.46, 0.19, 0.22),
+      normal = new T.Vector3(),
+      c = new T.Color();
+    // Broad lumps: the heap's surface at unit direction u, and its outward normal there.
+    const lump = (ux: number, uz: number) => 1 + (noise2(ux * 2.2 + 3.1, uz * 2.2 + 7.3) - 0.5) * 0.36;
+    const at = (ux: number, uy: number, uz: number, target: T.Vector3) => {
+      const k = lump(ux, uz);
+      return target.set(half.x * ux * k, 0.56 + half.y * Math.max(uy, -0.4) * k, half.z * uz * k);
+    };
+    for (let i = 0; i < p.count; i++) {
+      const ux = p.getX(i), uy = p.getY(i), uz = p.getZ(i);
+      at(ux, uy, uz, normal);
+      p.setXYZ(i, normal.x, normal.y, normal.z);
+      normal.set(ux / half.x, uy / half.y, uz / half.z).normalize();
+      n.setXYZ(i, normal.x, normal.y, normal.z);
+      c.copy(tones[0]).lerp(tones[1], 0.35 + 0.5 * sstep(uy, -0.3, 0.6));
+      out.set([c.r, c.g, c.b], i * 3);
+    }
+    geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    const mound = new T.Mesh(geo, material('#ffffff', 'foliage'));
     mound.userData.noShadow = true;
     mound.receiveShadow = true;
     rack.add(mound);
+    const straws: Lock[] = [],
+      u = new T.Vector3(),
+      root = new T.Vector3(),
+      up = new T.Vector3(0, 1, 0);
+    const straw = (k: number, ux: number, uy: number, uz: number, droop: number) => {
+      u.set(ux, uy, uz).normalize();
+      at(u.x, u.y, u.z, root);
+      const out = new T.Vector3(u.x / half.x, u.y / half.y, u.z / half.z).normalize(),
+        spin = hash(k * 13 + 3) * Math.PI * 2,
+        side = new T.Vector3().crossVectors(out, up).normalize(),
+        across = new T.Vector3().crossVectors(side, out),
+        dir = side.multiplyScalar(Math.cos(spin)).addScaledVector(across, Math.sin(spin)).addScaledVector(up, -droop).normalize(),
+        len = 0.16 + 0.1 * hash(k * 13 + 4),
+        tone = tones[Math.floor(hash(k * 13 + 5) * 3)];
+      straws.push({ root: root.clone().addScaledVector(dir, -len * 0.4).addScaledVector(out, 0.012), dir, across: out.clone().cross(dir), len, w: 0.038, t: 0.02, base: tone.clone().multiplyScalar(0.92), tip: tone, point: 0.25, out });
+    };
+    // Thatch spread evenly over the heap (a golden-angle spiral, a little jittered).
+    for (let k = 0; k < 48; k++) {
+      const a = k * 2.39996 + hash(k * 13 + 1) * 0.6,
+        rise = 0.12 + (0.86 * (k + 0.5)) / 48,
+        r = Math.sqrt(1 - rise * rise);
+      straw(k, Math.cos(a) * r, rise, Math.sin(a) * r, 0.15);
+    }
+    // A fringe drooping over the rim all round.
+    for (let k = 0; k < 16; k++) {
+      const a = ((k + 0.6 * hash(k * 17 + 900)) / 16) * Math.PI * 2;
+      straw(100 + k, Math.cos(a), -0.05, Math.sin(a), 1.4);
+    }
+    const loose = new T.Mesh(lockGeometry(straws), material('#ffffff', 'foliage'));
+    loose.userData.noShadow = true;
+    loose.receiveShadow = true;
+    rack.add(loose);
+  }
+  /** A small square bale beside the rack: a straw block bound by two dark twines, a few loose straws on top. */
+  function hayBale(g: T.Object3D) {
+    const { x, z, ry } = plan.hayBale,
+      bale = new T.Group(),
+      tones = [PADDOCK.hayShade, PADDOCK.hayPale].map((c) => new T.Color(c));
+    bale.position.set(x, plan.terrainHeight(x, z), z);
+    bale.rotation.y = ry;
+    g.add(bale);
+    box(bale, 0, 0.13, 0, 0.3, 0.26, 0.44, PADDOCK.hay, 'foliage', { bevel: 0.05 });
+    for (const bz of [-0.11, 0.11]) box(bale, 0, 0.13, bz, 0.312, 0.272, 0.025, palette.woodDark, 'fabric', { bevel: 0 }); // twines
+    const straws: Lock[] = [];
+    for (let i = 0; i < 5; i++) {
+      const h = hash(i * 7 + 701),
+        a = h * Math.PI * 2,
+        tone = tones[i % 2];
+      straws.push({
+        root: new T.Vector3((hash(i * 7 + 702) - 0.5) * 0.12, 0.265, (hash(i * 7 + 703) - 0.5) * 0.2),
+        dir: new T.Vector3(Math.cos(a), 0, Math.sin(a)),
+        across: new T.Vector3(-Math.sin(a), 0, Math.cos(a)),
+        len: 0.1 + 0.04 * h,
+        w: 0.038,
+        t: 0.02,
+        base: tone,
+        tip: tone,
+        point: 0.25,
+        out: new T.Vector3(0, 1, 0),
+      });
+    }
+    const loose = new T.Mesh(lockGeometry(straws), material('#ffffff', 'foliage'));
+    loose.userData.noShadow = true;
+    loose.receiveShadow = true;
+    bale.add(loose);
   }
   /**
    * A static Scottish Blackface sheep, about 0.66 tall at the fleece: three lumpy cream fleece
@@ -538,5 +624,5 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
     });
   }
-  return { highlandPaddock, shag, lockGeometry, coatCore, shaggyCoat, forelock, horn, highlandCow, headPose, tailPose, dyke, fieldGate, hayRack, blackfaceSheep, standingStoneRing };
+  return { highlandPaddock, lockGeometry, coatCore, shaggyCoat, forelock, horn, highlandCow, headPose, tailPose, dyke, fieldGate, hayRack, hayMound, hayBale, blackfaceSheep, standingStoneRing };
 }

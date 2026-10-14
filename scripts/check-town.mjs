@@ -208,6 +208,20 @@ for (const animal of plan.herd) {
     assert(inPaddock(x, z) >= 0.25, `${animal.id} leans into the dyke at ${x.toFixed(2)}, ${z.toFixed(2)}`);
   }
 }
+// The square bale beside the hay rack (0.3 by 0.44) stands inside the dykes, clear of the herd.
+{
+  const bale = plan.hayBale,
+    c = Math.cos(bale.ry),
+    s = Math.sin(bale.ry);
+  for (const [u, v] of [[0.15, 0.22], [0.15, -0.22], [-0.15, 0.22], [-0.15, -0.22]]) {
+    const x = bale.x + u * c + v * s,
+      z = bale.z - u * s + v * c;
+    assert(inPaddock(x, z) >= 0.05, `The hay bale leans into the dyke at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+  }
+  for (const animal of plan.herd)
+    assert(Math.hypot(animal.x - bale.x, animal.z - bale.z) > 0.27 + 0.7 * animal.scale, `The hay bale stands in ${animal.id}`);
+  assert(Math.abs(bale.z - plan.hayRack.z) > 0.5 + 0.22, 'The hay bale stands in the rack.');
+}
 for (let i = 0; i < 400; i++) {
   const pose = plan.boatPose(i * 0.37);
   assert(!plan.onIsland(pose.x, pose.z, -1.0), 'Boat runs aground.');
