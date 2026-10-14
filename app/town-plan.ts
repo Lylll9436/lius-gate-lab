@@ -298,10 +298,12 @@ export const paddock = { x: -11.6, z: 20.9, w: 5.2, d: 3.4, wall: 0.34, gate: { 
  * (sin h, cos h)); `phase` sets the idle graze cycle, so at time 0 (and so with reduced motion)
  * cow-b holds its head up toward the Life camera while cow-a eats at the rack and the calf grazes.
  * The calf grazes in front of cow-a, clear of cow-b's horns as the Life camera sees them.
+ * Cow-a feeds a little turned toward the Life camera: square to the rack, its near horn pointed
+ * almost straight at the camera and read as a short white tusk.
  */
 export type HerdMember = { id: string; x: number; z: number; heading: number; scale: number; eating: boolean; phase: number };
 export const herd: HerdMember[] = [
-  { id: 'cow-a', x: -12.35, z: 20.75, heading: -Math.PI / 2, scale: 1, eating: true, phase: 1.2 },
+  { id: 'cow-a', x: -12.43, z: 20.36, heading: -Math.PI / 2 + 0.55, scale: 1, eating: true, phase: 1.2 },
   { id: 'cow-b', x: -10.4, z: 21.25, heading: -0.75, scale: 1, eating: false, phase: -Math.PI / 2 },
   { id: 'calf', x: -12.9, z: 21.8, heading: 1.9, scale: 0.62, eating: false, phase: 1.9 },
 ];
