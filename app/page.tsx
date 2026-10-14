@@ -470,12 +470,18 @@ export default function Home() {
   // (the shortest way) to its subject's front; the bare city is the whole island. A pick of
   // the place already open frames it again (it may have been panned away, or a second click
   // stopped the glide), and leaves Inspect.
+  const titledPick = useRef('');
   useEffect(() => {
     const engine = api.current;
     if (mode !== 'city') return;
     if (engine) frameCity(engine, content);
+    const picked = `${pick} ${content}`;
     const frame = requestAnimationFrame(() => {
       window.scrollTo({ top: 0, behavior: 'auto' });
+      // Focus goes to the file once per pick: the town becoming ready only frames the place,
+      // and leaves the focus wherever the visitor has taken it meanwhile.
+      if (titledPick.current === picked) return;
+      titledPick.current = picked;
       // The tour keeps focus on its own buttons, so Next stays under the finger; the stop's
       // name is announced from the tour bar instead.
       if (document.activeElement?.closest('.tour-control')) return;
