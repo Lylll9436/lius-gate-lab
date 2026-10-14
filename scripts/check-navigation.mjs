@@ -225,7 +225,9 @@ const turnPieces = [];
 function collectTurn(node) {
   if (
     ts.isFunctionDeclaration(node) &&
-    ['viewOffset', 'panelOffset', 'offsetTarget', 'reset'].includes(node.name?.text)
+    ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'reset'].includes(
+      node.name?.text,
+    )
   )
     turnPieces.push(node.getText(syntax));
   if (
@@ -243,7 +245,7 @@ function collectTurn(node) {
   ts.forEachChild(node, collectTurn);
 }
 collectTurn(syntax);
-assert.equal(turnPieces.length, 7, 'The turn check must find every piece it runs.');
+assert.equal(turnPieces.length, 8, 'The turn check must find every piece it runs.');
 const turn = {
   T,
   Math,
@@ -269,7 +271,7 @@ const turn = {
   align() {},
 };
 const turning = runInNewContext(
-  `${ts.transpileModule(turnPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panelOffset, offsetTarget, reset, turnStep });`,
+  `${ts.transpileModule(turnPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panelOffset, offsetTarget, followPanel, reset, turnStep });`,
   turn,
 );
 // At rest on a close subject (the park shot), beside the panel.
@@ -297,6 +299,50 @@ assert(
   moved <= offsetLength * turned + 1e-9,
   `A turning frame moved the view centre ${moved.toFixed(2)} (offset ${offsetLength.toFixed(2)}): a sideways jump.`,
 );
+// An offset changed outside a framing while the camera turns (the file closed mid-turn on a
+// park shot; the reading page back at the hero, whose shift is set after its reset) glides
+// too: the frame loop moves the target by the change before the turning frame.
+let stepSource;
+function findStep(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'step')
+    stepSource = node.body.getText(syntax);
+  ts.forEachChild(node, findStep);
+}
+findStep(syntax);
+assert(stepSource, 'The panel check must find the frame loop.');
+const followAt = stepSource.indexOf('followPanel();'),
+  turnAt = stepSource.indexOf('Math.abs(targetYaw - yaw) > 0.0001');
+assert(
+  followAt >= 0 && followAt < turnAt,
+  'The frame loop must follow the panel offset before it turns the camera.',
+);
+for (const [from, to, bearing] of [
+  [0.21, 0, -0.35],
+  [0.21, -0.06, 0.9],
+]) {
+  Object.assign(turn, { yaw: bearing, targetYaw: bearing, targetZoom: 2.2, frameShift: from, tween: false });
+  turn.target.set(18, 0, -12);
+  turning.offsetTarget();
+  turn.controls.target.copy(turn.target);
+  const subjectThere = turn.target.clone().sub(turn.shiftApplied);
+  turn.targetYaw = bearing - 0.4;
+  turn.frameShift = to;
+  const before = turn.controls.target.clone(),
+    was = turn.yaw;
+  turning.followPanel();
+  assert(turn.tween, 'A changed panel offset glides.');
+  assert(
+    turn.target.clone().sub(turn.shiftApplied).distanceTo(subjectThere) < 1e-9,
+    'The glide keeps its subject.',
+  );
+  turning.turnStep();
+  const step = turn.controls.target.distanceTo(before);
+  assert(
+    step <= turn.shiftApplied.length() * Math.abs(turn.yaw - was) + 1e-9,
+    `A turning frame put a panel offset change of ${(Math.abs(to - from) * 88 / 2.2).toFixed(1)} on the view centre at once (moved ${step.toFixed(2)}).`,
+  );
+}
+turn.frameShift = 0.21;
 // Rotate pressed quickly keeps turning the button's way: three presses 0.3 s apart end three
 // quarter turns round, never swinging back the short way; a burst queues one turn at most.
 let rotateSource;

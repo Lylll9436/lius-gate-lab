@@ -660,6 +660,21 @@ export async function createCity(
     target.add(shiftApplied);
   }
   /**
+   * Panel framing: keep the subject (Inspect's building too) beside the panel, not behind it.
+   * An offset changed outside a framing (the file opened or closed, the reading page back at
+   * the hero, Inspect's fit) moves the target, so the view glides across. The frame loop runs
+   * this before a turn: a turning frame then adds only the offset's own turn, never the whole
+   * change at once.
+   */
+  function followPanel() {
+    const wanted = panelOffset(new T.Vector3());
+    if (wanted.distanceToSquared(shiftApplied) > 1e-6) {
+      target.sub(shiftApplied).add(wanted);
+      shiftApplied.copy(wanted);
+      tween = true;
+    }
+  }
+  /**
    * The whole island in the part of the frame left free: beside a side panel (the frame
    * shift), under a hidden top band (twice the frame drop), below the masthead and above the
    * bottom controls (about 76 px each). Never closer than the plain overview's zoom of 1.
@@ -1034,6 +1049,7 @@ export async function createCity(
     if (dt > 0 && dt < 0.05) intervals[intervalCount++ % intervals.length] = dt;
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
     if (!paused) time += dt;
+    followPanel();
     if (Math.abs(targetYaw - yaw) > 0.0001) {
       // The bearing eases in more slowly than the glide and never whips round; a reduced-motion
       // turn is a cut. The bearings asked for already take the shortest way round; quick Rotate
@@ -1168,13 +1184,6 @@ export async function createCity(
     const shown = new Set<T.Object3D>(parkSelected ? [parkGroup] : ringed);
     if (extraRoot) shown.add(extraRoot);
     ink.setSelection(inspect ? [] : [...shown]);
-    // Panel framing: keep the subject (Inspect's building too) beside the panel, not behind it.
-    const wanted = panelOffset(new T.Vector3());
-    if (wanted.distanceToSquared(shiftApplied) > 1e-6) {
-      target.sub(shiftApplied).add(wanted);
-      shiftApplied.copy(wanted);
-      tween = true;
-    }
     // Idle drift: a slow, breathing turn that stops the moment the visitor acts. Never with
     // reduced motion: Play there brings the people and the tram back, not a turning camera
     // that cuts back each time the map is touched.
