@@ -2395,15 +2395,16 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
   /**
    * A tartan picnic blanket and a hamper on the park turf, front-left of the bandstand under the
-   * edge of the west tree: 0.26 clear of the bandstand plinth, 0.22 of the bench, 0.4 of the trunk.
+   * edge of the west tree: 0.27 clear of the bandstand plinth, 0.5 of the bench (so the bench back
+   * hides no more than a corner from the Life chapter's camera) and 0.48 of the trunk.
    * The tartan is one flat colour per triangle on a 0.05 grid, the mix of a muted red, navy, green
    * and cream sett across and along it (0.5 repeat), so no texture can shimmer. It lies 0.012 over
    * the turf (top 0.10), casts no shadow and takes no contact bake.
    */
   function picnic(g: T.Object3D) {
-    const spot = { x: -12.2, z: 10.25, ry: 0.25 },
-      W = 1.2,
-      D = 0.9,
+    const spot = { x: -12.25, z: 10.08, ry: 0.12 },
+      W = 1.1,
+      D = 0.8,
       cell = 0.05;
     const red = new T.Color('#a94a3e'),
       navy = new T.Color('#34506e'),
@@ -2432,14 +2433,18 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     blanket.receiveShadow = true;
     blanket.userData.noShadow = true;
     rug.add(blanket);
-    // A wicker hamper on the back corner, away from the Life chapter's camera, and its lid and handle.
+    // A wicker hamper on the back corner, away from the Life chapter's camera: a pale wicker basket,
+    // a slightly darker lid and an arched cane handle over it, so it reads as a basket, not a box.
     const hamper = new T.Group();
-    hamper.position.set(-0.36, 0, -0.2);
+    hamper.position.set(-0.32, 0, -0.17);
     hamper.rotation.y = -0.18;
     rug.add(hamper);
-    box(hamper, 0, 0.12, 0, 0.42, 0.24, 0.3, palette.wood, 'wood');
-    box(hamper, 0, 0.27, 0, 0.46, 0.06, 0.34, palette.woodDark, 'wood');
-    box(hamper, 0, 0.33, 0, 0.24, 0.06, 0.03, palette.woodDark, 'wood');
+    box(hamper, 0, 0.12, 0, 0.42, 0.24, 0.3, '#b08a5c', 'wood');
+    box(hamper, 0, 0.265, 0, 0.45, 0.05, 0.33, '#9c7850', 'wood');
+    const handle = new T.Mesh(new T.TorusGeometry(0.1, 0.016, 6, 12, Math.PI), material(palette.woodDark, 'wood'));
+    handle.position.y = 0.29; // the arch stands on the lid along the basket's length
+    handle.castShadow = handle.receiveShadow = true;
+    hamper.add(handle);
     return rug;
   }
   /**
