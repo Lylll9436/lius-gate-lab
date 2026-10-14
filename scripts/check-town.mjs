@@ -559,6 +559,24 @@ for (let i = 0; i < 720; i++) {
     }
   }
 }
+// The dinghy's mooring lines are static, so the ends buried at its fairleads must stay inside
+// its hull (y -0.06 to 0.175, 0.31-0.38 half-wide) as it bobs and pitches.
+{
+  const d = model.animated.find((e) => e.object.name === 'harbour-dinghy');
+  assert(d, 'The dinghy is named harbour-dinghy.');
+  d.object.position.y = model.waterLevel; // the rest pose the lines were laid at
+  d.object.rotation.x = 0;
+  d.object.updateMatrixWorld(true);
+  const ends = plan.harbour.lines.map((l) => d.object.localToWorld(new T.Vector3(...l.fairlead)));
+  for (let t = 0; t <= 20; t += 0.1) {
+    d.update(t, 0);
+    d.object.updateMatrixWorld(true);
+    for (const end of ends) {
+      const { x, y, z } = d.object.worldToLocal(end.clone());
+      assert(y > -0.02 && y < 0.14 && Math.abs(x) < 0.17 && z > -0.62 && z < 0.55, `A mooring line's end leaves the dinghy's hull at t=${t.toFixed(1)}: ${[x, y, z].map((v) => v.toFixed(3)).join(', ')}`);
+    }
+  }
+}
 // Inspect's copy of the Town Hall keeps time and turns its vane with the town: its four pairs
 // of clock hands and its vane follow the originals the frame loop moves.
 {

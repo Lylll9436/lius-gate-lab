@@ -102,6 +102,56 @@ export function createKit(ctx: TownContext) {
     m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
     return m;
   }
+  /** A cast-iron mooring bollard's profile (radius, height): a flared foot, a waisted neck, a fat head. */
+  const BOLLARD = [[0, 0], [0.13, 0], [0.13, 0.035], [0.1, 0.06], [0.085, 0.2], [0.09, 0.24], [0.125, 0.27], [0.13, 0.3], [0.105, 0.335], [0, 0.345]].map(([r, y]) => new T.Vector2(r, y));
+  /** A bollard standing on y: dark iron, 0.345 tall, 0.26 across at the foot (216 triangles). */
+  function bollard(g: T.Object3D, x: number, y: number, z: number) {
+    const m = new T.Mesh(new T.LatheGeometry(BOLLARD, 12), material('#3a3f44', 'iron'));
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * A rope through the points (a centripetal Catmull-Rom tube, 0.07 thick unless r says otherwise,
+   * 10 triangles per 0.06). The tube is open-ended, so both end points must be buried: in a hull,
+   * a pile, a bollard, a plank or the sand. Thin casters ghost in the shadow map, so a rope casts
+   * only when asked.
+   */
+  function rope(g: T.Object3D, points: T.Vector3[], colour = palette.rope, opts: { r?: number; shadow?: boolean } = {}) {
+    const curve = new T.CatmullRomCurve3(points, false, 'centripetal'),
+      m = new T.Mesh(new T.TubeGeometry(curve, Math.ceil(curve.getLength() / 0.06), opts.r ?? 0.035, 5), material(colour, 'fabric'));
+    m.castShadow = !!opts.shadow;
+    m.receiveShadow = true;
+    m.userData.noShadow = !opts.shadow;
+    g.add(m);
+    return m;
+  }
+  /** A rope eye of radius R lying flat round a post at (x, y, z): its tube is 0.08 thick, 0.005 fatter than the rope spliced into it. */
+  function eye(g: T.Object3D, x: number, y: number, z: number, R: number) {
+    const m = new T.Mesh(new T.TorusGeometry(R, 0.04, 5, 12), material(palette.rope, 'fabric'));
+    m.position.set(x, y, z);
+    m.rotation.x = Math.PI / 2;
+    m.receiveShadow = true;
+    m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * A flat coil lying on the surface at y: `turns` turns from radius r0 in the middle out to r1,
+   * 12 points a turn, ending at endAngle, where it runs along (x, z) = (-sin, cos) of endAngle.
+   * A 0.07 rope on r0 0.06 to r1 0.19 over 3 turns overlaps its neighbouring turn into a grooved
+   * disc 0.45 across (under batch()'s 0.5 eave-cap size).
+   */
+  function coilPoints(x: number, y: number, z: number, r0: number, r1: number, turns: number, endAngle: number) {
+    const n = turns * 12;
+    return Array.from({ length: n + 1 }, (_, k) => {
+      const t = k / n,
+        a = endAngle - Math.PI * 2 * turns * (1 - t),
+        r = r0 + (r1 - r0) * t;
+      return new T.Vector3(x + r * Math.cos(a), y + 0.03 + 0.01 * t, z + r * Math.sin(a));
+    });
+  }
   function cone(
     g: T.Object3D,
     x: number,
@@ -351,6 +401,6 @@ export function createKit(ctx: TownContext) {
     const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
     return hit ? hit.point.y : plan.terrainHeight(x, z);
   }
-  return { box, cylinder, strut, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, door, quoins, plinth, chimney, lampGlass, groundY };
+  return { box, cylinder, strut, bollard, rope, eye, coilPoints, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, door, quoins, plinth, chimney, lampGlass, groundY };
 }
 export type Kit = ReturnType<typeof createKit>;

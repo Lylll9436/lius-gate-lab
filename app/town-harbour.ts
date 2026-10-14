@@ -9,7 +9,7 @@ import type { Props } from './town-props';
 /* ------------------------------------------------------------------ */
 export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
   const { material, lamps, animated } = ctx;
-  const { box, cylinder, cone, sphere, hullShape, hullSolid, pitchedRoof, windowAt, lampGlass } = kit;
+  const { box, cylinder, cone, sphere, bollard, rope, eye, coilPoints, hullShape, hullSolid, pitchedRoof, windowAt, lampGlass } = kit;
   const { lamp } = props;
   function pierAndHarbour(g: T.Object3D) {
     const [sx, sz] = plan.pier.start,
@@ -113,6 +113,46 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
         dinghy.rotation.x = Math.sin(time * 0.8) * 0.02;
       },
     });
+    mooring(p, moor, pitch);
+  }
+  /**
+   * The dinghy's lines and the boat's empty berth, pier-local. Each line runs from a fairlead
+   * buried in the dinghy's hull (taken at its rest pose), out level through the side, sagging to
+   * a rope eye round a pile head on the dinghy's side of the pile, and ends inside the pile. The
+   * lines stay put while the dinghy bobs: its buried ends never leave the hull (check-town). The
+   * boat never rests, so its berth at the pier head is a bollard with a coiled blue line on the
+   * planks beside it; the coil shares the bollard's world x, so the lead between them runs along
+   * world z and batch() never takes its box for an eave.
+   */
+  function mooring(p: T.Object3D, moor: typeof plan.harbour.dinghy, pitch: number) {
+    const H = plan.harbour,
+      up = new T.Vector3(0, 1, 0);
+    for (const line of H.lines) {
+      const [px, pz] = line.pile;
+      eye(p, px, 0.44, pz, 0.19); // 0.06 under the pile top, its inner edge clear of the pile
+      const end = new T.Vector3(...line.fairlead).applyAxisAngle(up, moor.turn).add(new T.Vector3(moor.x, WATER, moor.z)),
+        axis = new T.Vector3(px, 0.44, pz),
+        h = new T.Vector3(px - end.x, 0, pz - end.z).normalize(),
+        out = end.clone().addScaledVector(h, 0.25),
+        ring = axis.clone().addScaledVector(h, -0.19),
+        mid = out.clone().lerp(ring, 0.5);
+      mid.y -= 0.05;
+      rope(p, [end, out, mid, ring, axis]);
+    }
+    // The planks' own jitter, so the bollard stands on its plank (14) and the coil on 12 and 13.
+    const plankTop = (z: number) => 0.2 + (hash(Math.floor(z / pitch) * 5 + 2) - 0.5) * 0.02;
+    const [bx, bz] = H.headBollard,
+      [cx, cz] = H.berthCoil;
+    bollard(p, bx, plankTop(bz), bz);
+    eye(p, bx, 0.36, bz, 0.135); // round the waist, under the head's flare
+    const lead = new T.Vector3(bx - cx, 0, bz - cz).normalize(),
+      // The coil's underside lies on plank 12 (top 0.194) and 0.01 into plank 13 (0.204).
+      coil = coilPoints(cx, 0.199, cz, 0.06, 0.19, 3, Math.atan2(-lead.x, lead.z)),
+      last = coil[coil.length - 1],
+      lift = last.clone().addScaledVector(lead, 0.2).setY(0.29),
+      head = new T.Vector3(bx, 0.36, bz),
+      onEye = head.clone().addScaledVector(lift.clone().setY(0.36).sub(head).normalize(), 0.135);
+    rope(p, [new T.Vector3(cx, 0.144, cz), ...coil, lift, onEye, head], palette.ropeBlue);
   }
   function lighthouse(g: T.Object3D) {
     const [x, z] = plan.lighthouseRock;
