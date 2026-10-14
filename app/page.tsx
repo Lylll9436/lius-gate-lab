@@ -4,6 +4,8 @@ import type { BuildingId, Locale } from './city-data';
 import type { DistrictId } from './city-districts';
 import {
   chapterFor,
+  readingChapter,
+  readingContent,
   parseLocation,
   buildingForContent,
   sceneTarget,
@@ -59,9 +61,6 @@ function endFrame() {
   );
   return hidden / (2 * dock.offsetHeight);
 }
-/** The reading page's chapter for an address: the hero for the overview. */
-const readingChapter = (id: ContentId) =>
-  id === 'overview' ? 'overview' : chapterFor(id);
 /** The bearing that shows a place from the front: its chapter's, as in reading mode. */
 const facing = (id: ContentId) =>
   bearings[chapterFor(sceneTarget(id).building ?? id)] ?? bearings.overview;
@@ -507,11 +506,11 @@ export default function Home() {
         readingChapter(shown.content) !== current
       )
         window.history.replaceState(null, '', `#read/${current}`);
-      setView((previous) =>
-        previous.mode !== 'reading' || chapterFor(previous.content) === current
-          ? previous
-          : { ...previous, content: current },
-      );
+      setView((previous) => {
+        if (previous.mode !== 'reading') return previous;
+        const next = readingContent(previous.content, current);
+        return next === previous.content ? previous : { ...previous, content: next };
+      });
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(pick);
@@ -554,10 +553,10 @@ export default function Home() {
       return;
     }
     const chapter = settledShot,
-      ahead = readingChapter(content) !== chapter;
+      focusContent = readingContent(content, chapter),
+      ahead = focusContent !== content;
     if (ahead && framedShot.current === chapter) return;
     framedShot.current = chapter;
-    const focusContent = ahead ? chapter : content;
     engine.setYaw(bearings[chapter] ?? Math.PI / 4);
     if (chapter === 'overview') {
       engine.reset();

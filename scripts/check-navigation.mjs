@@ -105,6 +105,17 @@ for (const hash of [
     mode: 'city',
     content: 'overview',
   });
+// The reading page: every chapter is its own address, and the hero's overview is not About,
+// so scrolling from the hero into About frames the Town Hall, as Read and #read/town-hall do.
+for (const chapter of ['overview', ...nav.readingChapters])
+  assert.equal(nav.readingChapter(chapter), chapter);
+assert.equal(nav.readingContent('overview', 'town-hall'), 'town-hall');
+assert.equal(nav.readingContent('town-hall', 'overview'), 'overview');
+assert.equal(nav.readingContent('overview', 'overview'), 'overview');
+for (const person of nav.people) {
+  assert.equal(nav.readingContent(person.id, 'people'), person.id, 'A person stays shown in People.');
+  assert.equal(nav.readingContent(person.id, 'research-studio'), 'research-studio');
+}
 assert.notEqual(
   nav.parseLocation('#city/lius-gate').content,
   nav.parseLocation('#city/town-hall').content,

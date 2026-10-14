@@ -136,6 +136,18 @@ export function chapterFor(id: ContentId) {
       ? 'town-hall'
       : id.replace(/^place:/, '');
 }
+/**
+ * The reading page's chapter for an address. The hero's overview is a chapter of its own
+ * there, not part of About (chapterFor puts it in About for City mode's masthead).
+ */
+export const readingChapter = (id: ContentId) =>
+  id === 'overview' ? 'overview' : chapterFor(id);
+/**
+ * The reading page's address while `chapter` is under the reading line: the address already
+ * shown if it lies in that chapter (a person in People), else the chapter itself.
+ */
+export const readingContent = (id: ContentId, chapter: ContentId) =>
+  readingChapter(id) === chapter ? id : chapter;
 
 export function selectionForContent(id: ContentId): BuildingId[] {
   if (id === 'people')
