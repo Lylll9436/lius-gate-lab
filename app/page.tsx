@@ -743,8 +743,14 @@ export default function Home() {
     directory,
     zoom: (f) => api.current?.zoom(f),
     rotate: () => api.current?.rotate(),
-    // Camera only: in the city the open file stays open.
-    reset: () => (explore ? api.current?.overview() : api.current?.reset()),
+    // Camera only: in the city the open file stays open. In Plan view the whole island shows
+    // all four districts alike again, so the key never holds one the camera has left.
+    reset: () => {
+      if (!explore) return api.current?.reset();
+      if (!plan) return api.current?.overview();
+      setDistrict(null);
+      api.current?.focusDistrict(null);
+    },
     cycleSky: () =>
       setSkyMode((m) => (m === 'auto' ? 'day' : m === 'day' ? 'night' : 'auto')),
     toggleRain: () => setRain((v) => !v),
