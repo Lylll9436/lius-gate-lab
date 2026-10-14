@@ -402,6 +402,38 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
+// On the opening view (1440 x 900: bearing pi/4 swayed by the idle drift's +-0.16, the hero's
+// frame shift of -0.06) the balloon keeps to the top band: never behind the hero copy on the
+// left or the News card on the right (their boxes as laid out at that size).
+{
+  const W = 1440,
+    H = 900,
+    vertical = Math.max(53, (76 * H) / W),
+    view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
+    yaw = Math.PI / 4,
+    shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
+    boxes = { 'hero copy': [56, 377, 736, 780], 'News card': [1039, 282, 1384, 682] },
+    bounds = new T.Box3(),
+    corner = new T.Vector3();
+  for (let t = 0; t < 900; t += 0.5) {
+    balloon.update(t, 0);
+    balloon.object.updateWorldMatrix(true, true);
+    bounds.setFromObject(balloon.object);
+    for (const drift of [-0.16, 0, 0.16]) {
+      view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
+      view.lookAt(shifted);
+      view.updateMatrixWorld();
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+      for (let i = 0; i < 8; i++) {
+        corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z).project(view);
+        const x = ((corner.x + 1) / 2) * W, y = ((1 - corner.y) / 2) * H;
+        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+      }
+      for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
+        assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the opening view.`);
+    }
+  }
+}
 // The herd idles with five small animated meshes (three heads, two adult tails). At time 0, the
 // pose reduced motion holds, cow-b looks up at the Life camera, cow-a feeds at the rack, the
 // calf grazes and every tail hangs still.

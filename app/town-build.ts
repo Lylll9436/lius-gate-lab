@@ -58,13 +58,15 @@ function roofKind(colour: string): SurfaceKind {
 }
 
 /**
- * The balloon's ring: centred on the island, out over the shore and the sea, so it stays out
- * of every chapter's subject. `turn` is radians per second (a lap in about seven minutes).
- * `start` is the angle at load: north-east over the sea, the open top right of the opening
- * view, about two minutes before the ring brings it behind the hero text (at 1.2 it began
- * there, behind the lede, for the first minute).
+ * The balloon's beat: a ring centred on the island, out over the shore and the sea, so it stays
+ * out of every chapter's subject. It does not lap the ring (a lap brought it behind the hero
+ * text and the News card once every seven minutes) but swings to and fro along its far side
+ * as the opening view sees it, between the open top left and top right of that view, out of
+ * frame above the island in between. `middle` and `reach` are angles on the ring (radians),
+ * `rate` the swing's pace (radians per second, a swing there and back in about six and a
+ * half minutes). It sets off from the north-east end, over the sea.
  */
-export const BALLOON = { radius: 32, turn: 0.014, start: 5.25 };
+export const BALLOON = { radius: 32, middle: 3.8, reach: 1.35, rate: 0.016 };
 
 type Point = [number, number, number];
 /** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
@@ -1761,9 +1763,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     animated.push({
       object: b,
       update(time) {
-        // Round the whole island over the shore and the sea, so it never drifts across a
-        // chapter's subject, turning slowly enough to keep a calm pace on the wide ring.
-        const a = time * BALLOON.turn + BALLOON.start;
+        // To and fro on the ring's far side, out over the shore and the sea, so it never drifts
+        // across a chapter's subject or comes down past the hero text; it eases to a stop at
+        // each end, as in a lull, and turns back.
+        const a = BALLOON.middle + BALLOON.reach * Math.cos(time * BALLOON.rate);
         // The crown stays at about 17.9; the gulls fly below 10.7.
         b.position.set(Math.cos(a) * BALLOON.radius, 12.8 + Math.sin(time * 0.4) * 0.5, Math.sin(a) * BALLOON.radius);
         b.rotation.y = -a;
