@@ -347,7 +347,9 @@ const shader = {
 water.mesh.material.onBeforeCompile(shader, null);
 assert(shader.fragmentShader.includes('vec3 waveNormal=creekNormal(waterP)'));
 water.update(7, 0, new T.PerspectiveCamera());
-water.update(8, 1, new T.PerspectiveCamera(), { rain: 1, sun: new T.Vector3(1, 1, 1) });
+water.update(8, 1, new T.PerspectiveCamera(), { rain: 1, sun: new T.Vector3(1, 1, 1), moon: new T.Vector3(160, 320, -200) });
+// The moon's glint follows the moon the frame loop turns with the camera.
+assert.deepEqual(shader.uniforms.moonPosition.value.toArray(), [160, 320, -200], 'The sea takes the moon it is handed.');
 // Night: windows glow, lanterns light up, spotlights point down.
 model.materialLibrary.setNight(1);
 let windows = 0;

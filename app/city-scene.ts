@@ -9,7 +9,7 @@ import {
 } from './town-build';
 import * as plan from './town-plan';
 import { createCityInk } from './city-ink';
-import { createIslandWater } from './city-water';
+import { createIslandWater, MOON_POSITION } from './city-water';
 import { createStreetLighting } from './city-lighting';
 import {
   createRain,
@@ -411,10 +411,12 @@ export async function createCity(
   scene.add(sun.target);
   // The key light turns with the camera yaw, so the visible faces keep the same
   // top-bright / left-lit / right-shade read from every side.
-  const UP = new T.Vector3(0, 1, 0), keyOffset = new T.Vector3(), lastKey = new T.Vector3();
+  const UP = new T.Vector3(0, 1, 0), keyOffset = new T.Vector3(), lastKey = new T.Vector3(), moonAt = new T.Vector3();
   let shadowDirty = true;
   function placeSun() {
     keyOffset.copy(sunOffset).applyAxisAngle(UP, yaw - Math.PI / 4); // yaw only: idle drift must not swing shadows
+    // The moon's glint on the sea turns with it, so no rotate stop faces the moon across the water.
+    moonAt.copy(MOON_POSITION).applyAxisAngle(UP, yaw - Math.PI / 4);
     sun.position.copy(sun.target.position).add(keyOffset);
     // The studio fill turns too, or the shade sides darken after rotate().
     scene.environmentRotation.y = yaw - Math.PI / 4;
@@ -1259,7 +1261,7 @@ export async function createCity(
     const gullsOut = inspect ? 0 : gullPresence(night, rain);
     gulls.object.visible = gullsOut > 0.001;
     gulls.update(time, gullsOut);
-    water.update(time, night, camera, { rain, sun: keyOffset });
+    water.update(time, night, camera, { rain, sun: keyOffset, moon: moonAt });
     // Shadows refresh every other frame: moving things still get moving shadows,
     // and the costliest pass runs half as often. A turned key light refreshes at once.
     frameIndex++;

@@ -19,6 +19,7 @@ for (const name of [
   'city-ink',
   'city-materials',
   'city-data',
+  'city-water',
   'lab-navigation',
   'people-photos',
 ]) {
@@ -632,6 +633,70 @@ const drawsFrame = (skyKnown) =>
   );
 assert.equal(drawsFrame(false), undefined, 'A frame was drawn before the first sky.');
 assert.equal(drawsFrame(true), true, 'Frames are drawn once the sky is known.');
+// The moon turns with the camera, as the key light does: at every bearing (the four rotate stops
+// included, with the idle drift either way) the sea's mirror direction stays as far from the moon
+// as at the opening view, so its sharp glint lobe never spreads across the water as static.
+const moonPieces = [];
+function collectMoon(node) {
+  if (ts.isFunctionDeclaration(node) && ['placeSun', 'viewOffset'].includes(node.name?.text))
+    moonPieces.push(node.getText(syntax));
+  ts.forEachChild(node, collectMoon);
+}
+collectMoon(syntax);
+assert.equal(moonPieces.length, 2, 'The moon check must find every piece it runs.');
+assert(
+  /water\.update\([^)]*moon: moonAt[^)]*\)/.test(source),
+  'The frame loop must hand the turned moon to the sea.',
+);
+const { MOON_POSITION } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href);
+const sky = {
+  T,
+  Math,
+  MOON_POSITION,
+  UP: new T.Vector3(0, 1, 0),
+  sunOffset: new T.Vector3(-16, 32, 20),
+  keyOffset: new T.Vector3(),
+  lastKey: new T.Vector3(),
+  // Left alone, this is a moon fixed in the world.
+  moonAt: MOON_POSITION.clone(),
+  sun: { position: new T.Vector3(), target: { position: new T.Vector3() } },
+  scene: { environmentRotation: { y: 0 } },
+  shadowDirty: false,
+  yaw: Math.PI / 4,
+};
+const skyTurn = runInNewContext(
+  `${ts.transpileModule(moonPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ placeSun, viewOffset });`,
+  sky,
+);
+// How close the flat sea's mirror direction comes to the moon over the water in view (1 = on it).
+// The water in view is a square round the island that turns with the camera.
+function moonGlint() {
+  let worst = 0;
+  for (const drift of [-0.16, 0, 0.16]) {
+    const eye = skyTurn.viewOffset(sky.yaw + drift, new T.Vector3()).normalize();
+    for (let x = -60; x <= 60; x += 20)
+      for (let z = -60; z <= 60; z += 20) {
+        const sea = new T.Vector3(x, 0, z).applyAxisAngle(sky.UP, sky.yaw - Math.PI / 4),
+          half = sky.moonAt.clone().sub(sea).normalize().add(eye).normalize();
+        worst = Math.max(worst, half.y);
+      }
+  }
+  return worst;
+}
+skyTurn.placeSun();
+const openingGlint = moonGlint(),
+  glints = Array.from({ length: 64 }, (_, i) => {
+    sky.yaw = Math.PI / 4 + (i / 64) * Math.PI * 2;
+    skyTurn.placeSun();
+    return [sky.yaw, moonGlint()];
+  });
+for (const [bearing, glint] of glints)
+  assert(
+    glint < 0.95,
+    `At bearing ${bearing.toFixed(2)} the moon sits ${((Math.acos(Math.min(1, glint)) * 360) / Math.PI).toFixed(0)}° off the sea's mirror direction (keep it over 36°; the opening view has 56°): its glint lobe spreads over the water.`,
+  );
+for (const [bearing, glint] of glints)
+  assert(Math.abs(glint - openingGlint) < 1e-6, `At bearing ${bearing.toFixed(2)} the moon has not turned with the camera.`);
 // A lost GPU context: three uploads its textures again on a restore but binds the studio light
 // (a render target baked on the GPU) as black, so it is baked again and the shadows redrawn.
 // A context still lost after the grace period is reported to the page, and so is its return.
@@ -859,5 +924,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );

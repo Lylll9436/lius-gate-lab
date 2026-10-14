@@ -1,6 +1,13 @@
 // Water surface adapted from AC / xi4u (MIT). See THIRD_PARTY_NOTICES.md.
 import * as T from 'three';
 
+/**
+ * Where the moon hangs at the opening bearing (yaw pi/4). The frame loop turns it with the yaw,
+ * as it turns the key light: a moon fixed in the world sat straight behind the sea at one rotate
+ * stop, and its glint lobe, broken up by the flecks, covered the whole sea in crawling static.
+ */
+export const MOON_POSITION = new T.Vector3(-160, 320, 200);
+
 function createCreekMaterial() {
   // Until the town's ground masks arrive, every texel reads as deep water (G = 0).
   const blankMasks = new T.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
@@ -11,7 +18,7 @@ function createCreekMaterial() {
     rain: { value: 0 },
     cloud: { value: 0 },
     eyeDirection: { value: new T.Vector3(0.46, 0.55, 0.69) },
-    moonPosition: { value: new T.Vector3(-160, 320, 200) },
+    moonPosition: { value: MOON_POSITION.clone() },
     sunPosition: { value: new T.Vector3(-160, 320, 200) },
     groundMasks: { value: blankMasks as T.Texture },
     maskExtent: { value: 44 },
@@ -137,7 +144,7 @@ export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Te
       time: number,
       night: number,
       camera: T.Camera,
-      weather: { rain?: number; sun?: T.Vector3 } = {},
+      weather: { rain?: number; sun?: T.Vector3; moon?: T.Vector3 } = {},
     ) {
       bottom.material.color.copy(dayBed).lerp(nightBed, night);
       uniforms.time.value = time;
@@ -145,6 +152,7 @@ export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Te
       uniforms.rain.value = weather.rain ?? 0;
       if (weather.sun)
         uniforms.sunPosition.value.copy(weather.sun).multiplyScalar(8);
+      if (weather.moon) uniforms.moonPosition.value.copy(weather.moon);
       camera.getWorldDirection(uniforms.eyeDirection.value).negate();
     },
     dispose() {
