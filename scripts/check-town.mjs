@@ -334,11 +334,11 @@ for (const [id, m] of models) {
       [-BAY.depth / slant, BAY.cant / slant, BAY.x - BAY.root / 2, d / 2],
       [BAY.depth / slant, BAY.cant / slant, BAY.x + BAY.root / 2, d / 2],
     ];
-    // The door's lintel and left jamb, grown 0.02 all round.
+    // The door's lintel and left jamb, grown 0.05 all round, so a cheek frame keeps a visible band of stone off the doorpiece.
     const door = [
       [-0.09, 2.17, 1.13, 2.39, 0.24],
       [-0.01, 0.42, 0.17, 2.35, 0.2],
-    ].map(([x0, y0, x1, y1, dz]) => new T.Box3(new T.Vector3(x0, y0, d / 2), new T.Vector3(x1, y1, d / 2 + dz)).expandByScalar(0.02));
+    ].map(([x0, y0, x1, y1, dz]) => new T.Box3(new T.Vector3(x0, y0, d / 2), new T.Vector3(x1, y1, d / 2 + dz)).expandByScalar(0.05));
     let tris = 0,
       walls = 0,
       capped = 0;

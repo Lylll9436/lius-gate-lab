@@ -29,9 +29,10 @@ export function createHomes(kit: Kit, nature: Nature) {
     box(shell, 0, top + 0.1, 0, w + 0.3, 0.2, d + 0.3, dress, 'stone');
     // The signature bay: a Glasgow canted sandstone bay in the 1.06 slot between the left quoins
     // and the doorpiece. Its cheeks meet the wall at 67 degrees (the slot is too narrow for 45),
-    // so from any bearing the front and a cheek read as two tones meeting at an angle. Sash
-    // windows sit on every face: 0.36 glass on the front, 0.20 on each cheek, on every storey.
-    // Each home's bay differs in its top: Pengyuan's villa bay is one storey under a stone
+    // so from any bearing the front and a cheek read as two tones meeting at an angle. On every
+    // storey the front has a sash window (0.36 glass, meeting rail) and each cheek a single 0.20
+    // light whose frame stands only 0.07 proud, so the bay reads as glass, not a lattice, and the
+    // door-side frame keeps 0.07 of stone clear of the lintel end. Each home's bay differs in its top: Pengyuan's villa bay is one storey under a stone
     // balustrade, Yunlong's rises two storeys to the main eave, Qin's two under its own slate roof.
     // Window groups (stable ids, read by the night lights; each group is one light, drawn from
     // its first pane, the front's lower one): `<id>-bay-0` the ground storey (kept lit late),
@@ -40,7 +41,8 @@ export function createHomes(kit: Kit, nature: Nature) {
     const bay: Bay = { x: -0.68, z0: d / 2, root: 1.06, depth: 0.55, cant: 0.23 },
       faces = bayFaces(shell, bay);
     const storey = (n: number, y: number, h: number) => faces.forEach(({ face, arris }) =>
-      sash(face, arris * 0.07, y, 0, arris ? 0.2 : 0.36, h, dress, { group: `${site.id}-bay-${n}`, lit: n === 0 }));
+      sash(face, arris * 0.07, y, 0, arris ? 0.2 : 0.36, h, dress,
+        { group: `${site.id}-bay-${n}`, lit: n === 0, single: arris !== 0, deep: arris ? 0.07 : 0.12 }));
     cantedPrism(shell, bay, 0, P, base, 'stone', 0.06); // footing on the plinth line
     cantedPrism(shell, bay, 0.56, 0.68, dress, 'stone', 0.06).userData.band = true; // sill course; frames sit on it
     cantedPrism(shell, bay, P, 1.76, stone); // ground storey
