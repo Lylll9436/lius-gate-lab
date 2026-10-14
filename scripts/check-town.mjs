@@ -614,6 +614,21 @@ assert.equal(lowSun(rad(-10)), 0);
     assert.equal(crossed, 1, 'The check must see the sun cross north once.');
   }
 }
+// The gulls sit out the night and the rain, shrinking away as either eases in rather than all
+// vanishing in one frame.
+{
+  const { gullPresence, createGulls } = await load('city-atmosphere');
+  assert.equal(gullPresence(0, 0), 1);
+  assert.equal(gullPresence(1, 0), 0);
+  assert.equal(gullPresence(0, 1), 0);
+  for (const [name, at] of [['night', (v) => gullPresence(v, 0)], ['rain', (v) => gullPresence(0, v)]])
+    for (let v = 0; v < 1; v += 0.01)
+      assert(Math.abs(at(v + 0.01) - at(v)) < 0.06, `The gulls pop out of sight as the ${name} comes on (at ${v.toFixed(2)}).`);
+  const birds = createGulls();
+  birds.update(3, 0.4);
+  assert(birds.object.children.every((bird) => Math.abs(bird.scale.x - 0.4) < 1e-9), 'The gulls shrink with their presence.');
+  birds.dispose();
+}
 // Manual Day is plain daylight at every hour: never the real sun's golden hour or its warm low
 // light, the key light high. Auto and Night keep the real sun.
 {

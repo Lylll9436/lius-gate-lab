@@ -14,6 +14,7 @@ import { createStreetLighting } from './city-lighting';
 import {
   createRain,
   createGulls,
+  gullPresence,
   sunOffsetFor,
   lowSun,
   warmSun,
@@ -1194,9 +1195,10 @@ export async function createCity(
       .lerp(tint.fogRain, rain * 0.45 * (1 - night))
       .lerp(tint.fogGolden, glow * 0.6);
     weather.update(dt, rain, paused);
-    // Gulls sit out the night and the heavy rain.
-    gulls.object.visible = !inspect && night < 0.85 && rain < 0.5;
-    gulls.update(time);
+    // Gulls sit out the night and the heavy rain (and Inspect): they shrink away, then hide.
+    const gullsOut = inspect ? 0 : gullPresence(night, rain);
+    gulls.object.visible = gullsOut > 0.001;
+    gulls.update(time, gullsOut);
     water.update(time, night, camera, { rain, sun: keyOffset });
     // Shadows refresh every other frame: moving things still get moving shadows,
     // and the costliest pass runs half as often. A turned key light refreshes at once.

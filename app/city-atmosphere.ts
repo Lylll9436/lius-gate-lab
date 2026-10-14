@@ -112,6 +112,17 @@ export function createRain(count = 1700, radius = 50, ceiling = 30) {
 }
 
 /**
+ * How much of the gulls is out, 0..1: they sit out the night and the heavy rain, shrinking away
+ * as either comes on (over about a second for Night or the rain button) instead of all vanishing
+ * in one frame.
+ */
+export function gullPresence(night: number, rain: number) {
+  return (
+    (1 - T.MathUtils.smoothstep(night, 0.7, 0.95)) * (1 - T.MathUtils.smoothstep(rain, 0.2, 0.8))
+  );
+}
+
+/**
  * A few gulls circling the harbour and the lighthouse; wings flap, then glide in a shallow V.
  * Each bird is a chunky body (head, beak, tail) and two wings, all sharing one vertex-coloured
  * material. Beaks point along local +x, which the update turns along the direction of travel.
@@ -169,8 +180,10 @@ export function createGulls(count = 5) {
   });
   return {
     object: group,
-    update(time: number) {
+    /** `presence` (see gullPresence) scales every bird, 0 to 1. */
+    update(time: number, presence = 1) {
       for (const g of birds) {
+        g.bird.scale.setScalar(presence);
         const a = g.phase + time * g.w;
         g.bird.position.set(
           g.cx + Math.cos(a) * g.r,
