@@ -435,7 +435,7 @@ export const shoreProps = {
   creel: { i: 30.7, w: 1.65, turn: 0.4, foot: 0.31 },
   floats: [{ i: 29.6, w: 0.62, foot: 0.12 }, { i: 29.25, w: 0.95, foot: 0.12 }],
   coil: { i: 29.6, w: 1.45, foot: 0.23 },
-  netFrame: { from: { i: 37.4, w: 0.65 }, to: { i: 39.2, w: 0.65 }, foot: 0.15 }, // a capsule
+  netFrame: { from: { i: 37.4, w: 0.65 }, to: { i: 39.2, w: 0.65 }, foot: 0.3 }, // a capsule: the hangs splay to 0.24, the hem floats to 0.3
   driftwood: { from: { i: 40.05, w: 1.45 }, to: { i: 41.2, w: 1.38 }, foot: 0.1, rootFoot: 0.17 }, // a capsule, the root flare at `from`
   rockPools: [{ i: 42, w: 2.42, r: 0.32, foot: 0.55 }, { i: 41, w: 2.5, r: 0.22, foot: 0.45 }, { i: 43.1, w: 2.3, r: 0.26, foot: 0.49 }], // foot = r + 0.23 (rim rocks)
   wrack: [{ i: 42.4, w: 2.0, s: 1, foot: 0.17 }, { i: 40.3, w: 2.68, s: 0.8, foot: 0.136 }, { i: 39.3, w: 1.6, s: 0.9, foot: 0.153 }, { i: 38.7, w: 1.7, s: 0.7, foot: 0.119 }], // foot = 0.17 s

@@ -232,10 +232,13 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
   }
   /**
    * A net hung to dry over a bar between two posts on the upper beach, on the dinghy side of the
-   * pier, its long scalloped side hanging toward the sea with a row of small orange floats on the
-   * hem. The sheet wraps the bar on a circle 0.015 clear of it, so the bar never shows through.
-   * It is a solid veil: cut-out mesh holes shrink below a pixel at the zooms the town is mostly
-   * seen at (up to about 2 on a sharp screen, 4 on a plain one) and twinkle there as it pans.
+   * pier: its long side hangs toward the sea with a few small orange floats on the hem, the short
+   * side behind. The sheet wraps the bar on a circle 0.015 clear of it, so the bar never shows
+   * through; both hangs splay out as they fall, so they face the sky rather than standing as a
+   * flat board, and fall in loose folds to ragged hems of uneven length. It is a solid veil:
+   * cut-out mesh holes shrink below a pixel at the zooms the town is mostly seen at and twinkle
+   * there as it pans. Its back faces are built in, so it batches with the other cloth instead of
+   * needing a two-sided program of its own.
    */
   function dryingNet(g: T.Object3D) {
     const F = plan.shoreProps.netFrame,
@@ -250,51 +253,63 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     strut(frame, new T.Vector3(-span / 2, 0.95, 0), new T.Vector3(span / 2, 0.95, 0), 0.045, palette.wood, 'wood');
     // The sheet: 14 columns along the bar and 10 rows across it, from the seaward hem (row 0) up
     // and over the bar (rows 3-7, at 45 degree steps round it) and down to the landward hem.
+    // It is 1.05 long and pushed toward the `from` post, so the bar shows bare toward the other.
     const R = 0.06,
+      length = 1.05,
+      along = (u: number) => (u - 0.5) * length - 0.12,
       sheet = new T.PlaneGeometry(1.3, 1, 13, 9),
       pos = sheet.getAttribute('position'),
       tone = new Float32Array(pos.count * 3);
+    // A hang f of the way down (f 1 at the hem): it leaves the bar, splays out by `spread` and
+    // folds by up to 0.03 as it falls, to a hem `long` below the bar, less where the hem lifts.
+    const hang = (u: number, f: number, long: number, lift: number, spread: number, phase: number): [number, number] => [
+      R + spread * f ** 1.3 + 0.03 * f * Math.sin(2 * Math.PI * 3.2 * u + phase),
+      0.95 - f * (long - lift * (0.5 + 0.5 * Math.sin(2 * Math.PI * (1.3 * u + phase)))) * (0.8 + 0.2 * Math.sin(Math.PI * u)),
+    ];
     const at = (u: number, row: number): [number, number, number] => {
-      const sway = 0.6 + 0.4 * Math.sin(7 * u);
       if (row <= 2) {
-        const f = 1 - row / 3; // front hang: f 1 at the hem
-        return [-(R + 0.06 * Math.sin(Math.PI * f) * sway), 0.95 - f * (0.68 - 0.08 * Math.abs(Math.sin(2.5 * Math.PI * u))), f];
+        const f = 1 - row / 3,
+          [out, y] = hang(u, f, 0.74, 0.24, 0.15, 0.4);
+        return [-out, y, f];
       }
       if (row <= 7) {
         const a = ((row - 5) * Math.PI) / 4;
         return [R * Math.sin(a), 0.95 + R * Math.cos(a), 0];
       }
-      const f = (row - 7) / 2; // back hang: f 1 at the hem
-      return [R + 0.06 * Math.sin(Math.PI * f) * sway, 0.95 - f * 0.46, f];
+      const f = (row - 7) / 2,
+        [out, y] = hang(u, f, 0.5, 0.12, 0.11, 2.1);
+      return [out, y, f];
     };
     for (let k = 0; k < pos.count; k++) {
       const ix = k % 14,
         row = Math.floor(k / 14),
         u = ix / 13,
         [across, y, f] = at(u, row);
-      pos.setXYZ(k, (u - 0.5) * 1.3, y, across);
-      tone.fill(1.05 - 0.25 * f, k * 3, k * 3 + 3); // lighter over the fold, darker at the hems
+      pos.setXYZ(k, along(u), y, across);
+      tone.fill(1.04 - 0.08 * f, k * 3, k * 3 + 3); // a little lighter over the fold; the batch's contact bake darkens the hems
     }
     sheet.setAttribute('color', new T.BufferAttribute(tone, 3));
     sheet.computeVertexNormals();
-    const netMaterial = material(palette.net, 'fabric').clone();
-    netMaterial.side = T.DoubleSide;
-    netMaterial.vertexColors = true;
-    const net = new T.Mesh(sheet, netMaterial);
-    net.name = 'drying-net';
-    net.castShadow = false;
+    // The other side: the same sheet wound the other way round with its normals reversed.
+    const back = sheet.clone(),
+      index = back.getIndex()!,
+      normal = back.getAttribute('normal');
+    for (let k = 0; k < index.count; k += 3) {
+      const a = index.getX(k + 1);
+      index.setX(k + 1, index.getX(k + 2));
+      index.setX(k + 2, a);
+    }
+    for (let k = 0; k < normal.count; k++) normal.setXYZ(k, -normal.getX(k), -normal.getY(k), -normal.getZ(k));
+    const net = new T.Mesh(mergeGeometries([sheet, back])!, material(palette.net, 'fabric'));
     net.receiveShadow = true;
-    net.userData.keepSeparate = true;
+    net.userData.noShadow = true; // a thin sheet ghosts in the shadow map
     frame.add(net);
     // Floats on the seaward hem, hanging just below it.
-    const blob = new T.IcosahedronGeometry(0.055, 0),
-      bp = blob.getAttribute('position'),
-      bn = blob.getAttribute('normal');
-    for (let k = 0; k < bp.count; k++) bn.setXYZ(k, bp.getX(k) / 0.055, bp.getY(k) / 0.055, bp.getZ(k) / 0.055); // round, not faceted
-    for (const u of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+    const blob = lump(0.055);
+    for (const u of [0.1, 0.32, 0.55, 0.78, 0.93]) {
       const [across, y] = at(u, 0),
         float = new T.Mesh(blob, material(palette.tramOrange, 'enamel'));
-      float.position.set((u - 0.5) * 1.3, y - 0.03, across);
+      float.position.set(along(u), y - 0.03, across);
       float.receiveShadow = true;
       frame.add(float);
     }
