@@ -8,7 +8,7 @@ import type { Nature } from './town-nature';
 /* Homes: the terrace row and the cottages                             */
 /* ------------------------------------------------------------------ */
 export function createHomes(kit: Kit, nature: Nature) {
-  const { box, slabRoof, windowAt, door, quoins, plinth, chimney, cantedPrism, bayFaces, sash } = kit;
+  const { box, slabRoof, windowAt, door, quoins, plinth, chimney, cantedPrism, bayFaces, sash, bayRoof } = kit;
   const { hedge, flowerBed } = nature;
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
     const w = site.w,
@@ -37,8 +37,8 @@ export function createHomes(kit: Kit, nature: Nature) {
     const bayX = -0.6,
       bayW = 1.0,
       bayTop = 2.02;
-    if (red) {
-      const first = shell.children.length; // from here to the bay cornice, everything is bay (tagged at the end)
+    if (variant !== 'villa') {
+      const first = shell.children.length; // from here to the bay's top, everything is bay (tagged at the end)
       const faces = bayFaces(shell, bay);
       const storey = (n: number, y: number, h: number) => faces.forEach(({ face, arris }) =>
         sash(face, arris * 0.07, y, 0, arris ? 0.2 : 0.36, h, dress, { group: `${site.id}-bay-${n}`, lit: n === 0 }));
@@ -46,11 +46,16 @@ export function createHomes(kit: Kit, nature: Nature) {
       cantedPrism(shell, bay, 0.56, 0.68, dress, 'stone', 0.06).userData.band = true; // sill course; frames sit on it
       cantedPrism(shell, bay, P, 1.76, stone); // ground storey
       storey(0, 1.2, 0.86); // glass 0.77-1.63, frames 0.69-1.71
-      // Two storeys up to the wallhead: the main eave caps the bay, its cornice stops under the eave lip.
+      // Two storeys. The red bay rises to the wallhead: the main eave caps it and its cornice stops
+      // under the eave lip. Qin's stops lower, under its own piended slate roof below the gable window.
+      const upper = red ? 2.78 : 2.64;
       cantedPrism(shell, bay, 1.76, 1.9, dress, 'stone', 0.07).userData.band = true; // string course
-      cantedPrism(shell, bay, 1.9, 2.78, stone);
-      storey(1, 2.33, 0.7); // frames 1.90-2.76
-      cantedPrism(shell, bay, 2.78, 2.96, dress, 'stone', 0.1).userData.bayCap = true; // front at z 2.75, under the fascia
+      cantedPrism(shell, bay, 1.9, upper, stone);
+      if (red) storey(1, 2.33, 0.7); // frames 1.90-2.76
+      else storey(1, 2.25, 0.54); // frames 1.90-2.60
+      cantedPrism(shell, bay, upper, upper + (red ? 0.18 : 0.16), dress, 'stone', 0.1).userData.bayCap = true; // front at z 2.75
+      // Its eave at z 2.77, just past the cornice; the apex (3.22) dies into the main cornice under the gable window.
+      if (!red) bayRoof(shell, bay, 2.8, 0.42, palette.slate);
       for (const o of shell.children.slice(first)) o.traverse((m) => { m.userData.bay = true; }); // batch()'s bay-cap rule
     } else {
       // The old box bay on its own battered plinth, under a lean-to.
@@ -89,7 +94,7 @@ export function createHomes(kit: Kit, nature: Nature) {
     const fx = site.x + (Math.sin(site.rotation) * d) / 2,
       fz = site.z + (Math.cos(site.rotation) * d) / 2;
     const room = plan.distanceToStreets(fx, fz) - plan.PAVEMENT_WIDTH - 0.05;
-    if (room >= 1.2) flowerBed(shell, red ? bay.x : bayX, 0, d / 2 + 0.9, 1.0, 0.4, seed * 31);
+    if (room >= 1.2) flowerBed(shell, variant !== 'villa' ? bay.x : bayX, 0, d / 2 + 0.9, 1.0, 0.4, seed * 31);
     if (room >= 1.75) hedge(shell, -0.1, 0, d / 2 + Math.min(1.4, room - 0.35), w - 0.5, 0, 0.55, { at: doorX + 0.1, width: 1.0 });
     if (room - 0.85 >= 0.2) box(shell, doorX, 0.03, d / 2 + (0.85 + room) / 2, 0.8, 0.06, room - 0.85, palette.plaza, 'paving');
   }

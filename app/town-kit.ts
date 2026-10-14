@@ -338,6 +338,18 @@ export function createKit(ctx: TownContext) {
     }
     box(g, x, y, z + 0.08, w + 0.02, rail, 0.05, frame, 'paint'); // 0.05 deep, so a sharp 12-triangle box
   }
+  /** A piended bay roof: three facets to one apex on the wall, and a soffit (the shadow pass draws back faces). A bay cap. */
+  function bayRoof(g: T.Object3D, b: Bay, yEave: number, rise: number, colour: string) {
+    const [p0, p1, p2, p3] = bayOutline(b, 0.12).map(([x, z]) => new T.Vector3(x, yEave, z)),
+      a = new T.Vector3(b.x, yEave + rise, b.z0 - 0.05);
+    const geo = new T.BufferGeometry().setFromPoints([p0, p1, a, p1, p2, a, p2, p3, a, p0, p2, p1, p0, p3, p2]);
+    geo.computeVertexNormals(); // non-indexed, so flat facets; facets face up and out, the soffit down
+    const m = new T.Mesh(geo, material(colour, roofKind(colour)));
+    m.castShadow = m.receiveShadow = true;
+    Object.assign(m.userData, { roof: true, eaveY: yEave, bayCap: true });
+    g.add(m);
+    return m;
+  }
   /**
    * A door on the wall face at z: one enamelled leaf with a raised rim (the centre reads recessed),
    * a round brass knob, a 0.18 stone surround and, when the sill y is above the ground, nested 0.14
@@ -409,6 +421,6 @@ export function createKit(ctx: TownContext) {
     const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
     return hit ? hit.point.y : plan.terrainHeight(x, z);
   }
-  return { box, cylinder, strut, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, door, quoins, plinth, chimney, lampGlass, groundY };
+  return { box, cylinder, strut, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, bayRoof, door, quoins, plinth, chimney, lampGlass, groundY };
 }
 export type Kit = ReturnType<typeof createKit>;
