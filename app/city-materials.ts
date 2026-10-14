@@ -302,8 +302,9 @@ export function createCityMaterials() {
     // studio's lights merge into one highlight instead of a cluster of hot spots.
     brass: { roughness: 0.4, metalness: 1, spec: 3 },
     // Clear-coat lines on rounded edges and a soft sheen on tops; walls and top faces keep their
-    // body colour (a stronger upward boost turns red tops salmon and a dome into a bauble).
-    enamel: { roughness: 0.45, spec: 1.2, specFloor: 0.8, clearcoat: 1, clearcoatRoughness: 0.35 },
+    // body colour. No upward boost: at 1.2 the phone box's camera-facing hat facet paled toward
+    // salmon (and stronger still turns a dome into a bauble).
+    enamel: { roughness: 0.45, spec: 0.8, specFloor: 0.8, clearcoat: 1, clearcoatRoughness: 0.35 },
     // The glint's band (high) at twice the room, its floor (low) at three quarters: windows read
     // as glass by day, never as pale cards at overview, and shaded panes keep a calm lower half
     // instead of dropping to deep navy. Night keeps the warm glow only.
