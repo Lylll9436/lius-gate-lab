@@ -117,6 +117,20 @@ export function CityStage({
     }
     wasDirectory.current = directoryOpen;
   }, [directoryOpen]);
+  // Inspect takes the focus to its way back (its own button is disabled under it), and leaving
+  // it from that way back (the button, Escape) gives the focus back to Inspect.
+  const inspecting = explore && ctl.inspect,
+    wasInspecting = useRef(inspecting),
+    backButton = useRef<HTMLButtonElement>(null),
+    inspectButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (inspecting && !wasInspecting.current) backButton.current?.focus();
+    else if (!inspecting && wasInspecting.current) {
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (lost) inspectButton.current?.focus();
+    }
+    wasInspecting.current = inspecting;
+  }, [inspecting]);
   const lastStop = tourStops.length - 1,
     onPark = !b && !!sceneTarget(ctl.content).park,
     place = placeFor(ctl.content),
@@ -369,7 +383,7 @@ export function CityStage({
 
           {ctl.inspect && (
             <div className="inspection-toolbar">
-              <button onClick={ctl.exitInspection}>
+              <button ref={backButton} onClick={ctl.exitInspection}>
                 <ArrowLeft size={14} />
                 {tr('Back to the city', '返回城市')}
               </button>
@@ -467,7 +481,11 @@ export function CityStage({
             </div>
             <div className="dossier-foot">
               {b && (
-                <button onClick={ctl.inspectBuilding} disabled={!ctl.ready || ctl.inspect}>
+                <button
+                  ref={inspectButton}
+                  onClick={ctl.inspectBuilding}
+                  disabled={!ctl.ready || ctl.inspect}
+                >
                   <Box size={15} />
                   {tr('Inspect building', '查看建筑')}
                 </button>
