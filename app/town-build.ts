@@ -1896,14 +1896,15 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       face.position.set(0, 0, tz);
       face.rotation.y = side;
       shell.add(face);
-      const rim = new T.Mesh(new T.CylinderGeometry(0.95, 0.95, 0.08, 24), material(palette.metal, 'iron'));
+      // The dial is a flat glass face 0.004 proud of the rim: a dial with sides showed a strip of
+      // its upward side above the rim, and that caught the glass glint as a pale ring on the shaded clocks.
+      const rim = new T.Mesh(new T.CylinderGeometry(0.95, 0.95, 0.096, 24), material(palette.metal, 'iron'));
       rim.rotation.x = Math.PI / 2;
-      rim.position.set(0, 7.75, tw / 2 + 0.04);
+      rim.position.set(0, 7.75, tw / 2 + 0.048);
       rim.castShadow = rim.receiveShadow = true;
       face.add(rim);
-      const dial = new T.Mesh(new T.CylinderGeometry(0.85, 0.85, 0.06, 24), material(palette.white, 'glass'));
-      dial.rotation.x = Math.PI / 2;
-      dial.position.set(0, 7.75, tw / 2 + 0.07);
+      const dial = new T.Mesh(new T.CircleGeometry(0.85, 24), material(palette.white, 'glass'));
+      dial.position.set(0, 7.75, tw / 2 + 0.1);
       dial.userData.flatGlass = true; // an even cream face under the glass glint, not a window's gradient
       face.add(dial);
       for (let i = 0; i < 4; i++) {

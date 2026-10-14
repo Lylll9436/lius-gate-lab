@@ -83,8 +83,9 @@ function specShader(m: T.MeshStandardMaterial, specU: SpecUniform) {
  * the softboxes (high), one band per pane, darker low and lighter high. The room is read at
  * roughness .4 so the band stays soft instead of mirroring the room's edges.
  * vPane is batch()'s pane coordinates: across the pane and up from its middle, in units.
- * Only the studio reflection sees the lean (direct light keeps the flat pane and its 0.06
- * roughness), so the sun and the plaza lanterns never strike a hard glint off the glass.
+ * Only the studio room's light sees the lean: its reflection, and its fill a little, which also
+ * lifts toward the top of the pane. Direct light keeps the flat pane and its 0.06 roughness,
+ * so the sun and the plaza lanterns never strike a hard glint off the glass.
  */
 const GLINT_PATCH = `{
    vec3 flatNormal = geometryNormal;
@@ -303,9 +304,10 @@ export function createCityMaterials() {
     // Clear-coat lines on rounded edges and a soft sheen on tops; walls and top faces keep their
     // body colour (a stronger upward boost turns red tops salmon and a dome into a bauble).
     enamel: { roughness: 0.45, spec: 1.2, specFloor: 0.8, clearcoat: 1, clearcoatRoughness: 0.35 },
-    // The glint's band (high) at twice the room, its floor (low) at half: windows read as glass
-    // by day, never as pale cards at overview. Night keeps the warm glow only.
-    glass: { roughness: 0.06, spec: 8, specFloor: 2 },
+    // The glint's band (high) at twice the room, its floor (low) at three quarters: windows read
+    // as glass by day, never as pale cards at overview, and shaded panes keep a calm lower half
+    // instead of dropping to deep navy. Night keeps the warm glow only.
+    glass: { roughness: 0.06, spec: 8, specFloor: 3 },
     foliage: { roughness: 0.8 }, // soft plastic; never a sheen (a pale rim round every tree)
     grass: { roughness: 0.95 },
     paving: { roughness: 0.92 },
