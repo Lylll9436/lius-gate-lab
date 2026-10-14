@@ -176,6 +176,38 @@ for (const t of trees) {
       `Tree inside ${site.id}: ${t.id}`,
     );
 }
+// The Highland paddock lies on the flat island, clear of the shore and the streets, with no
+// tree in it; its herd stands inside the dykes, bodies at least 0.25 in from the walls' inner faces.
+const pad = plan.paddock;
+for (let i = 0; i <= 20; i++)
+  for (const [x, z] of [
+    [pad.x - pad.w / 2 + (pad.w * i) / 20, pad.z - pad.d / 2],
+    [pad.x - pad.w / 2 + (pad.w * i) / 20, pad.z + pad.d / 2],
+    [pad.x - pad.w / 2, pad.z - pad.d / 2 + (pad.d * i) / 20],
+    [pad.x + pad.w / 2, pad.z - pad.d / 2 + (pad.d * i) / 20],
+  ]) {
+    assert(plan.onIsland(x, z, 2), `The paddock reaches the shore at ${x.toFixed(1)}, ${z.toFixed(1)}`);
+    assert(plan.distanceToStreets(x, z) > 2, `The paddock crowds a street at ${x.toFixed(1)}, ${z.toFixed(1)}`);
+    assert(plan.terrainHeight(x, z) < 0.01, `The paddock runs up a hill at ${x.toFixed(1)}, ${z.toFixed(1)}`);
+  }
+for (const t of trees)
+  assert(
+    Math.abs(t.x - pad.x) > pad.w / 2 + 0.5 || Math.abs(t.z - pad.z) > pad.d / 2 + 0.5,
+    'Tree in the paddock: ' + t.id,
+  );
+const inPaddock = (x, z) =>
+  Math.min(pad.w / 2 - pad.wall / 2 - Math.abs(x - pad.x), pad.d / 2 - pad.wall / 2 - Math.abs(z - pad.z));
+assert.deepEqual(plan.herd.map((a) => a.id), ['cow-a', 'cow-b', 'calf']);
+for (const animal of plan.herd) {
+  // Nose (head up) to tail tuft, and the barrel's half-width, at the animal's scale.
+  const fx = Math.sin(animal.heading),
+    fz = Math.cos(animal.heading);
+  for (const [along, across] of [[1.02, 0.2], [1.02, -0.2], [0.6, 0.38], [0.6, -0.38], [-0.7, 0.38], [-0.7, -0.38]]) {
+    const x = animal.x + (fx * along + fz * across) * animal.scale,
+      z = animal.z + (fz * along - fx * across) * animal.scale;
+    assert(inPaddock(x, z) >= 0.25, `${animal.id} leans into the dyke at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+  }
+}
 for (let i = 0; i < 400; i++) {
   const pose = plan.boatPose(i * 0.37);
   assert(!plan.onIsland(pose.x, pose.z, -1.0), 'Boat runs aground.');
@@ -284,6 +316,15 @@ for (const [id, m] of models) {
   assert(hit, 'Nothing to click on: ' + id);
 }
 assert.equal(model.parkHit.userData.placeId, 'corner-park');
+// The herd answers the pointer as the park does: straight down on the paddock, the pick (the
+// models' hit targets and the park's, recursively) finds the Corner park.
+{
+  const pad = plan.paddock;
+  ray.set(new T.Vector3(pad.x, 40, pad.z), new T.Vector3(0, -1, 0));
+  let picked = ray.intersectObjects([...Array.from(models.values(), (m) => m.hit ?? m.root), model.parkHit], true)[0]?.object;
+  while (picked && !picked.userData.placeId && !picked.userData.buildingId) picked = picked.parent;
+  assert.equal(picked?.userData.placeId, 'corner-park', 'Pointing at the herd finds the Corner park.');
+}
 // Open water around the island, and a water shader that still compiles.
 const water = createIslandWater(model.waterLevel, -0.5);
 city.add(water.bottom, water.mesh);
@@ -360,6 +401,20 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
+// The herd idles with five small animated meshes (three heads, two adult tails). At time 0, the
+// pose reduced motion holds, cow-b looks up at the Life camera, cow-a feeds at the rack, the
+// calf grazes and every tail hangs still.
+const herdParts = model.animated.filter((e) => e.object.userData.herdPart);
+assert.deepEqual(herdParts.map((e) => e.object.name).sort(), ['calf-head', 'cow-a-head', 'cow-a-tail', 'cow-b-head', 'cow-b-tail']);
+for (const e of herdParts) e.update(0, 0);
+const part = (name) => herdParts.find((e) => e.object.name === name).object;
+assert(part('cow-b-head').rotation.x < 0, 'cow-b holds its head up.');
+for (const name of ['cow-a-head', 'cow-b-head', 'calf-head'])
+  assert(Math.abs(part(name).rotation.y) < 0.01 && Math.abs(part(name).rotation.z) < 0.01, name + ' looks straight ahead.');
+assert(part('cow-a-head').rotation.x > 0.1 && part('cow-a-head').rotation.x < 0.25, 'cow-a feeds at the hay.');
+assert(part('calf-head').rotation.x > 0.4, 'The calf grazes.');
+for (const name of ['cow-a-tail', 'cow-b-tail']) assert(Math.abs(part(name).rotation.z) < 1e-9, name + ' hangs still.');
+for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.children.every((c) => c.isMesh), 'Batched: ' + e.object.name);
 // The season shows on the trees: blossom only in spring, autumn tones only in autumn.
 const { glasgowSeason } = await load('glasgow-sun');
 const { treeLook } = await load('town-build');
@@ -373,8 +428,8 @@ for (const [when, season] of [
   assert.equal(glasgowSeason(new Date(when)), season, 'Glasgow season on ' + when);
 assert.equal(glasgowSeason(new Date('2026-10-13T12:00:00Z'), '?debug&season=spring'), 'spring', '?season= previews a season.');
 assert.equal(glasgowSeason(new Date('2026-10-13T12:00:00Z'), '?season=monsoon'), 'autumn', 'An unknown ?season= is ignored.');
-// Indexed as the build plants them (pines keep their own look).
-const looks = (season) => new Set(trees.flatMap((t, i) => (t.kind === 'pine' ? [] : [treeLook(t, i, season).top])));
+// Seeded by id, as the build plants them (pines keep their own look).
+const looks = (season) => new Set(trees.flatMap((t) => (t.kind === 'pine' ? [] : [treeLook(t, Number(t.id.slice(5)), season).top])));
 const blossomTop = '#fdd9e3',
   autumnTop = '#f2c862';
 assert(looks('spring').has(blossomTop) && !looks('spring').has(autumnTop), 'Spring blossoms and does not turn.');

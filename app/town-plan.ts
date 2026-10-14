@@ -285,6 +285,28 @@ export const cottages: { x: number; z: number; rotation: number; color: string }
   { x: 5, z: -17.5, rotation: 0, color: '#cdb48d' },
   { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8' },
 ];
+/**
+ * A dry-stone paddock for a small Highland herd, in the south-west outskirts between the ring's
+ * outer trees and the south shore: on flat ground, 3.35 from the road, about 3.9 inside the
+ * coast, 16 from the nearest cottage and far from the terrace row. From the Life chapter's
+ * bearing (-0.35) it lies in front of the park, below it on the page. The rectangle is the
+ * dykes' centre lines; the field gate opens in the north wall, toward the park.
+ */
+export const paddock = { x: -11.6, z: 20.9, w: 5.2, d: 3.4, wall: 0.34, gate: { x: -10.2, width: 1.1 } };
+/**
+ * The herd: two cows and a calf. `heading` is rotation.y (the nose points along
+ * (sin h, cos h)); `phase` sets the idle graze cycle, so at time 0 (and so with reduced motion)
+ * cow-b holds its head up toward the Life camera while cow-a eats at the rack and the calf grazes.
+ * The calf grazes in front of cow-a, clear of cow-b's horns as the Life camera sees them.
+ */
+export type HerdMember = { id: string; x: number; z: number; heading: number; scale: number; eating: boolean; phase: number };
+export const herd: HerdMember[] = [
+  { id: 'cow-a', x: -12.35, z: 20.75, heading: -Math.PI / 2, scale: 1, eating: true, phase: 1.2 },
+  { id: 'cow-b', x: -10.4, z: 21.25, heading: -0.75, scale: 1, eating: false, phase: -Math.PI / 2 },
+  { id: 'calf', x: -12.9, z: 21.8, heading: 1.9, scale: 0.62, eating: false, phase: 1.9 },
+];
+/** The hay rack against the paddock's west wall, its long side along z and its feeding side to +x. */
+export const hayRack = { x: -13.65, z: 20.7 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
@@ -425,7 +447,9 @@ export function plantingPlan(): TreeSpec[] {
       hilly && hash(i + 9) < 0.55 ? 'pine' : hash(i + 17) < 0.14 ? 'autumn' : 'round',
     );
   }
-  return trees;
+  // The paddock takes the one scatter tree that stood in it. Filtering afterwards (rather than
+  // in the scatter loop) leaves every other tree, and its id, where it was.
+  return trees.filter((t) => !insideRect(t.x, t.z, paddock, 1.2));
 }
 
 export type LampSpec = { x: number; z: number; id: string };

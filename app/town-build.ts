@@ -224,6 +224,26 @@ const hoardingWalls = (plot: typeof plan.reservedPlot) =>
     [-plot.w / 2, 0, plot.d, Math.PI / 2],
     [plot.w / 2, 0, plot.d, Math.PI / 2],
   ] as const;
+/**
+ * The paddock's dry-stone dykes as straight runs on the plan's centre lines: centre x, z,
+ * length and rotation. The north and south runs reach over the corners; the field gate cuts the
+ * north one, which stops at the outer faces of the gate posts (0.16 square, on the gateway's ends).
+ */
+const paddockRuns = (): (readonly [number, number, number, number])[] => {
+  const P = plan.paddock,
+    x0 = P.x - P.w / 2 - P.wall / 2,
+    x1 = P.x + P.w / 2 + P.wall / 2,
+    g0 = P.gate.x - P.gate.width / 2 - 0.08,
+    g1 = P.gate.x + P.gate.width / 2 + 0.08,
+    north = P.z - P.d / 2;
+  return [
+    [(x0 + g0) / 2, north, g0 - x0, 0],
+    [(g1 + x1) / 2, north, x1 - g1, 0],
+    [P.x, P.z + P.d / 2, x1 - x0, 0],
+    [P.x - P.w / 2, P.z, P.d - P.wall, Math.PI / 2],
+    [P.x + P.w / 2, P.z, P.d - P.wall, Math.PI / 2],
+  ];
+};
 
 /* ------------------------------------------------------------------ */
 /* Ground masks                                                        */
@@ -299,6 +319,7 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
     disc(t.x, t.z, 1.0 * t.size, 0.45, 0.5);
     disc(t.x, t.z, 0.3 * t.size, 0.85, 0.3);
   }
+  paddockMasks(rect, disc);
   const scratch = new Float32Array(N * N);
   for (let pass = 0; pass < 2; pass++) {
     boxBlur(ao, scratch, true);
@@ -349,6 +370,14 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   texture.name = 'ground-masks';
   texture.needsUpdate = true;
   return texture;
+}
+type RectStamp = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => void;
+type DiscStamp = (cx: number, cz: number, r: number, strength: number, feather: number) => void;
+/** The paddock's ground shade (stamped before the blur): a soft band under every dyke run, a pad under the hay rack and one under each animal. */
+function paddockMasks(rect: RectStamp, disc: DiscStamp) {
+  for (const [x, z, length, ry] of paddockRuns()) rect(x, z, length, plan.paddock.wall, ry, 0.5, 0.3);
+  rect(plan.hayRack.x, plan.hayRack.z, 0.5, 1.0, 0, 0.6, 0.3);
+  for (const animal of plan.herd) disc(animal.x, animal.z, 0.45 * animal.scale, 0.5, 0.3);
 }
 
 type TownOptions = {
@@ -2185,6 +2214,267 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Highland herd                                                     */
+  /* ---------------------------------------------------------------- */
+  /**
+   * The paddock's own colours, judged after the 0.72 grade: the dyke takes the beach boulders'
+   * greys and the hay a dull straw (HSV s 0.45; a paler one read as an egg in the trough).
+   */
+  const PADDOCK = { stone: ['#b9b6a2', '#9da394'], cope: '#a3aaa0', hay: '#c4a86c' };
+  /**
+   * Highland coats: a muted ginger-russet (HSV s ≤ 0.61, no louder than the wood and the red
+   * sandstone), a paler back and fringe, a dark belly and legs, a dark muzzle.
+   */
+  const COAT = { coat: '#ab6a42', light: '#c58a5c', dark: '#7a4b31', calf: '#b97a4c', muzzle: '#4f423a' };
+  /** The paddock, its gate and hay rack, and the herd in it. */
+  function highlandPaddock(g: T.Object3D) {
+    dyke(g);
+    fieldGate(g);
+    hayRack(g);
+    for (const animal of plan.herd) highlandCow(g, animal);
+  }
+  /** Hang the hem of a lump: vertices below `below` drop by a hashed amount up to `drop`; coincident corners drop together. */
+  function shag(geo: T.BufferGeometry, below: number, drop: number) {
+    const p = geo.getAttribute('position');
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (y < below) p.setY(i, y - drop * hash(Math.round(x * 97) * 7 + Math.round(y * 89) * 13 + Math.round(z * 83) * 3));
+    }
+    return geo;
+  }
+  /**
+   * The coat's two-tone paint, after paintCanopy: a warm, paler back, a darker belly and creases
+   * where the lumps meet. Lumps are [x, y, z, r, sx, sy, sz]; the value ramp starts at 0.8, not
+   * 0.45, because the batch bake already darkens the belly.
+   */
+  function paintCoat(geos: T.BufferGeometry[], lumps: number[][], tone: string, y0: number, y1: number) {
+    const base = new T.Color(tone), top = new T.Color(COAT.light), under = new T.Color(COAT.dark), c = new T.Color();
+    geos.forEach((geo, k) => {
+      const p = geo.getAttribute('position'), n = geo.getAttribute('normal'), out = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i), v = sstep(y, y0, y1);
+        let f = mix(0.8, 1.05, sstep(v, 0.12, 0.88));
+        lumps.forEach(([lx, ly, lz, r, sx, sy, sz], j) => {
+          if (j === k) return;
+          const gap = Math.hypot((x - lx) / sx, (y - ly) / sy, (z - lz) / sz) - r;
+          if (gap > 0) f *= 1 - 0.14 * (1 - sstep(gap, 0, 0.3 * r));
+        });
+        c.copy(base).lerp(under, 0.3 * (1 - v)).lerp(top, 0.22 * sstep(v, 0.55, 1) * Math.max(0, n.getY(i)));
+        out.set([c.r * f, c.g * f, c.b * f], i * 3);
+      }
+      geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    });
+  }
+  /** A horn: a tube along a smooth curve, tapering from r0 to a point, cream at the root and dark at the tip. */
+  function horn(g: T.Object3D, points: T.Vector3[], r0: number, colour: string, tip: string) {
+    const curve = new T.CatmullRomCurve3(points),
+      segments = 8,
+      sides = 6,
+      geo = new T.TubeGeometry(curve, segments, 1, sides, false),
+      p = geo.getAttribute('position'),
+      out = new Float32Array(p.count * 3),
+      root = new T.Color(colour),
+      dark = new T.Color(tip),
+      c = new T.Color(),
+      at = new T.Vector3();
+    // TubeGeometry lays out one ring of sides + 1 unit-radius vertices per step along the curve.
+    for (let j = 0; j <= segments; j++) {
+      const t = j / segments,
+        r = mix(r0, 0.004, t ** 1.2);
+      curve.getPointAt(t, at);
+      c.copy(root).lerp(dark, sstep(t, 0.62, 0.95));
+      for (let i = 0; i <= sides; i++) {
+        const k = j * (sides + 1) + i;
+        p.setXYZ(k, at.x + (p.getX(k) - at.x) * r, at.y + (p.getY(k) - at.y) * r, at.z + (p.getZ(k) - at.z) * r);
+        out.set([c.r, c.g, c.b], k * 3);
+      }
+    }
+    geo.setAttribute('color', new T.BufferAttribute(out, 3));
+    const m = new T.Mesh(geo, material('#ffffff', 'fabric'));
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * A Highland cow (local +z is the nose, about 1.65 nose to tail and 0.95 at the withers): a shaggy
+   * barrel with shoulder and rump lumps on short legs, a head with a fringe over the eyes, a
+   * dark muzzle and long upswept horns (nubs on a calf), and a tufted tail. Every part is
+   * 'fabric'. The head and tail hang from their own pivots, so they can move.
+   */
+  function highlandCow(g: T.Object3D, spec: plan.HerdMember) {
+    const calf = spec.scale < 0.8,
+      tone = calf ? COAT.calf : COAT.coat;
+    const cow = new T.Group();
+    cow.name = spec.id;
+    cow.position.set(spec.x, plan.terrainHeight(spec.x, spec.z), spec.z);
+    cow.rotation.y = spec.heading;
+    cow.scale.setScalar(spec.scale);
+    g.add(cow);
+    const coat = (geo: T.BufferGeometry, parent: T.Object3D = cow) => {
+      const m = new T.Mesh(geo, material('#ffffff', 'fabric'));
+      m.castShadow = m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    };
+    // Barrel, shoulder and rump: one coat, painted across the three lumps, with a ragged hem
+    // that hangs over the tops of the legs. The shoulder and rump lumps stay inside the barrel's
+    // outline seen from above and only lift its back line at the withers and the hips.
+    const lumps = [[0, 0.58, 0, 0.44, 0.85, 0.74, 1.3], [0, 0.72, 0.3, 0.3, 0.9, 0.85, 1.0], [0, 0.7, -0.36, 0.3, 0.9, 0.8, 0.95]];
+    const body = lumps.map(([x, y, z, r, sx, sy, sz]) => shag(new T.IcosahedronGeometry(r, 1), -0.06, 0.13).scale(sx, sy, sz).translate(x, y, z));
+    paintCoat(body, lumps, tone, 0.3, 0.95);
+    body.forEach((geo) => coat(geo));
+    for (const sx of [-0.2, 0.2]) for (const sz of [-0.34, 0.34]) box(cow, sx, 0.15, sz, 0.17, 0.3, 0.17, COAT.dark, 'fabric'); // short legs; the bake darkens the feet
+    const head = new T.Group();
+    head.name = spec.id + '-head';
+    head.position.set(0, 0.72, 0.5);
+    cow.add(head);
+    box(head, 0, -0.02, 0.22, 0.38, 0.34, 0.4, tone, 'fabric', { bevel: 0.1 }); // skull
+    box(head, 0, -0.13, 0.44, 0.32, 0.2, 0.16, COAT.muzzle, 'fabric', { bevel: 0.06 }); // muzzle
+    const f = calf ? 1.2 : 1;
+    // The fringe over the eyes, drooping forward with a ragged hem (no separate locks: pointed
+    // ones below it read as fangs over the muzzle).
+    const fringe = shag(new T.IcosahedronGeometry(0.2, 1), -0.02, 0.12).scale(1.3 * f, 0.6 * f, 0.85 * f),
+      forelock = new T.Color(tone).lerp(new T.Color(COAT.light), 0.45).getStyle(),
+      bud = new T.Color(palette.trim).lerp(new T.Color(tone), 0.35).getStyle();
+    const lock = coat(paintByHeight(fringe, forelock, (y) => mix(0.88, 1.04, sstep(y, -0.12, 0.12))), head);
+    lock.position.set(0, 0.11, 0.35);
+    lock.rotation.x = 0.3;
+    for (const s of [-1, 1]) {
+      box(head, s * 0.25, 0.04, 0.16, 0.18, 0.06, 0.1, tone, 'fabric', { rz: -s * 0.35 }); // ears, drooping out under the horns
+      // A calf's horn buds: small, muted and well back on the crown, behind the fringe, so they
+      // never sit where eyes would be.
+      if (calf) cone(head, s * 0.12, 0.16, 0.07, 0.03, 0.07, bud, 'fabric', 6, 0).rotation.z = -s * 0.4;
+      else horn(head, [[0.15, 0.12, 0.14], [0.42, 0.17, 0.24], [0.55, 0.38, 0.28], [0.59, 0.5, 0.29]].map(([x, y, z]) => new T.Vector3(s * x, y, z)), 0.065, palette.trim, palette.woodDark);
+    }
+    const tail = new T.Group();
+    tail.name = spec.id + '-tail';
+    tail.position.set(0, 0.8, -0.6);
+    cow.add(tail);
+    box(tail, 0, -0.21, 0, 0.07, 0.42, 0.07, tone, 'fabric').userData.noShadow = true; // strand: like the tuft it casts no shadow, so a tail is one mesh
+    coat(paintByHeight(new T.IcosahedronGeometry(0.09, 1).scale(1, 1.4, 1), COAT.dark, () => 1), tail).position.y = -0.45; // tuft
+    headPose(spec, head, 0);
+    tailPose(spec, tail, 0);
+    // Five animated pivots in all: each head, and each adult's tail (the calf's stays still).
+    head.userData.keepSeparate = true;
+    head.userData.herdPart = 'head';
+    animated.push({ object: head, update: (time) => headPose(spec, head, time) });
+    if (!calf) {
+      tail.userData.keepSeparate = true;
+      tail.userData.herdPart = 'tail';
+      animated.push({ object: tail, update: (time) => tailPose(spec, tail, time) });
+    }
+  }
+  /**
+   * A head's idle at `time`: a slow graze cycle (about 40 s, with long holds) that lowers it to
+   * the grass, or for the cow at the rack only to the hay; a chewing bob while it is down, a
+   * look about while it is up and a rare ear-flick twitch. Reduced motion holds time 0.
+   */
+  function headPose(spec: plan.HerdMember, head: T.Object3D, time: number) {
+    const { phase } = spec,
+      s = sstep(0.5 + 0.5 * Math.sin(time * 0.16 + phase), 0.2, 0.8);
+    // A grazing head drops (from 0.72) as well as dips, so the muzzle comes down to about 0.05
+    // over the grass instead of hanging over its own shadow.
+    head.position.y = spec.eating ? 0.72 : 0.72 - 0.12 * s;
+    head.rotation.x = (spec.eating ? mix(-0.06, 0.12, s) : mix(-0.08, 0.85, s)) + 0.03 * s * Math.sin(time * 5 + phase);
+    // Both start from rest, so the held pose looks straight ahead along the body.
+    head.rotation.y = 0.15 * (1 - s) * Math.cos(time * 0.23 + phase);
+    head.rotation.z = 0.07 * Math.max(0, Math.sin(time * 0.9 + phase * 3 + 1)) ** 16;
+  }
+  /** A tail swishes in bursts; at time 0 (and so with reduced motion) every tail hangs still. */
+  function tailPose(spec: plan.HerdMember, tail: T.Object3D, time: number) {
+    const { phase } = spec;
+    tail.rotation.z = 0.35 * Math.sin(time * 2.4 + phase) * sstep(Math.sin(time * 0.31 + phase * 1.7 + Math.PI), 0.55, 0.9);
+  }
+  /**
+   * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
+   * the Highland-cow outing lives) through an invisible box under the park's own hit box. The
+   * herd stays out of the park group, so the park's selection ring still traces only the park.
+   */
+  function herdHit(parkHit: T.Mesh) {
+    const P = plan.paddock;
+    const hit = new T.Mesh(new T.BoxGeometry(P.w + 0.4, 1.6, P.d + 0.4), parkHit.material);
+    hit.name = 'herd-hit';
+    hit.position.set(P.x - parkHit.position.x, 0.8 - parkHit.position.y, P.z - parkHit.position.z);
+    hit.userData.placeId = 'corner-park';
+    parkHit.add(hit);
+  }
+  /**
+   * Dry-stone dykes: battered, rounded blocks about 0.7 long in the two greys (jittered in
+   * height and turn), under a row of rounded cope stones set on edge. The top is about 0.5, so
+   * the cows read over it.
+   */
+  function dyke(g: T.Object3D) {
+    const wall = plan.paddock.wall;
+    paddockRuns().forEach(([x, z, length, ry], r) => {
+      const run = new T.Group();
+      run.position.set(x, plan.terrainHeight(x, z), z);
+      run.rotation.y = ry;
+      g.add(run);
+      const blocks = Math.max(1, Math.round(length / 0.7)),
+        block = length / blocks,
+        tops: number[] = [];
+      for (let i = 0; i < blocks; i++) {
+        const k = r * 17 + i,
+          top = 0.35 + (hash(k * 3 + 1) - 0.5) * 0.06;
+        tops.push(top);
+        box(run, -length / 2 + (i + 0.5) * block, top / 2, 0, block, top, wall, PADDOCK.stone[hash(k * 3 + 3) < 0.5 ? 0 : 1], 'stone', { bevel: 0.06, taper: 0.035, ry: (hash(k * 3 + 2) - 0.5) * 0.06 });
+      }
+      // Copes about 0.3 long, abutting with no gaps: a finer row with gaps between the stones
+      // falls below a pixel at overview zoom and flickers as the camera drifts. Each cope sinks
+      // 0.02 into the lower of the blocks under it and stands over the higher; every other one
+      // stands 0.0075 prouder, so abutting faces never share a plane.
+      const copes = Math.max(1, Math.round(length / 0.3)),
+        pitch = length / copes,
+        under = (along: number) => tops[Math.min(blocks - 1, Math.max(0, Math.floor((along + length / 2) / block)))];
+      for (let i = 0; i < copes; i++) {
+        const along = -length / 2 + (i + 0.5) * pitch,
+          ends = [under(along - pitch / 2 + 0.01), under(along + pitch / 2 - 0.01)],
+          bottom = Math.min(...ends) - 0.02,
+          top = Math.max(...ends) + 0.1 + 0.04 * hash(r * 101 + i * 7 + 1);
+        box(run, along, (bottom + top) / 2, 0, pitch + 0.01, top - bottom, wall - (i % 2 ? 0.04 : 0.055), PADDOCK.cope, 'stone', { rz: (hash(r * 101 + i * 7) - 0.5) * 0.08 });
+      }
+    });
+  }
+  /** A field gate across the gateway: posts at the two wall ends, three rails and a brace on the paddock side. */
+  function fieldGate(g: T.Object3D) {
+    const P = plan.paddock,
+      { x, width } = P.gate,
+      z = P.z - P.d / 2;
+    const gate = new T.Group();
+    gate.position.set(x, plan.terrainHeight(x, z), z);
+    g.add(gate);
+    for (const s of [-1, 1]) box(gate, (s * width) / 2, 0.4, 0, 0.16, 0.8, 0.16, palette.woodDark, 'wood'); // posts take the wall ends
+    for (const y of [0.2, 0.4, 0.6]) box(gate, 0, y, 0, width - 0.1, 0.08, 0.06, palette.wood, 'wood'); // rails, 0.03 into each post
+    const run = width - 0.3,
+      rise = 0.4;
+    box(gate, 0, 0.4, 0.06, Math.hypot(run, rise), 0.07, 0.05, palette.wood, 'wood', { rz: Math.atan2(rise, run) }); // brace, clear of the rails' faces
+  }
+  /**
+   * The hay rack against the west wall: an open trough of hay on four legs. (A pantile hat on it
+   * caught the sun as the brightest thing in the paddock, and the horns of the cow at the rack
+   * crossed it on screen.)
+   */
+  function hayRack(g: T.Object3D) {
+    const { x, z } = plan.hayRack;
+    const rack = new T.Group();
+    rack.position.set(x, plan.terrainHeight(x, z), z);
+    rack.rotation.y = Math.PI / 2; // local x runs along the wall (world z); local +z, the feeding side, faces the paddock
+    g.add(rack);
+    for (const sx of [-0.42, 0.42]) for (const sz of [-0.18, 0.18]) box(rack, sx, 0.275, sz, 0.1, 0.55, 0.1, palette.woodDark, 'wood');
+    box(rack, 0, 0.42, 0, 1.0, 0.28, 0.5, palette.wood, 'wood'); // trough 0.28-0.56
+    // The trough heaped with hay: a low, faceted pile inside its rim with a tufted top (shag()
+    // hangs a hem, so the pile is flipped for it).
+    const hay = shag(new T.IcosahedronGeometry(0.42, 1).rotateX(Math.PI), 0, 0.4).rotateX(Math.PI).scale(1.05, 0.3, 0.55);
+    hay.computeVertexNormals();
+    paintByHeight(hay, PADDOCK.hay, (y) => mix(0.8, 1.0, sstep(y, -0.12, 0.24)));
+    const mound = new T.Mesh(hay, material('#ffffff', 'foliage'));
+    mound.position.y = 0.56;
+    mound.userData.noShadow = true;
+    mound.receiveShadow = true;
+    rack.add(mound);
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
   buildTerrain();
@@ -2202,9 +2492,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   parkGroup.name = 'corner-park';
   parkGroup.userData.parkSelection = true;
   city.add(parkGroup);
-  trees.forEach((spec, i) => {
+  // Each tree's spin, tone and season accent come from its id, so a tree left out of the plan
+  // (the one the paddock took) does not change the look of every tree planted after it.
+  trees.forEach((spec) => {
     const inPark = Math.abs(spec.x - plan.park.x) < plan.park.w / 2 + 0.2 && Math.abs(spec.z - plan.park.z) < plan.park.d / 2 + 0.2;
-    tree(inPark ? parkGroup : land, spec, i);
+    tree(inPark ? parkGroup : land, spec, Number(spec.id.slice(5)));
   });
   yield 'trees';
   // The corner park, a raised plot: a bevelled turf slab (top 0.10) inside stone edging that opens
@@ -2251,6 +2543,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   pierAndHarbour(land);
   lighthouse(land);
   hotAirBalloon(city);
+  highlandPaddock(land);
   yield 'park, harbour and landmarks';
 
   const models = new Map<BuildingId, Model>();
@@ -2502,6 +2795,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   parkHit.position.set(plan.park.x, 1.1, plan.park.z);
   parkHit.userData.placeId = 'corner-park';
   city.add(parkHit);
+  herdHit(parkHit);
 
   return {
     city,
