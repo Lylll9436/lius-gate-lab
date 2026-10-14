@@ -448,35 +448,54 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
-// On the opening view (1440 x 900: bearing pi/4 swayed by the idle drift's +-0.16, the hero's
-// frame shift of -0.06) the balloon keeps to the top band: never behind the hero copy on the
-// left or the News card on the right (their boxes as laid out at that size).
+// On the opening view (bearing pi/4 swayed by the idle drift's +-0.16, the hero's frame shift
+// of -0.06) the balloon keeps to the top band at every common wide screen size: never behind
+// the hero copy on the left (eyebrow to lede, as laid out at that size, 8 px to spare) or the
+// News card on the right. The card is centred a little above the middle (translateY(-42%))
+// and its height follows the news, so it is taken at its tallest, three items with pictures
+// (400 px), not as it happens to be today.
 {
-  const W = 1440,
-    H = 900,
-    vertical = Math.max(53, (76 * H) / W),
-    view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
-    yaw = Math.PI / 4,
-    shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
-    boxes = { 'hero copy': [56, 377, 736, 780], 'News card': [1039, 282, 1384, 682] },
-    bounds = new T.Box3(),
-    corner = new T.Vector3();
-  for (let t = 0; t < 900; t += 0.5) {
-    balloon.update(t, 0);
-    balloon.object.updateWorldMatrix(true, true);
-    bounds.setFromObject(balloon.object);
-    for (const drift of [-0.16, 0, 0.16]) {
-      view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
-      view.lookAt(shifted);
-      view.updateMatrixWorld();
-      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-      for (let i = 0; i < 8; i++) {
-        corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z).project(view);
-        const x = ((corner.x + 1) / 2) * W, y = ((1 - corner.y) / 2) * H;
-        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+  const screens = [
+    // [width, height, hero copy box, News card's left and right]
+    [1024, 768, [41, 285, 721, 613], [693, 983]],
+    [1280, 720, [51, 219, 731, 590], [922, 1229]],
+    [1280, 800, [51, 288, 731, 670], [922, 1229]],
+    [1366, 768, [55, 251, 735, 638], [984, 1311]],
+    [1440, 800, [56, 271, 736, 670], [1038, 1384]],
+    [1440, 900, [56, 360, 736, 770], [1038, 1384]],
+    [1536, 864, [56, 322, 736, 734], [1120, 1480]],
+    [1600, 900, [56, 357, 736, 770], [1184, 1544]],
+    [1680, 1050, [56, 507, 736, 920], [1264, 1624]],
+    [1920, 1080, [56, 537, 736, 950], [1504, 1864]],
+  ];
+  const bounds = new T.Box3(),
+    corner = new T.Vector3(),
+    yaw = Math.PI / 4;
+  for (const [W, H, [cx0, cy0, cx1, cy1], [nx0, nx1]] of screens) {
+    const vertical = Math.max(53, (76 * H) / W),
+      view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
+      shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
+      boxes = {
+        'hero copy': [cx0 - 8, cy0 - 8, cx1 + 8, cy1 + 8],
+        'News card': [nx0, H / 2 - 0.42 * 400, nx1, H / 2 + 0.58 * 400],
+      };
+    for (let t = 0; t < 900; t += 0.5) {
+      balloon.update(t, 0);
+      balloon.object.updateWorldMatrix(true, true);
+      bounds.setFromObject(balloon.object);
+      for (const drift of [-0.16, 0, 0.16]) {
+        view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
+        view.lookAt(shifted);
+        view.updateMatrixWorld();
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (let i = 0; i < 8; i++) {
+          corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z).project(view);
+          const x = ((corner.x + 1) / 2) * W, y = ((1 - corner.y) / 2) * H;
+          left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+        }
+        for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
+          assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the ${W} x ${H} opening view.`);
       }
-      for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
-        assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the opening view.`);
     }
   }
 }

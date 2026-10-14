@@ -14,8 +14,12 @@ import type { Kit } from './town-kit';
  * frame above the island in between. `middle` and `reach` are angles on the ring (radians),
  * `rate` the swing's pace (radians per second, a swing there and back in about six and a
  * half minutes). It sets off from the north-east end, over the sea.
+ * The ends (2.75 and 5.05) rest in the band between the masthead and the hero copy or the
+ * News card even on a short wide screen (1280 x 720), where those reach far up the frame: a
+ * wider swing (2.45 to 5.15) came to rest behind the hero's eyebrow and title there, and
+ * dipped behind a full News card.
  */
-export const BALLOON = { radius: 32, middle: 3.8, reach: 1.35, rate: 0.016 };
+export const BALLOON = { radius: 32, middle: 3.9, reach: 1.15, rate: 0.016 };
 /**
  * How much darker the balloon's own colours go at full night. It is lit like the town, but it
  * is the one big, pale, round thing hanging unshadowed over the darkest part of the frame, with
