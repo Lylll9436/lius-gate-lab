@@ -456,23 +456,23 @@ for (let i = 0; i < 720; i++) {
 // and its height follows the news, so it is taken at its tallest, three items with pictures
 // (400 px), not as it happens to be today.
 {
+  // Each size's hero copy box, and the News card's left and right.
   const screens = [
-    // [width, height, hero copy box, News card's left and right]
-    [1024, 768, [41, 285, 721, 613], [693, 983]],
-    [1280, 720, [51, 219, 731, 590], [922, 1229]],
-    [1280, 800, [51, 288, 731, 670], [922, 1229]],
-    [1366, 768, [55, 251, 735, 638], [984, 1311]],
-    [1440, 800, [56, 271, 736, 670], [1038, 1384]],
-    [1440, 900, [56, 360, 736, 770], [1038, 1384]],
-    [1536, 864, [56, 322, 736, 734], [1120, 1480]],
-    [1600, 900, [56, 357, 736, 770], [1184, 1544]],
-    [1680, 1050, [56, 507, 736, 920], [1264, 1624]],
-    [1920, 1080, [56, 537, 736, 950], [1504, 1864]],
+    { W: 1024, H: 768, copy: [41, 285, 721, 613], news: [693, 983] },
+    { W: 1280, H: 720, copy: [51, 219, 731, 590], news: [922, 1229] },
+    { W: 1280, H: 800, copy: [51, 288, 731, 670], news: [922, 1229] },
+    { W: 1366, H: 768, copy: [55, 251, 735, 638], news: [984, 1311] },
+    { W: 1440, H: 800, copy: [56, 271, 736, 670], news: [1038, 1384] },
+    { W: 1440, H: 900, copy: [56, 360, 736, 770], news: [1038, 1384] },
+    { W: 1536, H: 864, copy: [56, 322, 736, 734], news: [1120, 1480] },
+    { W: 1600, H: 900, copy: [56, 357, 736, 770], news: [1184, 1544] },
+    { W: 1680, H: 1050, copy: [56, 507, 736, 920], news: [1264, 1624] },
+    { W: 1920, H: 1080, copy: [56, 537, 736, 950], news: [1504, 1864] },
   ];
   const bounds = new T.Box3(),
     corner = new T.Vector3(),
     yaw = Math.PI / 4;
-  for (const [W, H, [cx0, cy0, cx1, cy1], [nx0, nx1]] of screens) {
+  for (const { W, H, copy: [cx0, cy0, cx1, cy1], news: [nx0, nx1] } of screens) {
     const vertical = Math.max(53, (76 * H) / W),
       view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
       shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
@@ -728,7 +728,7 @@ assert.equal(lowSun(rad(-10)), 0);
   assert.equal(gullPresence(0, 0), 1);
   assert.equal(gullPresence(1, 0), 0);
   assert.equal(gullPresence(0, 1), 0);
-  for (const [name, at] of [['night', (v) => gullPresence(v, 0)], ['rain', (v) => gullPresence(0, v)]])
+  for (const [name, at] of Object.entries({ night: (v) => gullPresence(v, 0), rain: (v) => gullPresence(0, v) }))
     for (let v = 0; v < 1; v += 0.01)
       assert(Math.abs(at(v + 0.01) - at(v)) < 0.06, `The gulls pop out of sight as the ${name} comes on (at ${v.toFixed(2)}).`);
   const birds = createGulls();
