@@ -295,6 +295,106 @@ assert(
   /\.building-hover-label\s*\{[^}]*pointer-events:\s*none/.test(css),
   'The label must not intercept clicks or trigger hover loops.',
 );
+// Each hover mounts a new hover chip, and liquid glass gives every chip a refracting rim. The
+// chips that have left the page must be let go (no longer observed, their lens filters gone),
+// or a long visit keeps every chip it has ever shown.
+{
+  const glass = {},
+    observed = new Set(),
+    filters = [],
+    frames = [];
+  let mutated = () => {};
+  const svgNode = () => ({
+    setAttribute() {},
+    appendChild() {},
+    remove() {
+      this.removed = true;
+    },
+  });
+  const chip = () => ({
+    isConnected: true,
+    offsetWidth: 120,
+    offsetHeight: 30,
+    dataset: {},
+    style: { setProperty() {}, removeProperty() {} },
+  });
+  const page = [chip()];
+  runInNewContext(compile(await fs.readFile(path.join(root, 'app/liquid-glass.ts'), 'utf8')), {
+    exports: glass,
+    window: { setTimeout },
+    navigator: { userAgentData: { brands: [{ brand: 'Chromium' }] } },
+    matchMedia: () => ({ matches: false }),
+    document: {
+      body: { appendChild() {} },
+      createElementNS(_ns, tag) {
+        const n = svgNode();
+        if (tag === 'filter') filters.push(n);
+        return n;
+      },
+      createElement: () => ({
+        getContext: () => ({ putImageData() {} }),
+        toDataURL: () => 'data:image/png;base64,',
+      }),
+      querySelectorAll: () => page.filter((el) => el.isConnected),
+    },
+    ResizeObserver: class {
+      observe(el) {
+        observed.add(el);
+      }
+      unobserve(el) {
+        observed.delete(el);
+      }
+      disconnect() {
+        observed.clear();
+      }
+    },
+    MutationObserver: class {
+      constructor(callback) {
+        mutated = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+    requestAnimationFrame: (callback) => frames.push(callback),
+    cancelAnimationFrame() {},
+    getComputedStyle: () => ({ borderTopLeftRadius: '15px' }),
+    ImageData: class {
+      constructor(w, h) {
+        this.data = new Uint8ClampedArray(w * h * 4);
+      }
+    },
+    Image: class {
+      decode() {
+        return Promise.resolve();
+      }
+    },
+    setTimeout,
+    clearTimeout,
+  });
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const stopGlass = glass.installLiquidGlass('.hover-chip');
+  await settle();
+  for (let hover = 0; hover < 40; hover++) {
+    page.at(-1).isConnected = false;
+    page.push(chip());
+    mutated();
+    frames.splice(0).forEach((frame) => frame());
+    await settle();
+  }
+  assert.deepEqual(
+    [...observed],
+    [page.at(-1)],
+    `Liquid glass still observes ${observed.size - 1} hover chips that have left the page.`,
+  );
+  assert.equal(
+    filters.filter((f) => !f.removed).length,
+    1,
+    'Only the chip on the page keeps a lens filter.',
+  );
+  stopGlass();
+}
 console.log(
-  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, and five viewport shapes.',
+  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, and glass rims let go with the chips that leave the page.',
 );

@@ -183,8 +183,17 @@ export function installLiquidGlass(selector: string) {
       timers.set(el, window.setTimeout(() => void apply(el), 150));
     }
   });
+  /** An element gone from the page (a hover chip, a closed bar) is let go entirely. */
+  function forget(el: HTMLElement) {
+    clearTimeout(timers.get(el));
+    timers.delete(el);
+    resized.unobserve(el);
+    clear(el);
+  }
   function scan() {
     scanQueued = 0;
+    // Deleting the entry being visited is safe while iterating a Map.
+    for (const el of timers.keys()) if (!el.isConnected) forget(el);
     for (const el of applied.keys()) if (!el.isConnected) clear(el);
     document.querySelectorAll<HTMLElement>(selector).forEach((el) => {
       if (applied.has(el) || timers.has(el)) return;
