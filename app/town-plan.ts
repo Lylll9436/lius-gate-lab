@@ -521,6 +521,107 @@ export function walkFloor(x: number, z: number) {
 }
 export const tramLoop = ringLine;
 
+/* ------------------------------------------------------------------ */
+/* Street life                                                         */
+/* ------------------------------------------------------------------ */
+
+/** The tram's pace on the ring (units per second). The cyclist keeps the same lap time. */
+export const TRAM_SPEED = 2.1;
+const RING_LENGTH = polylineLength(ringLine, true);
+/** Where the tram is at `time` (seconds of town time; held at 0 under reduced motion). */
+export const tramPose = (time: number) => samplePolyline(tramLoop, (TRAM_SPEED * time) % RING_LENGTH, true);
+/**
+ * The cyclist's lane: 0.6 outside the ring's centre line. The ring runs clockwise on the map and
+ * negative offsets are its outer side, so the cyclist keeps left, as in Glasgow: clear of the
+ * tram's rails (0.42) and inside the kerb (0.85).
+ */
+export const cyclistLane = offsetPolyline(ringLine, -0.6);
+const LANE_LENGTH = polylineLength(cyclistLane, true);
+/**
+ * The cyclist at `time`: half a lap from the tram (by lap fraction, so the two never meet),
+ * leaning into the four corner arcs (eased over a unit either side of each arc's start), the
+ * crank turning with the distance ridden (the pedals level at time 0).
+ */
+export function cyclistPose(time: number) {
+  const d = (TRAM_SPEED * time * LANE_LENGTH) / RING_LENGTH,
+    p = samplePolyline(cyclistLane, d + LANE_LENGTH / 2, true);
+  const k = Math.min(Math.abs(p.x) - (ring.hw - ring.radius), Math.abs(p.z - ring.cz) - (ring.hd - ring.radius)),
+    t = Math.min(1, Math.max(0, k + 0.6));
+  return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * d + Math.PI / 2 };
+}
+/**
+ * The dog walk: a slim lap of the open lawn between the corner park's east edge and the south
+ * avenue's trees, 0.4 off the park, clear of the trunks and the pavements. The dog trots on a
+ * lane 0.3 inside it (right of travel on the clockwise loop), a little ahead of the walker.
+ */
+export const dogLoop = densify(roundedRect(0.55, 3.2, 0.5, 0, 6).map(([x, z]): XZ => [x - 4.45, z + 9.25]), 0.2);
+export const dogLane = offsetPolyline(dogLoop, 0.3);
+const WALK_LENGTH = polylineLength(dogLoop, true),
+  DOG_LENGTH = polylineLength(dogLane, true);
+/** Pace (units per second), each cycle's seconds walking and standing, and the dog's lead. */
+export const DOG_WALK = { speed: 0.5, walk: 11, stop: 4, lead: 0.45 };
+/**
+ * The walker and the dog at `time`: every 15 s they walk for 11 and stand for 4 while the dog
+ * sniffs (`sniff` eases 0 to 1 and back over half a second). Time 0 falls mid-stop at the
+ * loop's south end, nearest the Life camera, so reduced motion holds a still pose there.
+ */
+export function dogWalkPose(time: number) {
+  const { speed, walk, stop, lead } = DOG_WALK,
+    t = time + 1.5;
+  const n = Math.floor(t / (walk + stop)),
+    into = t - n * (walk + stop);
+  const s = WALK_LENGTH / 2 + speed * (n * walk + Math.max(0, into - stop));
+  const sniff = into < stop ? Math.min(1, into / 0.5, (stop - into) / 0.5) : 0;
+  return {
+    s,
+    sniff,
+    walker: samplePolyline(dogLoop, s, true),
+    dog: samplePolyline(dogLane, ((s + lead) / WALK_LENGTH) * DOG_LENGTH, true),
+  };
+}
+/**
+ * Ducks on the gate's pool, which lies between radii 2.7 and 3.9 in four sectors centred on the
+ * diagonals (the causeways cut the axes). A hen and a drake paddle one path in the south-east
+ * sector, the drake 1.3 behind in phase; a lone hen keeps the south-west one. Each traces a slow
+ * Lissajous about the pool's mid-line (r 3.3): `a` and `ra` are its swings in angle and radius,
+ * `rate` its pace in phase per second (at most about 0.04 units per second).
+ */
+export const ducks = [
+  { mid: Math.PI / 4, a: 0.22, ra: 0.18, q: 0, shift: 0, rate: 0.05, look: 'hen' },
+  { mid: Math.PI / 4, a: 0.22, ra: 0.18, q: 0, shift: -1.3, rate: 0.05, look: 'drake' },
+  { mid: (3 * Math.PI) / 4, a: 0.2, ra: 0.16, q: 1.0, shift: 2.0, rate: 0.042, look: 'hen' },
+] as const;
+/** Duck `i` at phase `u`: its position and heading (rotation.y, along its path). */
+export function duckPose(i: number, u: number) {
+  const d = ducks[i],
+    v = u + d.shift,
+    phi = d.mid + d.a * Math.sin(v),
+    r = 3.3 + d.ra * Math.sin(2 * v + d.q);
+  const dphi = d.a * Math.cos(v),
+    dr = 2 * d.ra * Math.cos(2 * v + d.q),
+    c = Math.cos(phi),
+    s = Math.sin(phi);
+  return { x: r * c, z: r * s, heading: Math.atan2(dr * c - r * s * dphi, dr * s + r * c * dphi) };
+}
+/**
+ * The height of duck `i`'s origin (its body centre) and its forward tip (`dip`, radians about its
+ * own x): a slow bob, and about every 25 s a 1.75 s tip toward the water, never in step with the
+ * others and none at night (roosting). The body rises a little with the tip, so the chest stays
+ * off the pool's bed (0.02); the water's surface (0.07) cuts the body below its centre.
+ */
+export function duckBob(i: number, time: number, night: number) {
+  const f = (((time / 25 + i * 0.37) % 1) + 1) % 1;
+  const bump = Math.sin(Math.PI * Math.min(1, Math.max(0, (f - 0.93) / 0.07)));
+  const dip = 0.3 * (1 - night) * bump;
+  return { dip, y: 0.1 + 0.006 * Math.sin(time * 1.3 + i) + 0.05 * dip };
+}
+/**
+ * The bike rack by the Research Studio: a paved pad against the west edge of the studio's path,
+ * three Sheffield hoops in a row along x (centred x 5.6, at each `hoops` z) and bikes parked at
+ * the first two. The pad lies inside the studio's hit box, so it answers as the studio.
+ */
+export const bikeRack = { pad: { x0: 5.15, x1: 6.1, z0: -4.5, z1: -2.7 }, x: 5.6, hoops: [-4.2, -3.6, -3.0], parked: [0, 1] };
+
 /**
  * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
  * gardens and the gaps between them); the moorland props keep out of it too.
