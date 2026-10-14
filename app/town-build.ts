@@ -1224,9 +1224,18 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(b, 0, 0.7, -0.19, 1.3, 0.26, 0.1, palette.wood, 'wood');      // back board, 108
     return b;
   }
+  /**
+   * Glass for a lamp, which the frame loop lights at night. Lamps are never batched, so they miss
+   * the glass spec patch; frosted, a globe shows one soft highlight instead of pinpoint specks.
+   */
+  function lampGlass() {
+    const glass = material(palette.lantern, 'glass').clone();
+    glass.emissive.set(palette.lantern);
+    glass.roughness = 0.3;
+    return glass;
+  }
   // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
-  const lanternGlass = material(palette.lantern, 'glass').clone();
-  lanternGlass.emissive.set(palette.lantern);
+  const lanternGlass = lampGlass();
   lanternGlass.emissiveIntensity = 0;
   /** A chunky lamp: iron plinth, a round brass collar, thick shaft, a fat lantern (height ± 0.2) and a hat. */
   function lamp(g: T.Object3D, x: number, z: number, height = 1.8, y = plan.terrainHeight(x, z)) {
@@ -1481,8 +1490,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       cylinder(buoy, 0, 0.12, 0, 0.325, 0.33, 0.1, palette.white, 'enamel', 18); // white band, about 0.015 proud
       if (top === 'can') box(buoy, 0, 0.45, 0, 0.26, 0.4, 0.26, colour, 'enamel');
       else cone(buoy, 0, 0.47, 0, 0.22, 0.44, colour, 'enamel', 18, 0);
-      const glow = material(palette.lantern, 'glass').clone();
-      glow.emissive.set(palette.lantern);
+      const glow = lampGlass();
       const lampMesh = new T.Mesh(new T.SphereGeometry(0.08, 12, 8), glow);
       lampMesh.position.y = top === 'can' ? 0.72 : 0.76;
       buoy.add(lampMesh);
@@ -1562,8 +1570,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     rail.position.y = 4.34;
     rail.castShadow = true;
     rock.add(rail);
-    const glass = material(palette.lantern, 'glass').clone();
-    glass.emissive.set(palette.lantern);
+    const glass = lampGlass();
     const lanternRoom = new T.Mesh(new T.CylinderGeometry(0.56, 0.56, 0.8, 24), glass);
     lanternRoom.position.y = 4.4; // 4.00-4.80, sits on the deck
     rock.add(lanternRoom);
@@ -1788,8 +1795,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(shell, 0, top + 1.4, 0, 1.6, 0.4, 0.9, stone, 'stone');
     for (const sx of [-1, 1]) {
       cylinder(shell, sx * 1.75, top + 1.45, 0, 0.1, 0.13, 0.5, palette.bronze, 'brass');
-      const glow = material(palette.lantern, 'glass').clone();
-      glow.emissive.set(palette.lantern);
+      const glow = lampGlass();
       const bowl = new T.Mesh(new T.SphereGeometry(0.24, 14, 10), glow);
       bowl.position.set(sx * 1.75, top + 1.92, 0);
       shell.add(bowl);
@@ -2128,8 +2134,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(tram, 0, 1.65, 0.5, 0.3, 0.12, 0.3, palette.metal, 'iron'); // pole base ON the clerestory
     box(tram, 0, 1.99, -0.085, 0.07, 0.07, 1.3, palette.metal, 'iron', { rx: 0.45 }); // trolley pole, lower end at the base
     for (const z of [-1.8, 1.8]) {
-      const light = material(palette.lantern, 'glass').clone();
-      light.emissive.set(palette.lantern);
+      const light = lampGlass();
       const head = new T.Mesh(new T.SphereGeometry(0.09, 12, 8), light);
       head.position.set(0, 0.5, z);
       tram.add(head);
@@ -2171,8 +2176,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     boat.add(buoyRing);
     // Bow waves: each strip's forward end hugs the stem and its aft end trails outward, just clear of the hull.
     for (const s of [-1, 1]) box(boat, s * 0.52, 0.02, 1.5, 0.12, 0.03, 0.7, '#eaf6f2', 'paint', { ry: -s * 0.5 });
-    const light = material(palette.lantern, 'glass').clone();
-    light.emissive.set(palette.lantern);
+    const light = lampGlass();
     const lanternMesh = new T.Mesh(new T.SphereGeometry(0.1, 12, 8), light);
     lanternMesh.position.set(0, 2.28, -0.15); // mast lantern
     boat.add(lanternMesh);
