@@ -11,7 +11,7 @@ import type { Props } from './town-props';
 /* ------------------------------------------------------------------ */
 export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
   const { material, lamps, animated } = ctx;
-  const { box, cylinder, cone, sphere, bollard, rope, eye, coilPoints, hullShape, hullSolid, pitchedRoof, windowAt, lampGlass } = kit;
+  const { box, cylinder, strut, cone, sphere, bollard, rope, eye, coilPoints, hullShape, hullSolid, pitchedRoof, windowAt, lampGlass } = kit;
   const { lamp } = props;
   function pierAndHarbour(g: T.Object3D) {
     const [sx, sz] = plan.pier.start,
@@ -117,6 +117,7 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     });
     mooring(p, moor, pitch);
     quay(g);
+    dryingNet(g);
   }
   /**
    * The dinghy's lines and the boat's empty berth, pier-local. Each line runs from a fairlead
@@ -227,6 +228,75 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       last = turns[turns.length - 1],
       along = new T.Vector3(Math.sin(seaward), 0, Math.cos(seaward));
     rope(g, [new T.Vector3(c.x, c.y - 0.055, c.z), ...turns, last.clone().addScaledVector(along, 0.12), last.clone().addScaledVector(along, 0.22).setY(c.y - 0.055)]);
+  }
+  /**
+   * A net hung to dry over a bar between two posts on the upper beach, on the dinghy side of the
+   * pier, its long scalloped side hanging toward the sea with a row of small orange floats on the
+   * hem. The sheet wraps the bar on a circle 0.015 clear of it, so the bar never shows through.
+   * It is a solid veil: cut-out mesh holes shrink below a pixel at the zooms the town is mostly
+   * seen at (up to about 2 on a sharp screen, 4 on a plain one) and twinkle there as it pans.
+   */
+  function dryingNet(g: T.Object3D) {
+    const F = plan.shoreProps.netFrame,
+      [ax, az] = plan.shoreAt(F.from.i, F.from.w),
+      [bx, bz] = plan.shoreAt(F.to.i, F.to.w),
+      span = Math.hypot(bx - ax, bz - az);
+    const frame = new T.Group();
+    frame.position.set((ax + bx) / 2, shoreHeight(F.from.w) - 0.01, (az + bz) / 2);
+    frame.rotation.y = Math.atan2(az - bz, bx - ax); // local +x runs from -> to, so local -z is out to sea
+    g.add(frame);
+    for (const s of [-1, 1]) box(frame, (s * span) / 2, 0.525, 0, 0.09, 1.05, 0.09, palette.woodDark, 'wood');
+    strut(frame, new T.Vector3(-span / 2, 0.95, 0), new T.Vector3(span / 2, 0.95, 0), 0.045, palette.wood, 'wood');
+    // The sheet: 14 columns along the bar and 10 rows across it, from the seaward hem (row 0) up
+    // and over the bar (rows 3-7, at 45 degree steps round it) and down to the landward hem.
+    const R = 0.06,
+      sheet = new T.PlaneGeometry(1.3, 1, 13, 9),
+      pos = sheet.getAttribute('position'),
+      tone = new Float32Array(pos.count * 3);
+    const at = (u: number, row: number): [number, number, number] => {
+      const sway = 0.6 + 0.4 * Math.sin(7 * u);
+      if (row <= 2) {
+        const f = 1 - row / 3; // front hang: f 1 at the hem
+        return [-(R + 0.06 * Math.sin(Math.PI * f) * sway), 0.95 - f * (0.68 - 0.08 * Math.abs(Math.sin(2.5 * Math.PI * u))), f];
+      }
+      if (row <= 7) {
+        const a = ((row - 5) * Math.PI) / 4;
+        return [R * Math.sin(a), 0.95 + R * Math.cos(a), 0];
+      }
+      const f = (row - 7) / 2; // back hang: f 1 at the hem
+      return [R + 0.06 * Math.sin(Math.PI * f) * sway, 0.95 - f * 0.46, f];
+    };
+    for (let k = 0; k < pos.count; k++) {
+      const ix = k % 14,
+        row = Math.floor(k / 14),
+        u = ix / 13,
+        [across, y, f] = at(u, row);
+      pos.setXYZ(k, (u - 0.5) * 1.3, y, across);
+      tone.fill(1.05 - 0.25 * f, k * 3, k * 3 + 3); // lighter over the fold, darker at the hems
+    }
+    sheet.setAttribute('color', new T.BufferAttribute(tone, 3));
+    sheet.computeVertexNormals();
+    const netMaterial = material(palette.net, 'fabric').clone();
+    netMaterial.side = T.DoubleSide;
+    netMaterial.vertexColors = true;
+    const net = new T.Mesh(sheet, netMaterial);
+    net.name = 'drying-net';
+    net.castShadow = false;
+    net.receiveShadow = true;
+    net.userData.keepSeparate = true;
+    frame.add(net);
+    // Floats on the seaward hem, hanging just below it.
+    const blob = new T.IcosahedronGeometry(0.055, 0),
+      bp = blob.getAttribute('position'),
+      bn = blob.getAttribute('normal');
+    for (let k = 0; k < bp.count; k++) bn.setXYZ(k, bp.getX(k) / 0.055, bp.getY(k) / 0.055, bp.getZ(k) / 0.055); // round, not faceted
+    for (const u of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const [across, y] = at(u, 0),
+        float = new T.Mesh(blob, material(palette.tramOrange, 'enamel'));
+      float.position.set((u - 0.5) * 1.3, y - 0.03, across);
+      float.receiveShadow = true;
+      frame.add(float);
+    }
   }
   function lighthouse(g: T.Object3D) {
     const [x, z] = plan.lighthouseRock;

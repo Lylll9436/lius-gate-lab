@@ -353,6 +353,14 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
   assert(Math.abs(widest - 7.2) < 0.05, `The shore's uv.x reaches ${widest}, not the shore width.`);
   const sand = patchedShader(sands[0].material);
   assert(varyings(sand.vertexShader).has('vShoreW') && varyings(sand.fragmentShader).has('vShoreW') && sand.fragmentShader.includes('shoreWet'), 'The sand has no wet band.');
+  // The drying net: one two-sided veil with no cut-out holes (they twinkle once under a pixel),
+  // shaded but casting nothing.
+  const nets = [];
+  city.traverse((o) => o.isMesh && o.name === 'drying-net' && nets.push(o));
+  assert.equal(nets.length, 1, 'One drying net.');
+  assert.equal(nets[0].material.side, T.DoubleSide, 'The net is seen from both sides.');
+  assert(!patchedShader(nets[0].material).fragmentShader.includes('discard'), 'The net has cut-out holes, which twinkle at overview.');
+  assert(nets[0].receiveShadow && !nets[0].castShadow, 'The net takes shadows and casts none.');
 }
 // The page builds the same town a phase at a time, handing the main thread back in between.
 const { buildTownInPhases } = await load('town-build');
