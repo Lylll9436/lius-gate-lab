@@ -68,7 +68,7 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     lathe.setAttribute('color', new T.BufferAttribute(col, 3));
     const envelope = new T.Mesh(lathe, material('#ffffff', 'fabric'));
     envelope.position.y = 0.95;
-    envelope.castShadow = envelope.receiveShadow = true;
+    envelope.receiveShadow = true;
     b.add(envelope);
     cylinder(b, 0, 5.0, 0, 0.5, 0.62, 0.12, palette.gold, 'fabric', 18); // crown cap
     box(b, 0, 0.2, 0, 0.7, 0.5, 0.7, palette.wood, 'wood'); // basket
@@ -77,6 +77,14 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     for (const sx of [-1, 1])
       for (const sz of [-1, 1])
         strut(b, new T.Vector3(sx * 0.32, 0.5, sz * 0.32), new T.Vector3(sx * 0.17, 1.02, sz * 0.17), 0.035, palette.woodDark, 'wood');
+    // No shadow: from its beat off the west shore the sun lays it on the beach behind the
+    // terrace, where it reads as a dark blot in the People chapter rather than as a balloon.
+    b.traverse((o) => {
+      if (o instanceof T.Mesh) {
+        o.castShadow = false;
+        o.userData.noShadow = true;
+      }
+    });
     b.userData.keepSeparate = true;
     b.userData.followsDrift = true; // city-scene turns it with the idle drift (followDrift)
     /**
