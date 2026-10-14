@@ -383,6 +383,19 @@ assert(scene.children.includes(lighting.lights[0]), 'Spotlights join the scene a
 lighting.update(0, false);
 assert(lighting.lights.every((l) => l.intensity === 0));
 assert(!scene.children.includes(lighting.lights[0]), 'Spotlights leave the scene by day.');
+// Their night shaders can be compiled by day: asIf sets each lighting state for the call only.
+for (const shadow of [true, false]) {
+  let seen;
+  lighting.asIf(true, shadow, () => {
+    seen = [scene.children.includes(lighting.lights[5]), lighting.lights.map((l) => l.castShadow)];
+  });
+  assert.deepEqual(seen, [true, lighting.lights.map((_, i) => i === 0 && shadow)], 'asIf sets the state it is asked for.');
+  assert(!scene.children.includes(lighting.lights[0]), 'asIf puts the lights back as they were.');
+  assert.deepEqual(lighting.lights.map((l) => l.castShadow), lighting.lights.map((_, i) => i === 0), 'asIf puts the shadows back.');
+}
+lighting.update(1, false);
+lighting.asIf(false, false, () => assert(!scene.children.includes(lighting.lights[0])));
+assert(scene.children.includes(lighting.lights[0]), 'asIf puts the night lights back.');
 lighting.dispose();
 // The balloon rounds the island out over the shore and the sea, above the gulls, and never
 // drifts over a building a chapter is about.

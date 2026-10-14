@@ -641,6 +641,7 @@ scene.background = new T.Color('#abcabc');
 const background = scene.background,
   priorTarget = { name: 'previous' };
 let currentTarget = priorTarget,
+  compiledInto = null,
   renders = 0,
   failMask = false;
 let clearColor = new T.Color('#456456'),
@@ -660,6 +661,10 @@ const renderer = {
     clearAlpha = a;
   },
   clear() {},
+  compileAsync(s, c) {
+    compiledInto = currentTarget;
+    return Promise.resolve(s);
+  },
   render(s, c) {
     renders++;
     if (s === scene && scene.overrideMaterial) {
@@ -693,6 +698,10 @@ ink.setSelection([]);
 renders = 0;
 ink.render();
 assert.equal(renders, 2);
+// Shaders compiled ahead are compiled as the beauty pass draws them: into its own target.
+await ink.compile();
+assert(compiledInto && compiledInto !== priorTarget, 'Ink compiles into the beauty pass’s target.');
+assert.equal(currentTarget, priorTarget, 'Compiling leaves the render target as it was.');
 ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();

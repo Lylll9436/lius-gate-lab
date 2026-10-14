@@ -1106,6 +1106,7 @@ export async function createCity(
     animateExtras(dt, now, blend);
     ink.render();
     placeHomeTags();
+    if (!warmTimer) warmTimer = window.setTimeout(() => void warmLighting(), 1500);
   }
   function animateExtras(dt: number, now: number, blend: number) {
     if (hover.id !== lastHover) {
@@ -1236,6 +1237,38 @@ export async function createCity(
         frameCost = refresh;
         applyQuality();
       }
+    }
+  }
+  /**
+   * The lamps joining the scene at dusk, and their shadow going at quality 2, change the shader
+   * of every lit material, compiled on the spot in the frame they change: a freeze of 0.1-1 s
+   * the first time (Night pressed, a real dusk, Day after a night start). Once the town is on
+   * screen, compile each lighting state's shaders in the background instead.
+   */
+  let warmTimer = 0;
+  async function warmLighting() {
+    const states: [boolean, boolean][] =
+      tier === 'low'
+        ? [
+            [false, false],
+            [true, false],
+          ]
+        : [
+            [false, false],
+            [true, true],
+            [true, false],
+          ];
+    for (const [inScene, shadow] of states) {
+      // Each state's compile call takes a few tens of milliseconds: one at a time, when idle.
+      await new Promise<void>((resolve) =>
+        typeof window.requestIdleCallback === 'function'
+          ? window.requestIdleCallback(() => resolve(), { timeout: 3000 })
+          : window.setTimeout(resolve, 100),
+      );
+      if (disposed) return;
+      let compiled: Promise<unknown> = Promise.resolve();
+      lighting.asIf(inScene, shadow, () => (compiled = ink.compile()));
+      await compiled.catch(() => {});
     }
   }
   setClocks();
@@ -1406,6 +1439,7 @@ export async function createCity(
     dispose() {
       disposed = true;
       cancelAnimationFrame(raf);
+      window.clearTimeout(warmTimer);
       exitInspection();
       observer.disconnect();
       visibilityObserver.disconnect();

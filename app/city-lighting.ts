@@ -37,6 +37,23 @@ export function createStreetLighting(
   }
   return {
     lights,
+    /**
+     * Call `run` with the lights as one of their states sets them (in the scene or not; with the
+     * first one's shadow on or off), then put them back as they were: for compiling the
+     * shaders each state needs before it first comes on.
+     */
+    asIf(inScene: boolean, shadow: boolean, run: () => void) {
+      const was = attached,
+        casting = lights.map((light) => light.castShadow);
+      setAttached(inScene);
+      lights.forEach((light, i) => (light.castShadow = i === 0 && shadow));
+      try {
+        run();
+      } finally {
+        lights.forEach((light, i) => (light.castShadow = casting[i]));
+        setAttached(was);
+      }
+    },
     update(night: number, inspecting: boolean) {
       const wanted = night > 0.04 && !inspecting;
       setAttached(wanted);

@@ -101,6 +101,19 @@ export function createCityInk(
       );
 
     },
+    /**
+     * Compile the scene's shaders as the beauty pass draws them (into its own target) without
+     * drawing, the slow part done in the background where the browser can.
+     */
+    compile() {
+      const previous = renderer.getRenderTarget();
+      try {
+        renderer.setRenderTarget(target);
+        return renderer.compileAsync(scene, camera);
+      } finally {
+        renderer.setRenderTarget(previous);
+      }
+    },
     render() {
       // The beauty depth already respects transparent smoke.
       const previous = renderer.getRenderTarget();
