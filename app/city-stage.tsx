@@ -25,6 +25,7 @@ import { buildings, type Building, type BuildingId, type Locale } from './city-d
 import { districts, type DistrictId } from './city-districts';
 import {
   people,
+  placeFor,
   sceneTarget,
   titleFor,
   tourStops,
@@ -106,7 +107,9 @@ export function CityStage({
     wasTouring.current = touring;
   }, [touring]);
   const lastStop = tourStops.length - 1,
-    onPark = !b && !!sceneTarget(ctl.content).park;
+    onPark = !b && !!sceneTarget(ctl.content).park,
+    place = placeFor(ctl.content),
+    placeBuilding = buildings.find((item) => item.id === place);
   const caption = hoveredBuilding
     ? `${hoveredBuilding.name[locale]} · ${hoveredBuilding.category[locale]}`
     : ctl.hovered === 'corner-park'
@@ -409,13 +412,14 @@ export function CityStage({
             aria-label={tr('Selected place', '当前地点')}
           >
             <div className="dossier-head">
+              {/* The place the camera frames: an event's file is the corner park's. */}
               <span className="eyebrow">
-                <PlaceGlyph kind={glyphFor(ctl.content)} size={14} />
-                {b
-                  ? b.category[locale]
-                  : ctl.content === 'people'
+                <PlaceGlyph kind={glyphFor(place ?? ctl.content)} size={14} />
+                {placeBuilding
+                  ? placeBuilding.category[locale]
+                  : place === 'people'
                     ? tr('The terrace', '联排住宅')
-                    : ctl.content === 'corner-park'
+                    : place === 'corner-park'
                       ? tr('Harbour', '港口')
                       : tr('Overview', '总览')}
               </span>

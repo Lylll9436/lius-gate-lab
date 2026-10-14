@@ -88,6 +88,15 @@ export function sceneTarget(id: ContentId): {
     };
   return {};
 }
+/**
+ * The place a City file is about, as the camera frames it: a building, the terrace ('people',
+ * for the People chapter and anyone without a home), the corner park (its events too), or
+ * null for the whole island. The file's eyebrow and glyph name it.
+ */
+export function placeFor(id: ContentId): BuildingId | 'people' | 'corner-park' | null {
+  const target = sceneTarget(id);
+  return target.building ?? (target.park ? 'corner-park' : target.district ? 'people' : null);
+}
 export function contentForBuilding(id: BuildingId) {
   const resident = peopleRecords.find((p) => p.buildingId === id);
   return resident

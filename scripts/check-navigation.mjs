@@ -82,6 +82,21 @@ assert.deepEqual(nav.tourStops, [
   'corner-park',
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
+// A City file's eyebrow names the place the camera frames, an event's park included.
+const { eventRecords } = await import(
+  pathToFileURL(path.join(output, 'lab-records.mjs')).href
+);
+assert(eventRecords.length, 'The place check needs an event to open.');
+for (const event of eventRecords)
+  assert.equal(
+    nav.placeFor('event:' + event.id),
+    'corner-park',
+    `The event ${event.id} is filed under the corner park, where the camera goes.`,
+  );
+for (const b of buildings) assert.equal(nav.placeFor(nav.contentForBuilding(b.id)), b.id);
+assert.equal(nav.placeFor('people'), 'people');
+assert.equal(nav.placeFor('corner-park'), 'corner-park');
+assert.equal(nav.placeFor('overview'), null);
 for (const stop of nav.tourStops)
   assert.deepEqual(nav.parseLocation(`#city/${stop}`), { mode: 'city', content: stop });
 for (const [old, content] of Object.entries({
