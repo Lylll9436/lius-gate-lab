@@ -264,7 +264,17 @@ export default function Home() {
     // The tour's first step is always one entry, even from its first stop, so Back ends it there.
     if (window.location.hash !== hash || options.keepTour) {
       if (options.replace) window.history.replaceState(null, '', hash);
-      else window.history.pushState(null, '', hash);
+      else {
+        // A bare address does not name the chapter being read: name it on the entry being
+        // left, so Back returns there rather than to the top of the page.
+        if (
+          !window.location.hash &&
+          viewRef.current.mode === 'reading' &&
+          active !== 'overview'
+        )
+          window.history.replaceState(null, '', `#read/${active}`);
+        window.history.pushState(null, '', hash);
+      }
     }
   }
   const navigateRef = useRef(navigate);
