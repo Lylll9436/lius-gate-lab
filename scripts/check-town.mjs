@@ -213,6 +213,88 @@ for (let i = 0; i < 400; i++) {
   assert(!plan.onIsland(pose.x, pose.z, -1.0), 'Boat runs aground.');
   assert(Number.isFinite(pose.heading));
 }
+// The harbour's beach details stand on the sand, each inside its own footprint and clear of the
+// others and of the beach boulders; the head bollard sits on one plank, and the boat keeps clear.
+{
+  const sp = plan.shoreProps,
+    H = plan.harbour,
+    at = (s) => plan.shoreAt(s.i, s.w),
+    parts = [
+      { name: 'creelStack', p: at(sp.creelStack), r: sp.creelStack.foot },
+      { name: 'creel', p: at(sp.creel), r: sp.creel.foot },
+      ...sp.floats.map((s, k) => ({ name: 'floats[' + k + ']', p: at(s), r: s.foot })),
+      { name: 'coil', p: at(sp.coil), r: sp.coil.foot },
+      { name: 'netFrame', p: at(sp.netFrame.from), q: at(sp.netFrame.to), r: sp.netFrame.foot },
+      { name: 'driftwood', p: at(sp.driftwood.from), q: at(sp.driftwood.to), r: sp.driftwood.foot, root: sp.driftwood.rootFoot },
+      ...sp.rockPools.map((s, k) => ({ name: 'rockPools[' + k + ']', p: at(s), r: s.foot })),
+      ...sp.wrack.map((s, k) => ({ name: 'wrack[' + k + ']', p: at(s), r: s.foot })),
+    ];
+  for (const part of parts)
+    for (const p of part.q ? [part.p, part.q] : [part.p]) {
+      const out = plan.distanceToPolyline(p, plan.islandOutline, true) * (plan.onIsland(p[0], p[1]) ? -1 : 1);
+      assert(out >= 0.3 && out <= 2.75, `${part.name} is ${out.toFixed(2)} out from the outline, off the beach`);
+    }
+  // Beach boulders as discs of 1.35 r (their plan scale) at the shore mesh's points.
+  for (let i = 0; i < plan.OUTLINE_SAMPLES; i++) {
+    if (plan.hash(i) >= 0.07) continue;
+    const width = 0.6 + 1.6 * plan.hash(i * 3 + 1);
+    parts.push({ name: 'boulder-' + i, p: plan.shoreAt(i, width), r: 1.35 * (0.26 + 0.18 * (0.5 + 0.5 * Math.sin(i * 17.1))) });
+  }
+  // Every part is a disc or a capsule (a driftwood log also has its root disc at `from`).
+  const shapes = (part) => [[part.p, part.q ?? part.p, part.r], ...(part.root ? [[part.p, part.p, part.root]] : [])];
+  const segmentGap = ([a, b, ra], [c, d, rc]) => {
+    let best = Infinity;
+    for (let t = 0; t <= 1; t += 0.02) {
+      best = Math.min(best, plan.distanceToSegment([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], c, d));
+      best = Math.min(best, plan.distanceToSegment([c[0] + (d[0] - c[0]) * t, c[1] + (d[1] - c[1]) * t], a, b));
+    }
+    return best - ra - rc;
+  };
+  const together = new Set(['rockPools[0]', 'wrack[0]', 'boulder-42']); // a pool, its weed and its boulder overlap on purpose
+  for (let a = 0; a < parts.length; a++)
+    for (let b = a + 1; b < parts.length; b++) {
+      if (together.has(parts[a].name) && together.has(parts[b].name)) continue;
+      const gap = Math.min(...shapes(parts[a]).flatMap((u) => shapes(parts[b]).map((v) => segmentGap(u, v))));
+      assert(gap >= 0.08, `${parts[a].name} and ${parts[b].name} are ${gap.toFixed(3)} apart`);
+    }
+  // The pier's planks as built (pierAndHarbour): 15 across the deck, each with its own shift and turn.
+  const L = plan.pier.length,
+    count = Math.round((L + 0.2) / 0.42),
+    pitch = (L + 0.2) / count,
+    plankAt = (k) => ({ x: (plan.hash(k * 5 + 1) - 0.5) * 0.06, z: (k + 0.5) * pitch, ry: (plan.hash(k * 5 + 3) - 0.5) * 0.05, hw: (plan.pier.width + 0.12) / 2, hd: (pitch - 0.045) / 2 });
+  const onPlank = ([x, z], r) =>
+    Array.from({ length: count }, (_, k) => plankAt(k)).some((p) => {
+      const c = Math.cos(p.ry),
+        s = Math.sin(p.ry),
+        lx = (x - p.x) * c - (z - p.z) * s,
+        lz = (x - p.x) * s + (z - p.z) * c;
+      return Math.abs(lx) + r <= p.hw && Math.abs(lz) + r <= p.hd;
+    });
+  const lampPlinth = [-0.38, L - 0.45],
+    toSquare = ([x, z], [cx, cz], half) => Math.hypot(Math.max(0, Math.abs(x - cx) - half), Math.max(0, Math.abs(z - cz) - half));
+  assert(onPlank(H.headBollard, 0.13), 'The head bollard straddles two planks.');
+  assert(toSquare(H.headBollard, lampPlinth, 0.17) - 0.13 >= 0.3, 'The head bollard crowds the pier-head lamp.');
+  const coilR = 0.225;
+  // Planks reach 0.81 either side, shifted by up to 0.03: the coil stays 0.03 inside the nearest edge.
+  assert(Math.abs(H.berthCoil[0]) + coilR <= (plan.pier.width + 0.12) / 2 - 0.03 - 0.03, 'The berth coil hangs over the deck edge.');
+  assert(Math.hypot(H.berthCoil[0] - H.headBollard[0], H.berthCoil[1] - H.headBollard[1]) - coilR - 0.13 >= 0.15, 'The berth coil crowds the bollard.');
+  for (let z = 0.9; z < L + 0.2; z += 1.3)
+    for (const side of [-1, 1])
+      assert(Math.hypot(H.berthCoil[0] - side * 0.72, H.berthCoil[1] - z) - coilR - 0.15 >= 0.15, `The berth coil crowds the pile at ${side * 0.72}, ${z.toFixed(1)}.`);
+  // The lead from the coil to the bollard runs along world z, so its box never reaches 0.5 wide on
+  // both world axes and batch() never takes the berth line for an eave cap.
+  const bollardAt = plan.pierPoint(...H.headBollard),
+    coilAt = plan.pierPoint(...H.berthCoil);
+  assert(Math.abs(bollardAt[0] - coilAt[0]) < 0.05, 'The berth line no longer runs along world z.');
+  for (let i = 0; i < 400; i++) {
+    const pose = plan.boatPose(i * 0.37);
+    for (const [name, p] of [['head bollard', bollardAt], ['berth coil', coilAt]])
+      assert(Math.hypot(pose.x - p[0], pose.z - p[1]) >= 1.5, `The boat runs into the ${name} at t=${(i * 0.37).toFixed(2)}.`);
+    for (const part of parts)
+      if (!part.name.startsWith('boulder'))
+        assert(plan.distanceToSegment([pose.x, pose.z], part.p, part.q ?? part.p) >= 3, `The boat comes within 3 of the ${part.name}.`);
+  }
+}
 const warnings = [];
 const originalWarn = console.warn;
 console.warn = (...args) => warnings.push(args.join(' '));

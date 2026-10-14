@@ -91,9 +91,11 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     }
     // A dinghy moored alongside the deck, on the side away from the hut, its stern past the foam:
     // a shaped white hull with a blue rubbing band, a visible wooden floor and a seated thwart.
-    const dinghy = new T.Group();
-    dinghy.position.set(sx + dx * 5.3 + plan.pier.tangent[0] * 1.4, WATER, sz + dz * 5.3 + plan.pier.tangent[1] * 1.4);
-    dinghy.rotation.y = heading + 0.06;
+    const moor = plan.harbour.dinghy,
+      dinghy = new T.Group();
+    dinghy.name = 'harbour-dinghy';
+    dinghy.position.set(sx + dx * moor.z + dz * moor.x, WATER, sz + dz * moor.z - dx * moor.x);
+    dinghy.rotation.y = heading + moor.turn;
     dinghy.userData.keepSeparate = true;
     g.add(dinghy);
     // The hull's top cap sits 0.005 under the band's, so the two caps don't z-fight on the gunwale.

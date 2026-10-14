@@ -22,6 +22,37 @@ import {
 type Point = [number, number, number];
 
 /* ------------------------------------------------------------------ */
+/* Shore profile                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The shore by width out from the outline: a crisp darker turf lip, dry sand, wet sand, the
+ * waterline, a pale shelf, the drop. The shelf colours sit under the sea's translucent turquoise
+ * shallows.
+ */
+export const SHORE_PROFILE = [
+  { width: 0, height: 0, color: '#98b74a' },
+  { width: 0.22, height: -0.004, color: palette.lawnEdge },
+  { width: 0.32, height: -0.008, color: '#efd9a4' },
+  { width: 1.9, height: -0.014, color: palette.sand },
+  { width: 2.5, height: -0.02, color: '#d6ba86' },
+  { width: 2.85, height: -0.026, color: palette.sandWet },
+  { width: 3.3, height: -0.05, color: '#a8d8cf' },
+  { width: 4.6, height: -0.17, color: '#5fb8c8' },
+  { width: 7.2, height: -0.48, color: '#2f8fb6' },
+];
+/** The shore surface height at a given width out from the outline (props stand at this less 0.01). */
+export function shoreHeight(width: number) {
+  for (let j = 1; j < SHORE_PROFILE.length; j++)
+    if (width <= SHORE_PROFILE[j].width) {
+      const a = SHORE_PROFILE[j - 1],
+        b = SHORE_PROFILE[j];
+      return T.MathUtils.lerp(a.height, b.height, (width - a.width) / (b.width - a.width));
+    }
+  return SHORE_PROFILE[SHORE_PROFILE.length - 1].height;
+}
+
+/* ------------------------------------------------------------------ */
 /* Ground masks                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -209,45 +240,17 @@ export function createGround(ctx: TownContext) {
     ground.name = 'island-ground';
     land.add(ground);
 
-    // The shore: a crisp darker turf lip, dry sand, wet sand, the waterline, a pale shelf, the drop.
-    // The shelf colours sit under the sea's translucent turquoise shallows.
-    const profile = [
-      { width: 0, height: 0, color: '#98b74a' },
-      { width: 0.22, height: -0.004, color: palette.lawnEdge },
-      { width: 0.32, height: -0.008, color: '#efd9a4' },
-      { width: 1.9, height: -0.014, color: palette.sand },
-      { width: 2.5, height: -0.02, color: '#d6ba86' },
-      { width: 2.85, height: -0.026, color: palette.sandWet },
-      { width: 3.3, height: -0.05, color: '#a8d8cf' },
-      { width: 4.6, height: -0.17, color: '#5fb8c8' },
-      { width: 7.2, height: -0.48, color: '#2f8fb6' },
-    ];
-    /** The shore surface height at a given width out from the outline. */
-    const shoreHeight = (width: number) => {
-      for (let j = 1; j < profile.length; j++)
-        if (width <= profile[j].width) {
-          const a = profile[j - 1],
-            b = profile[j];
-          return T.MathUtils.lerp(a.height, b.height, (width - a.width) / (b.width - a.width));
-        }
-      return profile[profile.length - 1].height;
-    };
+    // The shore: one ring of SHORE_PROFILE bands at every outline sample.
     const n = plan.OUTLINE_SAMPLES;
     const shorePoint = (i: number, width: number, height: number): Point => {
-      // Offset along the outline normal, smoothed over two neighbours each side.
-      const p = plan.islandOutline[i % n],
-        prev = plan.islandOutline[(i + n - 2) % n],
-        next = plan.islandOutline[(i + 2) % n];
-      const dx = next[0] - prev[0],
-        dz = next[1] - prev[1],
-        l = Math.hypot(dx, dz) || 1;
-      return [p[0] + (dz / l) * width, height, p[1] - (dx / l) * width];
+      const [x, z] = plan.shoreAt(i, width);
+      return [x, height, z];
     };
     const sp: number[] = [],
       sc: number[] = [],
       si: number[] = [];
     for (let i = 0; i < n; i++)
-      for (const band of profile) {
+      for (const band of SHORE_PROFILE) {
         // The inner edge meets the lawn's outer ring, which rises where a mound reaches the coast;
         // a flat edge there leaves a crack that shows the sea under the island.
         const [ox, oz] = plan.islandOutline[i],
@@ -258,9 +261,9 @@ export function createGround(ctx: TownContext) {
         sc.push(c.r, c.g, c.b);
       }
     for (let i = 0; i < n; i++)
-      for (let j = 0; j < profile.length - 1; j++) {
-        const a = i * profile.length + j,
-          b = ((i + 1) % n) * profile.length + j;
+      for (let j = 0; j < SHORE_PROFILE.length - 1; j++) {
+        const a = i * SHORE_PROFILE.length + j,
+          b = ((i + 1) % n) * SHORE_PROFILE.length + j;
         si.push(a, b, b + 1, a, b + 1, a + 1);
       }
     const shoreGeometry = new T.BufferGeometry();
