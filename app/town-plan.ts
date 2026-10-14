@@ -298,11 +298,12 @@ export const stoneRing = { x: -23.75, z: -23.25, r: 1.15 };
 /**
  * Glasgow's Duke of Wellington, cone and all, on the civic lawn west of the Town Hall: 4.75 from
  * the streets, 6.7 from the hall's footprint and well to the side of its front, on flat ground.
- * He rides east towards the plaza and the hall steps (rotation.y, so the horse faces along
- * (sin h, cos h)), turned enough from the opening bearing (pi/4) to be seen three-quarter on.
+ * He rides east towards the hall steps (rotation.y, so the horse faces along (sin h, cos h)),
+ * about 58 degrees off the opening bearing (pi/4) and 52 off the hall chapter's (0.9): a side
+ * three-quarter view from both, never the head-on blob a smaller turn gives.
  */
 export const statueSpot: XZ = [-10.4, -5.6];
-export const statueHeading = 1.35;
+export const statueHeading = 1.8;
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */

@@ -2443,13 +2443,13 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     return rug;
   }
   /**
-   * The Duke of Wellington as Glasgow knows him: a dark bronze rider on a standing horse, an
+   * The Duke of Wellington as Glasgow knows him: a dark bronze rider on a chunky standing horse, an
    * orange traffic cone on his head, on a plain stone plinth (a base course, a battered die and a
    * cornice; no inscription) over a 12-sided paved pad. About 3.6 to the cone's tip.
    */
   function wellington(g: T.Object3D) {
     const [x, z] = plan.statueSpot,
-      bronze = '#7a6a52';
+      bronze = '#5f5a4a'; // dark, cool bronze (s 0.22)
     const root = new T.Group();
     root.position.set(x, 0, z);
     root.rotation.y = plan.statueHeading;
@@ -2462,41 +2462,42 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(root, 0, 0.795, 0, 1.2, 0.95, 2.0, palette.blonde, 'stone', { taper: 0.05 }); // die 0.32..1.27
     box(root, 0, 1.35, 0, 1.38, 0.16, 2.18, palette.trim, 'stone'); // cornice 1.27..1.43
     const y0 = 1.43;
-    // The horse, nose to the plaza, the near foreleg stepping forward.
-    for (const sx of [-0.15, 0.15])
-      for (const sz of [-0.4, 0.4]) {
+    // The horse, chunky and nose to the hall steps: a deep barrel on short, stout legs (the near
+    // foreleg stepping forward), the neck leaning well forward and the head bowed.
+    for (const sx of [-0.16, 0.16])
+      for (const sz of [-0.42, 0.42]) {
         const step = sx > 0 && sz > 0 ? 0.18 : 0;
-        box(root, sx, y0 + 0.29, sz + step * 0.25, 0.13, 0.6, 0.14, bronze, 'metal', { rx: -step }); // leg; finish: brass
+        box(root, sx, y0 + 0.28, sz + step * 0.25, 0.17, 0.56, 0.17, bronze, 'metal', { rx: -step }); // leg; finish: brass
       }
-    box(root, 0, y0 + 0.8, 0, 0.5, 0.48, 1.12, bronze, 'metal', { bevel: 0.15 }); // barrel; finish: brass
+    box(root, 0, y0 + 0.78, 0, 0.56, 0.56, 1.3, bronze, 'metal', { bevel: 0.18 }); // barrel; finish: brass
     const neck = new T.Group();
-    neck.position.set(0, y0 + 1.12, 0.5);
-    neck.rotation.x = 0.5;
+    neck.position.set(0, y0 + 0.92, 0.48);
+    neck.rotation.x = 0.75;
     root.add(neck);
-    box(neck, 0, 0, 0, 0.34, 0.62, 0.36, bronze, 'metal'); // finish: brass
-    box(neck, 0, 0.04, -0.19, 0.08, 0.56, 0.08, bronze, 'metal'); // mane; finish: brass
+    box(neck, 0, 0.22, 0, 0.32, 0.55, 0.34, bronze, 'metal'); // finish: brass
+    box(neck, 0, 0.24, -0.17, 0.07, 0.5, 0.07, bronze, 'metal'); // mane; finish: brass
     const head = new T.Group();
-    head.position.set(0, y0 + 1.44, 0.76);
-    head.rotation.x = 0.75;
+    head.position.set(0, y0 + 1.3, 0.82);
+    head.rotation.x = 1.0;
     root.add(head);
-    box(head, 0, 0, 0, 0.21, 0.23, 0.46, bronze, 'metal'); // head, nose down; finish: brass
-    for (const s of [-1, 1]) box(head, s * 0.06, 0.14, -0.16, 0.05, 0.12, 0.05, bronze, 'metal'); // ear; finish: brass
+    box(head, 0, 0.02, 0.12, 0.24, 0.26, 0.5, bronze, 'metal'); // head, nose down; finish: brass
+    for (const s of [-1, 1]) box(head, s * 0.07, 0.16, -0.1, 0.05, 0.12, 0.05, bronze, 'metal', { rx: -0.8 }); // ear, upright on the poll; finish: brass
     const tail = new T.Group();
-    tail.position.set(0, y0 + 0.98, -0.56);
+    tail.position.set(0, y0 + 0.95, -0.64);
     tail.rotation.x = -0.3;
     root.add(tail);
     box(tail, 0, -0.22, 0, 0.1, 0.45, 0.12, bronze, 'metal'); // finish: brass
-    // The rider: saddle cloth, legs down the flanks, torso, arms forward to the reins, head.
-    box(root, 0, y0 + 1.05, -0.05, 0.62, 0.04, 0.5, bronze, 'metal'); // finish: brass
+    // The rider, smaller than the horse: saddle cloth, legs down the flanks, torso, arms forward to the reins, head.
+    box(root, 0, y0 + 1.07, -0.05, 0.64, 0.04, 0.5, bronze, 'metal'); // finish: brass
     for (const s of [-1, 1]) {
-      box(root, s * 0.3, y0 + 0.86, 0.04, 0.14, 0.42, 0.18, bronze, 'metal'); // leg; finish: brass
-      box(root, s * 0.22, y0 + 1.36, 0.06, 0.1, 0.36, 0.12, bronze, 'metal', { rx: -0.6 }); // arm, hands forward to the reins; finish: brass
+      box(root, s * 0.31, y0 + 0.88, 0.04, 0.14, 0.4, 0.18, bronze, 'metal'); // leg; finish: brass
+      box(root, s * 0.21, y0 + 1.3, 0.06, 0.1, 0.32, 0.12, bronze, 'metal', { rx: -0.6 }); // arm, hands forward to the reins; finish: brass
     }
-    box(root, 0, y0 + 1.32, -0.05, 0.36, 0.52, 0.26, bronze, 'metal'); // torso; finish: brass
-    sphere(root, 0, y0 + 1.72, -0.03, 0.15, bronze, 'metal'); // finish: brass
+    box(root, 0, y0 + 1.31, -0.05, 0.34, 0.45, 0.25, bronze, 'metal'); // torso; finish: brass
+    sphere(root, 0, y0 + 1.67, -0.03, 0.15, bronze, 'metal'); // finish: brass
     // The cone, knocked a little askew: a square foot, the cone and its white band.
     const hat = new T.Group();
-    hat.position.set(0, y0 + 1.84, -0.03);
+    hat.position.set(0, y0 + 1.79, -0.03);
     hat.rotation.z = 0.15;
     root.add(hat);
     box(hat, 0, 0.015, 0, 0.28, 0.03, 0.28, palette.tramOrange, 'paint'); // finish: enamel
