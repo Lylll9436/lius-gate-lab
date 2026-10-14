@@ -892,6 +892,76 @@ assert.equal(lowSun(rad(-10)), 0);
   assert.deepEqual(follow({ out: 0.5, wake: 0.2 }, { out: 0.3, wake: 0 }, 0.01, 1, false), { out: 0.3, wake: 0 }, 'By day the panes copy the clock.');
   assert.deepEqual(follow({ out: 1, wake: 1 }, { out: 0, wake: 0 }, 1, 1, false), { out: 0, wake: 0 }, 'Manual night resets at noon.');
 }
+// Through the night (20:00 to 07:30 in 20 s steps): the rooms go out one at a time until 05:30 and
+// never come back on, then early risers come on one at a time; every pane rests fully on or off,
+// none outshines today's glow, and the clock always rests on its settle points.
+const outBytes = panes.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255),
+  wakeBytes = panes.map((p) => Math.round(p.light[3] * 255)).filter((b) => b < 255);
+assert.equal(new Set(outBytes).size, outBytes.length, 'Two panes go out together.');
+assert.equal(new Set(wakeBytes).size, wakeBytes.length, 'Two early risers come on together.');
+const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v) < 0.01);
+{
+  const dialY = Y(windowGlow(panes.find((p) => p.role === 'dial').light, at(20))),
+    evening = lit(rooms, 20).length,
+    settled = (v) => v === 0 || v === 1 || Math.abs(((v * 255) % 1) - 0.6) < 1e-6;
+  let before = evening,
+    late = -1;
+  for (let s = 0; s <= 11.5 * 180; s++) {
+    const h = (20 + s / 180) % 24,
+      clock = at(h),
+      count = lit(rooms, h).length;
+    assert(Math.abs(count - before) <= 1, `${Math.abs(count - before)} rooms switch at once at ${h.toFixed(3)}.`);
+    if (s >= 9.5 * 180) assert(count >= before, `A room goes out after 05:30 (${h.toFixed(3)}).`);
+    else assert(count <= before, `A room comes back on before 05:30 (${h.toFixed(3)}).`);
+    if (s === 6.5 * 180) late = count;
+    assert(settled(clock.out) && settled(clock.wake), `The window clock is between its rest points at ${h.toFixed(3)}.`);
+    for (const p of panes) {
+      assert(atRest(p, windowLevel(p.light, clock)), `A pane at ${p.place} rests part-way at ${h.toFixed(3)}.`);
+      assert(Y(windowGlow(p.light, clock)) <= dialY + 1e-6, `A pane at ${p.place} outshines today's glow at ${h.toFixed(3)}.`);
+    }
+    before = count;
+  }
+  assert(late >= 0.3 * evening && late <= 0.75 * evening, `${late} of the evening's ${evening} lit rooms are still lit at 02:30.`);
+}
+// The page's cadence from 20:00 to 07:30: the sky every 30 s, its clock a minute at a time, and
+// 1800 frames of the follower after each. Every pane rests fully on or off after each 30 s, and
+// each switch (a pane going out, or an early riser coming on) is a lamp switched, not a dimmer or
+// a pop: about 2 s between 10% and 90%, all within one 30 s. Bytes are unique, so per frame only the
+// pane whose off byte the clock is in and the one whose wake byte it is in can be mid-switch.
+{
+  const state = windowClock(20),
+    goingOut = new Map(panes.filter((p) => p.light[2] < 1).map((p) => [Math.round(p.light[2] * 255), p])),
+    waking = new Map(panes.filter((p) => p.light[3] < 1).map((p) => [Math.round(p.light[3] * 255), p])),
+    switches = new Map();
+  let call = 0;
+  for (let minute = 0; minute <= 690; minute++) {
+    const goal = windowClock(((1200 + minute) / 60) % 24);
+    for (let twice = 0; twice < 2; twice++, call++) {
+      for (let frame = 0; frame < 1800; frame++) {
+        followWindows(state, goal, 1, 1 / 60, false);
+        const out = Math.floor(state.out * 255),
+          wake = Math.floor(state.wake * 255);
+        for (const [key, p, of] of [
+          ['out ' + out, goingOut.get(out), (p) => windowLevel(p.light, state) / p.light[0]],
+          ['wake ' + wake, waking.get(wake), (p) => windowLevel(p.light, state) / 0.8],
+        ]) {
+          if (!p) continue;
+          const fraction = of(p);
+          if (fraction <= 0.1 || fraction >= 0.9) continue;
+          const seen = switches.get(key) ?? { frames: 0, calls: new Set() };
+          seen.frames++;
+          seen.calls.add(call);
+          switches.set(key, seen);
+        }
+      }
+      for (const p of panes) assert(atRest(p, windowLevel(p.light, state)), `A pane at ${p.place} rests part-way after call ${call}.`);
+    }
+  }
+  for (const key of [...[...goingOut.keys()].map((b) => 'out ' + b), ...[...waking.keys()].map((b) => 'wake ' + b)]) {
+    const seen = switches.get(key);
+    assert(seen && seen.frames >= 115 && seen.frames <= 128 && seen.calls.size === 1, `The pane at ${key} switches over ${seen?.frames ?? 0} frames in ${seen?.calls.size ?? 0} calls.`);
+  }
+}
 console.log(
-  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

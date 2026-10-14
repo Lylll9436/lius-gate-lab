@@ -700,9 +700,10 @@ export default function Home() {
   }, [mode, settledShot, ready]);
 
   // The sky, the weather, the clock and the theme. Manual Day lights the town with a fixed
-  // daytime sun, never the real one setting.
+  // daytime sun, never the real one setting. The windows keep Glasgow's real clock in every
+  // mode, so Manual night at 14:00 shows the evening and at 03:00 the deep night.
   useEffect(() => {
-    api.current?.setSky(sceneSky(sky, skyMode));
+    api.current?.setSky({ ...sceneSky(sky, skyMode), hours: sky.hours });
     document.documentElement.dataset.theme = night > 0.55 ? 'night' : 'day';
   }, [sky, skyMode, night, ready]);
   useEffect(() => {
