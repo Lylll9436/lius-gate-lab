@@ -59,6 +59,18 @@ const SCROLL_KEYS = new Set([
 ]);
 /** The reading camera's last shot: the whole island once the footer arrives. */
 const READ_END = 'end';
+/** The reading page's chapter under the reading line: the hero until About reaches it. */
+function chapterAtLine(wide: boolean) {
+  const line = window.innerHeight * (wide ? 0.42 : 0.52);
+  let current: ContentId = 'overview';
+  for (const section of document.querySelectorAll<HTMLElement>(
+    '.chapter[data-chapter]',
+  )) {
+    if (section.getBoundingClientRect().top <= line)
+      current = section.dataset.chapter as ContentId;
+  }
+  return current;
+}
 /** How the town is placed as the reading page ends. */
 function endFrame() {
   const dock = document.querySelector<HTMLElement>('.stage-dock'),
@@ -221,39 +233,49 @@ export default function Home() {
     }
   }
   /** Scroll the reading page to a chapter or card, and send the camera straight there.
-   *  `instant` jumps without the smooth glide (a page opened at an address). */
-  const scrollToContent = useCallback((id: ContentId, instant = false) => {
-    const chapter = readingChapter(id);
-    // The lock holds until the scroll starts (the first frames can be seconds late
-    // while the town is built), then for as long as a smooth scroll may take.
-    const lock = { chapter, until: Infinity };
-    scrollLock.current = lock;
-    setActive(chapter);
-    setEnding(false);
-    // A chosen chapter needs no settling: without this, coming back from the city would
-    // first turn the camera toward the last chapter read, then back.
-    setSettledShot(chapter);
-    // Two frames: the story must be laid out again if explore mode was just left.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        lock.until = performance.now() + 2500;
-        const target =
-          document.getElementById(`read-${id}`) ??
-          document.getElementById(`read-${chapterFor(id)}`);
-        // 'instant', not 'auto': the page's CSS scroll-behavior is smooth.
-        const behavior: ScrollBehavior =
-          instant ||
-          window.matchMedia('(prefers-reduced-motion: reduce)').matches
-            ? 'instant'
-            : 'smooth';
-        if (id === 'overview') window.scrollTo({ top: 0, behavior });
-        else target?.scrollIntoView({ behavior, block: 'start' });
-        target
-          ?.querySelector<HTMLElement>('h2,h3')
-          ?.focus({ preventScroll: true });
-      }),
-    );
-  }, []);
+   *  `instant` jumps without the smooth glide (a page opened at an address); `restored` is
+   *  Back/Forward, where the browser has already put the page back where the reader left it. */
+  const scrollToContent = useCallback(
+    (id: ContentId, instant = false, restored = false) => {
+      const chapter = readingChapter(id);
+      // The lock holds until the scroll starts (the first frames can be seconds late
+      // while the town is built), then for as long as a smooth scroll may take.
+      const lock = { chapter, until: Infinity };
+      scrollLock.current = lock;
+      setActive(chapter);
+      setEnding(false);
+      // A chosen chapter needs no settling: without this, coming back from the city would
+      // first turn the camera toward the last chapter read, then back.
+      setSettledShot(chapter);
+      // Two frames: the story must be laid out again if explore mode was just left.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          // Put back inside the chapter asked for, the reader stays where they were: a
+          // glide on to the chapter's top would only follow the browser's own cut there.
+          if (restored && chapterAtLine(wideRef.current) === chapter) {
+            if (scrollLock.current === lock) scrollLock.current = null;
+            return;
+          }
+          lock.until = performance.now() + 2500;
+          const target =
+            document.getElementById(`read-${id}`) ??
+            document.getElementById(`read-${chapterFor(id)}`);
+          // 'instant', not 'auto': the page's CSS scroll-behavior is smooth.
+          const behavior: ScrollBehavior =
+            instant ||
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches
+              ? 'instant'
+              : 'smooth';
+          if (id === 'overview') window.scrollTo({ top: 0, behavior });
+          else target?.scrollIntoView({ behavior, block: 'start' });
+          target
+            ?.querySelector<HTMLElement>('h2,h3')
+            ?.focus({ preventScroll: true });
+        }),
+      );
+    },
+    [],
+  );
   function navigate(
     nextMode: BrowseMode,
     nextContent: ContentId,
@@ -352,7 +374,8 @@ export default function Home() {
   // Address bar → view. An empty address opens the reading page at the top.
   // The scroll starts right here, not in a later effect that could fire on some
   // unrelated change: a page opened at an address jumps straight to it, a bare
-  // address is left where it is, and Back/Forward glide to their place.
+  // address is left where it is, and Back/Forward keep the place the browser puts
+  // the page back to when it is in their chapter, or else glide to the chapter.
   useEffect(() => {
     let disposed = false;
     const sync = (first: boolean) => {
@@ -363,7 +386,7 @@ export default function Home() {
         : { mode: 'reading' as const, content: 'overview' };
       applyView(next);
       if (next.mode === 'reading' && (hash || !first))
-        scrollToContent(next.content, first);
+        scrollToContent(next.content, first, !first);
     };
     const onHistory = () => sync(false);
     void Promise.resolve().then(() => sync(true));
@@ -498,14 +521,7 @@ export default function Home() {
       expiry = 0;
     const pick = () => {
       raf = 0;
-      const line = window.innerHeight * (wide ? 0.42 : 0.52);
-      let current: ContentId = 'overview';
-      for (const section of document.querySelectorAll<HTMLElement>(
-        '.chapter[data-chapter]',
-      )) {
-        if (section.getBoundingClientRect().top <= line)
-          current = section.dataset.chapter as ContentId;
-      }
+      const current = chapterAtLine(wide);
       const lock = scrollLock.current;
       if (lock) {
         const now = performance.now();
