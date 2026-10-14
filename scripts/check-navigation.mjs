@@ -409,7 +409,7 @@ function collectDrift(node) {
 }
 collectDrift(syntax);
 assert.equal(driftPieces.length, 3, 'The drift check must find every piece it runs.');
-const driftAt = (reduced) =>
+const driftAt = (reduced, state = {}) =>
   runInNewContext(
     `${ts.transpileModule(`function nextAngle() { ${driftPieces.join('\n')} return nextDrift; }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};nextAngle();`,
     {
@@ -424,10 +424,24 @@ const driftAt = (reduced) =>
       time: 20,
       driftAngle: 0,
       blend: 1,
+      ...state,
     },
   );
 assert(Math.abs(driftAt(false)) > 0.01, 'The check must see the drift turn the camera.');
 assert.equal(driftAt(true), 0, 'With reduced motion the camera must not drift.');
+// The drift stops where it is when the visitor acts: Pause, a drag or a button just pressed.
+// Turning back to the bearing would keep the town moving after Pause and turn it under a drag.
+const swayed = 0.15;
+for (const [action, state] of [
+  ['Pause', { paused: true }],
+  ['A drag', { hover: { dragging: true } }],
+  ['A button just pressed', { lastInteraction: 59000 }],
+])
+  assert.equal(driftAt(false, { ...state, driftAngle: swayed }), swayed, `${action} turned the drifted camera.`);
+assert(
+  driftAt(false, { inspect: {}, driftAngle: swayed }) < swayed - 0.01,
+  'Inspect eases the drift back to the building’s own bearing.',
+);
 // Leaving Inspect from a study zoom closer than the town's limit eases all the way out: the
 // real OrbitControls clamps the zoom to its limit on every update, so the limit must come
 // down with the glide, not before it.
@@ -683,5 +697,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment.`,
 );

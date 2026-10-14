@@ -1147,7 +1147,13 @@ export async function createCity(
       !hover.dragging &&
       !paused &&
       now - lastInteraction > 4000;
-    const driftTarget = idle ? Math.sin(time * 0.07) * 0.16 : 0;
+    // It stops where it is: turning back to the bearing would keep the town moving after Pause
+    // and turn it under a drag. Inspect (and the drift switched off) take it back to the bearing.
+    const driftTarget = idle
+      ? Math.sin(time * 0.07) * 0.16
+      : reduced || !drift || inspect
+        ? 0
+        : driftAngle;
     const nextDrift = reduced
       ? driftTarget
       : driftAngle + (driftTarget - driftAngle) * Math.min(1, blend * 0.35);
