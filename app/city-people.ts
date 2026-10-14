@@ -143,12 +143,12 @@ export function animateResident(
   }
   root.userData.sole = Math.min(...soles);
 }
-/** The dog's coat and its white points (snout and tail tip). */
-const DOG = { coat: '#3b3633', white: '#ece3cf' };
+/** The dog's coat and its white points (the snout, and the tail's tip, a little muted). */
+const DOG = { coat: '#3b3633', white: '#ece3cf', tip: '#cdbfa6' };
 /**
  * A small Border collie, about 0.36 long and 0.24 tall (local +z is the nose, the origin between
  * the feet): a dark body on four short legs, a head with a white snout on its own pivot
- * ('dog-head', to sniff) and a tail with a white tip on another ('dog-tail', to wag). Every part
+ * ('dog-head', to sniff) and a tail with a pale tip on another ('dog-tail', to wag). Every part
  * is fabric. The body is just long enough (0.31) to cast a shadow; nothing else does.
  */
 export function createDog(material: Material) {
@@ -175,16 +175,16 @@ export function createDog(material: Material) {
   tail.position.set(0, 0.2, -0.16);
   tail.userData.keepSeparate = true;
   dog.add(tail);
-  // The white tip is painted on (vertex colours, which batching multiplies in): the cone's top
-  // 40% is white, blending into the coat over its middle ring.
-  const cone = new T.ConeGeometry(0.04, 0.16, 4, 5),
+  // The pale tip is painted on (vertex colours, which batching multiplies in): a muted cream over
+  // the brush's top quarter, blending into the coat below it, so it reads as a tip, not a spike.
+  const cone = new T.ConeGeometry(0.045, 0.13, 6, 5),
     p = cone.getAttribute('position'),
     tones = new Float32Array(p.count * 3),
-    white = new T.Color(DOG.white),
+    tip = new T.Color(DOG.tip),
     coat = new T.Color(DOG.coat);
-  for (let i = 0; i < p.count; i++) (p.getY(i) > 0 ? white : coat).toArray(tones, i * 3);
+  for (let i = 0; i < p.count; i++) (p.getY(i) > 0.03 ? tip : coat).toArray(tones, i * 3);
   cone.setAttribute('color', new T.BufferAttribute(tones, 3));
-  const brush = part(tail, cone, '#ffffff', 0, 0.036, -0.071);
+  const brush = part(tail, cone, '#ffffff', 0, 0.0295, -0.0579);
   brush.rotation.x = -1.1; // its base on the pivot, its tip back and up
   return dog;
 }
