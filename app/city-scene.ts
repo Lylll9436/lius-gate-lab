@@ -558,9 +558,11 @@ export async function createCity(
     clockChecked = -1e9,
     hoverSignature = '',
     frameIndex = 0,
-    skyHours = 20;
+    skyHours = 20,
+    paneHours = 20;
   // The windows' night: the clock the panes are heading for (from the sky's hours) and the one
   // they show, which follows it one pane at a time and only in the dark (glasgow-sun's followWindows).
+  // paneHours is the sky's hours at the last frame, when the panes last followed the clock.
   const paneClock = { out: 0, wake: 0 },
     paneGoal = { out: 0, wake: 0 };
   // Colours used every frame, allocated once.
@@ -1129,6 +1131,7 @@ export async function createCity(
     night = T.MathUtils.lerp(night, targetNight, reduced ? 1 : blend * 0.45);
     model.materialLibrary.setNight(night);
     followWindows(paneClock, paneGoal, night, dt, reduced);
+    paneHours = skyHours;
     model.materialLibrary.setWindows(paneClock.out, paneClock.wake);
     lighting.update(night, !!inspect);
     sky.intensity = T.MathUtils.lerp(0.85, 0.3, night);
@@ -1445,9 +1448,12 @@ export async function createCity(
       targetSunOffset.copy(sunOffsetFor(elevation, azimuth));
       targetWarmth = warmSun(elevation);
       targetGolden = lowSun(elevation);
-      // A jump of more than two hours (sleep, a long-hidden tab, a debug shot; never the clocks
-      // changing) puts the panes straight where the clock is; otherwise they follow it pane by pane.
-      const jump = Math.abs(((hours - skyHours + 36) % 24) - 12) > 2;
+      // A jump of more than two hours puts the panes straight where the clock is; otherwise they
+      // follow it pane by pane. It is a jump from the last sky (sleep, a debug shot; never the
+      // clocks changing) or from the last frame: a hidden tab or a town scrolled out of view runs
+      // no frames while the page still sends the sky every half minute, minute by minute.
+      const gap = (from: number) => Math.abs(((hours - from + 36) % 24) - 12) > 2;
+      const jump = gap(skyHours) || gap(paneHours);
       skyHours = hours;
       Object.assign(paneGoal, windowClock(hours));
       if (!skyKnown || jump) Object.assign(paneClock, paneGoal);
