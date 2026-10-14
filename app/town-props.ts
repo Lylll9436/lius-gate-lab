@@ -27,12 +27,16 @@ export function createProps(ctx: TownContext, kit: Kit) {
     box(b, 0, 0.7, -0.19, 1.3, 0.26, 0.1, palette.wood, 'wood');      // back board, 108
     return b;
   }
-  /** A Sheffield cycle hoop (0.5 wide, 0.58 tall) along the local x axis; thin, so it casts no shadow. */
+  /**
+   * A Sheffield cycle hoop (0.57 wide, 0.49 tall: below a parked bike's bar, which passes over it)
+   * along the local x axis; thin, so it casts no shadow.
+   */
   function cycleHoop(g: T.Object3D, x: number, y: number, z: number) {
     const h = new T.Group(); h.position.set(x, y, z); g.add(h);
-    const parts = [-0.25, 0.25].map((sx) => cylinder(h, sx, 0.165, 0, 0.035, 0.035, 0.33, palette.metal, 'iron'));
-    const bow = new T.Mesh(new T.TorusGeometry(0.25, 0.035, 6, 12, Math.PI), material(palette.metal, 'iron'));
-    bow.position.y = 0.33;
+    const steel = '#7d8288'; // galvanised, paler than the street iron, so the hoops part from the tyres
+    const parts = [-0.25, 0.25].map((sx) => cylinder(h, sx, 0.1, 0, 0.035, 0.035, 0.2, steel, 'iron'));
+    const bow = new T.Mesh(new T.TorusGeometry(0.25, 0.035, 6, 12, Math.PI), material(steel, 'iron'));
+    bow.position.y = 0.2;
     h.add(bow);
     for (const m of [...parts, bow]) {
       m.castShadow = false;

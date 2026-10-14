@@ -311,7 +311,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // Three ducks on the gate's pool; the animated list's batching makes each one mesh.
   pondDucks(city);
   // The bike rack at the Research Studio's entrance: three hoops on its apron and two bikes, front
-  // to the plaza, leaning on the first two. Two, not three: three bikes by the studio
+  // to the plaza, their frames leaning on the first two. Two, not three: three bikes by the studio
   // of a three-member group would read as theirs. The rack joins the studio's shell, so it batches,
   // rings and inspects with the building (built in the town instead, it would punch holes in the
   // studio's selection ring wherever it stands in front of the apron).
@@ -324,8 +324,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       cycleHoop(rack, x, y, z);
       if (!parked.includes(i)) return;
       const bike = bicycle(rack, i === 0 ? palette.greenDoor : palette.tramCream, { basket: i === 1 });
-      bike.position.set(x + 0.025, y, z + 0.2);
-      bike.rotation.set(0, -Math.PI / 2, 0.07);
+      bike.position.set(x + 0.025, y, z + 0.1);
+      bike.rotation.set(0, -Math.PI / 2, 0.07); // the top tube rests on the hoop's bow
     });
     studio.shell.attach(rack);
   }
