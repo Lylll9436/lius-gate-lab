@@ -127,7 +127,8 @@ const covers = {
   civic: [[plan.sites['lius-gate'].x, plan.sites['lius-gate'].z]],
   residential: [],
   research: [[plan.reservedPlot.x, plan.reservedPlot.z]],
-  waterfront: [[plan.park.x, plan.park.z]],
+  // The herd answers the pointer as the corner park, so its paddock (to the dykes' outer faces) is the park's district too.
+  waterfront: [[plan.park.x, plan.park.z], ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => [plan.paddock.x + sx * (plan.paddock.w + plan.paddock.wall) / 2, plan.paddock.z + sz * (plan.paddock.d + plan.paddock.wall) / 2]))],
 };
 for (const d of districts) {
   for (const locale of ['en', 'zh']) assert(d.name[locale] && d.description[locale]);

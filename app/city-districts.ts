@@ -67,16 +67,20 @@ export const districts: {
     id: 'waterfront',
     name: { en: 'Harbour & park', zh: '港口与公园' },
     description: {
-      en: 'The brick archive, the corner park, the pier and the harbour boat.',
-      zh: '红砖档案馆、街角公园、码头与港湾里的小船。',
+      en: 'The brick archive, the corner park and the Highland cows’ paddock, the pier and the harbour boat.',
+      zh: '红砖档案馆、街角公园与高地牛的围栏、码头与港湾里的小船。',
     },
     color: '#58a6cc',
+    // The south-west corner takes in the Highland paddock: its herd answers the pointer as the
+    // corner park, so Plan view tints it with the park.
     outline: [
       [-14.6, 5.9],
       [12.8, 5.9],
       [13.9, 17.6],
       [10.6, 20.6],
-      [-14.6, 19.5],
+      [-8.0, 23.6],
+      [-15.0, 23.6],
+      [-15.0, 17.0],
     ],
     buildings: ['city-archive'],
   },
