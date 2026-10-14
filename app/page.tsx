@@ -46,6 +46,16 @@ cityScene?.catch(() => {});
  * follows it, so a quick scroll past several chapters turns the camera once, not each time.
  */
 const CAMERA_SETTLE_MS = 200;
+/** Keys that scroll the page: pressed during a glide, they take the scroll over from it. */
+const SCROLL_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  ' ',
+]);
 /** The reading camera's last shot: the whole island once the footer arrives. */
 const READ_END = 'end';
 /** How the town is placed as the reading page ends. */
@@ -471,7 +481,8 @@ export default function Home() {
   // Reading mode: the chapter under the reading line drives the camera.
   useEffect(() => {
     if (mode !== 'reading') return;
-    let raf = 0;
+    let raf = 0,
+      expiry = 0;
     const pick = () => {
       raf = 0;
       const line = window.innerHeight * (wide ? 0.42 : 0.52);
@@ -484,7 +495,16 @@ export default function Home() {
       }
       const lock = scrollLock.current;
       if (lock) {
-        if (performance.now() < lock.until && current !== lock.chapter) return;
+        const now = performance.now();
+        if (now < lock.until && current !== lock.chapter) {
+          // Looked at again as the lock runs out: a glide stopped short of its chapter (by the
+          // scrollbar, say) sends no more scroll events to do it.
+          if (lock.until !== Infinity) {
+            window.clearTimeout(expiry);
+            expiry = window.setTimeout(onScroll, lock.until - now + 20);
+          }
+          return;
+        }
         scrollLock.current = null;
       }
       setActive((previous) => (previous === current ? previous : current));
@@ -515,12 +535,28 @@ export default function Home() {
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(pick);
     };
+    // The reader taking over (a wheel, a drag, a scroll key) stops a glide where it is: the
+    // lock ends with it, so the page follows what is under the reading line from there.
+    const takeOver = (event: Event) => {
+      const lock = scrollLock.current;
+      if (!lock || lock.until === Infinity) return;
+      if (event instanceof KeyboardEvent && !SCROLL_KEYS.has(event.key)) return;
+      scrollLock.current = null;
+      onScroll();
+    };
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
+    window.addEventListener('wheel', takeOver, { passive: true });
+    window.addEventListener('touchmove', takeOver, { passive: true });
+    window.addEventListener('keydown', takeOver);
     return () => {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+      window.removeEventListener('wheel', takeOver);
+      window.removeEventListener('touchmove', takeOver);
+      window.removeEventListener('keydown', takeOver);
+      window.clearTimeout(expiry);
       if (raf) cancelAnimationFrame(raf);
     };
   }, [mode, wide]);
