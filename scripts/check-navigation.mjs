@@ -180,6 +180,85 @@ assert.deepEqual(
   ],
   'Hidden canvases must not invalidate their last camera frame.',
 );
+// A new framing carries its panel offset from the start, so one that also turns the camera
+// (each reading chapter has its own bearing) glides: the first turning frame moves the view
+// centre only by the offset's own turn, never sideways by the whole offset at once.
+const turnPieces = [];
+function collectTurn(node) {
+  if (
+    ts.isFunctionDeclaration(node) &&
+    ['viewOffset', 'panelOffset', 'offsetTarget', 'reset'].includes(node.name?.text)
+  )
+    turnPieces.push(node.getText(syntax));
+  if (
+    ts.isVariableStatement(node) &&
+    node.declarationList.declarations.some((d) =>
+      ['shortestAngle', 'YAW_RATE'].includes(d.name.getText(syntax)),
+    )
+  )
+    turnPieces.push(node.getText(syntax));
+  if (
+    ts.isIfStatement(node) &&
+    node.expression.getText(syntax) === 'Math.abs(targetYaw - yaw) > 0.0001'
+  )
+    turnPieces.push(`function turnStep() { ${node.getText(syntax)} }`);
+  ts.forEachChild(node, collectTurn);
+}
+collectTurn(syntax);
+assert.equal(turnPieces.length, 7, 'The turn check must find every piece it runs.');
+const turn = {
+  T,
+  Math,
+  camera: new T.OrthographicCamera(-44, 44, 26, -26, 0.1, 180),
+  screenRight: new T.Vector3(),
+  screenUp: new T.Vector3(),
+  shiftApplied: new T.Vector3(),
+  target: new T.Vector3(),
+  controls: { target: new T.Vector3() },
+  frameShift: 0.21,
+  frameDrop: 0.15,
+  yaw: 1.9,
+  targetYaw: 1.9,
+  targetZoom: 2.2,
+  reduced: false,
+  dt: 1 / 60,
+  tween: false,
+  focusedIds: [],
+  parkSelected: false,
+  autoFocus: false,
+  overviewFit: false,
+  exitInspection() {},
+  align() {},
+};
+const turning = runInNewContext(
+  `${ts.transpileModule(turnPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panelOffset, offsetTarget, reset, turnStep });`,
+  turn,
+);
+// At rest on a close subject (the park shot), beside the panel.
+turn.target.set(18, 0, -12);
+turning.offsetTarget();
+turn.controls.target.copy(turn.target);
+// Back to the island (zoom 1) and to the overview's bearing: a re-frame that turns.
+turning.reset();
+assert(
+  turn.target.clone().sub(turn.shiftApplied).length() < 1e-9,
+  'A framing keeps its subject, less the offset, as its target.',
+);
+assert(
+  turn.shiftApplied.distanceTo(turning.panelOffset(new T.Vector3())) < 1e-9,
+  'A framing carries the panel offset for its own zoom.',
+);
+const centre = turn.controls.target.clone(),
+  offsetLength = turn.shiftApplied.length(),
+  bearing = turn.yaw;
+turning.turnStep();
+const turned = Math.abs(turn.yaw - bearing),
+  moved = turn.controls.target.distanceTo(centre);
+assert(turned > 0, 'The check must run a turning frame.');
+assert(
+  moved <= offsetLength * turned + 1e-9,
+  `A turning frame moved the view centre ${moved.toFixed(2)} (offset ${offsetLength.toFixed(2)}): a sideways jump.`,
+);
 // Selection adds one depth-aware mask pass; all renderer state survives failure.
 const { createCityInk } = await import(
   pathToFileURL(path.join(output, 'city-ink.mjs')).href

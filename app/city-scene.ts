@@ -599,6 +599,17 @@ export async function createCity(
       .addScaledVector(screenUp, (frameDrop * (camera.top - camera.bottom)) / zoom);
   }
   /**
+   * A new framing's target carries its panel offset from the start (measured at the new zoom),
+   * so the glide eases the offset in with everything else. A turn that starts with it then
+   * adds only the offset's change from frame to frame: were the offset left for the frame loop
+   * to add, a turning frame would put the whole of it on the view centre at once, a sideways
+   * jump.
+   */
+  function offsetTarget() {
+    panelOffset(shiftApplied);
+    target.add(shiftApplied);
+  }
+  /**
    * The whole island in the part of the frame left free: beside a side panel (the frame
    * shift), under a hidden top band (twice the frame drop), below the masthead and above the
    * bottom controls (about 76 px each). Never closer than the plain overview's zoom of 1.
@@ -636,7 +647,7 @@ export async function createCity(
       .multiplyScalar((minX + maxX) / 2)
       .addScaledVector(up, (minY + maxY) / 2);
     target.addScaledVector(back, -target.y / back.y);
-    shiftApplied.set(0, 0, 0);
+    offsetTarget();
     tween = true;
   }
   function fitFocused() {
@@ -652,7 +663,6 @@ export async function createCity(
     const bounds = new T.Box3();
     roots.forEach((r) => bounds.union(new T.Box3().setFromObject(r)));
     target.copy(bounds.getCenter(new T.Vector3()));
-    shiftApplied.set(0, 0, 0);
     const size = bounds.getSize(new T.Vector3());
     const spanX = (size.x + size.z) * 0.707,
       spanY = (size.x + size.z) * 0.48 + size.y * 0.75;
@@ -665,6 +675,7 @@ export async function createCity(
       1.3,
       3.4,
     );
+    offsetTarget();
     tween = true;
   }
   function focusBuildings(ids: BuildingId[]) {
@@ -748,7 +759,7 @@ export async function createCity(
     exitInspection();
     const m = models.get(id)!;
     target.copy(m.center).add(new T.Vector3(0, 1, 0));
-    shiftApplied.set(0, 0, 0);
+    offsetTarget();
     focusedIds = [id];
     parkSelected = false;
     autoFocus = true;
@@ -763,8 +774,8 @@ export async function createCity(
     autoFocus = false;
     overviewFit = false;
     target.set(0, 0, 0);
-    shiftApplied.set(0, 0, 0);
     targetZoom = 1;
+    offsetTarget();
     targetYaw = yaw + shortestAngle(yaw, Math.PI / 4);
     tween = true;
   }
@@ -1227,9 +1238,9 @@ export async function createCity(
       overviewFit = false;
       targetZoom = T.MathUtils.clamp(camera.zoom * f, controls.minZoom, controls.maxZoom);
       // Zoom about the subject beside the panel: take the panel offset out of the current
-      // view centre; the frame loop adds it back for the new zoom.
+      // view centre and put it back as measured at the new zoom.
       target.copy(controls.target).sub(shiftApplied);
-      shiftApplied.set(0, 0, 0);
+      offsetTarget();
       tween = true;
       lastInteraction = performance.now();
     },
@@ -1306,7 +1317,6 @@ export async function createCity(
         0,
         (Math.min(...zs) + Math.max(...zs)) / 2,
       );
-      shiftApplied.set(0, 0, 0);
       targetZoom = T.MathUtils.clamp(
         Math.min(
           ((camera.right - camera.left) * 0.62) / (across * 0.707),
@@ -1316,6 +1326,7 @@ export async function createCity(
         1,
         2.6,
       );
+      offsetTarget();
       tween = true;
     },
     focusPark() {
@@ -1325,8 +1336,8 @@ export async function createCity(
       autoFocus = false;
       overviewFit = false;
       target.set(plan.park.x, 0, plan.park.z);
-      shiftApplied.set(0, 0, 0);
       targetZoom = 2.2;
+      offsetTarget();
       tween = true;
     },
     dispose() {
