@@ -316,9 +316,9 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       frame.add(float);
     }
   }
-  /** The icosahedron as a smooth little lump: detail 0, but with sphere normals. */
-  function lump(r: number) {
-    const geo = new T.IcosahedronGeometry(r, 0),
+  /** The icosahedron as a smooth little lump: low detail, but with sphere normals. */
+  function lump(r: number, detail = 0) {
+    const geo = new T.IcosahedronGeometry(r, detail),
       p = geo.getAttribute('position'),
       n = geo.getAttribute('normal');
     for (let k = 0; k < p.count; k++) n.setXYZ(k, p.getX(k) / r, p.getY(k) / r, p.getZ(k) / r);
@@ -351,10 +351,13 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
    */
   function strand(g: T.Object3D, p: T.Object3D) {
     const S = plan.shoreProps,
-      rockGreys = ['#717b75', '#646f69'];
+      // The beach boulders' greige, a little darker for being wet.
+      rockGreys = ['#a3a08f', '#8d9385'];
     S.rockPools.forEach((pool, n) => {
       const [x, z] = plan.shoreAt(pool.i, pool.w),
-        y = shoreHeight(pool.w);
+        y = shoreHeight(pool.w),
+        turn = plan.shoreTurn(pool.i), // local x along the shore, +z out to sea
+        stretch = [1.15, 0.85]; // a little longer along the shore than across it
       // A matte bed, the shelf's turquoise in the middle paling to the shallows' at its ragged rim.
       const bed = new T.CircleGeometry(pool.r, 9).rotateX(-Math.PI / 2),
         bp = bed.getAttribute('position'),
@@ -363,29 +366,35 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
         rim = new T.Color('#a8d8cf');
       for (let k = 1; k < bp.count; k++) {
         const jitter = 0.88 + 0.24 * hash(n * 31 + ((k - 1) % 9));
-        bp.setXYZ(k, bp.getX(k) * jitter, 0, bp.getZ(k) * jitter);
+        bp.setXYZ(k, bp.getX(k) * jitter * stretch[0], 0, bp.getZ(k) * jitter * stretch[1]);
       }
       for (let k = 0; k < bp.count; k++) tone.set((k === 0 ? deep : rim).toArray(), k * 3);
       bed.setAttribute('color', new T.BufferAttribute(tone, 3));
       const bedMesh = new T.Mesh(bed, material('#ffffff', 'stone'));
       bedMesh.position.set(x, y + 0.008, z);
+      bedMesh.rotation.y = turn;
       bedMesh.receiveShadow = true;
       bedMesh.userData.ground = true;
       bedMesh.userData.noShadow = true;
       g.add(bedMesh);
-      // Five wet rocks round it, unevenly spaced, 40% sunk, darker at the foot.
-      for (let k = 0; k < 5; k++) {
-        const a = n * 1.7 + (k * Math.PI * 2) / 5 + (hash(n * 17 + k) - 0.5) * 0.8,
-          r = 0.1 + 0.06 * hash(n * 23 + k * 3),
-          geo = lump(r),
+      // Three or four wet rocks of mixed sizes on the landward side, the rim left open toward the
+      // sea, 40% sunk and darker at the foot.
+      const count = 4 - (n % 2),
+        local = new T.Vector3();
+      for (let k = 0; k < count; k++) {
+        const t = (k + 0.5 + (hash(n * 17 + k) - 0.5) * 0.6) / count,
+          a = Math.PI / 2 + 1 + t * (2 * Math.PI - 2), // round from the seaward gap (2 radians wide) back to it
+          r = 0.07 + 0.09 * hash(n * 23 + k * 3),
+          geo = lump(r, 1),
           rp = geo.getAttribute('position'),
           shade = new Float32Array(rp.count * 3);
         for (let q = 0; q < rp.count; q++) shade.fill(0.85 + 0.17 * T.MathUtils.smoothstep(rp.getY(q), -r * 0.2, r), q * 3, q * 3 + 3);
         geo.setAttribute('color', new T.BufferAttribute(shade, 3));
         const rock = new T.Mesh(geo, material(rockGreys[(n + k) % 2], 'stone'));
-        rock.position.set(x + Math.cos(a) * (pool.r + 0.03), y + 0.11 * r, z + Math.sin(a) * (pool.r + 0.03));
+        local.set(Math.cos(a) * (pool.r * stretch[0] + 0.02), 0, Math.sin(a) * (pool.r * stretch[1] + 0.02)).applyAxisAngle(new T.Vector3(0, 1, 0), turn);
+        rock.position.set(x + local.x, y + 0.11 * r, z + local.z);
         rock.scale.set(1.25, 0.55, 1);
-        rock.rotation.y = Math.PI / 2 - a; // the long axis runs round the pool, not out from it
+        rock.rotation.y = turn - a + Math.PI / 2 + (hash(n * 5 + k) - 0.5) * 0.8; // roughly along the rim
         rock.receiveShadow = true;
         rock.userData.noShadow = true;
         g.add(rock);
