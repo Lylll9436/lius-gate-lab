@@ -83,8 +83,9 @@ function specShader(m: T.MeshStandardMaterial, specU: SpecUniform) {
  * the softboxes (high), one band per pane, darker low and lighter high. The room is read at
  * roughness .4 so the band stays soft instead of mirroring the room's edges.
  * vPane is batch()'s pane coordinates: across the pane and up from its middle, in units.
- * Only the studio reflection sees the lean (direct light keeps the flat pane and its 0.06
- * roughness), so the sun and the plaza lanterns never strike a hard glint off the glass.
+ * Only the studio room's light sees the lean: its reflection, and its fill a little, which also
+ * lifts toward the top of the pane. Direct light keeps the flat pane and its 0.06 roughness,
+ * so the sun and the plaza lanterns never strike a hard glint off the glass.
  */
 const GLINT_PATCH = `{
    vec3 flatNormal = geometryNormal;
