@@ -122,6 +122,20 @@ function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, glass = false
   m.customProgramCacheKey = () => (glass ? 'lius-bake-glass' : 'lius-bake-solid');
 }
 
+/**
+ * The beach's wet band: a swash mark at about 2.2 out from the outline, wandering +-0.13 on a
+ * smooth 1.25-unit value noise and anti-aliased by the width's own derivative, then darker sand
+ * down to the waterline (2.87), fading out under the foam. vShoreW is the shore mesh's uv.x.
+ */
+const SHORE_PARS = `
+varying float vShoreW;
+float shoreHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}`;
+const SHORE_WET = `vec2 wq=vGroundP.xz*.8,wi=floor(wq),wf=fract(wq);wf=wf*wf*(3.-2.*wf);
+float wob=mix(mix(shoreHash(wi),shoreHash(wi+vec2(1.,0.)),wf.x),mix(shoreHash(wi+vec2(0.,1.)),shoreHash(wi+1.),wf.x),wf.y);
+float edge=2.2+.26*(wob-.5),fw=fwidth(vShoreW)+.02;
+shoreWet=smoothstep(edge-fw,edge+fw,vShoreW)*(1.-smoothstep(2.88,3.,vShoreW));
+diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.93,.92,.91),vec3(.85,.84,.83),smoothstep(edge,2.85,vShoreW)),shoreWet);`;
+
 /** The ground masks' A channel stores terrain height over this range (units). */
 export const GROUND_HEIGHT_RANGE = 2;
 /** Ground surfaces that read the baked ground masks (water reads them in city-water). */
@@ -133,6 +147,9 @@ type BakeUniforms = { groundMasks: { value: T.Texture }; maskExtent: { value: nu
  * mown town lawn that carries a soft 1.5-unit checker, A the terrain height (so only
  * surfaces lying on the ground are shaded, not roof lawns or raised floors).
  * Paving gets offset flags whose joints fade out once a flag is too small on screen.
+ * Sand gets the wet band: its uv.x is the exact width out from the outline (the shore mesh
+ * sets it), and from a swash mark wandering about 2.2 out down to the waterline the sand is
+ * darker, darkest at the foam. Any other sand surface needs uv.x = 0 to stay dry.
  */
 function groundShader(m: T.MeshStandardMaterial, kind: SurfaceKind, uniforms: BakeUniforms) {
   const tint = kind === 'grass' || kind === 'soil' ? 'vec3(.52, .60, .40)' : 'vec3(.62, .58, .50)';
@@ -140,17 +157,18 @@ function groundShader(m: T.MeshStandardMaterial, kind: SurfaceKind, uniforms: Ba
 diffuseColor.rgb*=mix(vec3(.93,.95,.90),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
   const flags = `vec2 tq=vGroundP.xz/.9;tq.x+=.5*step(1.,mod(floor(tq.y),2.));float th=fract(sin(dot(floor(tq),vec2(127.1,311.7)))*43758.5453);vec2 f=fract(tq);vec2 fj=fwidth(tq);float jn=1.-smoothstep(0.,.06+fj.x,min(min(f.x,1.-f.x),min(f.y,1.-f.y)));float jnear=1.-smoothstep(.03,.06,max(fj.x,fj.y));
 diffuseColor.rgb*=(.96+.08*th)*(1.-.18*jn*jnear);`;
+  const sand = kind === 'sand';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.groundMasks = uniforms.groundMasks;
     shader.uniforms.maskExtent = uniforms.maskExtent;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundP = (modelMatrix * vec4(transformed, 1.)).xyz;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;' + (sand ? '\nvarying float vShoreW;' : ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundP = (modelMatrix * vec4(transformed, 1.)).xyz;' + (sand ? '\nvShoreW = uv.x;' : ''));
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;' + (sand ? SHORE_PARS : ''))
       .replace('#include <color_fragment>', `#include <color_fragment>
-{
-vec4 gs=texture2D(groundMasks,vGroundP.xz/(2.*maskExtent)+.5);
+${sand ? 'float shoreWet=0.;\n' : ''}{
+${sand ? SHORE_WET + '\n' : ''}vec4 gs=texture2D(groundMasks,vGroundP.xz/(2.*maskExtent)+.5);
 float nearGround=1.-smoothstep(.2,.5,vGroundP.y-gs.a*${GROUND_HEIGHT_RANGE.toFixed(1)});
 ${kind === 'grass' ? lawn : kind === 'paving' ? flags : ''}
 diffuseColor.rgb*=mix(vec3(1.),${tint},gs.r*nearGround);

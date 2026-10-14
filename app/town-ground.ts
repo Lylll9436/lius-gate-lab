@@ -248,6 +248,7 @@ export function createGround(ctx: TownContext) {
     };
     const sp: number[] = [],
       sc: number[] = [],
+      su: number[] = [],
       si: number[] = [];
     for (let i = 0; i < n; i++)
       for (const band of SHORE_PROFILE) {
@@ -259,6 +260,7 @@ export function createGround(ctx: TownContext) {
         const tone = 0.96 + 0.04 * Math.sin(i * 0.9 + band.width * 2.1) + 0.02 * (hash(i * 7 + band.width * 13) - 0.5);
         const c = new T.Color(band.color).multiplyScalar(tone);
         sc.push(c.r, c.g, c.b);
+        su.push(band.width, 0); // the sand shader's wet band reads the exact width out from the outline
       }
     for (let i = 0; i < n; i++)
       for (let j = 0; j < SHORE_PROFILE.length - 1; j++) {
@@ -269,6 +271,8 @@ export function createGround(ctx: TownContext) {
     const shoreGeometry = new T.BufferGeometry();
     shoreGeometry.setAttribute('position', new T.Float32BufferAttribute(sp, 3));
     shoreGeometry.setAttribute('color', new T.Float32BufferAttribute(sc, 3));
+    shoreGeometry.setAttribute('uv', new T.Float32BufferAttribute(su, 2));
+    shoreGeometry.userData.longitudinalUV = true; // batch() keeps this uv
     shoreGeometry.setIndex(si);
     shoreGeometry.computeVertexNormals();
     const beach = new T.Mesh(shoreGeometry, material('#ffffff', 'sand'));

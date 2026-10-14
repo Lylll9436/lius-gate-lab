@@ -325,6 +325,35 @@ city.traverse((o) => {
 });
 assert(meshes < 420, `Static batching regression: ${meshes} meshes`);
 assert(triangles < 900000, `Triangle budget exceeded: ${Math.round(triangles)}`);
+// Every custom program declares the varyings it reads in the fragment stage (one missing drops
+// the mesh). Nothing compiles GLSL in Node, so this checks the patched text.
+const patchedShader = (m) => {
+  const s = { uniforms: {}, vertexShader: T.ShaderLib.physical.vertexShader, fragmentShader: T.ShaderLib.physical.fragmentShader };
+  m.onBeforeCompile(s, null);
+  return s;
+};
+const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)].map((v) => v[1]));
+{
+  const seen = new Set();
+  city.traverse((o) => {
+    if (!o.isMesh || seen.has(o.material)) return;
+    seen.add(o.material);
+    const s = patchedShader(o.material),
+      fv = varyings(s.fragmentShader);
+    for (const v of varyings(s.vertexShader))
+      assert(!new RegExp('\\b' + v + '\\b').test(s.fragmentShader) || fv.has(v), `${o.material.name}: ${v} read but not declared`);
+  });
+  // The beach's wet band: the shore is the only sand, and its uv.x runs out to the profile's 7.2.
+  const sands = [];
+  city.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'sand' && sands.push(o));
+  assert.equal(sands.length, 1, 'Only the shore is sand.');
+  const uv = sands[0].geometry.getAttribute('uv');
+  let widest = -Infinity;
+  for (let i = 0; i < uv.count; i++) widest = Math.max(widest, uv.getX(i));
+  assert(Math.abs(widest - 7.2) < 0.05, `The shore's uv.x reaches ${widest}, not the shore width.`);
+  const sand = patchedShader(sands[0].material);
+  assert(varyings(sand.vertexShader).has('vShoreW') && varyings(sand.fragmentShader).has('vShoreW') && sand.fragmentShader.includes('shoreWet'), 'The sand has no wet band.');
+}
 // The page builds the same town a phase at a time, handing the main thread back in between.
 const { buildTownInPhases } = await load('town-build');
 const phaseNames = [];
