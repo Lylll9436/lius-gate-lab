@@ -18,8 +18,11 @@
      concentrates in the bevel, a faint shade at the bottom for thickness, and (in Chromium)
      real refraction from app/liquid-glass.ts. Blur values are literal in the rules below,
      because some Safari versions ignore var() inside backdrop-filter. */
-  --glass-tint: linear-gradient(160deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1));
-  --glass-glow: radial-gradient(120% 80% at 12% 0%, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0) 58%);
+  /* The tint's colour stops (registered below, so a day/night switch fades them). The
+     gradients themselves are put together on each glass surface, in the shared glass rule. */
+  --glass-tint-a: rgba(255, 255, 255, 0.3);
+  --glass-tint-b: rgba(255, 255, 255, 0.1);
+  --glass-glow-a: rgba(255, 255, 255, 0.42);
   --glass-spec: rgba(255, 255, 255, 0.85);
   --glass-spec-far: rgba(255, 255, 255, 0.3);
   --glass-line: rgba(255, 255, 255, 0.14);
@@ -64,8 +67,9 @@
   --bg: #0e1416;
   --bg-2: #141b1e;
   --panel: rgba(17, 23, 26, 0.7);
-  --glass-tint: linear-gradient(160deg, rgba(40, 52, 56, 0.42), rgba(14, 20, 22, 0.26));
-  --glass-glow: radial-gradient(120% 80% at 12% 0%, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 58%);
+  --glass-tint-a: rgba(40, 52, 56, 0.42);
+  --glass-tint-b: rgba(14, 20, 22, 0.26);
+  --glass-glow-a: rgba(255, 255, 255, 0.1);
   --glass-spec: rgba(255, 255, 255, 0.42);
   --glass-spec-far: rgba(255, 255, 255, 0.12);
   --glass-line: rgba(238, 240, 236, 0.14);
@@ -86,6 +90,23 @@
   --stage-b: #0b1316;
   --shadow: 0 30px 60px -28px rgba(0, 0, 0, 0.7);
   --primary-foreground: #0e1416;
+}
+/* Registered as colours so the glass can fade its tint over a day/night switch, with the page
+   (a gradient, or an unregistered property, would snap). Values as in :root's day. */
+@property --glass-tint-a {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.3);
+}
+@property --glass-tint-b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.1);
+}
+@property --glass-glow-a {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.42);
 }
 @theme inline {
   --color-background: var(--background);
@@ -534,12 +555,17 @@ body:has(.mode-explore),
   will-change: transform;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+  /* Its glass fades over a day/night switch as every glass surface's does (see the shared
+     glass rule); so does its own ink. */
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s, color 1.2s ease,
+    box-shadow 0.3s ease, --glass-tint-a 1.2s ease, --glass-tint-b 1.2s ease,
+    --glass-glow-a 1.2s ease;
 }
 .map-labels .home-tag[data-shown] {
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.35s ease;
+  transition: opacity 0.35s ease, color 1.2s ease, box-shadow 0.3s ease,
+    --glass-tint-a 1.2s ease, --glass-tint-b 1.2s ease, --glass-glow-a 1.2s ease;
 }
 .stage-caption {
   position: absolute;
@@ -1622,12 +1648,18 @@ body:has(.mode-explore),
 .home-tag,
 .scene-fallback,
 .skip-link {
+  /* Put together here, from this surface's own (fading) stops: a var() in :root's value
+     would be resolved there, and every surface would inherit the switch as a snap. */
+  --glass-tint: linear-gradient(160deg, var(--glass-tint-a), var(--glass-tint-b));
+  --glass-glow: radial-gradient(120% 80% at 12% 0%, var(--glass-glow-a), rgba(255, 255, 255, 0) 58%);
   background: var(--glass-glow), var(--glass-tint);
   border: 1px solid transparent;
   box-shadow: var(--glass-shadow);
   -webkit-backdrop-filter: blur(22px) saturate(180%) brightness(1.04);
   backdrop-filter: blur(22px) saturate(180%) brightness(1.04);
-  transition: background-color 1.2s ease, box-shadow 0.3s ease;
+  /* The tint fades with the page's own 1.2 s day/night fade. */
+  transition: background-color 1.2s ease, box-shadow 0.3s ease, --glass-tint-a 1.2s ease,
+    --glass-tint-b 1.2s ease, --glass-glow-a 1.2s ease;
 }
 :root[data-theme='night'] .panel,
 :root[data-theme='night'] .hero-news,
