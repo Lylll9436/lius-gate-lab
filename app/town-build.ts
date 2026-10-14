@@ -2759,7 +2759,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
    */
   function wellington(g: T.Object3D) {
     const [x, z] = plan.statueSpot,
-      bronze = '#5f5a4a'; // dark, cool bronze (s 0.22)
+      bronze = '#5f5a4a'; // dark, cool bronze (s 0.22) on the iron finish: half metal, so the sun still models it
     const root = new T.Group();
     root.position.set(x, 0, z);
     root.rotation.y = plan.statueHeading;
@@ -2777,34 +2777,34 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     for (const sx of [-0.16, 0.16])
       for (const sz of [-0.42, 0.42]) {
         const step = sx > 0 && sz > 0 ? 0.18 : 0;
-        box(root, sx, y0 + 0.28, sz + step * 0.25, 0.17, 0.56, 0.17, bronze, 'brass', { rx: -step }); // leg
+        box(root, sx, y0 + 0.28, sz + step * 0.25, 0.17, 0.56, 0.17, bronze, 'iron', { rx: -step }); // leg
       }
-    box(root, 0, y0 + 0.78, 0, 0.56, 0.56, 1.3, bronze, 'brass', { bevel: 0.18 }); // barrel
+    box(root, 0, y0 + 0.78, 0, 0.56, 0.56, 1.3, bronze, 'iron', { bevel: 0.18 }); // barrel
     const neck = new T.Group();
     neck.position.set(0, y0 + 0.92, 0.48);
     neck.rotation.x = 0.75;
     root.add(neck);
-    box(neck, 0, 0.22, 0, 0.32, 0.55, 0.34, bronze, 'brass');
-    box(neck, 0, 0.24, -0.17, 0.07, 0.5, 0.07, bronze, 'brass'); // mane
+    box(neck, 0, 0.22, 0, 0.32, 0.55, 0.34, bronze, 'iron');
+    box(neck, 0, 0.24, -0.17, 0.07, 0.5, 0.07, bronze, 'iron'); // mane
     const head = new T.Group();
     head.position.set(0, y0 + 1.3, 0.82);
     head.rotation.x = 1.0;
     root.add(head);
-    box(head, 0, 0.02, 0.12, 0.24, 0.26, 0.5, bronze, 'brass'); // head, nose down
-    for (const s of [-1, 1]) box(head, s * 0.07, 0.16, -0.1, 0.05, 0.12, 0.05, bronze, 'brass', { rx: -0.8 }); // ear, upright on the poll
+    box(head, 0, 0.02, 0.12, 0.24, 0.26, 0.5, bronze, 'iron'); // head, nose down
+    for (const s of [-1, 1]) box(head, s * 0.07, 0.16, -0.1, 0.05, 0.12, 0.05, bronze, 'iron', { rx: -0.8 }); // ear, upright on the poll
     const tail = new T.Group();
     tail.position.set(0, y0 + 0.95, -0.64);
     tail.rotation.x = -0.3;
     root.add(tail);
-    box(tail, 0, -0.22, 0, 0.1, 0.45, 0.12, bronze, 'brass');
+    box(tail, 0, -0.22, 0, 0.1, 0.45, 0.12, bronze, 'iron');
     // The rider, smaller than the horse: saddle cloth, legs down the flanks, torso, arms forward to the reins, head.
-    box(root, 0, y0 + 1.07, -0.05, 0.64, 0.04, 0.5, bronze, 'brass');
+    box(root, 0, y0 + 1.07, -0.05, 0.64, 0.04, 0.5, bronze, 'iron');
     for (const s of [-1, 1]) {
-      box(root, s * 0.31, y0 + 0.88, 0.04, 0.14, 0.4, 0.18, bronze, 'brass'); // leg
-      box(root, s * 0.21, y0 + 1.3, 0.06, 0.1, 0.32, 0.12, bronze, 'brass', { rx: -0.6 }); // arm, hands forward to the reins
+      box(root, s * 0.31, y0 + 0.88, 0.04, 0.14, 0.4, 0.18, bronze, 'iron'); // leg
+      box(root, s * 0.21, y0 + 1.3, 0.06, 0.1, 0.32, 0.12, bronze, 'iron', { rx: -0.6 }); // arm, hands forward to the reins
     }
-    box(root, 0, y0 + 1.31, -0.05, 0.34, 0.45, 0.25, bronze, 'brass'); // torso
-    sphere(root, 0, y0 + 1.67, -0.03, 0.15, bronze, 'brass');
+    box(root, 0, y0 + 1.31, -0.05, 0.34, 0.45, 0.25, bronze, 'iron'); // torso
+    sphere(root, 0, y0 + 1.67, -0.03, 0.15, bronze, 'iron');
     // The cone, knocked a little askew: a square foot, the cone and its white band.
     const hat = new T.Group();
     hat.position.set(0, y0 + 1.79, -0.03);
