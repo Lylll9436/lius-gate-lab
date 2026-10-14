@@ -2357,7 +2357,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   function headPose(spec: plan.HerdMember, head: T.Object3D, time: number) {
     const { phase } = spec,
       s = sstep(0.5 + 0.5 * Math.sin(time * 0.16 + phase), 0.2, 0.8);
-    head.rotation.x = (spec.eating ? mix(-0.06, 0.12, s) : mix(-0.08, 0.6, s)) + 0.03 * s * Math.sin(time * 5 + phase);
+    // A grazing head drops (from 0.72) as well as dips, so the muzzle comes down to about 0.05
+    // over the grass instead of hanging over its own shadow.
+    head.position.y = spec.eating ? 0.72 : 0.72 - 0.12 * s;
+    head.rotation.x = (spec.eating ? mix(-0.06, 0.12, s) : mix(-0.08, 0.85, s)) + 0.03 * s * Math.sin(time * 5 + phase);
     // Both start from rest, so the held pose looks straight ahead along the body.
     head.rotation.y = 0.15 * (1 - s) * Math.cos(time * 0.23 + phase);
     head.rotation.z = 0.07 * Math.max(0, Math.sin(time * 0.9 + phase * 3 + 1)) ** 16;
