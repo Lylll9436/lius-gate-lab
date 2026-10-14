@@ -271,14 +271,28 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     tail: { y: 0.8, z: -0.6 },
   };
   /**
+   * A calf's build, in its own units before the herd's 0.62 scale: leggy (its legs half as long
+   * again as an adult's, under a shorter coat), a smaller, rounder barrel and a head a quarter
+   * bigger, so the head is large for the body.
+   */
+  const CALF: typeof ADULT = {
+    legs: { h: 0.44, w: 0.13, x: 0.15, z: 0.25 },
+    shape: { cy: 0.64, ax: 0.29, ay: 0.25, az: 0.44 },
+    rows: [{ theta: 0.45, len: 0.3, w: 0.22, count: 4 }, { theta: 1.05, len: 0.28, w: 0.22, count: 4 }],
+    hem: { count: 11, len: 0.22 },
+    head: { y: 0.78, z: 0.36, scale: 1.25 },
+    tail: { y: 0.74, z: -0.44 },
+  };
+  /**
    * A Highland cow: a shaggy coat of chunky locks over a smooth russet barrel, its ragged hem
    * hanging over the tops of short dark legs; a head with a long forelock falling over the eyes,
-   * a dark muzzle and long upswept cream horns with dark tips (nubs on a calf), and a tufted
-   * tail. Every part is 'fabric'. The head and tail hang from their own pivots, so they can move.
+   * a dark muzzle and long upswept cream horns with dark tips, and a tufted tail. A calf (scale
+   * under 0.8) takes the CALF build, a lighter ginger coat and horn buds. Every part is
+   * 'fabric'. The head and tail hang from their own pivots, so they can move.
    */
   function highlandCow(g: T.Object3D, spec: plan.HerdMember) {
     const calf = spec.scale < 0.8,
-      build = ADULT,
+      build = calf ? CALF : ADULT,
       tone = new T.Color(calf ? COAT.calf : COAT.coat),
       seed = plan.herd.indexOf(spec) * 1000 + 17;
     const cow = new T.Group();
@@ -311,7 +325,7 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       box(head, s * 0.25, 0.04, 0.16, 0.18, 0.06, 0.1, tone.getStyle(), 'fabric', { rz: -s * 0.35 }); // ears, drooping out under the horns
       // A calf's horn buds: small, muted and well back on the crown, behind the forelock, so
       // they never sit where eyes would be.
-      if (calf) cone(head, s * 0.12, 0.16, 0.07, 0.03, 0.07, bud, 'fabric', 6, 0).rotation.z = -s * 0.4;
+      if (calf) cone(head, s * 0.11, 0.19, 0.06, 0.035, 0.08, bud, 'fabric', 6, 0).rotation.z = -s * 0.3;
       else horn(head, [[0.15, 0.12, 0.14], [0.42, 0.17, 0.24], [0.55, 0.38, 0.28], [0.59, 0.5, 0.29]].map(([x, y, z]) => new T.Vector3(s * x, y, z)), 0.065, palette.trim, palette.woodDark);
     }
     const tail = new T.Group();
