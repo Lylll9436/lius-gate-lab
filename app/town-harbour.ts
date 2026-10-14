@@ -161,8 +161,10 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
   }
   /**
    * A Scottish creel, about 1.6x real like the crates: a D-shaped net body on a flat base, 0.46
-   * long (local z) x 0.34 wide x 0.285 tall, its netted ends in shade; three rubber-coated hoops
-   * stand 0.035 proud of the vault as ribs, and a white entrance ring sits in the +z end.
+   * long (local z) x 0.34 wide x 0.285 tall, its netted ends a little in shade; three soft
+   * charcoal rubber-coated hoops stand 0.035 proud of the vault as ribs, and the entrance ring in
+   * the +z end is the netting's own colour, darker, so it reads as the opening (a white ring read
+   * as an eye, the brightest thing on the quay).
    */
   let creelBody: T.BufferGeometry | undefined;
   function creel(g: T.Object3D, x: number, y: number, z: number, ry: number, net: string) {
@@ -172,7 +174,7 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
         merged = mergeGeometries([base, vault])!,
         n = merged.getAttribute('normal'),
         tone = new Float32Array(n.count * 3);
-      for (let k = 0; k < n.count; k++) tone.fill(Math.abs(n.getZ(k)) > 0.9 ? 0.72 : n.getY(k) < 0.3 ? 0.9 : 1, k * 3, k * 3 + 3);
+      for (let k = 0; k < n.count; k++) tone.fill(Math.abs(n.getZ(k)) > 0.9 ? 0.85 : n.getY(k) < 0.3 ? 0.9 : 1, k * 3, k * 3 + 3);
       merged.setAttribute('color', new T.BufferAttribute(tone, 3));
       creelBody = merged;
     }
@@ -185,12 +187,12 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     c.add(body);
     for (const hz of [-0.19, 0, 0.19]) {
       // Paint, not iron: thin arcs keep iron's specular off them.
-      const hoop = new T.Mesh(new T.TorusGeometry(0.175, 0.035, 4, 6, Math.PI), material('#3a3f44', 'paint'));
+      const hoop = new T.Mesh(new T.TorusGeometry(0.175, 0.035, 4, 6, Math.PI), material('#565c60', 'paint'));
       hoop.position.set(0, 0.115, hz);
       hoop.castShadow = hoop.receiveShadow = true;
       c.add(hoop);
     }
-    cylinder(c, 0, 0.17, 0.225, 0.07, 0.07, 0.03, palette.white, 'paint').rotation.x = Math.PI / 2;
+    cylinder(c, 0, 0.17, 0.225, 0.07, 0.07, 0.03, '#' + new T.Color(net).multiplyScalar(0.45).getHexString(), 'paint').rotation.x = Math.PI / 2;
   }
   /** A beach detail's root at shore coordinates (i, w), standing 0.01 into the sand. */
   const onShore = (i: number, w: number) => {
