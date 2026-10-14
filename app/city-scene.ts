@@ -94,6 +94,9 @@ const shortestAngle = (from: number, to: number) => {
  */
 const YAW_RATE = 2.5,
   YAW_SPEED = Math.PI / 2;
+/** How close the camera may zoom: on the town, and on Inspect's lone building. */
+const CITY_MAX_ZOOM = 4,
+  STUDY_MAX_ZOOM = 8;
 
 /** Build the town model only, all at once: used by the checks. */
 export function buildCityModel() {
@@ -411,7 +414,7 @@ export async function createCity(
   controls.dampingFactor = 0.09;
   // Far enough out for the whole island beside the file on a 1024-1280 px wide screen.
   controls.minZoom = 0.5;
-  controls.maxZoom = 4;
+  controls.maxZoom = CITY_MAX_ZOOM;
   // Panning stops before the view leaves the island for open sea: the subject point (the
   // view centre less the panel offset) stays within this radius of the island's centre.
   const PAN_RADIUS = 30;
@@ -739,7 +742,9 @@ export async function createCity(
     }
     city.visible = true;
     zones.visible = planMode;
-    controls.maxZoom = 4;
+    // A study zoom closer than the town's limit eases out: the limit comes down with the
+    // glide (see step) rather than OrbitControls clamping the zoom in one frame.
+    controls.maxZoom = Math.max(CITY_MAX_ZOOM, camera.zoom);
   }
   /** Inspect's framing: the building fitted to the camera's frustum, beside the panel or
    *  above the sheet. */
@@ -1017,6 +1022,9 @@ export async function createCity(
     // on narrow wide screens) are never clamped.
     controls.cursor.copy(shiftApplied);
     controls.maxTargetRadius = tween ? Infinity : PAN_RADIUS;
+    // Out of Inspect, the zoom limit follows the camera back down to the town's.
+    if (!inspect)
+      controls.maxZoom = Math.max(CITY_MAX_ZOOM, Math.min(controls.maxZoom, camera.zoom));
     controls.update();
     // Whatever the visitor panned to is where the next panel offset starts from.
     if (!tween) target.copy(controls.target);
@@ -1219,7 +1227,7 @@ export async function createCity(
       );
       studyGround.position.set(studyCentre.x, studyBounds.min.y - 0.01, studyCentre.z);
       scene.add(studyGround);
-      controls.maxZoom = 8;
+      controls.maxZoom = STUDY_MAX_ZOOM;
       city.visible = false;
       zones.visible = false;
       frameStudy();
@@ -1236,7 +1244,12 @@ export async function createCity(
       inspectionAutoFit = false;
       autoFocus = false;
       overviewFit = false;
-      targetZoom = T.MathUtils.clamp(camera.zoom * f, controls.minZoom, controls.maxZoom);
+      // The limit of where the camera is (the town or Inspect), not one still easing down.
+      targetZoom = T.MathUtils.clamp(
+        camera.zoom * f,
+        controls.minZoom,
+        inspect ? STUDY_MAX_ZOOM : CITY_MAX_ZOOM,
+      );
       // Zoom about the subject beside the panel: take the panel offset out of the current
       // view centre and put it back as measured at the new zoom.
       target.copy(controls.target).sub(shiftApplied);

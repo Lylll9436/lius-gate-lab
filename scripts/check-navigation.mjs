@@ -282,6 +282,76 @@ assert(
   moved <= offsetLength * turned + 1e-9,
   `A turning frame moved the view centre ${moved.toFixed(2)} (offset ${offsetLength.toFixed(2)}): a sideways jump.`,
 );
+// Leaving Inspect from a study zoom closer than the town's limit eases all the way out: the
+// real OrbitControls clamps the zoom to its limit on every update, so the limit must come
+// down with the glide, not before it.
+const exitPieces = [];
+function collectExit(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'exitInspection')
+    exitPieces.push(node.getText(syntax));
+  if (
+    ts.isVariableStatement(node) &&
+    node.declarationList.declarations.some(
+      (d) => d.name.getText(syntax) === 'CITY_MAX_ZOOM',
+    )
+  )
+    exitPieces.push(node.getText(syntax));
+  if (
+    ts.isIfStatement(node) &&
+    node.expression.getText(syntax) === '!inspect' &&
+    node.thenStatement.getText(syntax).includes('controls.maxZoom')
+  )
+    exitPieces.push(`function zoomLimit() { ${node.getText(syntax)} }`);
+  ts.forEachChild(node, collectExit);
+}
+collectExit(syntax);
+assert.equal(exitPieces.length, 3, 'The Inspect exit check must find every piece it runs.');
+const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+const studyCamera = new T.OrthographicCamera(-38, 38, 45, -45, 0.1, 180);
+studyCamera.position.set(0, 35, 38);
+studyCamera.lookAt(0, 0, 0);
+const studyControls = new OrbitControls(studyCamera, null);
+studyControls.enableDamping = true;
+studyControls.dampingFactor = 0.09;
+studyControls.maxZoom = 8;
+// A phone's study zoom on a home.
+studyCamera.zoom = 7.4;
+studyCamera.updateProjectionMatrix();
+studyControls.update();
+const exit = {
+  Math,
+  camera: studyCamera,
+  controls: studyControls,
+  inspect: {},
+  studyGround: {},
+  scene: { remove() {} },
+  city: { visible: false },
+  zones: { visible: false },
+  planMode: false,
+  shadowFocus() {},
+  clearHover() {},
+};
+const leaving = runInNewContext(
+  `${ts.transpileModule(exitPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ exitInspection, zoomLimit });`,
+  exit,
+);
+leaving.exitInspection();
+assert.equal(exit.inspect, null);
+const townZoom = 3.4,
+  glide = 1 - Math.exp(-5.5 / 60);
+for (let frame = 0; frame < 120; frame++) {
+  const before = studyCamera.zoom;
+  // step(): the glide's lerp, then the limit, then OrbitControls' own update.
+  studyCamera.zoom += (townZoom - studyCamera.zoom) * glide;
+  leaving.zoomLimit();
+  studyControls.update();
+  assert(
+    before - studyCamera.zoom <= (before - townZoom) * glide + 1e-9,
+    `Leaving Inspect cut the zoom from ${before.toFixed(2)} to ${studyCamera.zoom.toFixed(2)} in one frame.`,
+  );
+}
+assert(Math.abs(studyCamera.zoom - townZoom) < 1e-3, 'The glide must reach the town framing.');
+assert.equal(studyControls.maxZoom, 4, 'Back in the town, its zoom limit holds again.');
 // Selection adds one depth-aware mask pass; all renderer state survives failure.
 const { createCityInk } = await import(
   pathToFileURL(path.join(output, 'city-ink.mjs')).href
@@ -353,5 +423,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, an eased zoom out of Inspect.`,
 );
