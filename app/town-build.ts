@@ -2316,15 +2316,19 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(head, 0, -0.02, 0.22, 0.38, 0.34, 0.4, tone, 'fabric', { bevel: 0.1 }); // skull
     box(head, 0, -0.13, 0.44, 0.32, 0.2, 0.16, COAT.muzzle, 'fabric', { bevel: 0.06 }); // muzzle
     const f = calf ? 1.2 : 1;
-    const fringe = shag(new T.IcosahedronGeometry(0.2, 1), -0.04, 0.08).scale(1.3 * f, 0.6 * f, 0.85 * f),
-      forelock = new T.Color(tone).lerp(new T.Color(COAT.light), 0.45).getStyle();
-    const lock = coat(paintByHeight(fringe, forelock, (y) => mix(0.88, 1.04, sstep(y, -0.12, 0.12))), head); // the fringe over the eyes, drooping forward
+    // The fringe over the eyes, drooping forward with a ragged hem (no separate locks: pointed
+    // ones below it read as fangs over the muzzle).
+    const fringe = shag(new T.IcosahedronGeometry(0.2, 1), -0.02, 0.12).scale(1.3 * f, 0.6 * f, 0.85 * f),
+      forelock = new T.Color(tone).lerp(new T.Color(COAT.light), 0.45).getStyle(),
+      bud = new T.Color(palette.trim).lerp(new T.Color(tone), 0.35).getStyle();
+    const lock = coat(paintByHeight(fringe, forelock, (y) => mix(0.88, 1.04, sstep(y, -0.12, 0.12))), head);
     lock.position.set(0, 0.11, 0.35);
     lock.rotation.x = 0.3;
     for (const s of [-1, 1]) {
-      cone(head, s * 0.08 * f, 0, 0.46, 0.07 * f, 0.16 * f, forelock, 'fabric', 4).rotation.x = Math.PI; // locks hanging over the eyes
       box(head, s * 0.25, 0.04, 0.16, 0.18, 0.06, 0.1, tone, 'fabric', { rz: -s * 0.35 }); // ears, drooping out under the horns
-      if (calf) cone(head, s * 0.14, 0.17, 0.16, 0.04, 0.08, palette.trim, 'fabric', 6, 0).rotation.z = -s * 0.5; // horn buds
+      // A calf's horn buds: small, muted and well back on the crown, behind the fringe, so they
+      // never sit where eyes would be.
+      if (calf) cone(head, s * 0.12, 0.16, 0.07, 0.03, 0.07, bud, 'fabric', 6, 0).rotation.z = -s * 0.4;
       else horn(head, [[0.15, 0.12, 0.14], [0.42, 0.17, 0.24], [0.55, 0.38, 0.28], [0.59, 0.5, 0.29]].map(([x, y, z]) => new T.Vector3(s * x, y, z)), 0.065, palette.trim, palette.woodDark);
     }
     const tail = new T.Group();
