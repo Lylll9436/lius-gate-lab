@@ -607,9 +607,10 @@ export default function Home() {
     );
     return () => window.clearTimeout(timer);
   }, [shot, settledShot]);
-  // The chapter the reading camera last framed. The address follows the reading line at once
-  // but the camera only once it settles, so for a moment the address is already in the next
-  // chapter: the camera then keeps its shot rather than fit the chapter being left again.
+  // The shot the reading camera last framed (and on what screen). The address follows the
+  // reading line at once but the camera only once it settles, so for a moment the address is
+  // already in the next chapter: the camera then keeps its shot rather than fit the chapter
+  // being left again. The footer's whole island does not depend on the address at all.
   const framedShot = useRef<string | null>(null);
   useEffect(() => {
     const engine = api.current;
@@ -617,18 +618,21 @@ export default function Home() {
       framedShot.current = null;
       return;
     }
+    const framed = `${settledShot} ${wide}`,
+      focusContent = readingContent(content, settledShot);
+    if (
+      framedShot.current === framed &&
+      (settledShot === READ_END || focusContent !== content)
+    )
+      return;
+    framedShot.current = framed;
     if (settledShot === READ_END) {
-      framedShot.current = READ_END;
       // Beside the last chapter's panel, in the part of the stage the footer leaves in view.
       engine.setFrameShift(wide ? 0.21 : 0, endFrame());
       engine.overview(true);
       return;
     }
-    const chapter = settledShot,
-      focusContent = readingContent(content, chapter),
-      ahead = focusContent !== content;
-    if (ahead && framedShot.current === chapter) return;
-    framedShot.current = chapter;
+    const chapter = settledShot;
     engine.setYaw(bearings[chapter] ?? Math.PI / 4);
     if (chapter === 'overview') {
       engine.reset();
