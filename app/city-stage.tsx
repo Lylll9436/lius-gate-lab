@@ -134,6 +134,8 @@ export function CityStage({
         ctl.inspect && 'is-inspecting',
         // Which floating panels are up, so the phone layouts can keep them apart.
         explore && (ctl.panelOpen || ctl.directory) && 'has-side',
+        // The file itself, so the wide layout can keep the tour bar clear of it.
+        explore && ctl.panelOpen && 'has-file',
         explore && ctl.tour >= 0 && 'is-touring',
         explore && ctl.plan && 'has-plan',
       ]

@@ -408,6 +408,8 @@ body:has(.mode-explore),
   overscroll-behavior: none;
 }
 .city-stage {
+  /* The open file's width on wide screens; the tour bar keeps clear of it (see Responsive). */
+  --file-width: min(460px, calc(100% - 32px));
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -827,7 +829,7 @@ body:has(.mode-explore),
   top: calc(var(--masthead) + 8px);
   right: 16px;
   bottom: 72px;
-  width: min(460px, calc(100% - 32px));
+  width: var(--file-width);
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -1770,6 +1772,30 @@ body:has(.mode-explore),
 /* ------------------------------------------------------------------ */
 /* Responsive                                                          */
 /* ------------------------------------------------------------------ */
+/* City mode on wide screens: centred on the screen, the tour bar would run under an open file
+   below about 1,350 px wide (a laptop, a tablet held sideways), its Next and Close buttons
+   behind the frosted file. Beside the file it sits in the middle of the space left of it,
+   under the stop the camera has framed there, and never reaches past it. */
+@media (min-width: 961px) {
+  .is-explore.has-file .tour-control {
+    left: calc((100% - var(--file-width) - 16px) / 2);
+    max-width: calc(100% - var(--file-width) - 48px);
+  }
+  /* A long stop name gives way before the tour's buttons do. */
+  .is-explore.has-file .tour-control strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .is-explore.has-file .tour-control .eyebrow,
+  .is-explore.has-file .tour-control > div {
+    flex-shrink: 0;
+  }
+  /* A Directory opened during the tour stops short of the tour bar on a short screen. */
+  .is-explore.is-touring .directory {
+    max-height: calc(100svh - var(--masthead) - 136px);
+  }
+}
 @media (max-width: 1180px) {
   .panel {
     width: min(100%, clamp(380px, 50vw, 600px));
