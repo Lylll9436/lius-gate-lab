@@ -2300,20 +2300,22 @@ export function* buildTownInPhases(options: TownOptions = {}) {
    * middle is the whole opening's, so an arched pane's band runs over the arch too.
    * A curtain wall (`paneSpan`) is one sheet several units tall, and measured in units its whole
    * upper storey would sit in the shader's clamped top lean (a pale strip). Its height maps
-   * instead onto one gentle sweep, -0.6 at the foot to 0.2 at the head.
+   * instead onto one gentle sweep, -0.6 at the foot to 0.2 at the head. A `flatGlass` face (the
+   * clock dials) keeps one lean all over, so it reads as an even face under the glass.
    */
-  function paneUV(geometry: T.BufferGeometry, bounds: T.Box3, look: { paneSpan?: boolean }) {
+  function paneUV(geometry: T.BufferGeometry, bounds: T.Box3, look: { flatGlass?: boolean; paneSpan?: boolean }) {
     const p = geometry.getAttribute('position'),
       n = geometry.getAttribute('normal'),
       mid = bounds.getCenter(new T.Vector3()),
       tall = Math.max(1e-3, bounds.max.y - bounds.min.y),
       uv = new Float32Array(p.count * 2);
-    for (let i = 0; i < p.count; i++) {
-      // Across = up x normal; a face looking straight up or down has no across.
-      const ax = n.getZ(i), az = -n.getX(i), len = Math.hypot(ax, az);
-      uv[i * 2] = len > 0.1 ? ((p.getX(i) - mid.x) * ax + (p.getZ(i) - mid.z) * az) / len : 0;
-      uv[i * 2 + 1] = look.paneSpan ? -0.6 + (0.8 * (p.getY(i) - bounds.min.y)) / tall : p.getY(i) - mid.y;
-    }
+    if (!look.flatGlass)
+      for (let i = 0; i < p.count; i++) {
+        // Across = up x normal; a face looking straight up or down has no across.
+        const ax = n.getZ(i), az = -n.getX(i), len = Math.hypot(ax, az);
+        uv[i * 2] = len > 0.1 ? ((p.getX(i) - mid.x) * ax + (p.getZ(i) - mid.z) * az) / len : 0;
+        uv[i * 2 + 1] = look.paneSpan ? -0.6 + (0.8 * (p.getY(i) - bounds.min.y)) / tall : p.getY(i) - mid.y;
+      }
     geometry.setAttribute('uv', new T.BufferAttribute(uv, 2));
   }
   function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number } = {}) {
