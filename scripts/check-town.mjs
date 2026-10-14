@@ -800,6 +800,31 @@ assert.equal(lowSun(rad(-10)), 0);
       }
     }
 }
+// The windows' night clock: evening until 22:00, panes going out until 02:30, early risers from
+// 05:30 to 07:30, reset unseen at noon. The follower only moves forward in the dark, holds through
+// twilight and the autumn clock change, and copies the clock by day and at the noon reset.
+const { windowClock, followWindows, WINDOW_RATE } = await load('glasgow-sun');
+{
+  for (const h of [21.9, 12, 17.5]) assert.deepEqual(windowClock(h), { out: 0, wake: 0 }, `The windows' night has begun at ${h}.`);
+  assert.equal(windowClock(2.5).out, 1, 'Every pane that goes out is out by 02:30.');
+  assert.equal(windowClock(7.5).wake, 1, 'Every early riser is up by 07:30.');
+  const follow = (from, goal, night, dt, snap) => {
+    const state = { ...from };
+    followWindows(state, goal, night, dt, snap);
+    return state;
+  };
+  const early = { out: 0.1, wake: 0.1 },
+    ahead = { out: 0.3, wake: 0.3 };
+  for (const snap of [false, true]) {
+    assert.deepEqual(follow(early, ahead, 0.6, 1, snap), early, 'No pane goes out at dusk.');
+    assert.deepEqual(follow({ out: 0.5, wake: 0 }, { out: 0.3, wake: 0 }, 1, 1, snap), { out: 0.5, wake: 0 }, 'The panes hold when the clocks go back.');
+  }
+  const moved = follow(early, ahead, 1, 1, false);
+  assert(Math.abs(moved.out - 0.1 - WINDOW_RATE) < 1e-12 && Math.abs(moved.wake - 0.1 - WINDOW_RATE) < 1e-12, 'The panes follow at WINDOW_RATE.');
+  assert.deepEqual(follow(early, ahead, 1, 1, true), ahead, 'Reduced motion jumps to the clock.');
+  assert.deepEqual(follow({ out: 0.5, wake: 0.2 }, { out: 0.3, wake: 0 }, 0.01, 1, false), { out: 0.3, wake: 0 }, 'By day the panes copy the clock.');
+  assert.deepEqual(follow({ out: 1, wake: 1 }, { out: 0, wake: 0 }, 1, 1, false), { out: 0, wake: 0 }, 'Manual night resets at noon.');
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

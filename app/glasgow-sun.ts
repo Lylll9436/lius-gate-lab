@@ -47,6 +47,39 @@ export function glasgowSeason(date = new Date(), search = ''): Season {
         : 'winter';
 }
 
+/**
+ * How far through the night the windows are: `out` is how many of the evening's lit panes
+ * have gone out (each pane keeps its own point on it), `wake` how many early risers are up.
+ */
+export type WindowClock = { out: number; wake: number };
+/** Puts a clock value 0.6 of the way through its byte: past that byte's fade (which ends at +0.51) and short of the
+ * next byte's, so between moves every pane rests fully on or fully off. 0 and 1 stay exact. */
+const settle = (v: number) => (v <= 0 ? 0 : Math.min(1, (Math.floor(v * 255) + 0.6) / 255));
+/** The windows' night from Glasgow wall-clock hours, in whole bytes: `out` 0 → 1 from 22:00 to 02:30, `wake` 0 → 1
+ * from 05:30 to 07:30. Both hold until noon and are 0 from noon to 22:00 (the reset happens unseen, in daylight). */
+export function windowClock(hours: number): WindowClock {
+  const n = (((hours + 6) % 24) + 24) % 24; // 0 at 18:00, 4 at 22:00, 18 at noon
+  return n >= 18
+    ? { out: 0, wake: 0 }
+    : { out: settle(clamp((n - 4) / 4.5, 0, 1)), wake: settle(clamp((n - 11.5) / 2, 0, 1)) };
+}
+/** Per second: one byte (at most one pane) in 6.5 s, and one pane's 0.002-wide fade in 3.3 s. */
+export const WINDOW_RATE = 0.0006;
+/** One frame of the panes following the clock. In daylight they copy it, unseen. The noon reset copies it too, even in
+ * Manual night: it is the only drop over 0.5, since DST's is at most 0.23. Through twilight they hold, so none goes out
+ * at dusk or comes on at dawn. Otherwise they only move forward: at once with reduced motion, else at WINDOW_RATE. */
+export function followWindows(state: WindowClock, goal: WindowClock, night: number, dt: number, snap: boolean) {
+  if (night < 0.05 || goal.out < state.out - 0.5) {
+    state.out = goal.out;
+    state.wake = goal.wake;
+    return;
+  }
+  if (night < 0.97) return;
+  const step = snap ? Infinity : WINDOW_RATE * dt;
+  state.out = Math.max(state.out, Math.min(goal.out, state.out + step));
+  state.wake = Math.max(state.wake, Math.min(goal.wake, state.wake + step));
+}
+
 /** Approximate solar position for Glasgow at a given instant. */
 export function glasgowSky(date = new Date()): SkyState {
   const parts = Object.fromEntries(

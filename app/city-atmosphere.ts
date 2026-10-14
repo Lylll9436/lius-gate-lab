@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  * Everything here is decorative: no colliders, no pavement, no physics.
  */
 
-export { glasgowSky, glasgowSeason, type SkyState, type Season } from './glasgow-sun';
+export { glasgowSky, glasgowSeason, windowClock, followWindows, type SkyState, type Season } from './glasgow-sun';
 
 const DEG = Math.PI / 180;
 
