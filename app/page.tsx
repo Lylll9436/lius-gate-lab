@@ -377,9 +377,11 @@ export default function Home() {
   // address is left where it is, and Back/Forward keep the place the browser puts
   // the page back to when it is in their chapter, or else glide to the chapter.
   useEffect(() => {
-    let disposed = false;
+    let disposed = false,
+      synced = '';
     const sync = (first: boolean) => {
       if (disposed) return;
+      synced = window.location.href;
       const hash = window.location.hash;
       const next = hash
         ? parseLocation(hash)
@@ -389,9 +391,14 @@ export default function Home() {
         scrollToContent(next.content, first, !first);
     };
     const onHistory = () => sync(false);
+    // Back/Forward to another fragment fires popstate and then hashchange: the second is the
+    // same address again. (Only popstate comes for the tour's entries, which share a hash.)
+    const onHashChange = () => {
+      if (window.location.href !== synced) sync(false);
+    };
     void Promise.resolve().then(() => sync(true));
     window.addEventListener('popstate', onHistory);
-    window.addEventListener('hashchange', onHistory);
+    window.addEventListener('hashchange', onHashChange);
     const media = window.matchMedia(WIDE),
       onMedia = () => setWide(media.matches);
     onMedia();
@@ -399,7 +406,7 @@ export default function Home() {
     return () => {
       disposed = true;
       window.removeEventListener('popstate', onHistory);
-      window.removeEventListener('hashchange', onHistory);
+      window.removeEventListener('hashchange', onHashChange);
       media.removeEventListener('change', onMedia);
     };
   }, [scrollToContent]);
