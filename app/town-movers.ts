@@ -139,8 +139,9 @@ export function createMovers(ctx: TownContext, kit: Kit) {
   /**
    * A town bike (local +z forward, y 0 the ground, about 0.9 long): two tyres, a diamond frame in
    * `colour`, a dark bar and saddle, a chainring on the left, and optionally a wicker basket and a
-   * front lamp (a lantern dot the frame loop lights at night, no light or halo). Matte paint, not
-   * enamel, so the thin tubes do not glint; nothing casts, since thin members ghost in the shadow map.
+   * front lamp (a dark housing round a lantern lens the frame loop lights at night, no light or
+   * halo). Matte paint, not enamel, so the thin tubes do not glint; nothing casts, since thin
+   * members ghost in the shadow map.
    */
   function bicycle(g: T.Object3D, colour: string, opts: { basket?: boolean; lamp?: boolean } = {}) {
     const bike = new T.Group();
@@ -169,14 +170,17 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     ring.rotation.z = Math.PI / 2;
     parts.push(ring);
     if (opts.basket) parts.push(box(bike, 0, 0.5, 0.34, 0.24, 0.16, 0.2, palette.wood, 'wood'));
+    if (opts.lamp) parts.push(box(bike, 0, 0.47, 0.25, 0.08, 0.07, 0.06, dark, 'paint')); // the lamp's housing, on the stem
     for (const m of parts) {
       m.castShadow = false;
       m.receiveShadow = true;
       m.userData.noShadow = true;
     }
     if (opts.lamp) {
-      const light = new T.Mesh(new T.IcosahedronGeometry(0.04, 1), lampGlass());
-      light.position.set(0, 0.47, 0.27);
+      // Only the lens shows, set in the housing's front: a pale ball out on its own would read
+      // as a third hand by day.
+      const light = new T.Mesh(new T.IcosahedronGeometry(0.035, 1).scale(1, 1, 0.5), lampGlass());
+      light.position.set(0, 0.47, 0.28);
       bike.add(light);
       lamps.push(light);
     }
