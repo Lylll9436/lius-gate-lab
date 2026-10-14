@@ -395,6 +395,39 @@ assert(
   'Zooming during a glide must not leave the picked place off-centre.',
 );
 assert(Math.abs(turn.camera.zoom - 3) < 0.01, 'The zoom builds on the glide’s own zoom.');
+// Idle drift turns the camera only for visitors who have not asked for reduced motion.
+const driftPieces = [];
+function collectDrift(node) {
+  if (
+    ts.isVariableStatement(node) &&
+    node.declarationList.declarations.some((d) =>
+      ['idle', 'driftTarget', 'nextDrift'].includes(d.name.getText(syntax)),
+    )
+  )
+    driftPieces.push(node.getText(syntax));
+  ts.forEachChild(node, collectDrift);
+}
+collectDrift(syntax);
+assert.equal(driftPieces.length, 3, 'The drift check must find every piece it runs.');
+const driftAt = (reduced) =>
+  runInNewContext(
+    `${ts.transpileModule(`function nextAngle() { ${driftPieces.join('\n')} return nextDrift; }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};nextAngle();`,
+    {
+      Math,
+      reduced,
+      drift: true,
+      inspect: null,
+      hover: { dragging: false },
+      paused: false,
+      now: 60000,
+      lastInteraction: -1e9,
+      time: 20,
+      driftAngle: 0,
+      blend: 1,
+    },
+  );
+assert(Math.abs(driftAt(false)) > 0.01, 'The check must see the drift turn the camera.');
+assert.equal(driftAt(true), 0, 'With reduced motion the camera must not drift.');
 // Leaving Inspect from a study zoom closer than the town's limit eases all the way out: the
 // real OrbitControls clamps the zoom to its limit on every update, so the limit must come
 // down with the glide, not before it.
@@ -536,5 +569,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion.`,
 );

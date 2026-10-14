@@ -1125,9 +1125,16 @@ export async function createCity(
       shiftApplied.copy(wanted);
       tween = true;
     }
-    // Idle drift: a slow, breathing turn that stops the moment the visitor acts.
+    // Idle drift: a slow, breathing turn that stops the moment the visitor acts. Never with
+    // reduced motion: Play there brings the people and the tram back, not a turning camera
+    // that cuts back each time the map is touched.
     const idle =
-      drift && !inspect && !hover.dragging && !paused && now - lastInteraction > 4000;
+      !reduced &&
+      drift &&
+      !inspect &&
+      !hover.dragging &&
+      !paused &&
+      now - lastInteraction > 4000;
     const driftTarget = idle ? Math.sin(time * 0.07) * 0.16 : 0;
     const nextDrift = reduced
       ? driftTarget
