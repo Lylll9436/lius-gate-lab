@@ -754,6 +754,9 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       bakeRamp(m, colour, 0.85, 1.02, lichen, 0.25);
     });
   }
+  /** The pool's mid-line water as it reads through its pale surface, a shade darker (x 0.85), and the ripple's height. */
+  const DUCK_RIPPLE = '#4696ac',
+    DUCK_WATER = 0.078;
   /**
    * Mallards on the gate's pool (plan.ducks): a brown hen and a drake with a dark green head in
    * the south-east sector, a lone hen in the south-west. Each is a small rigid group (about 0.32
@@ -781,7 +784,13 @@ export function createCountry(ctx: TownContext, kit: Kit) {
       const bill = box(duck, 0, 0.105, 0.19, 0.07, 0.035, 0.08, look.bill, 'fabric'),
         tail = cone(duck, 0, 0.05, -0.17, 0.045, 0.09, look.tail, 'fabric', 4);
       tail.rotation.x = -1.2; // tipped back and up
-      for (const m of [body, head, bill, tail]) {
+      // The water round the duck: a flat oval a little wider than the body, just over the surface
+      // (0.07), in the pool's own mid-line colour a shade darker, so the body sits in the water
+      // with a waterline and a soft ring of disturbed water rather than on the pale pool like a
+      // sticker. It is part of the duck's one mesh, so it tips with the duck's rare dip.
+      const ripple = new T.Mesh(new T.CircleGeometry(1, 18).rotateX(-Math.PI / 2).scale(0.15, 1, 0.22).translate(0, DUCK_WATER - plan.DUCK_REST, -0.01), material(DUCK_RIPPLE, 'fabric'));
+      duck.add(ripple);
+      for (const m of [body, head, bill, tail, ripple]) {
         m.castShadow = false;
         m.receiveShadow = true;
         m.userData.noShadow = true;

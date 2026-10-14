@@ -719,8 +719,10 @@ export function duckBob(i: number, time: number, night: number) {
   const f = (((time / 25 + i * 0.37) % 1) + 1) % 1;
   const bump = Math.sin(Math.PI * Math.min(1, Math.max(0, (f - 0.93) / 0.07)));
   const dip = 0.3 * (1 - night) * bump;
-  return { dip, y: 0.1 + 0.006 * Math.sin(time * 1.3 + i) + 0.05 * dip };
+  return { dip, y: DUCK_REST + 0.006 * Math.sin(time * 1.3 + i) + 0.05 * dip };
 }
+/** A duck's body centre at rest: as low as its bob keeps its chest off the bed (0.02), so the surface (0.07) cuts its side about a third of the way up. */
+export const DUCK_REST = 0.0965;
 /**
  * The bike rack at the Research Studio: three Sheffield hoops in a row along x on the west edge
  * of its entrance apron (centred x 5.93, at each `hoops` z, on the apron's top `y`), between the
