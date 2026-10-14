@@ -343,7 +343,7 @@ for (let i = 0; i < 400; i++) {
       { name: 'netFrame', p: at(sp.netFrame.from), q: at(sp.netFrame.to), r: sp.netFrame.foot },
       { name: 'driftwood', p: at(sp.driftwood.from), q: at(sp.driftwood.to), r: sp.driftwood.foot, root: sp.driftwood.rootFoot },
       ...sp.rockPools.map((s, k) => ({ name: 'rockPools[' + k + ']', p: at(s), r: s.foot })),
-      ...sp.wrack.map((s, k) => ({ name: 'wrack[' + k + ']', p: at(s), r: s.foot })),
+      ...sp.wrack.map((s, k) => ({ name: 'wrack[' + k + ']', p: at({ i: s.from, w: s.w }), q: at({ i: s.to, w: s.w }), r: s.foot })),
     ];
   for (const part of parts)
     for (const p of part.q ? [part.p, part.q] : [part.p]) {
@@ -366,7 +366,12 @@ for (let i = 0; i < 400; i++) {
     }
     return best - ra - rc;
   };
-  const together = new Set(['rockPools[0]', 'wrack[0]', 'boulder-42']); // a pool, its weed and its boulder overlap on purpose
+  const together = new Set(['rockPools[0]', 'rockPools[1]', 'boulder-42']); // the pools tuck against their boulder on purpose
+  // ...but not into each other.
+  {
+    const [a, b] = sp.rockPools;
+    assert(Math.hypot(at(a)[0] - at(b)[0], at(a)[1] - at(b)[1]) - a.foot - b.foot >= 0.05, 'The rock pools run into each other.');
+  }
   for (let a = 0; a < parts.length; a++)
     for (let b = a + 1; b < parts.length; b++) {
       if (together.has(parts[a].name) && together.has(parts[b].name)) continue;

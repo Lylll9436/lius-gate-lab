@@ -455,8 +455,8 @@ export const harbour = {
  * Beach details either side of the pier, in shore coordinates: outline sample i (fractional) and
  * width w out from the outline. `foot` is the plan radius every part stays inside. The hut side
  * (samples 29-31) is the working quay: creels, a float and a coil on the dry sand. The dinghy side
- * (37-43) has a net drying on a frame, a strand line of wrack and driftwood, and rock pools on the
- * wet sand round the boulder at sample 42.
+ * (37-43) has a net drying on a frame, two strand lines of wrack, driftwood, and rock pools on the
+ * wet sand against the boulder at sample 42.
  */
 export const shoreProps = {
   creelStack: { i: 30.3, w: 0.8, foot: 0.51 },
@@ -465,8 +465,10 @@ export const shoreProps = {
   coil: { i: 29.6, w: 1.45, foot: 0.23 },
   netFrame: { from: { i: 37.4, w: 0.65 }, to: { i: 39.2, w: 0.65 }, foot: 0.3 }, // a capsule: the hangs splay to 0.24, the hem floats to 0.3
   driftwood: { from: { i: 40.05, w: 1.45 }, to: { i: 41.2, w: 1.38 }, foot: 0.1, rootFoot: 0.17 }, // a capsule, the root flare at `from`
-  rockPools: [{ i: 42, w: 2.42, r: 0.32, foot: 0.6 }, { i: 43.1, w: 2.3, r: 0.26, foot: 0.53 }], // foot = 1.15 r + 0.23 (stretched along the shore, rim rocks)
-  wrack: [{ i: 42.4, w: 2.0, s: 1, foot: 0.17 }, { i: 40.3, w: 2.68, s: 0.8, foot: 0.136 }, { i: 39.3, w: 1.6, s: 0.9, foot: 0.153 }, { i: 38.7, w: 1.7, s: 0.7, foot: 0.119 }], // foot = 0.17 s
+  // Tucked against the boulder at sample 42 (seaward of it and beside it), so its rock is their rim; foot = 1.3 r (stretched along the shore, ragged).
+  rockPools: [{ i: 42, w: 2.0, r: 0.32, foot: 0.42 }, { i: 42.65, w: 1.5, r: 0.2, foot: 0.26 }],
+  // Strand lines: ribbons of weed along the shore from sample `from` to `to` at about w (older and browner up the beach). foot: half-width, wobble and bow.
+  wrack: [{ from: 38.45, to: 39.4, w: 1.66, foot: 0.17 }, { from: 39.95, to: 40.75, w: 2.62, foot: 0.17 }],
 };
 
 /* ------------------------------------------------------------------ */
