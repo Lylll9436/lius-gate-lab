@@ -726,14 +726,15 @@ export function duckBob(i: number, time: number, night: number) {
 /** A duck's body centre at rest: as low as its bob keeps its chest off the bed (0.02), so the surface (0.07) cuts its side about a third of the way up. */
 export const DUCK_REST = 0.0965;
 /**
- * The bike rack at the Research Studio: three Sheffield hoops in a row along x on the west edge
- * of its entrance apron (centred x 5.93, at each `hoops` z, on the apron's top `y`), between the
- * bench and the canopy's south post and clear of the way from the path to the door, with bikes
- * leaning on the first two. The studio chapter (bearing -0.7) sees it beside the entrance, clear
- * of the gate's attic. It is part of the studio's shell, so it answers the pointer, rings and
- * inspects with the studio.
+ * The bike rack at the Research Studio: two Sheffield hoops in a row along x on the west edge of
+ * its entrance apron (centred x 5.93, at each `hoops` z, on the apron's top `y`), between the
+ * bench and the canopy's south post and clear of the way from the path to the door, with a bike
+ * leaning on each. The studio chapter (bearing -0.7) sees it beside the entrance, clear of the
+ * gate's attic. (An empty third hoop stood alone beside the attic's finial there and read as a
+ * dark hook or a cane handle.) It is part of the studio's shell, so it answers the pointer, rings
+ * and inspects with the studio.
  */
-export const bikeRack = { x: 5.93, y: 0.06, hoops: [-5.95, -5.35, -4.75], parked: [0, 1] };
+export const bikeRack = { x: 5.93, y: 0.06, hoops: [-5.95, -5.35], parked: [0, 1] };
 
 /**
  * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
