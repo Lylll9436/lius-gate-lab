@@ -265,9 +265,14 @@ for (const [x, z] of [...plan.dogLoop, ...plan.dogLane]) {
     assert(Math.hypot(at[0].x - at[1].x, at[0].z - at[1].z) >= 0.3, 'The ducks swim through each other.');
   }
 }
-// The bike rack's pad lies off the plaza and the pavements, with no trunk on it.
+// The bike rack (its hoops and the bikes leaning on them) stands off the plaza and the pavements,
+// with no trunk near it.
+const rackFootprint = (() => {
+  const { x, hoops } = plan.bikeRack; // the bikes stand 0.025 east of their hoop, 0.9 long
+  return { x0: x - 0.425, x1: x + 0.475, z0: Math.min(...hoops) - 0.05, z1: Math.max(...hoops) + 0.05 };
+})();
 {
-  const { x0, x1, z0, z1 } = plan.bikeRack.pad;
+  const { x0, x1, z0, z1 } = rackFootprint;
   for (let i = 0; i <= 10; i++)
     for (const [x, z] of [[x0 + ((x1 - x0) * i) / 10, z0], [x0 + ((x1 - x0) * i) / 10, z1], [x0, z0 + ((z1 - z0) * i) / 10], [x1, z0 + ((z1 - z0) * i) / 10]]) {
       assert(Math.hypot(x, z) - plan.PLAZA_RADIUS >= 0.5, `The bike rack crowds the plaza at ${x.toFixed(2)}, ${z.toFixed(2)}`);
@@ -375,6 +380,12 @@ for (const [id, m] of models) {
     assert(beside.zoom <= fit.zoom + 1e-9, 'Inspection beside the file: ' + id);
     assert(above.zoom <= fit.zoom + 1e-9, 'Inspection above the sheet: ' + id);
   }
+}
+// The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
+{
+  const studio = new T.Box3().setFromObject(models.get('research-studio').root),
+    { x0, x1, z0, z1 } = rackFootprint;
+  assert(studio.min.x <= x0 && x1 <= studio.max.x && studio.min.z <= z0 && z1 <= studio.max.z, 'The bike rack stands outside the Research Studio.');
 }
 // The pointer can find every building and the park.
 const ray = new T.Raycaster();

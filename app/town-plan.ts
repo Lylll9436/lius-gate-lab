@@ -622,11 +622,14 @@ export function duckBob(i: number, time: number, night: number) {
   return { dip, y: 0.1 + 0.006 * Math.sin(time * 1.3 + i) + 0.05 * dip };
 }
 /**
- * The bike rack by the Research Studio: a paved pad against the west edge of the studio's path,
- * three Sheffield hoops in a row along x (centred x 5.6, at each `hoops` z) and bikes parked at
- * the first two. The pad lies inside the studio's hit box, so it answers as the studio.
+ * The bike rack at the Research Studio: three Sheffield hoops in a row along x on the west edge
+ * of its entrance apron (centred x 5.93, at each `hoops` z, on the apron's top `y`), between the
+ * bench and the canopy's south post and clear of the way from the path to the door, with bikes
+ * leaning on the first two. The studio chapter (bearing -0.7) sees it beside the entrance, clear
+ * of the gate's attic. It is part of the studio's shell, so it answers the pointer, rings and
+ * inspects with the studio.
  */
-export const bikeRack = { pad: { x0: 5.15, x1: 6.1, z0: -4.5, z1: -2.7 }, x: 5.6, hoops: [-4.2, -3.6, -3.0], parked: [0, 1] };
+export const bikeRack = { x: 5.93, y: 0.06, hoops: [-5.95, -5.35, -4.75], parked: [0, 1] };
 
 /**
  * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
