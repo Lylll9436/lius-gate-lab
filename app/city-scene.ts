@@ -393,13 +393,24 @@ export async function createCity(
   }
   function shadowFocus(center?: T.Vector3, radius = 34) {
     const base = shadowSizeFor();
-    const resolution = center ? base * 2 : base;
+    const resolution = center ? base * 2 : base,
+      focus = center || new T.Vector3();
+    // A new map (or a frustum moved elsewhere) is drawn before the next frame uses it, even
+    // paused: until then three samples an empty map and puts everything in full shadow.
+    if (
+      sun.shadow.mapSize.x !== resolution ||
+      sun.target.position.distanceToSquared(focus) > 1e-9 ||
+      sun.shadow.camera.right !== radius
+    ) {
+      shadowDirty = true;
+      renderer.shadowMap.needsUpdate = true;
+    }
     if (sun.shadow.mapSize.x !== resolution) {
       sun.shadow.mapSize.set(resolution, resolution);
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     }
-    sun.target.position.copy(center || new T.Vector3());
+    sun.target.position.copy(focus);
     placeSun();
     Object.assign(sun.shadow.camera, {
       left: -radius,

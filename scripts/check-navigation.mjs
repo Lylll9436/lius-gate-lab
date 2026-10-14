@@ -498,6 +498,63 @@ for (let frame = 0; frame < 120; frame++) {
 }
 assert(Math.abs(studyCamera.zoom - townZoom) < 1e-3, 'The glide must reach the town framing.');
 assert.equal(studyControls.maxZoom, 4, 'Back in the town, its zoom limit holds again.');
+// A sun shadow map thrown away (Inspect's sharper map, the town's again, a quality step) or a
+// frustum moved elsewhere is drawn again before the next frame uses it, even paused: an empty
+// map would put everything in full shadow until the paused cadence came round.
+const shadowPieces = [];
+function collectShadow(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'shadowFocus')
+    shadowPieces.push(node.getText(syntax));
+  if (
+    ts.isVariableStatement(node) &&
+    node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'shadowSizeFor')
+  )
+    shadowPieces.push(node.getText(syntax));
+  ts.forEachChild(node, collectShadow);
+}
+collectShadow(syntax);
+assert.equal(shadowPieces.length, 2, 'The shadow check must find every piece it runs.');
+const shadowSun = new T.DirectionalLight();
+Object.assign(shadowSun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34 });
+shadowSun.shadow.mapSize.set(1536, 1536);
+const shadows = {
+  T,
+  Math,
+  sun: shadowSun,
+  shadowBase: 1536,
+  quality: 0,
+  shadowDirty: false,
+  renderer: { shadowMap: { needsUpdate: false } },
+  placeSun() {},
+};
+const focusing = runInNewContext(
+  `${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};shadowFocus;`,
+  shadows,
+);
+const drawn = () => {
+  shadowSun.shadow.map = { dispose() {} };
+  shadows.shadowDirty = false;
+  shadows.renderer.shadowMap.needsUpdate = false;
+};
+const redrawn = (what) => {
+  assert.equal(shadowSun.shadow.map, null, `${what}: the check expects a new map.`);
+  assert(
+    shadows.shadowDirty && shadows.renderer.shadowMap.needsUpdate,
+    `${what} left the sun with no shadow map until the next scheduled shadow pass.`,
+  );
+};
+drawn();
+focusing(new T.Vector3(6, 2, -4), 9);
+redrawn('Entering Inspect');
+drawn();
+focusing();
+redrawn('Leaving Inspect');
+drawn();
+focusing();
+assert(!shadows.renderer.shadowMap.needsUpdate, 'An unchanged focus costs no extra shadow pass.');
+shadows.quality = 2;
+focusing();
+redrawn('A quality step');
 // Selection adds one depth-aware mask pass; all renderer state survives failure.
 const { createCityInk } = await import(
   pathToFileURL(path.join(output, 'city-ink.mjs')).href
@@ -569,5 +626,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion, a sun shadow redrawn whenever its map is replaced.`,
 );
