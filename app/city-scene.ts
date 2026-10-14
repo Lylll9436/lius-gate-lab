@@ -428,9 +428,12 @@ export async function createCity(
   // Reading mode leaves scrolling to the page: one finger and the plain wheel scroll it, and
   // Ctrl/⌘ + wheel or a pinch zooms. City mode has no page to scroll, so the canvas takes
   // every gesture: the plain wheel zooms, one finger pans, and zooms close in on the pointer.
+  // There every mouse button pans: OrbitControls' middle-button zoom anchors itself to the
+  // pointer only once (and wrongly), then drifts the subject away from beside the file.
   let cityMode = false;
   function setCityMode(on: boolean) {
     cityMode = on;
+    controls.mouseButtons.MIDDLE = on ? T.MOUSE.PAN : T.MOUSE.DOLLY;
     controls.touches.ONE = on ? T.TOUCH.PAN : null;
     controls.zoomToCursor = on;
     renderer.domElement.style.touchAction = on ? 'none' : 'pan-y';
