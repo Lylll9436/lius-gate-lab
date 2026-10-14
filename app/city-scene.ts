@@ -815,7 +815,9 @@ export async function createCity(
     mouse = new T.Vector2();
   let downX = 0,
     downY = 0,
-    multiPointer = false;
+    multiPointer = false,
+    // The press has strayed past a tap's slop at some point: a drag, even one that came back.
+    travelled = false;
   const activePointers = new Set<number>();
   function pickAt(clientX: number, clientY: number) {
     if (inspect) return null;
@@ -860,7 +862,15 @@ export async function createCity(
     else {
       downX = e.clientX;
       downY = e.clientY;
+      travelled = false;
     }
+  }
+  /** A fingertip wobbles more than a mouse: a tap may travel 10 px and still pick. */
+  function strayed(e: PointerEvent) {
+    return (
+      Math.hypot(e.clientX - downX, e.clientY - downY) >
+      (e.pointerType === 'touch' ? 10 : 5)
+    );
   }
   function up(e: PointerEvent) {
     const tracked = activePointers.delete(e.pointerId);
@@ -869,15 +879,8 @@ export async function createCity(
       hover.dragging = false;
       multiPointer = false;
     }
-    // A fingertip wobbles more than a mouse: a tap may travel 10 px and still pick.
-    const slop = e.pointerType === 'touch' ? 10 : 5;
-    if (
-      !tracked ||
-      blocked ||
-      e.button !== 0 ||
-      Math.hypot(e.clientX - downX, e.clientY - downY) > slop
-    )
-      return;
+    // A tap stays within its slop the whole way: a pan that comes back is still a pan.
+    if (!tracked || blocked || e.button !== 0 || travelled || strayed(e)) return;
     const id = pickAt(e.clientX, e.clientY);
     if (id === 'corner-park') onPark();
     else if (id) onSelect(id);
@@ -885,6 +888,7 @@ export async function createCity(
   function move(e: PointerEvent) {
     pointerMove(hover, e);
     if (e.buttons) clearHover();
+    if (activePointers.has(e.pointerId) && strayed(e)) travelled = true;
   }
   function clearHover() {
     clearPointer(hover);

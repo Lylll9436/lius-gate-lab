@@ -28,6 +28,7 @@ const syntax = ts.createSourceFile(
 const names = [
   'pickAt',
   'down',
+  'strayed',
   'up',
   'move',
   'clearHover',
@@ -96,6 +97,7 @@ const h = {
   downX: 0,
   downY: 0,
   multiPointer: false,
+  travelled: false,
   activePointers: new Set(),
   container: {
     getBoundingClientRect: () => ({
@@ -240,6 +242,24 @@ for (const [pointerType, dx, picks] of [
     `A ${pointerType} press that moves ${dx} px must ${picks ? '' : 'not '}pick.`,
   );
 }
+// A pan that wanders off and comes back to within the slop before letting go is still a pan.
+for (const pointerType of ['touch', 'mouse']) {
+  const start = eventAt('town-hall', { pointerType }),
+    before = selection.length;
+  emit('pointerdown', start);
+  emit('pointermove', { ...start, clientX: start.clientX + 100, buttons: 1 });
+  emit('pointermove', { ...start, clientX: start.clientX + 2, buttons: 1 });
+  emit('pointerup', { ...start, clientX: start.clientX + 2 });
+  assert.equal(
+    selection.length,
+    before,
+    `A ${pointerType} pan out and back must not pick.`,
+  );
+  // The next press starts afresh: a tap still picks.
+  emit('pointerdown', start);
+  emit('pointerup', start);
+  assert.equal(selection.length, before + 1, `A ${pointerType} tap after a pan must pick.`);
+}
 assert.equal(f.pickAt(41, 200), null);
 assert.equal(f.pickAt(850, 200), null);
 
@@ -276,5 +296,5 @@ assert(
   'The label must not intercept clicks or trigger hover loops.',
 );
 console.log(
-  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, and five viewport shapes.',
+  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, and five viewport shapes.',
 );
