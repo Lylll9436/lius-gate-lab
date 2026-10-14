@@ -136,5 +136,55 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     lamps.push(lanternMesh);
     return boat;
   }
-  return { hotAirBalloon, buildTram, buildBoat };
+  /**
+   * A town bike (local +z forward, y 0 the ground, about 0.9 long): two tyres, a diamond frame in
+   * `colour`, a dark bar and saddle, a chainring on the left, and optionally a wicker basket and a
+   * front lamp (a dark housing round a lantern lens the frame loop lights at night, no light or
+   * halo). Matte paint, not enamel, so the thin tubes do not glint; nothing casts, since thin
+   * members ghost in the shadow map.
+   */
+  function bicycle(g: T.Object3D, colour: string, opts: { basket?: boolean; lamp?: boolean } = {}) {
+    const bike = new T.Group();
+    g.add(bike);
+    const rubber = '#3a3f44',
+      dark = '#3b3633',
+      v = (x: number, y: number, z: number) => new T.Vector3(x, y, z);
+    const parts: T.Mesh[] = [];
+    for (const z of [-0.3, 0.3]) {
+      const tyre = new T.Mesh(new T.TorusGeometry(0.115, 0.035, 6, 14), material(rubber, 'paint'));
+      tyre.position.set(0, 0.15, z);
+      tyre.rotation.y = Math.PI / 2;
+      bike.add(tyre);
+      parts.push(tyre);
+    }
+    const bb = v(0, 0.15, 0),
+      seat = v(0, 0.3, -0.08),
+      head = v(0, 0.4, 0.21),
+      rear = v(0, 0.15, -0.3),
+      front = v(0, 0.15, 0.3);
+    for (const [a, b] of [[bb, seat], [seat, head], [bb, v(0, 0.37, 0.22)], [bb, rear], [seat, rear], [head, front], [head, v(0, 0.56, 0.19)]])
+      parts.push(strut(bike, a, b, 0.035, colour, 'paint'));
+    parts.push(box(bike, 0, 0.56, 0.2, 0.36, 0.06, 0.06, dark, 'paint')); // handlebar
+    parts.push(box(bike, 0, 0.33, -0.1, 0.1, 0.06, 0.17, dark, 'paint')); // saddle
+    const ring = cylinder(bike, -0.05, 0.15, 0, 0.07, 0.07, 0.04, rubber, 'paint'); // chainring, axis along x
+    ring.rotation.z = Math.PI / 2;
+    parts.push(ring);
+    if (opts.basket) parts.push(box(bike, 0, 0.5, 0.34, 0.24, 0.16, 0.2, palette.wood, 'wood'));
+    if (opts.lamp) parts.push(box(bike, 0, 0.47, 0.25, 0.08, 0.07, 0.06, dark, 'paint')); // the lamp's housing, on the stem
+    for (const m of parts) {
+      m.castShadow = false;
+      m.receiveShadow = true;
+      m.userData.noShadow = true;
+    }
+    if (opts.lamp) {
+      // Only the lens shows, set in the housing's front: a pale ball out on its own would read
+      // as a third hand by day.
+      const light = new T.Mesh(new T.IcosahedronGeometry(0.035, 1).scale(1, 1, 0.5), lampGlass());
+      light.position.set(0, 0.47, 0.28);
+      bike.add(light);
+      lamps.push(light);
+    }
+    return bike;
+  }
+  return { hotAirBalloon, buildTram, buildBoat, bicycle };
 }

@@ -208,6 +208,81 @@ for (const animal of plan.herd) {
     assert(inPaddock(x, z) >= 0.25, `${animal.id} leans into the dyke at ${x.toFixed(2)}, ${z.toFixed(2)}`);
   }
 }
+// Street life. The cyclist keeps left on the ring's outer side, half a lap from the tram: on the
+// flat carriageway, its ±0.22 never reaching the kerb (0.85 out), well clear of the terrace homes,
+// their bays and lean-tos (each site's rectangle run 0.8 further out at the front).
+{
+  const lean = new Set();
+  for (let t = 0; t <= 3000; t += 0.13) {
+    const p = plan.cyclistPose(t),
+      tram = plan.tramPose(t);
+    assert(Math.hypot(p.x - tram.x, p.z - tram.z) >= 20, `The cyclist meets the tram at t=${t.toFixed(2)}`);
+    const off = plan.distanceToPolyline([p.x, p.z], plan.ringLine, true);
+    assert(Math.abs(off - 0.6) <= 0.02 && !inside(plan.ringLine, p.x, p.z), `The cyclist leaves the outer lane at t=${t.toFixed(2)} (${off.toFixed(3)})`);
+    assert(plan.terrainHeight(p.x, p.z) === 0, 'The cyclist rides up a hill');
+    assert(Number.isFinite(p.heading) && p.lean >= 0 && p.lean <= 0.13 + 1e-9, 'The cyclist leans out of the turn');
+    lean.add(p.lean > 0.12);
+    for (const id of ['pengyuan-liu', 'yunlong-liu', 'qin-li']) {
+      const s = plan.sites[id],
+        dx = p.x - s.x,
+        dz = p.z - s.z,
+        lx = dx * Math.cos(s.rotation) - dz * Math.sin(s.rotation),
+        lz = dx * Math.sin(s.rotation) + dz * Math.cos(s.rotation),
+        out = Math.hypot(Math.max(Math.abs(lx) - s.w / 2, 0), Math.max(-s.d / 2 - lz, 0, lz - s.d / 2 - 0.8));
+      assert(out >= 2.4, `The cyclist passes ${out.toFixed(2)} from ${id}`);
+    }
+  }
+  assert.deepEqual([...lean].sort(), [false, true], 'The cyclist rides straights upright and leans on the corners.');
+}
+// The dog walk keeps to the open lawn east of the corner park: off the plot, the pavements and
+// the trunks, both the walker's loop and the dog's lane inside it.
+for (const [x, z] of [...plan.dogLoop, ...plan.dogLane]) {
+  const park = plan.park,
+    out = Math.max(Math.abs(x - park.x) - park.w / 2, Math.abs(z - park.z) - park.d / 2);
+  assert(out >= 0.35, `The dog walk crosses the corner park at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+  assert(plan.distanceToStreets(x, z) > plan.PAVEMENT_WIDTH + 0.35, `The dog walk crowds a pavement at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+  for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) >= 0.95, `The dog walk runs into ${t.id}`);
+  assert(plan.terrainHeight(x, z) === 0, 'The dog walk climbs a hill');
+}
+// Ducks paddle inside their sectors of the pool, clear of the causeways' faces, and the pair
+// never swims through each other.
+{
+  const { POOL, POOL_GAP } = await load('town-shared');
+  // The plan keeps the pool's mid-line as a number; it must be the pool's.
+  assert.equal((POOL.inner + POOL.outer) / 2, 3.3, 'The ducks swim about the pool’s mid-line.');
+  for (let u = 0; u <= Math.PI * 2; u += 0.01) {
+    const at = plan.ducks.map((_, i) => plan.duckPose(i, u));
+    at.forEach(({ x, z, heading }, i) => {
+      const r = Math.hypot(x, z),
+        a = Math.atan2(z, x);
+      assert(r >= 2.95 && r <= 3.65, `duck-${i} leaves the water (r ${r.toFixed(2)})`);
+      // The causeways' faces are radial cuts at ±POOL_GAP about each axis.
+      const sector = Math.round((a - Math.PI / 4) / (Math.PI / 2)) * (Math.PI / 2) + Math.PI / 4,
+        across = Math.min(...[sector - Math.PI / 4, sector + Math.PI / 4].map((axis) => r * Math.sin(Math.abs(plan.angleDiff(a, axis)) - POOL_GAP)));
+      assert(across >= 0.3, `duck-${i} bumps a causeway (${across.toFixed(2)})`);
+      assert(Number.isFinite(heading));
+    });
+    assert(Math.hypot(at[0].x - at[1].x, at[0].z - at[1].z) >= 0.3, 'The ducks swim through each other.');
+  }
+}
+// The bike rack (its hoops and the bikes leaning on them) stands off the plaza and the pavements,
+// with no trunk near it.
+const rackFootprint = (() => {
+  const { x, hoops } = plan.bikeRack; // the bikes stand 0.025 east of their hoop, 0.9 long
+  return { x0: x - 0.425, x1: x + 0.475, z0: Math.min(...hoops) - 0.05, z1: Math.max(...hoops) + 0.05 };
+})();
+{
+  const { x0, x1, z0, z1 } = rackFootprint;
+  for (let i = 0; i <= 10; i++)
+    for (const [x, z] of [[x0 + ((x1 - x0) * i) / 10, z0], [x0 + ((x1 - x0) * i) / 10, z1], [x0, z0 + ((z1 - z0) * i) / 10], [x1, z0 + ((z1 - z0) * i) / 10]]) {
+      assert(Math.hypot(x, z) - plan.PLAZA_RADIUS >= 0.5, `The bike rack crowds the plaza at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+      let road = plan.distanceToPolyline([x, z], plan.ringLine, true);
+      for (const a of plan.avenues) road = Math.min(road, plan.distanceToSegment([x, z], a.from, a.to));
+      assert(road - plan.ROAD_WIDTH / 2 - plan.PAVEMENT_WIDTH >= 0.5, `The bike rack crowds a pavement at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+    }
+  for (const t of trees)
+    assert(Math.hypot(Math.max(x0 - t.x, 0, t.x - x1), Math.max(z0 - t.z, 0, t.z - z1)) >= 1.5, `${t.id} stands on the bike rack`);
+}
 for (let i = 0; i < 400; i++) {
   const pose = plan.boatPose(i * 0.37);
   assert(!plan.onIsland(pose.x, pose.z, -1.0), 'Boat runs aground.');
@@ -537,6 +612,12 @@ for (const [id, m] of models) {
       }
   }
 }
+// The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
+{
+  const studio = new T.Box3().setFromObject(models.get('research-studio').root),
+    { x0, x1, z0, z1 } = rackFootprint;
+  assert(studio.min.x <= x0 && x1 <= studio.max.x && studio.min.z <= z0 && z1 <= studio.max.z, 'The bike rack stands outside the Research Studio.');
+}
 // The pointer can find every building and the park.
 const ray = new T.Raycaster();
 for (const [id, m] of models) {
@@ -801,6 +882,75 @@ assert(part('cow-a-head').rotation.x > 0.1 && part('cow-a-head').rotation.x < 0.
 assert(part('calf-head').rotation.x > 0.4, 'The calf grazes.');
 for (const name of ['cow-a-tail', 'cow-b-tail']) assert(Math.abs(part(name).rotation.z) < 1e-9, name + ' hangs still.');
 for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.children.every((c) => c.isMesh), 'Batched: ' + e.object.name);
+// The ducks on the gate's pool: each one mesh, its colours baked once (a hen's brightest red is
+// its bill's top face, pantile x 1.04; a second bake would make it x 1.04 squared). Through two
+// tips each, the body stays off the pool's bed (0.02) and the surface (0.07) cuts it between its
+// lowest point and its centre (the group's origin): afloat, never on top of the water.
+{
+  const { palette } = await load('town-build');
+  const ducks = model.animated.filter((e) => /^duck-\d$/.test(e.object.name));
+  assert.deepEqual(ducks.map((e) => e.object.name), ['duck-0', 'duck-1', 'duck-2']);
+  for (const e of ducks) assert(e.object.children.length === 1 && e.object.children[0].isMesh, `${e.object.name} is not one mesh`);
+  const colour = ducks[0].object.children[0].geometry.getAttribute('color');
+  let red = 0;
+  for (let i = 0; i < colour.count; i++) red = Math.max(red, colour.getX(i));
+  assert(Math.abs(red - new T.Color(palette.pantile).r * 1.04) < 1e-3, `duck-0's colours are baked ${red.toFixed(3)}, not once`);
+  const corner = new T.Vector3();
+  for (const e of ducks) {
+    const mesh = e.object.children[0],
+      position = mesh.geometry.getAttribute('position');
+    for (let step = 0; step <= 1000; step++) {
+      e.update(step * 0.05, 0);
+      e.object.updateMatrixWorld(true);
+      let low = Infinity;
+      for (let i = 0; i < position.count; i++) low = Math.min(low, corner.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld).y);
+      assert(low >= 0.02, `${e.object.name} touches the pool's bed (${low.toFixed(3)}) at t=${(step * 0.05).toFixed(2)}`);
+      assert(low < 0.07 && e.object.position.y > 0.07, `${e.object.name} floats on top of the water at t=${(step * 0.05).toFixed(2)}`);
+    }
+  }
+}
+// The people are batched part by part, as before (13 or 14 meshes each, the satchel's wood making
+// the difference). The dog walker is one more of them; the dog is four meshes (its body, the only
+// part that casts, its legs, its head and its tail) and keeps its pivots apart from its body.
+{
+  const meshesIn = (o) => {
+    let n = 0;
+    o.traverse((c) => (n += c.isMesh ? 1 : 0));
+    return n;
+  };
+  for (const w of walkers) assert([13, 14].includes(meshesIn(w.root)), `A walker is ${meshesIn(w.root)} meshes`);
+  const dogWalk = model.animated.find((e) => e.object.name === 'dog-walk');
+  assert(dogWalk && dogWalk.object.userData.prebatched, 'The dog walk is batched with the people.');
+  const [figure, dog] = dogWalk.object.children;
+  assert.equal(dog.name, 'dog');
+  assert([13, 14].includes(meshesIn(figure)), `The dog walker is ${meshesIn(figure)} meshes`);
+  assert.equal(meshesIn(dog), 4, 'The dog is four meshes.');
+  const cast = [];
+  dog.traverse((c) => c.isMesh && c.castShadow && cast.push(c));
+  assert(cast.length === 1 && cast[0].parent === dog, 'Only the dog’s body casts a shadow.');
+  for (const name of ['dog-head', 'dog-tail']) assert(dog.getObjectByName(name).children.every((c) => c.isMesh), `${name} is batched`);
+  // The cyclist: one rigid rig (the bike, the body and the arms, in a few batches and none of them
+  // masonry, plus the lamp) and two pedalling legs, whose shoes stay on the crank's circle
+  // (bike-local centre y 0.185, radius 0.065) all the way round.
+  const cyclist = model.animated.find((e) => e.object.name === 'cyclist');
+  assert(cyclist && cyclist.object.userData.prebatched, 'The cyclist is batched with the people.');
+  const [rig, ...legs] = cyclist.object.children;
+  assert.deepEqual(legs.map((l) => l.name), ['leg-left', 'leg-right']);
+  assert(rig.children.every((c) => c.isMesh) && rig.children.length <= 5, 'The cyclist’s rig is a few batched meshes.');
+  assert(!rig.children.some((c) => c.material.userData.surfaceKind === 'stone'), 'The cyclist’s rig has a stone batch.');
+  assert.equal(rig.children.filter((c) => lamps.includes(c)).length, 1, 'The bike has one lamp.');
+  assert.equal(meshesIn(cyclist.object), 10, `The cyclist is ${meshesIn(cyclist.object)} meshes`);
+  const shoe = new T.Vector3();
+  for (let t = 0; t < 4; t += 0.02) {
+    cyclist.update(t, 0);
+    cyclist.object.updateMatrixWorld(true);
+    for (const leg of legs) {
+      const knee = leg.getObjectByName('knee');
+      cyclist.object.worldToLocal(knee.localToWorld(shoe.set(0, -0.135, 0.025)));
+      assert(Math.abs(Math.hypot(shoe.z, shoe.y - 0.185) - 0.065) <= 0.005 && Math.abs(shoe.x) < 0.1, `The cyclist's ${leg.name} misses its pedal at t=${t.toFixed(2)}`);
+    }
+  }
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>

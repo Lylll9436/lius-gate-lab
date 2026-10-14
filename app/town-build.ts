@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { createCityMaterials } from './city-materials';
-import { createResident } from './city-people';
+import { animateResident, createDog, createResident, pedalRider, seatRider } from './city-people';
 import { buildings, type BuildingId } from './city-data';
 import * as plan from './town-plan';
 import type { XZ } from './town-plan';
@@ -34,7 +34,8 @@ export { BALLOON } from './town-movers';
  * Everything is procedural and merged into a few draw calls per surface family.
  *
  * This file assembles the town; each part lives in its own module:
- * - town-plan.ts: the layout every part reads (sites, streets, planting, the herd, the flock);
+ * - town-plan.ts: the layout every part reads (sites, streets, planting, the herd, the flock,
+ *   and the street life's paths: the cyclist's lane, the dog walk, the ducks and the bike rack);
  * - town-shared.ts: the palette, hash and noise, the plaza, bandstand, crane and paddock layout,
  *   the water level, and TownContext (the material library, season, land group, lamps, clocks
  *   and animated parts of one build);
@@ -43,13 +44,14 @@ export { BALLOON } from './town-movers';
  * - town-ground.ts: the island, the shore and its foam, and the baked ground masks;
  * - town-streets.ts: the ring road, pavements and avenues, and the plaza with its pool;
  * - town-nature.ts: trees, hedges, beds, topiary, heather and thistles, and their seasons;
- * - town-props.ts: benches, lamps, the phone box, bins, the bandstand, the notice board, the
- *   crane, the picnic and the Wellington statue;
+ * - town-props.ts: benches, cycle hoops, lamps, the phone box, bins, the bandstand, the notice
+ *   board, the crane, the picnic and the Wellington statue;
  * - town-harbour.ts: the pier, the harbour with its moorings and beach details, and the lighthouse;
  * - town-homes.ts: the three members' homes in their terrace row, and the cottages;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
- * - town-movers.ts: the balloon, the tram and the boat;
- * - town-country.ts: the Highland herd and its paddock, the sheep and the standing stones;
+ * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
+ * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
+ *   ducks on the gate's pool;
  * - town-batch.ts: batch(), which merges each group by surface family and bakes contact and
  *   eave shade into it.
  * Each module's create* factory takes the build's TownContext (and the kit, planting or props
@@ -110,10 +112,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { pierAndHarbour, lighthouse } = createHarbour(ctx, kit, props);
   const { buildTerrace, buildCottage } = createHomes(kit, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
-  const { hotAirBalloon, buildTram, buildBoat } = createMovers(ctx, kit);
-  const { highlandPaddock, blackfaceSheep, standingStoneRing } = createCountry(ctx, kit);
+  const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
+  const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
   const { batch, windows } = createBatch(ctx);
-  const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
+  const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
   /**
    * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
    * the Highland-cow outing lives) through an invisible box under the park's own hit box. The
@@ -237,6 +239,96 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       speed: (inner ? 0.85 : -0.85) * (0.85 + hash(i + 3) * 0.3),
     });
   }
+  // A dog walker and a Border collie on the open lawn east of the corner park: a generic
+  // townsperson in muted clothes and a flat cap. Every 15 s they stop for 4 while the dog sniffs
+  // and wags faster; the walker's hand on the dog's side is held forward, as if on a lead (a lead
+  // itself would be too thin to draw). Both pose from town time, so reduced motion holds them.
+  const dogWalk = new T.Group(),
+    dogWalker = createResident(7, material, { coat: '#7a6a52', legs: '#3a4654', hair: '#8c8577', scarf: '#c4a878' }),
+    dog = createDog(material);
+  dogWalk.name = 'dog-walk';
+  dogWalk.userData.prebatched = true; // batched with the walkers below, not by the animated loop
+  dogWalk.add(dogWalker, dog);
+  city.add(dogWalk);
+  {
+    const head = dog.getObjectByName('dog-head')!,
+      tail = dog.getObjectByName('dog-tail')!,
+      leadArm = dogWalker.getObjectByName('arm-left')!; // the -x arm: the dog's side
+    let last = 0,
+      lastS = 0,
+      wag = 0;
+    const update = (time: number) => {
+      // Clamped steps absorb jumps in time; paused, time stands still and so does everything.
+      const dt = Math.min(0.1, Math.max(0, time - last)),
+        pose = plan.dogWalkPose(time),
+        { walker: w, dog: d } = pose;
+      last = time;
+      animateResident(dogWalker, Math.abs(pose.s - lastS), dt, dt === 0);
+      lastS = pose.s;
+      dogWalker.position.set(w.x, plan.terrainHeight(w.x, w.z) - dogWalker.userData.sole, w.z);
+      dogWalker.rotation.y = w.heading;
+      leadArm.rotation.x = -0.45;
+      dog.position.set(d.x, plan.terrainHeight(d.x, d.z) + 0.012 * Math.abs(Math.sin(pose.s * 26)) * (1 - pose.sniff), d.z);
+      dog.rotation.y = d.heading;
+      head.rotation.x = 0.55 * pose.sniff; // nose down while they stand
+      // The wag's phase adds up, so its speed (6 rad/s walking, 10 standing) changes without a jump.
+      wag += dt * (6 + 4 * pose.sniff);
+      tail.rotation.y = 0.5 * Math.sin(wag);
+    };
+    update(0);
+    animated.push({ object: dogWalk, update });
+  }
+  // A cyclist on the ring, keeping left on its outer side half a lap from the tram: a generic
+  // rider in an oat jacket and a slate helmet on a red bike with a front lamp (a dot the frame
+  // loop lights at night). The bike, the body and the arms are one rigid rig; the legs pedal.
+  const cyclist = new T.Group(),
+    rig = new T.Group(),
+    rider = createResident(8, material, { coat: '#cdb48d', legs: '#3a4654', hair: '#7d91a5', scarf: '#f5efe0' });
+  cyclist.name = 'cyclist';
+  cyclist.userData.prebatched = true; // batched with the people below
+  cyclist.add(rig);
+  city.add(cyclist);
+  const bike = bicycle(rig, palette.redDoor, { lamp: true });
+  cyclist.add(rider);
+  rider.position.set(0, 0.05, -0.1);
+  const riderJoints = seatRider(rider);
+  cyclist.updateMatrixWorld(true);
+  for (const part of [bike, rider.getObjectByName('body')!, rider.getObjectByName('arm-left')!, rider.getObjectByName('arm-right')!])
+    for (const mesh of part.children.filter((o) => o instanceof T.Mesh)) rig.attach(mesh);
+  for (const hip of riderJoints.hips) cyclist.attach(hip);
+  bike.removeFromParent();
+  rider.removeFromParent();
+  {
+    const update = (time: number) => {
+      const p = plan.cyclistPose(time);
+      cyclist.position.set(p.x, plan.levels.road, p.z);
+      cyclist.rotation.set(0, p.heading, p.lean); // the lean is about the bike's own axis, into the turn
+      pedalRider(riderJoints, p.crank);
+    };
+    update(0);
+    animated.push({ object: cyclist, update });
+  }
+  // Three ducks on the gate's pool; the animated list's batching makes each one mesh.
+  pondDucks(city);
+  // The bike rack at the Research Studio's entrance: three hoops on its apron and two bikes, front
+  // to the plaza, their frames leaning on the first two. Two, not three: three bikes by the studio
+  // of a three-member group would read as theirs. The rack joins the studio's shell, so it batches,
+  // rings and inspects with the building (built in the town instead, it would punch holes in the
+  // studio's selection ring wherever it stands in front of the apron).
+  {
+    const rack = new T.Group(),
+      { x, y, hoops, parked } = plan.bikeRack,
+      studio = models.get('research-studio')!;
+    city.add(rack);
+    hoops.forEach((z, i) => {
+      cycleHoop(rack, x, y, z);
+      if (!parked.includes(i)) return;
+      const bike = bicycle(rack, i === 0 ? palette.greenDoor : palette.tramCream, { basket: i === 1 });
+      bike.position.set(x + 0.025, y, z + 0.1);
+      bike.rotation.set(0, -Math.PI / 2, 0.07); // the top tube rests on the hoop's bow
+    });
+    studio.shell.attach(rack);
+  }
   const tram = buildTram();
   city.add(tram);
   const boat = buildBoat();
@@ -256,8 +348,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     batch(m.shell, { windows: id === 'town-hall' || id === 'city-archive' ? 'civic' : id === 'research-studio' ? 'studio' : 'home', place: id });
     yield `batch ${id}`;
   }
-  for (const walker of walkers)
-    for (const part of walker.root.children) {
+  /** A figure batched part by part (the body, each hip and knee, each arm), so its joints still bend. */
+  function batchFigure(root: T.Object3D) {
+    for (const part of root.children) {
       const joints = part.children.filter((o) => o instanceof T.Group);
       for (const joint of joints) {
         part.remove(joint);
@@ -266,9 +359,17 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       batch(part as T.Group, { contact: 'none' });
       if (joints.length) part.add(...joints);
     }
+  }
+  for (const walker of walkers) batchFigure(walker.root);
+  batchFigure(dogWalker);
+  batchFigure(cyclist);
+  for (const name of ['dog-head', 'dog-tail']) batch(dog.getObjectByName(name)!, { contact: 'none' });
+  batch(dog, { contact: 'none' });
   batch(tram, { contact: 'local', localFloor: 0, windows: 'vehicle' });
   batch(boat, { contact: 'none', windows: 'vehicle' });
-  for (const entry of animated) if (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)) batch(entry.object, { contact: 'none' });
+  for (const entry of animated)
+    if (!entry.object.userData.prebatched && (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)))
+      batch(entry.object, { contact: 'none' });
   city.updateMatrixWorld(true);
 
   const parkHit = new T.Mesh(new T.BoxGeometry(plan.park.w, 2.2, plan.park.d), new T.MeshBasicMaterial({ visible: false }));

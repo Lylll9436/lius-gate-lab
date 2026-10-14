@@ -541,7 +541,6 @@ export async function createCity(
     inspectionAutoFit = true,
     inspectYaw = yaw,
     overviewFit = false,
-    tramDistance = 0,
     rain = 0,
     targetRain = 0,
     drift = false,
@@ -587,7 +586,6 @@ export async function createCity(
   scene.add(weather.object, gulls.object);
   const target = new T.Vector3(),
     offset = new T.Vector3();
-  const tramLength = plan.polylineLength(plan.tramLoop, true);
   const zones = buildDistrictZones();
   scene.add(zones);
   const hover = hoverPointer();
@@ -1162,8 +1160,8 @@ export async function createCity(
       );
       walker.root.rotation.y = pose.heading + (walker.speed < 0 ? Math.PI : 0);
     }
-    if (!paused) tramDistance = (tramDistance + dt * 2.1) % tramLength;
-    const vehicle = plan.samplePolyline(plan.tramLoop, tramDistance, true);
+    // The tram runs on town time, as the cyclist does half a lap away (plan.cyclistPose).
+    const vehicle = plan.tramPose(time);
     tram.position.set(vehicle.x, plan.levels.road, vehicle.z);
     tram.rotation.y = vehicle.heading;
     const pose = plan.boatPose(time);
