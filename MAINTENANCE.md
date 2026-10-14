@@ -58,8 +58,8 @@ pnpm content remove events example-event
 - 整体饱和度：`app/city-scene.ts` 里的 `SATURATION`（当前 0.72），在最终合成里统一调整，改一个数即可；1 为调色板原色。三位成员的住宅是一排并列的联排（`app/town-plan.ts` 的 `terraceRow`），间距由 `spacing` 控制。联排两端的背景小屋（`cottages`）退到这条线后约 3 个单位并转向，`check-town` 会检查它们不接在联排的线上。阅读「成员」一章时，三栋住宅上方显示名字标签（`app/city-stage.tsx` 的 `home-tag`，由 `city-scene.ts` 的 `setHomeTags` 每帧投影到屋顶上方），悬停成员卡片只描边对应的那一栋。
 - 天气、时刻与季节：主光方向来自 `app/city-atmosphere.ts` 的 `sunOffsetFor`，白天抬高到 50–57°；真实太阳高度低于约 12° 时（`lowSun`，即清晨与黄昏前），主光降到约 40°，并在调色之前让主光与雾变暖（`city-scene.ts` 的 `sunGolden`、`fogGolden`）。下雨时阴影变淡（`sun.shadow.intensity` 降到 0.35）、海鸥停飞、雨丝为 `#7f8f9c`。树木按格拉斯哥的月份换季（`app/glasgow-sun.ts` 的 `glasgowSeason`，`town-build.ts` 的 `treeLook`）：春季开花，秋季变色，夏季全绿，冬季是更沉的绿；地址加 `?season=spring|summer|autumn|winter` 可预览某一季。热气球绕岛心、沿半径 32 的圈在海岸与海面上空飞（`town-build.ts` 的 `BALLOON`），不会挡住各章的主体；`start` 让它从东北方海面出发，首屏打开时不在标题与导语后面。
 - 规划视图的四个分区在 `app/city-districts.ts`：名称、说明（en / zh）、颜色与地面轮廓 `outline`。分区由 `city-scene.ts` 的 `buildDistrictZones` 画在路缘之上（`DISTRICT_LIFT`），打开规划视图时，图例列出每个分区的名称与说明（手机上是顶部一行可横向滑动的卡片）。移动建筑、公园或预留地块后，`check-town` 会检查每个分区仍然包住它说明里的地方、留在平地上、不碰海岸且互不重叠。
-- 城市模式的目录与导览：目录每行写出这个地方装的是什么（`city-data.ts` 的 `category`），当前打开的地方标 `aria-current`，指向某一行会在模型上描边那栋建筑（`setAccent`）。导览的站点是 `app/lab-navigation.ts` 的 `tourStops`：七个地方按目录顺序，最后一站是街角公园；导览只在开始时记一条浏览历史，之后每站替换地址，焦点留在「下一站」上。
-- `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移、真实日照（`setSky`）、雨、悬停射线与标签、单栋建筑近看、设备分级与帧率调节。`createCity` 的 API 由 `app/page.tsx` 调用。
+- 城市模式的目录与导览：目录每行写出这个地方装的是什么（`city-data.ts` 的 `category`），当前打开的地方标 `aria-current`，指向某一行会在模型上描边那栋建筑（`setAccent`）。导览的站点是 `app/lab-navigation.ts` 的 `tourStops`：七个地方按目录顺序，最后一站是街角公园；导览只在开始时记一条浏览历史，之后每站替换地址，焦点留在「下一站」上。城市模式里按 Esc 依次退出近看、关闭目录、规划视图和导览，最后才收起资料（`app/page.tsx` 的 keydown 处理）；再次选中已打开的地方也会重新取景。
+- `app/city-scene.ts` 负责渲染与交互：正交镜头与平滑过渡、阅读面板构图偏移、闲置漂移（减少动态效果时关闭）、真实日照（`setSky`）、雨、悬停射线与标签、单栋建筑近看、设备分级与帧率调节。`createCity` 的 API 由 `app/page.tsx` 调用。
 - 加载不卡页面：`app/page.tsx` 在模块执行时就开始下载 city-scene（仍是动态 `import()`，不进首包）；`createCity` 是异步的，用 `buildTownInPhases` 分阶段建城，每个阶段（以及 PMREM 环境光之前）都把主线程交还浏览器。新增较重的建模或合批步骤时，在 `town-build.ts` 的装配部分加一个 `yield`，让单个阶段保持在几十毫秒内；`buildTown` 一次跑完全部阶段，供 Node 检查使用。
 
 ## 交付前检查
@@ -70,7 +70,7 @@ pnpm check
 pnpm build:pages
 ```
 
-`check-town` 在 Node 中生成整座小城，验证建筑位置、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器、夜间窗灯、热气球航线、季节树色和晨昏的低角度主光；`check-navigation`、`check-hover`、`check-content` 验证地址解析、悬停行为和内容增删改。这些检查不代替在目标设备上的视觉验收。
+`check-town` 在 Node 中生成整座小城，验证建筑位置、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器、夜间窗灯、热气球航线、季节树色和晨昏的低角度主光；`check-navigation`、`check-hover`、`check-content` 验证地址解析、镜头动作（连按旋转不回摆、过渡中缩放、离开近看时缓出）、悬停与点选（拖出又拖回的平移不算点选）和内容增删改。这些检查不代替在目标设备上的视觉验收。
 
 ## GitHub Pages 发布
 
