@@ -22,7 +22,7 @@ import { paintByHeight, bakeRamp } from './town-nature';
 /* ------------------------------------------------------------------ */
 export function createCountry(ctx: TownContext, kit: Kit) {
   const { material, animated } = ctx;
-  const { box, cone, groundY } = kit;
+  const { box, sphere, groundY } = kit;
   /**
    * The paddock's own colours, judged after the 0.72 grade: the dyke takes the beach boulders'
    * greys; the hay is a straw gold from the brass and gold family (HSV s 0.51, under the gold's
@@ -219,20 +219,50 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     return lockGeometry(locks);
   }
   /**
-   * The forelock: a fan of long locks rooted on the poll between the horns, falling forward over
-   * the brow and the eyes to just above the muzzle, and a lock down each cheek. Head space: the
-   * skull's front face is at z 0.42, its crown at y 0.15; the muzzle's top is at y -0.03.
+   * The forelock, in two layers that wrap the brow: locks lying flat along the poll from between
+   * the horns forward over the brow's rounded edge, and under their tips a fringe hanging from
+   * that edge down over the eyes to the muzzle, each lock tapered to a point, overlapping its
+   * neighbours, its length, width and splay set by hash (three and four on a cow, three and three
+   * shorter ones on a calf); on a cow, a lock down each cheek too. Straight locks rooted on the
+   * poll and falling forward either stood up over it as a crest (a hedgehog on the calf) or,
+   * laid at the angle that clears the brow, jutted out in front of the face like a comb. Head
+   * space: the crown is at y 0.15 and the front face at z 0.42, the edge between them rounded
+   * (r 0.1 round y 0.05, z 0.32); the muzzle's top is at y -0.03.
    */
-  function forelock(tone: T.Color, seed: number) {
-    const base = tone.clone().lerp(new T.Color(COAT.tips), 0.4),
-      tip = new T.Color(COAT.tips).multiplyScalar(1.04),
-      locks: Lock[] = [];
-    for (let i = -2; i <= 2; i++) {
-      const h = hash(seed + 40 + i * 3);
-      locks.push({ root: new T.Vector3(i * 0.07, 0.25, 0.2), dir: new T.Vector3(i * 0.12, -0.56, 0.83), across: new T.Vector3(1, 0, 0), len: 0.28 + 0.09 * h, w: 0.12, t: 0.07, base, tip, out: new T.Vector3(0, 0.83, 0.56) });
-    }
-    for (const s of [-1, 1])
-      locks.push({ root: new T.Vector3(s * 0.17, 0.15, 0.22), dir: new T.Vector3(s * 0.35, -0.85, 0.4), across: new T.Vector3(0, 0, 1), len: 0.24, w: 0.14, t: 0.07, base, tip, out: new T.Vector3(s, 0, 0) });
+  function forelock(tone: T.Color, seed: number, calf: boolean) {
+    const base = tone.clone().lerp(new T.Color(COAT.tips), 0.35),
+      tip = new T.Color(COAT.tips),
+      locks: Lock[] = [],
+      across = new T.Vector3(1, 0, 0),
+      layers = [
+        // On the poll: flat, from between the horns to just over the brow's edge.
+        { count: 3, spread: calf ? 0.085 : 0.09, root: [0.135, 0.06], dir: [0, 1], len: calf ? 0.3 : 0.36, w: 0.13, out: [1, 0] },
+        // Down the face: from the brow's edge over the eyes.
+        { count: calf ? 3 : 4, spread: calf ? 0.1 : 0.13, root: [0.121, 0.391], dir: [-0.88, 0.45], len: calf ? 0.2 : 0.25, w: calf ? 0.11 : 0.12, out: [0.45, 0.88] },
+      ];
+    let k = 0;
+    for (const layer of layers)
+      for (let j = 0; j < layer.count; j++) {
+        const h = hash(seed + 40 + ++k * 3),
+          h2 = hash(seed + 41 + k * 3),
+          u = ((j + 0.5) / layer.count) * 2 - 1;
+        locks.push({
+          root: new T.Vector3(u * layer.spread + (h - 0.5) * 0.03, layer.root[0], layer.root[1] + (h2 - 0.5) * 0.03),
+          dir: new T.Vector3(u * 0.2 + (h2 - 0.5) * 0.14, layer.dir[0], layer.dir[1]),
+          across,
+          len: layer.len * (0.8 + 0.45 * h),
+          w: layer.w * (0.85 + 0.3 * h2),
+          t: 0.06,
+          base,
+          tip,
+          point: 0.12,
+          out: new T.Vector3(0, layer.out[0], layer.out[1]),
+          rootShade: 0.75,
+        });
+      }
+    if (!calf)
+      for (const s of [-1, 1])
+        locks.push({ root: new T.Vector3(s * 0.17, 0.15, 0.22), dir: new T.Vector3(s * 0.35, -0.85, 0.4), across: new T.Vector3(0, 0, 1), len: 0.24 * (0.85 + 0.3 * hash(seed + 60 + s)), w: 0.14, t: 0.07, base, tip, point: 0.15, out: new T.Vector3(s, 0, 0), rootShade: 0.75 });
     return lockGeometry(locks);
   }
   /** A horn: a tube along a smooth curve, tapering from r0 to a point, cream at the root and dark at the tip. */
@@ -327,13 +357,14 @@ export function createCountry(ctx: TownContext, kit: Kit) {
     cow.add(head);
     box(head, 0, -0.02, 0.22, 0.38, 0.34, 0.4, tone.getStyle(), 'fabric', { bevel: 0.1 }); // skull
     box(head, 0, -0.13, 0.44, 0.32, 0.2, 0.16, COAT.muzzle, 'fabric', { bevel: 0.06 }); // muzzle
-    coat(forelock(tone, seed), head);
-    const bud = new T.Color(palette.trim).lerp(tone, 0.35).getStyle();
+    coat(forelock(tone, seed, calf), head);
+    const bud = new T.Color(palette.trim).lerp(new T.Color(COAT.tips), 0.6).getStyle();
     for (const s of [-1, 1]) {
       box(head, s * 0.25, 0.04, 0.16, 0.18, 0.06, 0.1, tone.getStyle(), 'fabric', { rz: -s * 0.35 }); // ears, drooping out under the horns
-      // A calf's horn buds: small, muted and well back on the crown, behind the forelock, so
-      // they never sit where eyes would be.
-      if (calf) cone(head, s * 0.11, 0.19, 0.06, 0.035, 0.08, bud, 'fabric', 6, 0).rotation.z = -s * 0.3;
+      // A calf's horn buds: small rounded nubs, muted toward the coat's ginger, half sunk in the
+      // crown among the forelock's roots (sharp cones there read as a hedgehog's spines, and
+      // nubs on bare skull as a pair of eyes).
+      if (calf) sphere(head, s * 0.13, 0.15, 0.1, 0.024, bud, 'fabric').scale.set(1, 1.2, 1);
       else horn(head, [[0.15, 0.12, 0.14], [0.42, 0.17, 0.24], [0.55, 0.38, 0.28], [0.59, 0.5, 0.29]].map(([x, y, z]) => new T.Vector3(s * x, y, z)), 0.065, palette.trim, palette.woodDark);
     }
     const tail = new T.Group();
