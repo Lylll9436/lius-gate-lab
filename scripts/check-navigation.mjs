@@ -632,6 +632,96 @@ const drawsFrame = (skyKnown) =>
   );
 assert.equal(drawsFrame(false), undefined, 'A frame was drawn before the first sky.');
 assert.equal(drawsFrame(true), true, 'Frames are drawn once the sky is known.');
+// A lost GPU context: three uploads its textures again on a restore but binds the studio light
+// (a render target baked on the GPU) as black, so it is baked again and the shadows redrawn.
+// A context still lost after the grace period is reported to the page, and so is its return.
+const contextPieces = [];
+function collectContext(node) {
+  if (
+    ts.isFunctionDeclaration(node) &&
+    ['bakeStudio', 'contextLost', 'contextRestored'].includes(node.name?.text)
+  )
+    contextPieces.push(node.getText(syntax));
+  if (
+    ts.isVariableStatement(node) &&
+    node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'CONTEXT_GRACE_MS')
+  )
+    contextPieces.push(node.getText(syntax));
+  ts.forEachChild(node, collectContext);
+}
+collectContext(syntax);
+assert.equal(contextPieces.length, 4, 'The context check must find every piece it runs.');
+for (const [event, handler] of [
+  ['webglcontextlost', 'contextLost'],
+  ['webglcontextrestored', 'contextRestored'],
+])
+  assert(
+    syntax.text.includes(`renderer.domElement.addEventListener('${event}', ${handler})`) &&
+      syntax.text.includes(`renderer.domElement.removeEventListener('${event}', ${handler})`),
+    `The town must listen for ${event} (and stop on dispose).`,
+  );
+const bakes = [],
+  reports = [],
+  pending = new Map();
+let timerIds = 0;
+const gpu = {
+  T: {
+    PMREMGenerator: class {
+      fromScene(room, sigma) {
+        const target = { texture: { bake: bakes.length } };
+        bakes.push({ room, sigma, target, generator: this });
+        return target;
+      }
+      dispose() {
+        this.disposed = true;
+      }
+    },
+  },
+  RoomEnvironment: class {
+    dispose() {
+      this.disposed = true;
+    }
+  },
+  renderer: {},
+  scene: { environment: null },
+  window: {
+    setTimeout: (callback, ms) => {
+      pending.set(++timerIds, { callback, ms });
+      return timerIds;
+    },
+    clearTimeout: (id) => pending.delete(id),
+  },
+  options: { onLost: (lost) => reports.push(lost) },
+  lostTimer: 0,
+  studio: null,
+  shadowDirty: false,
+  warmTimer: 7,
+};
+const restoring = runInNewContext(
+  `${ts.transpileModule(contextPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};studio = bakeStudio();({ contextLost, contextRestored, CONTEXT_GRACE_MS });`,
+  gpu,
+);
+assert.equal(gpu.scene.environment, bakes[0].target.texture, 'The studio light lights the scene.');
+assert(bakes[0].room.disposed && bakes[0].generator.disposed, 'A bake keeps no room or generator.');
+// Lost and back within the grace period: nothing reported lost; the studio baked again.
+restoring.contextLost();
+assert.equal(pending.size, 1, 'A lost context starts the grace period.');
+assert.equal([...pending.values()][0].ms, restoring.CONTEXT_GRACE_MS);
+gpu.shadowDirty = false;
+restoring.contextRestored();
+assert.equal(pending.size, 0, 'A context back in time is never reported lost.');
+assert.equal(bakes.length, 2, 'A restored context bakes the studio light again.');
+assert.equal(gpu.scene.environment, bakes[1].target.texture, 'The new studio light lights the scene.');
+assert.equal(gpu.studio, bakes[1].target, 'The new bake is the one disposed with the town.');
+assert(gpu.shadowDirty, 'A restored context redraws the shadows at once.');
+assert.equal(gpu.warmTimer, 0, 'A restored context compiles the lamps’ shaders ahead again.');
+assert.deepEqual(reports, [false]);
+// Lost for good: reported once the grace period is over, and cleared when it comes back.
+restoring.contextLost();
+[...pending.values()][0].callback();
+assert.deepEqual(reports, [false, true], 'A context lost for good is reported.');
+restoring.contextRestored();
+assert.deepEqual(reports, [false, true, false], 'Its return is reported too.');
 // The frame-time governor: a slow moment lowers the quality, and it comes back once frames are
 // fast again, on a 120 Hz screen too, without stepping to and fro.
 const governPieces = [];
@@ -769,5 +859,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, a studio light baked again after a lost GPU context.`,
 );

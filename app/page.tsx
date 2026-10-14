@@ -437,7 +437,11 @@ export default function Home() {
                   contentForBuilding(id),
                 ),
               () => navigateRef.current(viewRef.current.mode, 'corner-park'),
-              { onHover: (id) => setHovered(id) },
+              {
+                onHover: (id) => setHovered(id),
+                // A GPU context lost for good leaves an empty stage: say so, as for a failed load.
+                onLost: (lost) => setError(lost),
+              },
             ),
       )
       .then((city) => {

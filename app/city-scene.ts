@@ -37,6 +37,11 @@ export type HoverTarget = BuildingId | 'corner-park' | null;
 export type CityOptions = {
   /** Called whenever the building or place under the mouse changes. */
   onHover?: (id: HoverTarget) => void;
+  /**
+   * Called with true when the GPU context has been lost for CONTEXT_GRACE_MS (the stage shows
+   * nothing), and with false once it is back.
+   */
+  onLost?: (lost: boolean) => void;
 };
 export type CityAPI = {
   select: (id: BuildingId) => void;
@@ -99,6 +104,8 @@ const YAW_RATE = 2.5,
 /** How close the camera may zoom: on the town, and on Inspect's lone building. */
 const CITY_MAX_ZOOM = 4,
   STUDY_MAX_ZOOM = 8;
+/** How long a lost GPU context may take to come back before the town is reported gone. */
+const CONTEXT_GRACE_MS = 4000;
 
 /** Build the town model only, all at once: used by the checks. */
 export function buildCityModel() {
@@ -338,10 +345,17 @@ export async function createCity(
   await nextTask();
   // Studio light: a pre-filtered room environment gives every surface soft fill and
   // a gentle highlight on rounded edges, the way a C4D/Octane clay render looks.
-  const pmrem = new T.PMREMGenerator(renderer);
-  const studio = pmrem.fromScene(new RoomEnvironment(), 0.04);
-  pmrem.dispose();
-  scene.environment = studio.texture;
+  // It is baked on the GPU, so it is baked again after a lost context (see contextRestored).
+  function bakeStudio() {
+    const pmrem = new T.PMREMGenerator(renderer),
+      room = new RoomEnvironment(),
+      baked = pmrem.fromScene(room, 0.04);
+    pmrem.dispose();
+    room.dispose();
+    scene.environment = baked.texture;
+    return baked;
+  }
+  let studio = bakeStudio();
   scene.environmentIntensity = 0.25;
   const fog = new T.Fog('#d9e3dd', 72, 150);
   scene.fog = fog;
@@ -1316,6 +1330,29 @@ export async function createCity(
       await compiled.catch(() => {});
     }
   }
+  /**
+   * A lost GPU context (a phone putting the tab away, a GPU reset) comes back with three's
+   * textures uploaded again, all but the studio light: a render target baked on the GPU, which
+   * three binds as black after a restore, leaving the shade sides dark and the rounded edges
+   * dull. It is baked again (the old one went with the context), the shadows are redrawn at once
+   * and the lamps' shaders compiled ahead again. A context that stays lost is reported, so the
+   * page can say so instead of showing an empty stage, and so is its return.
+   */
+  let lostTimer = 0;
+  function contextLost() {
+    window.clearTimeout(lostTimer);
+    lostTimer = window.setTimeout(() => options.onLost?.(true), CONTEXT_GRACE_MS);
+  }
+  function contextRestored() {
+    window.clearTimeout(lostTimer);
+    studio = bakeStudio();
+    shadowDirty = true;
+    window.clearTimeout(warmTimer);
+    warmTimer = 0;
+    options.onLost?.(false);
+  }
+  renderer.domElement.addEventListener('webglcontextlost', contextLost);
+  renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
   setClocks();
   raf = requestAnimationFrame(frame);
   const api: CityAPI = {
@@ -1486,6 +1523,9 @@ export async function createCity(
       disposed = true;
       cancelAnimationFrame(raf);
       window.clearTimeout(warmTimer);
+      window.clearTimeout(lostTimer);
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       exitInspection();
       observer.disconnect();
       visibilityObserver.disconnect();
