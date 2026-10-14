@@ -74,7 +74,10 @@ export function glasgowSky(date = new Date()): SkyState {
       7.53 * Math.cos((2 * Math.PI * (dayOfYear - 81)) / 364) -
       1.5 * Math.sin((2 * Math.PI * (dayOfYear - 81)) / 364)) /
       60;
-  const hourAngle = ((solarHours - 12) * 15 * Math.PI) / 180;
+  // Wrapped to -180..180 degrees: the UTC hour wraps at midnight, before solar midnight in
+  // Glasgow, and an unwrapped angle there would put the sun on the wrong side of north.
+  const hourAngle =
+    (((((((solarHours - 12) * 15) % 360) + 540) % 360) - 180) * Math.PI) / 180;
   const sinElevation =
     Math.sin(GLASGOW_LAT) * Math.sin(declination) +
     Math.cos(GLASGOW_LAT) * Math.cos(declination) * Math.cos(hourAngle);

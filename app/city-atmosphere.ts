@@ -43,7 +43,16 @@ export function sunOffsetFor(elevation: number, azimuth: number, distance = 41) 
     40 * DEG,
     lowSun(elevation),
   );
-  const swing = T.MathUtils.clamp(azimuth - Math.PI, -2.2, 2.2) * 0.28; // at most +-35 degrees
+  // The sun's bearing from due south, turned into a swing of at most +-35 degrees. Past 126
+  // degrees either side (the night, with the sun to the north) it eases back to the founding
+  // light, so it passes north smoothly instead of flipping 70 degrees as the azimuth wraps.
+  const fromSouth = Math.atan2(Math.sin(azimuth - Math.PI), Math.cos(azimuth - Math.PI)),
+    reach = 2.2,
+    swing =
+      0.28 *
+      (Math.abs(fromSouth) <= reach
+        ? fromSouth
+        : (Math.sign(fromSouth) * reach * (Math.PI - Math.abs(fromSouth))) / (Math.PI - reach));
   const bearing = Math.atan2(-16, 20) + swing;
   return new T.Vector3(Math.cos(lifted) * Math.sin(bearing) * distance, Math.sin(lifted) * distance, Math.cos(lifted) * Math.cos(bearing) * distance);
 }

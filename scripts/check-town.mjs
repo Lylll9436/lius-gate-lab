@@ -583,6 +583,37 @@ assert(degrees(sunOffsetFor(rad(-12), Math.PI * 1.6)) > 49, 'The night light sta
 assert.equal(lowSun(rad(15)), 0);
 assert.equal(lowSun(rad(2)), 1);
 assert.equal(lowSun(rad(-10)), 0);
+// The key light's sideways swing follows the sun round smoothly: by day as before (0.28 of the
+// sun's bearing from south), and through north at night with no jump as the azimuth wraps from
+// 360 to 0 degrees, or as the UTC day turns over before solar midnight.
+{
+  const { glasgowSky } = await load('glasgow-sun');
+  const turn = (a, b) => Math.acos(Math.min(1, a.clone().normalize().dot(b.clone().normalize()))) / rad(1);
+  for (let azimuth = Math.PI - 2.2; azimuth <= Math.PI + 2.2; azimuth += 0.1) {
+    const [x, , z] = sunOffsetFor(rad(30), azimuth).toArray();
+    assert(Math.abs(Math.atan2(x, z) - Math.atan2(-16, 20) - 0.28 * (azimuth - Math.PI)) < 1e-9, 'The daytime swing is unchanged.');
+  }
+  for (let azimuth = 0; azimuth < Math.PI * 2; azimuth += 0.01)
+    assert(turn(sunOffsetFor(rad(-12), azimuth), sunOffsetFor(rad(-12), azimuth + 0.01)) < 0.5, `The key light jumps at azimuth ${azimuth.toFixed(2)}.`);
+  // The real sun through the night, a minute at a time across 00:00 UTC and solar midnight: it
+  // keeps to its side of north until it crosses, and the key light never jumps.
+  for (const day of ['2026-02-11', '2026-06-21', '2026-10-14', '2026-11-03', '2026-12-21']) {
+    let crossed = 0,
+      before = glasgowSky(new Date(Date.parse(`${day}T22:00:00Z`)));
+    for (let minute = 1; minute <= 240; minute++) {
+      const after = glasgowSky(new Date(Date.parse(`${day}T22:00:00Z`) + minute * 60000)),
+        moved = Math.abs(Math.atan2(Math.sin(after.azimuth - before.azimuth), Math.cos(after.azimuth - before.azimuth)));
+      assert(moved < rad(1), `The sun jumps ${(moved / rad(1)).toFixed(1)} degrees round at minute ${minute} after 22:00 UTC on ${day}.`);
+      if (before.azimuth > Math.PI && after.azimuth < Math.PI) crossed++;
+      assert(
+        turn(sunOffsetFor(before.elevation, before.azimuth), sunOffsetFor(after.elevation, after.azimuth)) < 0.5,
+        `The key light swings at minute ${minute} after 22:00 UTC on ${day}.`,
+      );
+      before = after;
+    }
+    assert.equal(crossed, 1, 'The check must see the sun cross north once.');
+  }
+}
 // Manual Day is plain daylight at every hour: never the real sun's golden hour or its warm low
 // light, the key light high. Auto and Night keep the real sun.
 {
