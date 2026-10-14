@@ -7,19 +7,35 @@ import type { Kit } from './town-kit';
 /* Vehicles and people                                                 */
 /* ------------------------------------------------------------------ */
 /**
- * The balloon's beat: a ring centred on the island, out over the shore and the sea, so it stays
- * out of every chapter's subject. It does not lap the ring (a lap brought it behind the hero
- * text and the News card once every seven minutes) but swings to and fro along its far side
- * as the opening view sees it, between the open top left and top right of that view, out of
- * frame above the island in between. `middle` and `reach` are angles on the ring (radians),
- * `rate` the swing's pace (radians per second, a swing there and back in about six and a
- * half minutes). It sets off from the north-east end, over the sea.
- * The ends (2.75 and 5.05) rest in the band between the masthead and the hero copy or the
- * News card even on a short wide screen (1280 x 720), where those reach far up the frame: a
- * wider swing (2.45 to 5.15) came to rest behind the hero's eyebrow and title there, and
- * dipped behind a full News card.
+ * The balloon's beat, out over the west shore and the sea, so it stays out of every chapter's
+ * subject. On the opening view it hangs in the open band between the masthead and the hero
+ * copy, under the gap between the wordmark and the nav pill, and drifts to and fro across the
+ * frame there: from its anchor `at` (an angle on a ring of `radius` round the island) up to
+ * 2 x `reach` along the opening view's screen-left, which leaves its height in the frame alone
+ * (along the ring there it would mostly rise and sink), easing to a stop at each end. `rate` is
+ * the swing's pace (radians of its phase per second), `height` its basket's height and `bob`
+ * how far it rises and sinks. It never leaves the frame: a long swing round the far side climbed
+ * out of the top of the frame between its rests, through the masthead, and on short wide
+ * screens (1280 x 720) its rests sat behind the frosted tools pill or the nav pill, or dipped
+ * behind the hero copy and the News card. It also turns with the camera's idle drift
+ * (followDrift), which would otherwise swing it up and down the frame by about 50 px.
  */
-export const BALLOON = { radius: 32, middle: 3.9, reach: 1.15, rate: 0.016 };
+export const BALLOON = { radius: 32, at: 2.58, reach: 1.3, rate: 0.02, height: 12.8, bob: 0.3 };
+/**
+ * Turn a sky object with the camera's idle drift: by `drift` about the vertical line through
+ * the view's centre `target`, so it holds its place in the frame while the town turns beneath
+ * it. Call it after the object's own update each frame.
+ */
+export function followDrift(object: T.Object3D, target: T.Vector3, drift: number) {
+  if (!drift) return;
+  const c = Math.cos(drift),
+    s = Math.sin(drift),
+    x = object.position.x - target.x,
+    z = object.position.z - target.z;
+  object.position.x = target.x + x * c + z * s;
+  object.position.z = target.z - x * s + z * c;
+  object.rotation.y += drift;
+}
 /**
  * How much darker the balloon's own colours go at full night. It is lit like the town, but it
  * is the one big, pale, round thing hanging unshadowed over the darkest part of the frame, with
@@ -62,6 +78,7 @@ export function createMovers(ctx: TownContext, kit: Kit) {
       for (const sz of [-1, 1])
         strut(b, new T.Vector3(sx * 0.32, 0.5, sz * 0.32), new T.Vector3(sx * 0.17, 1.02, sz * 0.17), 0.035, palette.woodDark, 'wood');
     b.userData.keepSeparate = true;
+    b.userData.followsDrift = true; // city-scene turns it with the idle drift (followDrift)
     /**
      * The balloon's batched meshes take their own copies of the shared batch materials (the same
      * shader program), so their colour can follow the night without darkening everything else
@@ -86,12 +103,18 @@ export function createMovers(ctx: TownContext, kit: Kit) {
       object: b,
       update(time, night) {
         dim(night);
-        // To and fro on the ring's far side, out over the shore and the sea, so it never drifts
-        // across a chapter's subject or comes down past the hero text; it eases to a stop at
-        // each end, as in a lull, and turns back.
-        const a = BALLOON.middle + BALLOON.reach * Math.cos(time * BALLOON.rate);
+        // To and fro across the opening view's open band over the west shore and the sea, so it
+        // never drifts across a chapter's subject or out of that band; it eases to a stop at each
+        // end, as in a lull, and turns back.
+        const a = BALLOON.at,
+          across = BALLOON.reach * (Math.cos(time * BALLOON.rate) - 1), // 0 to -2 reach, along screen-right
+          r = Math.SQRT1_2;
         // The crown stays at about 17.9; the gulls fly below 10.7.
-        b.position.set(Math.cos(a) * BALLOON.radius, 12.8 + Math.sin(time * 0.4) * 0.5, Math.sin(a) * BALLOON.radius);
+        b.position.set(
+          Math.cos(a) * BALLOON.radius + across * r,
+          BALLOON.height + Math.sin(time * 0.4) * BALLOON.bob,
+          Math.sin(a) * BALLOON.radius - across * r,
+        );
         b.rotation.y = -a;
         b.rotation.z = Math.sin(time * 0.6) * 0.03;
       },

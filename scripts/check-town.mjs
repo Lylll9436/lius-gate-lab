@@ -925,7 +925,7 @@ assert(balloon, 'The town has a balloon.');
 }
 // It sets off north-east over the sea (the opening view's open top right), not behind the hero text.
 balloon.update(0, 0);
-assert(balloon.object.position.x > 10 && balloon.object.position.z < -20, 'The balloon starts north-east, over the sea.');
+assert(balloon.object.position.x < -25 && balloon.object.position.z > 10, 'The balloon starts out over the west shore, over the sea.');
 for (let i = 0; i < 720; i++) {
   balloon.update(i * 0.7, 0);
   const { x, y, z } = balloon.object.position;
@@ -934,13 +934,17 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
-// On the opening view (bearing pi/4 swayed by the idle drift's +-0.16, the hero's frame shift
-// of -0.06) the balloon keeps to the top band at every common wide screen size: never behind
-// the hero copy on the left (eyebrow to lede, as laid out at that size, 8 px to spare) or the
-// News card on the right. The card is centred a little above the middle (translateY(-42%))
-// and its height follows the news, so it is taken at its tallest, three items with pictures
-// (400 px), not as it happens to be today.
+// On the opening view (bearing pi/4 swayed by the idle drift's +-0.16, which the balloon turns
+// with, and the hero's frame shift of -0.06) the balloon stays whole in the open band at every
+// common wide screen size: below the masthead (64 px, 8 px to spare, so never behind the frosted
+// nav and tools pills or the wordmark), never behind the hero copy on the left (eyebrow to lede,
+// as laid out at that size, 8 px to spare) or the News card on the right, and never out of the
+// frame. The card is centred a little above the middle (translateY(-42%)) and its height follows
+// the news, so it is taken at its tallest, three items with pictures (400 px), not as it happens
+// to be today. Each size is checked again with a classic 15 px scrollbar narrowing the canvas
+// (the card then sits 15 px further left).
 {
+  const { followDrift } = await load('town-movers');
   // Each size's hero copy box, and the News card's left and right.
   const screens = [
     { W: 1024, H: 768, copy: [41, 285, 721, 613], news: [693, 983] },
@@ -953,10 +957,12 @@ for (let i = 0; i < 720; i++) {
     { W: 1600, H: 900, copy: [56, 357, 736, 770], news: [1184, 1544] },
     { W: 1680, H: 1050, copy: [56, 507, 736, 920], news: [1264, 1624] },
     { W: 1920, H: 1080, copy: [56, 537, 736, 950], news: [1504, 1864] },
-  ];
+  ].flatMap((s) => [s, { ...s, W: s.W - 15, news: s.news.map((x) => x - 15) }]);
   const bounds = new T.Box3(),
     corner = new T.Vector3(),
+    rest = new T.Vector3(),
     yaw = Math.PI / 4;
+  let restYaw = 0;
   for (const { W, H, copy: [cx0, cy0, cx1, cy1], news: [nx0, nx1] } of screens) {
     const vertical = Math.max(53, (76 * H) / W),
       view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
@@ -967,9 +973,14 @@ for (let i = 0; i < 720; i++) {
       };
     for (let t = 0; t < 900; t += 0.5) {
       balloon.update(t, 0);
-      balloon.object.updateWorldMatrix(true, true);
-      bounds.setFromObject(balloon.object);
+      rest.copy(balloon.object.position);
+      restYaw = balloon.object.rotation.y;
       for (const drift of [-0.16, 0, 0.16]) {
+        balloon.object.position.copy(rest);
+        balloon.object.rotation.y = restYaw;
+        followDrift(balloon.object, shifted, drift);
+        balloon.object.updateWorldMatrix(true, true);
+        bounds.setFromObject(balloon.object);
         view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
         view.lookAt(shifted);
         view.updateMatrixWorld();
@@ -979,11 +990,18 @@ for (let i = 0; i < 720; i++) {
           const x = ((corner.x + 1) / 2) * W, y = ((1 - corner.y) / 2) * H;
           left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
         }
+        assert(top >= 64 + 8, `At t=${t} the balloon rises into the masthead (top ${top.toFixed(0)} px) on the ${W} x ${H} opening view.`);
+        assert(left >= 0 && right <= W && bottom <= H, `At t=${t} the balloon leaves the ${W} x ${H} opening view.`);
         for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
           assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the balloon drifts behind the ${name} on the ${W} x ${H} opening view.`);
       }
     }
   }
+  // Turning with the drift moves it in the world (the frame loop applies it after its update), never into the town.
+  balloon.update(0, 0);
+  followDrift(balloon.object, new T.Vector3(), 0.16);
+  assert(Math.hypot(balloon.object.position.x, balloon.object.position.z) > 30, 'The drift turns the balloon over the town.');
+  balloon.update(0, 0);
 }
 // The dinghy's mooring lines are static, so the ends buried at its fairleads must stay inside
 // its hull (y -0.06 to 0.175, 0.31-0.38 half-wide) as it bobs and pitches.

@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   buildTown,
   buildTownInPhases,
+  followDrift,
   type Model,
   type Town,
 } from './town-build';
@@ -392,6 +393,7 @@ export async function createCity(
     // starts below sea level, and a positive near plane would cut the sea off there.
     camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180);
   const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
+  const driftFollowers = animated.map((entry) => entry.object).filter((o) => o.userData.followsDrift);
   // Everything the frame loop turns: Inspect's copy of a building follows these parts of it.
   const movingParts = new Set<T.Object3D>([
     ...animated.map((entry) => entry.object),
@@ -1270,6 +1272,9 @@ export async function createCity(
       driftAngle = nextDrift;
       align();
     }
+    // The balloon turns with the drift, so it holds its open band of the frame (its update above
+    // put it back on its own beat this frame).
+    for (const o of driftFollowers) followDrift(o, controls.target, driftAngle);
     // The sun's warmth and the night follow Glasgow's real sky, but the key light stays high
     // and turns with the camera (a stylised sun); rain turns everything grey.
     if (sunOffset.distanceToSquared(targetSunOffset) > 1e-4) {

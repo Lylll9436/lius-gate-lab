@@ -26,7 +26,7 @@ import { createCountry } from './town-country';
 export { palette } from './town-shared';
 export { treeLook, heatherLook } from './town-nature';
 export { MASK_EXTENT, MASK_SIZE, buildGroundMasks } from './town-ground';
-export { BALLOON } from './town-movers';
+export { BALLOON, followDrift } from './town-movers';
 
 /**
  * The town itself: terrain, streets, seven buildings, trees,
