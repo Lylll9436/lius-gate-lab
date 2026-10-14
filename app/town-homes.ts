@@ -32,8 +32,9 @@ export function createHomes(kit: Kit, nature: Nature) {
     // so from any bearing the front and a cheek read as two tones meeting at an angle. On every
     // storey the front has a sash window (0.36 glass, meeting rail) and each cheek a single 0.20
     // light whose frame stands only 0.07 proud, so the bay reads as glass, not a lattice, and the
-    // door-side frame keeps 0.07 of stone clear of the lintel end. Each home's bay differs in its top: Pengyuan's villa bay is one storey under a stone
-    // balustrade, Yunlong's rises two storeys to the main eave, Qin's two under its own slate roof.
+    // door-side frame keeps 0.07 of stone clear of the lintel end. Each home's bay differs in its
+    // top: Pengyuan's villa bay is one storey under a stone balustrade, Yunlong's rises two
+    // storeys to the main eave, Qin's two under its own slate roof.
     // Window groups (stable ids, read by the night lights; each group is one light, drawn from
     // its first pane, the front's lower one): `<id>-bay-0` the ground storey (kept lit late) and
     // `<id>-bay-1` the upper storey (Yunlong's and Qin's two-storey bays only).
