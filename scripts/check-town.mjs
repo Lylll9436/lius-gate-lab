@@ -415,8 +415,8 @@ assert(part('cow-a-head').rotation.x > 0.1 && part('cow-a-head').rotation.x < 0.
 assert(part('calf-head').rotation.x > 0.4, 'The calf grazes.');
 for (const name of ['cow-a-tail', 'cow-b-tail']) assert(Math.abs(part(name).rotation.z) < 1e-9, name + ' hangs still.');
 for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.children.every((c) => c.isMesh), 'Batched: ' + e.object.name);
-// Moorland: a few heather drifts on the hills only and thistles by the paddock, never on the mown
-// town lawn, the terrace, the streets, the beach or within 1.0 of the herd's paddock.
+// Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
+// streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>
   Math.abs(x - plan.paddock.x) < plan.paddock.w / 2 + margin && Math.abs(z - plan.paddock.z) < plan.paddock.d / 2 + margin;
 const heather = plan.heatherPlan(trees);
@@ -437,9 +437,16 @@ for (const d of heather)
       assert(!(Math.abs(x - row.x) < 5.5 && Math.abs(z - row.z) < row.spacing + 4), `${d.id} by the terrace`);
       for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) > 0.3 * t.size, `${d.id} round the trunk of ${t.id}`);
     }
+// Thistles grow at the dyke's foot: outside its outer face by more than a rosette, never more than half a unit out.
+const outsideDyke = (x, z) =>
+  Math.hypot(
+    Math.max(0, Math.abs(x - plan.paddock.x) - plan.paddock.w / 2 - plan.paddock.wall / 2),
+    Math.max(0, Math.abs(z - plan.paddock.z) - plan.paddock.d / 2 - plan.paddock.wall / 2),
+  );
 for (const [x, z] of plan.thistles) {
   assert(plan.onIsland(x, z, 1) && plan.lawnCore(x, z) < 0.02 && plan.distanceToStreets(x, z) > 2, `Thistle astray at ${x}, ${z}`);
-  assert(!nearPaddock(x, z, 1.0), `Thistle in the paddock at ${x}, ${z}`);
+  assert(outsideDyke(x, z) > 0.2, `Thistle in the dyke at ${x}, ${z}`);
+  assert(outsideDyke(x, z) < 0.5, `Thistle astray from the dyke at ${x}, ${z}`);
 }
 // Blackface sheep graze the two empty hilltops, clear of the trees, the shore, the streets and the
 // cottages, and every hoof stands on (or just in) the built ground: none floats over the slope.

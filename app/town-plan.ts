@@ -525,18 +525,19 @@ export const tramLoop = ringLine;
  */
 const terraceClearing = { x: terraceRow.x, z: terraceRow.z, w: 11, d: 2 * (terraceRow.spacing + 4) };
 /**
- * Thistles by the paddock, in two tight clumps of four plants off its south (sea) corners: just
- * beyond its 1.0 margin, off the mown lawn and away from the gate in the north wall.
+ * Thistles at the foot of the paddock's dyke, in two tight clumps of four plants by its south
+ * (sea) corners: 0.23-0.47 out from the wall's outer face, so each rosette (r 0.17) clears the
+ * stones, off the mown lawn and away from the gate in the north wall.
  */
 export const thistles: XZ[] = [
-  [-14.46, 23.91],
-  [-14.18, 23.85],
-  [-14.28, 24.09],
-  [-14.08, 24.05],
-  [-8.56, 23.81],
-  [-8.28, 23.75],
-  [-8.38, 23.99],
-  [-8.18, 23.95],
+  [-13.86, 23.06],
+  [-13.58, 23.0],
+  [-13.68, 23.24],
+  [-13.48, 23.2],
+  [-9.46, 23.06],
+  [-9.18, 23.0],
+  [-9.28, 23.24],
+  [-9.08, 23.2],
 ];
 export type HeatherDrift = {
   id: string;
