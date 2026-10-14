@@ -313,10 +313,11 @@ for (const [id, m] of models) {
   const BAY = { x: -0.68, root: 1.06, depth: 0.55, cant: 0.23 },
     slant = Math.hypot(BAY.depth, BAY.cant),
     WALL_TOP = 3.02;
-  // Each bay's bodies (y0, y1) on the homes already rebuilt; the last one's top is the bay's own cap.
+  // Each bay's bodies (y0, y1); the last one's top is the bay's own cap.
   const BODIES = {
     'yunlong-liu': [[0.42, 1.76], [1.9, 2.78]],
     'qin-li': [[0.42, 1.76], [1.9, 2.64]],
+    'pengyuan-liu': [[0.42, 1.76]],
   };
   const v = new T.Vector3(),
     q = new T.Vector3(),
