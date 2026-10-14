@@ -2505,67 +2505,112 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
     return hit ? hit.point.y : plan.terrainHeight(x, z);
   }
-  /** The terrain's surface normal at (x, z), for props that lie along a slope. */
-  function terrainNormal(x: number, z: number) {
-    const e = 0.05;
-    return new T.Vector3(
-      plan.terrainHeight(x - e, z) - plan.terrainHeight(x + e, z),
-      2 * e,
-      plan.terrainHeight(x, z - e) - plan.terrainHeight(x, z + e),
-    ).normalize();
-  }
   /**
-   * A heather drift: a low mat of small, overlapping, knobbly tufts laid along the slope and sunk
-   * to shallow caps, heather green with the tops speckled in the season's bloom, so it reads as
-   * scrub and not as a pile of stones. Like the turf it takes no contact shading (the dark foot band
-   * outlined every tuft as a pebble) and casts no shadow.
+   * A heather drift: one low mat over the plan's tufts (their union gives its outline, a little
+   * nibbled), heather green fading at its rim to the turf's own green, stippled with many small
+   * shoots in the season's bloom. One surface with a fine texture, so it reads as a patch of
+   * scrub: a cluster of a few separate domes, each with an outline and a shaded underside, read
+   * as a pile of pebbles. Like the turf it takes no contact shading and casts no shadow.
    */
   function heatherDrift(g: T.Object3D, drift: plan.HeatherDrift, index: number) {
     const look = heatherLook(season),
       stem = new T.Color(look.stem),
       bloom = new T.Color(look.bloom),
+      turf = new T.Color(palette.grass),
       c = new T.Color(),
-      up = new T.Vector3(0, 1, 0),
       // The built hill runs a little under the smooth terrainHeight; follow it, measured once per drift.
       drop = groundY(drift.x, drift.z) - plan.terrainHeight(drift.x, drift.z);
-    const geos = drift.lumps.map((l, k) => {
-      const ico = new T.IcosahedronGeometry(l.r, 1);
+    const SPOKES = 24,
+      RINGS = 5,
+      HEIGHT = 0.06;
+    // How far the tufts reach from the drift's centre along a bearing: the far side of their union.
+    const reach = (a: number) => {
+      const dx = Math.cos(a),
+        dz = Math.sin(a);
+      let far = 0;
+      for (const l of drift.lumps) {
+        const ox = l.x - drift.x,
+          oz = l.z - drift.z,
+          t = ox * dx + oz * dz,
+          side = ox * ox + oz * oz - t * t;
+        if (side < l.r * l.r) far = Math.max(far, t + Math.sqrt(l.r * l.r - side));
+      }
+      return far;
+    };
+    const rim = Array.from({ length: SPOKES }, (_, k) => reach((k / SPOKES) * Math.PI * 2) * (0.9 + 0.12 * hash(index * 13 + k * 3.1)));
+    const rimAt = (a: number) => {
+      const u = ((((a / (Math.PI * 2)) % 1) + 1) % 1) * SPOKES,
+        k = Math.floor(u);
+      return mix(rim[k % SPOKES], rim[(k + 1) % SPOKES], u - k);
+    };
+    // The mat's height over the turf, from the centre (f = 0) to the rim (f = 1, just under the turf).
+    const lift = (f: number) => (f >= 1 ? -0.015 : HEIGHT * Math.pow(1 - f * f, 0.6));
+    const ground = (x: number, z: number) => plan.terrainHeight(x, z) + drop;
+    const position: number[] = [],
+      colour: number[] = [],
+      faces: number[] = [];
+    // Ring 0 is the centre; the last ring is the rim. Inner points wander a little off their ring
+    // and spoke, so no radial pattern shows.
+    for (let ring = 0; ring <= RINGS; ring++)
+      for (let k = 0; k < (ring ? SPOKES : 1); k++) {
+        const wander = ring && ring < RINGS ? 0.35 : 0,
+          a = ((k + (ring % 2) * 0.5 + wander * (hash(index * 41 + ring * 13 + k) - 0.5)) / SPOKES) * Math.PI * 2,
+          f = Math.min(1, (ring + wander * (hash(index * 43 + ring * 7 + k * 3) - 0.5)) / RINGS),
+          x = drift.x + Math.cos(a) * f * rimAt(a),
+          z = drift.z + Math.sin(a) * f * rimAt(a);
+        position.push(x, ground(x, z) + lift(ring === RINGS ? 1 : Math.min(f, 0.99)), z);
+        const shade = 0.92 + 0.12 * hash(index * 3 + ring * 5 + k * 0.7);
+        c.copy(stem).lerp(turf, 0.55 * sstep(f, 0.5, 1));
+        colour.push(c.r * shade, c.g * shade, c.b * shade);
+      }
+    const at = (ring: number, k: number) => (ring ? 1 + (ring - 1) * SPOKES + (k % SPOKES) : 0);
+    for (let k = 0; k < SPOKES; k++) {
+      faces.push(0, at(1, k + 1), at(1, k));
+      for (let ring = 1; ring < RINGS; ring++) {
+        // Odd rings sit half a step on, so each quad leans the same way round the ring.
+        const o = ring % 2;
+        faces.push(at(ring, k), at(ring + 1, k + o), at(ring + 1, k + o - 1 + SPOKES));
+        faces.push(at(ring, k), at(ring, k + 1), at(ring + 1, k + o));
+      }
+    }
+    const mat = new T.BufferGeometry();
+    mat.setAttribute('position', new T.Float32BufferAttribute(position, 3));
+    mat.setAttribute('color', new T.Float32BufferAttribute(colour, 3));
+    mat.setIndex(faces);
+    mat.computeVertexNormals();
+    // The shoots: small, flat, smooth blobs half sunk in the mat, packed on a sunflower spiral so
+    // they stipple its crown; most flower, the rest stay a lighter green.
+    const shoot = mergeVertices((() => {
+      const ico = new T.IcosahedronGeometry(1, 0);
       ico.deleteAttribute('normal');
       ico.deleteAttribute('uv');
-      // Shared corners, so the knobbly displacement cannot open cracks; smooth normals after it.
-      const geo = mergeVertices(ico),
-        p = geo.getAttribute('position'),
-        speck = new Float32Array(p.count);
-      ico.dispose();
-      for (let i = 0; i < p.count; i++) {
-        const v = new T.Vector3().fromBufferAttribute(p, i),
-          seed = hash(index * 31 + k * 7 + i * 1.7);
-        v.multiplyScalar(1 + (seed - 0.5) * 0.2);
-        p.setXYZ(i, v.x, v.y, v.z);
-        speck[i] = hash(index * 17 + k * 5 + i * 2.3);
-      }
-      geo.rotateY(hash(index * 5 + k) * Math.PI);
-      geo.scale(1, 0.6, 1);
-      geo.translate(0, -0.12 * l.r, 0); // a low cap, about 0.48r showing, that meets the turf at a shallow angle
-      geo.applyQuaternion(new T.Quaternion().setFromUnitVectors(up, terrainNormal(l.x, l.z)));
-      geo.translate(l.x, plan.terrainHeight(l.x, l.z) + drop, l.z);
+      return ico;
+    })());
+    const area = drift.lumps.reduce((sum, l) => Math.max(sum, Math.PI * (Math.hypot(l.x - drift.x, l.z - drift.z) + l.r) ** 2), 0),
+      count = Math.round(Math.min(60, Math.max(24, area / 0.013))),
+      spin = hash(index * 19) * Math.PI * 2;
+    const shoots = Array.from({ length: count }, (_, k) => {
+      const a = spin + k * 2.39996,
+        f = 0.82 * Math.sqrt((k + 0.5) / count),
+        r = 0.05 + 0.035 * hash(index * 23 + k * 1.9),
+        x = drift.x + Math.cos(a) * f * rimAt(a),
+        z = drift.z + Math.sin(a) * f * rimAt(a),
+        geo = shoot.clone();
+      geo.rotateY(hash(index * 29 + k) * Math.PI);
+      geo.scale(r, r * 0.55, r);
+      geo.translate(x, ground(x, z) + lift(f) - 0.012, z);
       geo.computeVertexNormals();
-      const n = geo.getAttribute('normal'),
-        out = new Float32Array(p.count * 3),
-        tone = 0.94 + 0.1 * hash(index * 7 + k * 3);
-      for (let i = 0; i < p.count; i++) {
-        const top = sstep(n.getY(i), 0.3, 0.85),
-          f = tone * mix(0.84, 1.04, top) * (0.92 + 0.12 * hash(index * 3 + k * 11 + i * 0.7));
-        // Speckled: a top corner flowers or stays green, so the crown is mottled, never a solid cap.
-        c.copy(speck[i] < 0.7 * top ? bloom : stem);
-        out[i * 3] = c.r * f;
-        out[i * 3 + 1] = c.g * f;
-        out[i * 3 + 2] = c.b * f;
-      }
-      geo.setAttribute('color', new T.BufferAttribute(out, 3));
+      const flower = hash(index * 31 + k * 2.7) < 0.7,
+        shade = 0.9 + 0.16 * hash(index * 37 + k * 1.1),
+        n = geo.getAttribute('position').count;
+      c.copy(flower ? bloom : stem).lerp(turf, flower ? 0 : 0.2);
+      geo.setAttribute('color', new T.Float32BufferAttribute(Array.from({ length: n }, () => [c.r * shade, c.g * shade, c.b * shade]).flat(), 3));
       return geo;
     });
-    const m = new T.Mesh(mergeGeometries(geos)!, material('#ffffff', 'foliage'));
+    shoot.dispose();
+    const m = new T.Mesh(mergeGeometries([mat, ...shoots])!, material('#ffffff', 'foliage'));
+    mat.dispose();
+    shoots.forEach((s) => s.dispose());
     m.castShadow = false;
     m.receiveShadow = true;
     m.userData.noShadow = true;
