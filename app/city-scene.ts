@@ -1253,15 +1253,21 @@ export async function createCity(
       inspectionAutoFit = false;
       autoFocus = false;
       overviewFit = false;
+      // Mid-glide, zoom from where the glide is heading (its zoom and its subject), so it still
+      // lands on its subject and quick presses add up; at rest, from the view as it is.
+      if (!tween) {
+        targetZoom = camera.zoom;
+        target.copy(controls.target);
+      }
       // The limit of where the camera is (the town or Inspect), not one still easing down.
       targetZoom = T.MathUtils.clamp(
-        camera.zoom * f,
+        targetZoom * f,
         controls.minZoom,
         inspect ? STUDY_MAX_ZOOM : CITY_MAX_ZOOM,
       );
-      // Zoom about the subject beside the panel: take the panel offset out of the current
-      // view centre and put it back as measured at the new zoom.
-      target.copy(controls.target).sub(shiftApplied);
+      // Zoom about the subject beside the panel: take the panel offset out of the view centre
+      // and put it back as measured at the new zoom.
+      target.sub(shiftApplied);
       offsetTarget();
       tween = true;
       lastInteraction = performance.now();

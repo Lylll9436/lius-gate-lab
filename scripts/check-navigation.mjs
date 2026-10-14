@@ -336,6 +336,65 @@ assert(
   turn.targetYaw - turn.yaw <= Math.PI * 2 + 1e-6,
   'A burst of Rotate presses queues one full turn at most.',
 );
+// The +/- buttons during a glide: the glide still lands on its subject, and quick presses add up.
+let zoomSource, glideSource;
+function findZoom(node) {
+  if (ts.isMethodDeclaration(node) && node.name.getText(syntax) === 'zoom')
+    zoomSource = `function zoomBy(f) ${node.body.getText(syntax)}`;
+  if (
+    ts.isIfStatement(node) &&
+    node.expression.getText(syntax) === 'tween' &&
+    node.thenStatement.getText(syntax).includes('controls.target.lerp')
+  )
+    glideSource = `function glideStep() { ${node.getText(syntax)} }`;
+  ts.forEachChild(node, findZoom);
+}
+findZoom(syntax);
+assert(zoomSource && glideSource, 'The zoom check must find the zoom method and the glide.');
+Object.assign(turn, {
+  CITY_MAX_ZOOM: 4,
+  STUDY_MAX_ZOOM: 8,
+  inspect: null,
+  blend: 1 - Math.exp(-5.5 / 60),
+});
+turn.controls.minZoom = 0.5;
+const zooming = runInNewContext(
+  `${ts.transpileModule(`${zoomSource}\n${glideSource}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ zoomBy, glideStep });`,
+  turn,
+);
+const settleGlide = () => {
+  for (let frame = 0; frame < 600 && turn.tween; frame++) zooming.glideStep();
+};
+// Three presses of + 150 ms apart from rest at zoom 1: three steps of 1.25.
+turn.yaw = turn.targetYaw = Math.PI / 4;
+turn.camera.zoom = turn.targetZoom = 1;
+turn.target.set(0, 0, 0);
+turning.offsetTarget();
+turn.controls.target.copy(turn.target);
+turn.tween = false;
+for (let press = 0; press < 3; press++) {
+  zooming.zoomBy(1.25);
+  for (let frame = 0; frame < 9; frame++) zooming.glideStep();
+}
+settleGlide();
+assert(
+  Math.abs(turn.camera.zoom - 1.25 ** 3) < 0.01,
+  `Three quick presses of + zoomed to ${turn.camera.zoom.toFixed(2)}, not ${(1.25 ** 3).toFixed(2)}.`,
+);
+// A pick's glide to a subject, with + pressed a few frames in: it still ends on the subject.
+const subject = new T.Vector3(14, 0, -9);
+turn.targetZoom = 2.4;
+turn.target.copy(subject);
+turning.offsetTarget();
+turn.tween = true;
+for (let frame = 0; frame < 4; frame++) zooming.glideStep();
+zooming.zoomBy(1.25);
+settleGlide();
+assert(
+  turn.controls.target.clone().sub(turn.shiftApplied).distanceTo(subject) < 0.01,
+  'Zooming during a glide must not leave the picked place off-centre.',
+);
+assert(Math.abs(turn.camera.zoom - 3) < 0.01, 'The zoom builds on the glide’s own zoom.');
 // Leaving Inspect from a study zoom closer than the town's limit eases all the way out: the
 // real OrbitControls clamps the zoom to its limit on every update, so the limit must come
 // down with the glide, not before it.
@@ -477,5 +536,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, an eased zoom out of Inspect.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect.`,
 );
