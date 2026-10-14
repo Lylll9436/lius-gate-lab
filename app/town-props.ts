@@ -58,7 +58,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
     box(p, 0, 1.0, 0, 0.72, 1.6, 0.72, red, 'enamel'); // body
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       const f = new T.Group(); f.rotation.y = side; p.add(f);
-      box(f, 0, 0.98, 0.35, 0.48, 1.04, 0.04, palette.glass, 'glass'); // pane
+      box(f, 0, 0.98, 0.35, 0.48, 1.04, 0.04, palette.glass, 'glass').userData.window = 'kiosk'; // pane, a cool light all night
       box(f, 0, 0.98, 0.37, 0.07, 1.04, 0.03, red, 'enamel'); // mullion
       box(f, 0, 1.15, 0.37, 0.48, 0.07, 0.03, red, 'enamel'); // transom
       box(f, 0, 1.64, 0.37, 0.5, 0.13, 0.03, palette.white, 'enamel'); // sign band, blank
@@ -132,7 +132,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
     base.add(jib);
     box(jib, 0, 0, 0, 1.1, 0.6, 1.1, Y, 'enamel'); // slewing unit
     box(jib, 0.35, 0.65, 0.1, 0.9, 0.7, 0.8, Y, 'enamel'); // cab
-    box(jib, 0.35, 0.7, 0.51, 0.62, 0.38, 0.06, palette.glass, 'glass'); // cab window
+    box(jib, 0.35, 0.7, 0.51, 0.62, 0.38, 0.06, palette.glass, 'glass').userData.window = 'unlit'; // cab window, dark at night
     cone(jib, 0, 1.8, 0, 0.42, 1.6, Y, 'enamel', 4); // apex
     box(jib, 3.3, 0.35, 0, 6.2, 0.22, 0.22, Y, 'enamel'); // top chord
     for (const s of [-0.22, 0.22]) box(jib, 3.3, -0.05, s, 6.2, 0.12, 0.12, Y, 'enamel'); // bottom chords

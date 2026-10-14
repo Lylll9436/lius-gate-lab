@@ -214,12 +214,15 @@ for (let i = 0; i < 400; i++) {
   assert(Number.isFinite(pose.heading));
 }
 const warnings = [];
-const originalWarn = console.warn;
-console.warn = (...args) => warnings.push(args.join(' '));
+const originalWarn = console.warn,
+  originalError = console.error;
+// A glass geometry without aWindow makes mergeGeometries log an error and drop its whole group.
+console.warn = console.error = (...args) => warnings.push(args.join(' '));
 const start = performance.now();
 const model = buildCityModel();
 const ms = performance.now() - start;
 console.warn = originalWarn;
+console.error = originalError;
 assert.deepEqual(warnings, []);
 const { city, models, walkers, lamps, clocks } = model;
 assert.equal(models.size, 7);
@@ -446,17 +449,82 @@ water.update(7, 0, new T.PerspectiveCamera());
 water.update(8, 1, new T.PerspectiveCamera(), { rain: 1, sun: new T.Vector3(1, 1, 1), moon: new T.Vector3(160, 320, -200) });
 // The moon's glint follows the moon the frame loop turns with the camera.
 assert.deepEqual(shader.uniforms.moonPosition.value.toArray(), [160, 320, -200], 'The sea takes the moon it is handed.');
-// Night: windows glow, lanterns light up, spotlights point down.
+// Night: windows glow pane by pane, lanterns light up, spotlights point down.
+const { windowClock, followWindows, WINDOW_RATE } = await load('glasgow-sun');
+const { windowLevel, windowGlow } = await load('city-materials');
 model.materialLibrary.setNight(1);
-let windows = 0;
+let windows = 0,
+  glassBatch;
 city.traverse((o) => {
-  // Lanterns carry their own glow, driven by the frame loop; windows share the library's glass.
+  // Lanterns carry their own glow, driven by the frame loop; windows share the library's glass,
+  // and each pane carries its own light in aWindow (normalised bytes, as batch() bakes them).
   if (o.isMesh && o.material.userData.surfaceKind === 'glass' && !lamps.includes(o)) {
     assert(o.material.emissiveIntensity > 0.5, 'Windows must light up at night.');
+    const a = o.geometry.attributes.aWindow;
+    assert(a && a.itemSize === 4 && a.normalized && a.array instanceof Uint8Array, 'A glass mesh without its panes\' night lights.');
+    glassBatch = o.material;
     windows++;
   }
 });
 assert(windows > 5);
+// The glass shader really reads them: a renamed chunk would drop the patch silently.
+{
+  const shader = { uniforms: {}, vertexShader: T.ShaderLib.standard.vertexShader, fragmentShader: T.ShaderLib.standard.fragmentShader };
+  glassBatch.onBeforeCompile(shader, null);
+  assert(shader.vertexShader.includes('attribute vec4 aWindow') && shader.vertexShader.includes('vWindow = on *'), 'The glass shader reads aWindow.');
+  assert(shader.fragmentShader.includes('totalEmissiveRadiance *= vWindow'), 'The glass shader lights each pane by its own light.');
+  assert(shader.uniforms.windowClock?.value?.isVector2, 'The glass shader follows the window clock.');
+}
+const panes = model.windows,
+  rooms = panes.filter((p) => ['home', 'civic', 'studio'].includes(p.role)),
+  at = (h) => windowClock(h),
+  lit = (list, h) => list.filter((p) => windowLevel(p.light, at(h)) > 0.1),
+  Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
+  todayGlow = new T.Color('#ffd29a');
+assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) => [p.place, p.light]), 'Every build lights the same panes.');
+// Evening: about half the rooms lit; the members' homes are lit late, and the studio works later.
+{
+  const evening = lit(rooms, 20).length / rooms.length;
+  assert(evening >= 0.35 && evening <= 0.65, `${Math.round(evening * 100)}% of the rooms are lit at 20:00.`);
+  for (const id of ['pengyuan-liu', 'yunlong-liu', 'qin-li'])
+    assert(lit(rooms.filter((p) => p.place === id), 23.5).length, `${id}'s home is dark at 23:30.`);
+  assert(lit(rooms.filter((p) => p.place === 'research-studio'), 1).length, 'The studio is dark at 01:00.');
+}
+// Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
+{
+  const role = (r) => panes.filter((p) => p.role === r);
+  assert.equal(role('dial').length, 4, 'Four clock dials.');
+  assert.equal(role('unlit').length, 1, 'One crane cab.');
+  for (const r of ['beacon', 'kiosk', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
+  for (let minute = 0; minute < 24 * 60; minute += 15) {
+    const clock = at(minute / 60);
+    assert(role('dial').every((p) => windowLevel(p.light, clock) === 1), `A clock dial is dark at minute ${minute}.`);
+    assert(['beacon', 'kiosk', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
+    assert(role('unlit').every((p) => windowLevel(p.light, clock) === 0), `The crane cab is lit at minute ${minute}.`);
+  }
+  // The dials are exactly today's glow; no pane is brighter (luminance x the night's 0.72).
+  for (const p of role('dial')) {
+    const c = windowGlow(p.light, at(20));
+    assert(['r', 'g', 'b'].every((k) => Math.abs(c[k] - todayGlow[k]) < 1e-4), 'A clock dial is not today\'s glow.');
+  }
+  // The four looks, each from its bytes: full warm, today's, cool and dim (and the studio's glass box,
+  // today's colour at 0.8 so it never reads as a lampshade). Every lit room is one of them.
+  const looks = [
+      ['full warm', 255, 0, 0.46],
+      ["today's", 255, 128, 0.5],
+      ['cool', 179, 255, 0.41],
+      ['dim', 115, 0, 0.21],
+      ['studio glass', 204, 128, 0.4],
+    ],
+    glowOf = (level, tint) => Y(windowGlow([level / 255, tint / 255, 1, 1], at(20))) * 0.72;
+  for (const [name, level, tint, want] of looks) assert(Math.abs(glowOf(level, tint) - want) < 0.01, `A ${name} pane glows at ${glowOf(level, tint).toFixed(3)}.`);
+  for (const p of lit(rooms, 20)) {
+    const bytes = p.light.slice(0, 2).map((v) => Math.round(v * 255)),
+      look = looks.find(([, level, tint]) => level === bytes[0] && tint === bytes[1]);
+    assert(look, `A lit pane at ${p.place} has no look of its own (${bytes}).`);
+    assert(Math.abs(Y(windowGlow(p.light, at(20))) * 0.72 - look[3]) < 0.01, `A ${look[0]} pane at ${p.place} glows off its look.`);
+  }
+}
 // The lighthouse beam swings over the sea at night, never across the island, and is not drawn by day.
 const beam = model.animated.find((e) => e.object.children[0]?.material?.uniforms?.strength);
 assert(beam, 'The lighthouse has a beam.');
@@ -803,7 +871,6 @@ assert.equal(lowSun(rad(-10)), 0);
 // The windows' night clock: evening until 22:00, panes going out until 02:30, early risers from
 // 05:30 to 07:30, reset unseen at noon. The follower only moves forward in the dark, holds through
 // twilight and the autumn clock change, and copies the clock by day and at the noon reset.
-const { windowClock, followWindows, WINDOW_RATE } = await load('glasgow-sun');
 {
   for (const h of [21.9, 12, 17.5]) assert.deepEqual(windowClock(h), { out: 0, wake: 0 }, `The windows' night has begun at ${h}.`);
   assert.equal(windowClock(2.5).out, 1, 'Every pane that goes out is out by 02:30.');

@@ -15,8 +15,82 @@ import type { TownContext } from './town-shared';
 /** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
 const BAKE_RANGE = 4;
 
+/*
+ * Night windows. Every glass pane carries its own light in `aWindow` (four normalised bytes, the
+ * same on each of its vertices): r its level tonight (0 dark, 0.45 dim, 0.7 cool, 1 full), g its
+ * tint (0 warm, 128 exactly today's glow, 255 cool), b the night clock's `out` at which it goes
+ * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
+ * reads them against the window clock (city-materials' setWindows).
+ */
+type WindowRole = 'home' | 'civic' | 'studio' | 'kiosk' | 'beacon' | 'dial' | 'vehicle' | 'unlit';
+type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
+/** Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers. */
+const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
+  home: { lit: 0.55, dim: 0.2, cool: 0.15, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
+  civic: { lit: 0.4, dim: 0, cool: 0.5, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
+  studio: { lit: 0.85, dim: 0, cool: 0.4, goes: 0.5, span: [0.6, 0.98], risers: 0 }, // 00:42-02:25
+};
+/** [level, tint, off, wake] for panes that never change (1 = never). */
+const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
+  kiosk: [0.8, 1, 1, 1],
+  beacon: [1, 0, 1, 1],
+  dial: [1, 0.5, 1, 1],
+  vehicle: [0.85, 0.25, 1, 1],
+  unlit: [0, 0, 1, 1],
+};
+type WindowPane = { role: WindowRole; place: string; at: T.Vector3; light: number[] };
+type Claimed = { off: Set<number>; wake: Set<number> };
+const byte = (v: number) => Math.round(v * 255);
+/** Five uniform draws from a pane's world centre (to the centimetre): the same pane gets the same light on every build. */
+function paneDraws(p: T.Vector3) {
+  let h = Math.imul(Math.round(p.x * 100), 0x27d4eb2d) ^ Math.imul(Math.round(p.y * 100), 0x165667b1) ^ Math.imul(Math.round(p.z * 100), 0x9e3779b1);
+  return Array.from({ length: 5 }, () => {
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+  });
+}
+/** The free byte nearest lo + (hi - lo) * u in [lo, hi], searching up and wrapping to lo: no two panes switch together. */
+function claim(set: Set<number>, lo: number, hi: number, u: number) {
+  if (!(lo < hi)) throw new Error(`Empty window span ${lo}..${hi}`);
+  for (let i = 0, b = lo + Math.round((hi - lo) * u); i <= hi - lo; i++, b = b >= hi ? lo : b + 1)
+    if (!set.has(b)) {
+      set.add(b);
+      return b;
+    }
+  throw new Error(`No free window byte in ${lo}..${hi}`);
+}
+/**
+ * A pane's four aWindow bytes. `windowLit` panes are lit at today's colour (at full level, or at
+ * the level `windowLit` gives as a number) and go out no earlier than 01:22. Only a pane that is
+ * dark by morning can be an early riser, so every riser comes on from dark rather than brightening
+ * a lamp left on all night.
+ */
+function windowLight(o: T.Object3D, role: WindowRole, at: T.Vector3, claimed: Claimed) {
+  const fixed = WINDOW_FIXED[role];
+  if (fixed) return fixed.map(byte);
+  const m = WINDOW_MIX[role]!,
+    [u0, u1, u2, u3, u4] = paneDraws(at),
+    forced = !!o.userData.windowLit,
+    forcedLevel = typeof o.userData.windowLit === 'number' ? o.userData.windowLit : 1;
+  const lit = forced || u0 < m.lit,
+    dim = !forced && u1 < m.dim,
+    cool = !forced && !dim && u1 < m.dim + m.cool;
+  const level = !lit ? 0 : forced ? forcedLevel : dim ? 0.45 : cool ? 0.7 : 1;
+  const tint = forced ? 0.5 : !lit || dim ? 0 : cool ? 1 : u2 < 0.7 ? 0 : 0.5; // dark panes get 0: risers are warm
+  const lo = forced ? Math.max(m.span[0], 0.75) : m.span[0],
+    hi = forced ? Math.min(0.98, Math.max(m.span[1], lo + 0.2)) : m.span[1];
+  const off = lit && u3 < m.goes ? claim(claimed.off, byte(lo), byte(hi), u3 / m.goes) : 255;
+  return [byte(level), byte(tint), off, u4 < m.risers && (!lit || off < 255) ? claim(claimed.wake, 10, 245, u4 / m.risers) : 255];
+}
+
 export function createBatch(ctx: TownContext) {
   const { library, lamps } = ctx;
+  // Per build, like ctx: the off and wake bytes already taken, every lit place's pane list, and
+  // each window group's one light.
+  const claimed: Claimed = { off: new Set(), wake: new Set() },
+    windows: WindowPane[] = [],
+    groupLight = new Map<string, number[]>();
   /**
    * Pane coordinates for the glass glint, in units from the pane's middle: x across the face
    * (to the right seen from outside, so every pane leans the same way on screen), y up. The
@@ -41,7 +115,11 @@ export function createBatch(ctx: TownContext) {
       }
     geometry.setAttribute('uv', new T.BufferAttribute(uv, 2));
   }
-  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number } = {}) {
+  /**
+   * `windows` is the role of g's glass where a pane has no `userData.window` of its own (home by
+   * default), `place` the name its panes are listed under (g's name by default).
+   */
+  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number; windows?: WindowRole; place?: string } = {}) {
     const mode = opts.contact ?? 'terrain',
       localFloor = opts.localFloor ?? 0;
     g.updateMatrixWorld(true);
@@ -178,6 +256,20 @@ export function createBatch(ctx: TownContext) {
       }
       geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
       geometry.setAttribute('aBake', new T.BufferAttribute(bake, 2, true));
+      if (k === 'glass') {
+        // A window group (a bay storey's sash panes) is one light: its first pane draws and claims, the rest reuse it.
+        const group: string | undefined = o.userData.windowGroup;
+        let light = group ? groupLight.get(group) : undefined;
+        if (!light) {
+          const at = o.getWorldPosition(new T.Vector3()),
+            role: WindowRole = o.userData.window ?? opts.windows ?? 'home';
+          light = windowLight(o, role, at, claimed);
+          if (group) groupLight.set(group, light);
+          windows.push({ role, place: opts.place ?? g.name, at, light: light.map((v) => v / 255) });
+        }
+        const bytes = light;
+        geometry.setAttribute('aWindow', new T.BufferAttribute(new Uint8Array(count * 4).map((_, i) => bytes[i % 4]), 4, true));
+      }
       if (!groups.has(key)) groups.set(key, { mat, cast, list: [] });
       groups.get(key)!.list.push(geometry);
       old.push(o);
@@ -187,7 +279,7 @@ export function createBatch(ctx: TownContext) {
       const normalized = geometries.map((geo) => {
         const plain = geo.index ? geo.toNonIndexed() : geo;
         for (const name of Object.keys(plain.attributes))
-          if (!['position', 'normal', 'color', 'uv', 'aBake'].includes(name)) plain.deleteAttribute(name);
+          if (!['position', 'normal', 'color', 'uv', 'aBake', 'aWindow'].includes(name)) plain.deleteAttribute(name);
         if (!plain.getAttribute('normal')) plain.computeVertexNormals();
         return plain;
       });
@@ -206,5 +298,5 @@ export function createBatch(ctx: TownContext) {
         }
     }
   }
-  return { paneUV, batch };
+  return { paneUV, batch, windows };
 }

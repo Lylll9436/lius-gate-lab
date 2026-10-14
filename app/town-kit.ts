@@ -262,6 +262,7 @@ export function createKit(ctx: TownContext) {
   /**
    * A window: one chunky bevelled frame proud of the wall face at z, glass recessed 0.1 behind
    * the frame face, a chunky sill and lintel (a keystone on arched ones). Faces local +z.
+   * Returns the glass pane (for its night-light tags).
    * `bars` is accepted for old callers and ignored: no glazing bars.
    */
   function windowAt(
@@ -281,6 +282,7 @@ export function createKit(ctx: TownContext) {
     if(opts.mullion) box(g,x,y,z+0.08,0.08,h,0.06,frame,frameKind);
     if(opts.sill!==false) box(g,x,y-h/2-f-0.05,z+0.11,w+2*f+0.16,0.1,0.22,dress,'stone');
     if(opts.lintel!==false){ if(opts.arched) box(g,x,y+h/2+r+f+0.1,z+0.1,0.24,0.32,0.2,dress,'stone'); else box(g,x,y+h/2+f+0.09,z+0.09,w+2*f+0.2,0.18,0.18,dress,'stone'); }
+    return glass;
   }
   /*
    * The canted bay kit (Glasgow sandstone bays on the three homes). A bay is a trapezoid in a
