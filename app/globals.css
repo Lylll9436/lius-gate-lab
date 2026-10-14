@@ -1743,6 +1743,18 @@ body:has(.mode-explore),
   background: var(--ink);
   border-color: transparent;
 }
+/* The mode switch's label and fill change together: with the glass rule's slow fill fade the
+   label went pale on pale glass entering the city, and dark on the still dark fill leaving it,
+   right under the pointer that pressed it. Filling, both ease quickly (as they do over a
+   day/night switch in the city); back to glass, both change at once, and over a day/night
+   switch the label follows the page's fade, as the language switch beside it does. */
+.mode-switch {
+  transition: box-shadow 0.3s ease, --glass-tint-a 1.2s ease, --glass-tint-b 1.2s ease,
+    --glass-glow-a 1.2s ease;
+}
+.mode-switch.is-explore {
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.3s ease;
+}
 /* Pressing on glass lights it from inside. */
 .button-ghost:hover,
 .mode-switch:hover,
