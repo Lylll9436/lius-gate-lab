@@ -13,6 +13,8 @@ function roofKind(colour: string): SurfaceKind {
   if (colour === palette.pantile || colour === palette.pantileLight) return 'pantile';
   return 'slate';
 }
+/** A canted bay's plan on its wall (see bayOutline): centre x, wall face z0, root width, projection and cant per side. */
+export type Bay = { x: number; z0: number; root: number; depth: number; cant: number };
 const unitBox = new T.BoxGeometry(1, 1, 1);
 /**
  * Soft, rendered-object edges: every box thicker than a slab gets a small rounded edge,
@@ -260,6 +262,7 @@ export function createKit(ctx: TownContext) {
   /**
    * A window: one chunky bevelled frame proud of the wall face at z, glass recessed 0.1 behind
    * the frame face, a chunky sill and lintel (a keystone on arched ones). Faces local +z.
+   * Returns the glass pane (for its night-light tags).
    * `bars` is accepted for old callers and ignored: no glazing bars.
    */
   function windowAt(
@@ -279,6 +282,78 @@ export function createKit(ctx: TownContext) {
     if(opts.mullion) box(g,x,y,z+0.08,0.08,h,0.06,frame,frameKind);
     if(opts.sill!==false) box(g,x,y-h/2-f-0.05,z+0.11,w+2*f+0.16,0.1,0.22,dress,'stone');
     if(opts.lintel!==false){ if(opts.arched) box(g,x,y+h/2+r+f+0.1,z+0.1,0.24,0.32,0.2,dress,'stone'); else box(g,x,y+h/2+f+0.09,z+0.09,w+2*f+0.2,0.18,0.18,dress,'stone'); }
+    return glass;
+  }
+  /*
+   * The canted bay kit (Glasgow sandstone bays on the three homes). A bay is a trapezoid in a
+   * wall's plan: its roots on the wall face at z0, `root` apart; its front `depth` out and
+   * `cant` narrower on each side. Everything stands on a shell's own plan (x along the wall,
+   * +z out of it).
+   */
+  /** Root-left, front-left, front-right, root-right, `grow` beyond the faces (a cheek moved out meets the wall wider). */
+  function bayOutline(b: Bay, grow = 0): [number, number][] {
+    const out = (grow * Math.hypot(b.depth, b.cant)) / b.depth, root = b.root / 2 + out,
+      front = root - ((b.depth + grow) * b.cant) / b.depth, z1 = b.z0 + b.depth + grow;
+    return [[b.x - root, b.z0], [b.x - front, z1], [b.x + front, z1], [b.x + root, b.z0]];
+  }
+  /** The bay plan extruded y0..y1, tucked 0.04 into the wall, top and bottom edges chamfered like pitchedRoof. */
+  function cantedPrism(g: T.Object3D, b: Bay, y0: number, y1: number, colour: string, kind: SurfaceKind = 'stone', grow = 0) {
+    const p = bayOutline(b, grow), back = b.z0 - 0.04, bev = Math.min(0.03, (y1 - y0) / 4);
+    const shape = new T.Shape([[p[0][0], back], ...p, [p[3][0], back]].map(([x, z]) => new T.Vector2(x, -z)));
+    const geo = new T.ExtrudeGeometry(shape, { depth: y1 - y0 - 2 * bev, bevelEnabled: true, bevelThickness: bev,
+      bevelSize: bev, bevelOffset: -bev, bevelSegments: 1 }).rotateX(-Math.PI / 2).translate(0, y0 + bev, 0);
+    const m = new T.Mesh(geo, material(colour, kind)); m.castShadow = m.receiveShadow = true; g.add(m); return m;
+  }
+  /**
+   * A group per bay face on its plane (local +z out of the face, x along it): the front first,
+   * then the left and right cheeks. `arris` is the local x sign toward the front angle (0 on the
+   * front). The order is load-bearing: a window group's first pane is the front's (night windows).
+   */
+  function bayFaces(g: T.Object3D, b: Bay) {
+    const p = bayOutline(b);
+    return [1, 0, 2].map((i) => {
+      const [ax, az] = p[i], [bx, bz] = p[i + 1], face = new T.Group();
+      face.position.set((ax + bx) / 2, 0, (az + bz) / 2);
+      face.rotation.y = Math.atan2(az - bz, bx - ax);
+      g.add(face);
+      return { face, length: Math.hypot(bx - ax, bz - az), arris: i === 0 ? 1 : i === 2 ? -1 : 0 };
+    });
+  }
+  /**
+   * A sash window on the face at z: a 0.08 painted frame `win.deep` proud (0.12), two panes (the
+   * upper sash 0.03 in front, on the outer track) and a meeting rail. `win.single` makes it one
+   * fixed light instead (a narrow cheek light): one pane, no rail, so a bay reads as glass rather
+   * than a lattice of small frames. Each pane is its own centred plane, never rotated or
+   * pre-merged, so batch() gives it pane-centred glint coordinates and its own upward gradient.
+   * Every pane carries `userData.windowGroup = win.group` (one light at night: the group's first
+   * pane, the lower one, draws it) and `sashPane`; `win.lit` adds `windowLit` (kept lit late).
+   */
+  function sash(g: T.Object3D, x: number, y: number, z: number, w: number, h: number, frame: string,
+    win: { group: string; lit?: boolean; single?: boolean; deep?: number }) {
+    const rail = 0.08, ph = win.single ? h : (h - rail) / 2;
+    frameRing(g, x, y, z, w, h, 0.08, win.deep ?? 0.12, frame, 'paint');
+    const panes: (readonly [number, number])[] = win.single ? [[0, 0.03]] : [[-1, 0.04], [1, 0.07]]; // lower pane first
+    for (const [s, dz] of panes) {
+      const pane = new T.Mesh(new T.PlaneGeometry(w + 0.02, ph + 0.01), material(palette.glass, 'glass'));
+      pane.position.set(x, y + (s * (ph + rail)) / 2, z + dz);
+      pane.userData.windowGroup = win.group;
+      pane.userData.sashPane = true;
+      if (win.lit) pane.userData.windowLit = true;
+      g.add(pane);
+    }
+    if (!win.single) box(g, x, y, z + 0.08, w + 0.02, rail, 0.05, frame, 'paint'); // 0.05 deep, so a sharp 12-triangle box
+  }
+  /** A piended bay roof: three facets to one apex on the wall, and a soffit (the shadow pass draws back faces). A bay cap. */
+  function bayRoof(g: T.Object3D, b: Bay, yEave: number, rise: number, colour: string) {
+    const [p0, p1, p2, p3] = bayOutline(b, 0.12).map(([x, z]) => new T.Vector3(x, yEave, z)),
+      a = new T.Vector3(b.x, yEave + rise, b.z0 - 0.05);
+    const geo = new T.BufferGeometry().setFromPoints([p0, p1, a, p1, p2, a, p2, p3, a, p0, p2, p1, p0, p3, p2]);
+    geo.computeVertexNormals(); // non-indexed, so flat facets; facets face up and out, the soffit down
+    const m = new T.Mesh(geo, material(colour, roofKind(colour)));
+    m.castShadow = m.receiveShadow = true;
+    Object.assign(m.userData, { roof: true, eaveY: yEave, bayCap: true });
+    g.add(m);
+    return m;
   }
   /**
    * A door on the wall face at z: one enamelled leaf with a raised rim (the centre reads recessed),
@@ -351,6 +426,6 @@ export function createKit(ctx: TownContext) {
     const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
     return hit ? hit.point.y : plan.terrainHeight(x, z);
   }
-  return { box, cylinder, strut, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, door, quoins, plinth, chimney, lampGlass, groundY };
+  return { box, cylinder, strut, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, bayRoof, door, quoins, plinth, chimney, lampGlass, groundY };
 }
 export type Kit = ReturnType<typeof createKit>;

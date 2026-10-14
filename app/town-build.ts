@@ -112,7 +112,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing } = createCountry(ctx, kit);
-  const { batch } = createBatch(ctx);
+  const { batch, windows } = createBatch(ctx);
   const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
   /**
    * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
@@ -251,9 +251,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   yield 'batch land';
   batch(parkGroup);
   yield 'batch park';
-  // Buildings share the library's batch materials, so one night toggle lights every window.
+  // Each glass pane carries its own night light in aWindow (batch() draws it; see town-batch.ts).
   for (const [id, m] of models) {
-    batch(m.shell);
+    batch(m.shell, { windows: id === 'town-hall' || id === 'city-archive' ? 'civic' : id === 'research-studio' ? 'studio' : 'home', place: id });
     yield `batch ${id}`;
   }
   for (const walker of walkers)
@@ -266,12 +266,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       batch(part as T.Group, { contact: 'none' });
       if (joints.length) part.add(...joints);
     }
-  batch(tram, { contact: 'local', localFloor: 0 });
-  batch(boat, { contact: 'none' });
+  batch(tram, { contact: 'local', localFloor: 0, windows: 'vehicle' });
+  batch(boat, { contact: 'none', windows: 'vehicle' });
   for (const entry of animated) if (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)) batch(entry.object, { contact: 'none' });
   city.updateMatrixWorld(true);
 
-  // Sprinkle a soft "lit window" marker for night: glass materials are shared, so one toggle lights the town.
   const parkHit = new T.Mesh(new T.BoxGeometry(plan.park.w, 2.2, plan.park.d), new T.MeshBasicMaterial({ visible: false }));
   parkHit.position.set(plan.park.x, 1.1, plan.park.z);
   parkHit.userData.placeId = 'corner-park';
@@ -287,6 +286,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     boat,
     lamps,
     clocks,
+    windows,
     animated,
     parkGroup,
     parkHit,

@@ -99,6 +99,30 @@ const GLINT_PATCH = `{
    geometryNormal = flatNormal;
 }`;
 
+/** Window light. Warm is 2700K-ish within palette.lantern's saturation (s 0.46); cool is s 0.05. */
+const GLASS_GLOW = '#ffd29a',
+  WINDOW_WARM = '#ffc68a',
+  WINDOW_COOL = '#e4ebef';
+/** A colour relative to the glow, as GLSL (the glow itself stays setNight's master). */
+const relGlow = (hex: string) => {
+  const c = new T.Color(hex),
+    g = new T.Color(GLASS_GLOW);
+  return `vec3(${[c.r / g.r, c.g / g.g, c.b / g.b].map((v) => v.toFixed(3)).join(',')})`;
+};
+/**
+ * Each pane's light (batch()'s aWindow: level, tint, off byte, wake byte) against the window
+ * clock (out, wake): lit at its level until `out` passes its off byte, then dark; an early riser
+ * comes on at 0.8 once `wake` passes its wake byte. Each switch is a 0.002-wide smoothstep, so at
+ * the follower's pace a lamp goes out over about 3 s. The tint byte splits at 128: warm below,
+ * exactly today's glow at 128, cool at 255. The result scales the emissive, never above 1 in
+ * luminance, so a pane never outshines today's glow and nothing spills off the glass.
+ */
+const WINDOW_VERTEX = `{ float on = aWindow.r * (1. - smoothstep(aWindow.b, aWindow.b + .002, windowClock.x));
+  on = max(on, .8 * step(aWindow.a, .999) * smoothstep(aWindow.a, aWindow.a + .002, windowClock.y));
+  float t = floor(aWindow.g * 255. + .5); // the tint byte: 0 warm, 128 exactly today's glow, 255 exactly cool
+  vWindow = on * (t < 128. ? mix(${relGlow(WINDOW_WARM)}, vec3(1.), t / 128.) : mix(vec3(1.), ${relGlow(WINDOW_COOL)}, (t - 128.) / 127.)); }`;
+type WindowUniform = { value: T.Vector2 };
+
 /**
  * Contact and eave darkening, shaped per fragment from the two linear distances batch() bakes
  * into aBake (height above the ground, depth below an overhang; 0..1 over 4 units).
@@ -106,14 +130,16 @@ const GLINT_PATCH = `{
  * The kind's spec uniform scales its reflections; the shader text is the same for every kind,
  * so all standard solids share one program (and the clear-coated ones one more, glass one more).
  */
-function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, glass = false) {
+function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, glass = false, windowClock?: WindowUniform) {
   m.onBeforeCompile = (shader) => {
     shader.uniforms.specBoost = specU;
+    if (glass && windowClock) shader.uniforms.windowClock = windowClock;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aBake;\nvarying vec2 vBake;' + (glass ? '\nvarying vec2 vPane;' : ''))
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * 4.;' + (glass ? '\nvPane = uv;' : ''));
+      .replace('#include <common>', '#include <common>\nattribute vec2 aBake;\nvarying vec2 vBake;' + (glass ? '\nvarying vec2 vPane;\nattribute vec4 aWindow;\nuniform vec2 windowClock;\nvarying vec3 vWindow;' : ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * 4.;' + (glass ? '\nvPane = uv;\n' + WINDOW_VERTEX : ''));
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', SPEC_UNIFORM + '\nvarying vec2 vBake;' + (glass ? '\nvarying vec2 vPane;' : ''))
+      .replace('#include <common>', SPEC_UNIFORM + '\nvarying vec2 vBake;' + (glass ? '\nvarying vec2 vPane;\nvarying vec3 vWindow;' : ''))
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + (glass ? '\ntotalEmissiveRadiance *= vWindow;' : ''))
       .replace('#include <color_fragment>', `#include <color_fragment>
    float contact = mix(.55, 1., smoothstep(0., .7, vBake.x)) * mix(.82, 1., smoothstep(0., .08, vBake.x)); // guide's 0.45 foot band
    diffuseColor.rgb *= contact * mix(.7, 1., smoothstep(0., .45, vBake.y));`)
@@ -276,6 +302,8 @@ function surfaceMaps(kind: SurfaceKind) {
 
 export function createCityMaterials() {
   let night = 0;
+  /** The window clock every glass batch material reads (one shared object): x `out`, y `wake`. */
+  const windowClock: WindowUniform = { value: new T.Vector2() };
   const cache = new Map<string, T.MeshStandardMaterial>();
   const maps = new Map<SurfaceKind, ReturnType<typeof surfaceMaps>>();
   // The ground masks are baked by buildTown; until then a black texel leaves the ground untouched.
@@ -351,7 +379,7 @@ export function createCityMaterials() {
       m.name = `city-${kind}`;
       m.userData.surfaceKind = kind;
       if (kind === 'glass') {
-        m.emissive.set('#ffd29a');
+        m.emissive.set(GLASS_GLOW);
         m.emissiveIntensity = night * 0.72;
       } else if (kind === 'grass' || kind === 'soil') {
         if (!maps.has(kind)) maps.set(kind, surfaceMaps(kind));
@@ -388,7 +416,7 @@ export function createCityMaterials() {
       m.side = side;
       const kind = source.userData.surfaceKind as SurfaceKind;
       if (MASKED_GROUND.has(kind)) groundShader(m, kind, bakeUniforms);
-      else if (!GROUND_KINDS.has(kind)) bakeShader(m, specFor(kind), kind === 'glass');
+      else if (!GROUND_KINDS.has(kind)) bakeShader(m, specFor(kind), kind === 'glass', windowClock);
       batches.set(key, m);
     }
     return batches.get(key)!;
@@ -410,7 +438,28 @@ export function createCityMaterials() {
       if (m.userData.surfaceKind === 'glass')
         m.emissiveIntensity = night * 0.72;
   }
-  return { material, batchMaterial, dispose, setNight, setSpec, bakeUniforms };
+  /** Where the night is for the panes (glasgow-sun's windowClock, as followed by the scene). */
+  function setWindows(out: number, wake: number) {
+    windowClock.value.set(out, wake);
+  }
+  return { material, batchMaterial, dispose, setNight, setWindows, setSpec, bakeUniforms };
+}
+
+/*
+ * JS twins of the window shader, for the checks. Keep them in step with WINDOW_VERTEX; `light` is
+ * a pane's aWindow bytes / 255 (town.windows), `clock` the window clock.
+ */
+const ss = (e: number, x: number) => T.MathUtils.smoothstep(x, e, e + 0.002);
+/** A pane's light level at this point of the night (0 dark, its own level, or 0.8 for an early riser). */
+export function windowLevel(light: readonly number[], clock: { out: number; wake: number }) {
+  return Math.max(light[0] * (1 - ss(light[2], clock.out)), light[3] < 0.999 ? 0.8 * ss(light[3], clock.wake) : 0);
+}
+/** The pane's emissive before emissiveIntensity (linear), i.e. emissive × vWindow. */
+export function windowGlow(light: readonly number[], clock: { out: number; wake: number }) {
+  const t = Math.round(light[1] * 255),
+    glow = new T.Color(GLASS_GLOW);
+  const c = t < 128 ? new T.Color(WINDOW_WARM).lerp(glow, t / 128) : glow.lerp(new T.Color(WINDOW_COOL), (t - 128) / 127);
+  return c.multiplyScalar(windowLevel(light, clock));
 }
 
 /** UVs use physical dimensions, not one identical stretched texture per box. */

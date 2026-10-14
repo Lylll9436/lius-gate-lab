@@ -214,12 +214,15 @@ for (let i = 0; i < 400; i++) {
   assert(Number.isFinite(pose.heading));
 }
 const warnings = [];
-const originalWarn = console.warn;
-console.warn = (...args) => warnings.push(args.join(' '));
+const originalWarn = console.warn,
+  originalError = console.error;
+// A glass geometry without aWindow makes mergeGeometries log an error and drop its whole group.
+console.warn = console.error = (...args) => warnings.push(args.join(' '));
 const start = performance.now();
 const model = buildCityModel();
 const ms = performance.now() - start;
 console.warn = originalWarn;
+console.error = originalError;
 assert.deepEqual(warnings, []);
 const { city, models, walkers, lamps, clocks } = model;
 assert.equal(models.size, 7);
@@ -306,6 +309,103 @@ for (const [id, m] of models) {
     assert(above.zoom <= fit.zoom + 1e-9, 'Inspection above the sheet: ' + id);
   }
 }
+// The canted bays: under the eaves, out of the gardens, clear of the doorpiece, baked as one body under their own cap,
+// the main wall's bake untouched, one light per storey, and each home within its triangle budget. The models are
+// batched, so this reads the merged meshes in shell space (front +z, the wall face at d/2).
+{
+  const BAY = { x: -0.68, root: 1.06, depth: 0.55, cant: 0.23 },
+    slant = Math.hypot(BAY.depth, BAY.cant),
+    WALL_TOP = 3.02;
+  // Each bay's bodies (y0, y1); the last one's top is the bay's own cap.
+  const BODIES = {
+    'yunlong-liu': [[0.42, 1.76], [1.9, 2.78]],
+    'qin-li': [[0.42, 1.76], [1.9, 2.64]],
+    'pengyuan-liu': [[0.42, 1.76]],
+  };
+  const v = new T.Vector3(),
+    q = new T.Vector3(),
+    n = new T.Vector3(),
+    tri = new T.Box3();
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { w, d } = plan.sites[id],
+      bodies = BODIES[id],
+      cap = bodies?.at(-1)[1];
+    // Bay body faces as [normal x, normal z, point x, point z]: front, left cheek, right cheek.
+    const faces = [
+      [0, 1, BAY.x, d / 2 + BAY.depth],
+      [-BAY.depth / slant, BAY.cant / slant, BAY.x - BAY.root / 2, d / 2],
+      [BAY.depth / slant, BAY.cant / slant, BAY.x + BAY.root / 2, d / 2],
+    ];
+    // The door's lintel and left jamb, grown 0.05 all round, so a cheek frame keeps a visible band of stone off the doorpiece.
+    const door = [
+      [-0.09, 2.17, 1.13, 2.39, 0.24],
+      [-0.01, 0.42, 0.17, 2.35, 0.2],
+    ].map(([x0, y0, x1, y1, dz]) => new T.Box3(new T.Vector3(x0, y0, d / 2), new T.Vector3(x1, y1, d / 2 + dz)).expandByScalar(0.05));
+    let tris = 0,
+      walls = 0,
+      capped = 0;
+    for (const o of shell.children) {
+      if (!o.isMesh) continue;
+      const p = o.geometry.attributes.position,
+        kind = o.material.userData.surfaceKind;
+      tris += (o.geometry.index?.count ?? p.count) / 3;
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        if (v.z > d / 2 + 0.45) assert(v.y < 3.12, `${id}: the bay stands through the eave at ${v.toArray().join(', ')}`);
+        if (!bodies) continue;
+        if (v.z > d / 2 + 0.75) assert(v.y < 0.7, `${id}: the bay reaches into the front garden at ${v.toArray().join(', ')}`);
+        // A cheek frame's root stile spans the lintel's height with no vertex there, so test triangles, not vertices.
+        if (kind === 'paint' && i % 3 === 2) {
+          tri.makeEmpty();
+          for (let j = i - 2; j <= i; j++) tri.expandByPoint(q.fromBufferAttribute(p, j));
+          if (tri.min.x < -0.03) assert(!door.some((b) => b.intersectsBox(tri)), `${id}: a bay frame touches the doorpiece at ${tri.min.toArray().join(', ')}`);
+        }
+        if (kind !== 'stone') continue;
+        n.fromBufferAttribute(o.geometry.attributes.normal, i);
+        const eave = o.geometry.attributes.aBake.getY(i) * 4;
+        // The main wall's flat front keeps its bake: only the main cornice caps it (2.48 at y 0.54, 0.12 at 2.90).
+        if (Math.abs(v.z - d / 2) < 2e-3 && n.z > 0.99 && Math.abs(Math.abs(v.x) - (w / 2 - 0.12)) < 2e-3) {
+          walls++;
+          assert(Math.abs(eave - (WALL_TOP - v.y)) < 0.02, `${id}: a bay cap darkens the main wall at ${v.toArray().join(', ')}`);
+        }
+        // A bay body darkens only toward its own cap, never a band's, and its top row sits right under it on every face.
+        const onFace = faces.some(([nx, nz, px, pz]) => n.x * nx + n.z * nz > 0.99 && Math.abs((v.x - px) * nx + (v.z - pz) * nz) < 2e-3);
+        const body = onFace && Math.abs(v.x - BAY.x) < BAY.root / 2 + 1e-3 && bodies.find(([y0, y1]) => v.y > y0 && v.y < y1);
+        if (!body) continue;
+        assert(eave > cap - v.y - 0.02, `${id}: a band course darkens the bay at ${v.toArray().join(', ')}`);
+        if (body[1] === cap && Math.abs(v.y - (cap - 0.03)) < 2e-3) {
+          capped++;
+          assert(eave < 0.1, `${id}: the bay's top is not under its cap at ${v.toArray().join(', ')}`);
+        }
+      }
+    }
+    assert(tris < 6000, `${id}: ${Math.round(tris)} triangles`);
+    if (!bodies) continue;
+    assert(walls >= 4 && capped >= 9, `${id}: found ${walls} main-wall and ${capped} capped bay vertices`);
+    // Once per-pane night lights land (model.windows): each bay storey is one light, and the ground storey is forced
+    // on (level 255, out no earlier than byte 191, 01:22). Pengyuan's one-storey bay has no glass above its cornice.
+    if (model.windows)
+      for (const [y0, y1, forced] of [
+        [0.6, 1.8, true],
+        [1.85, 3, false],
+      ]) {
+        const seen = new Set();
+        for (const o of shell.children)
+          if (o.isMesh && o.material.userData.surfaceKind === 'glass') {
+            const p = o.geometry.attributes.position,
+              a = o.geometry.attributes.aWindow.array;
+            for (let i = 0; i < p.count; i++)
+              if (v.fromBufferAttribute(p, i).x < -0.03 && v.z > d / 2 + 0.02 && v.y > y0 && v.y < y1) seen.add(a.slice(i * 4, i * 4 + 4).join());
+          }
+        const lights = forced || bodies.length > 1 ? 1 : 0;
+        assert.equal(seen.size, lights, `${id}: the bay's band ${y0}–${y1} has ${seen.size} lights`);
+        if (!lights) continue;
+        const [level, , off] = [...seen][0].split(',').map(Number);
+        if (forced) assert(level === 255 && off >= 191, `${id}: the ground storey is not lit late (${[...seen][0]})`);
+      }
+  }
+}
 // The pointer can find every building and the park.
 const ray = new T.Raycaster();
 for (const [id, m] of models) {
@@ -349,17 +449,87 @@ water.update(7, 0, new T.PerspectiveCamera());
 water.update(8, 1, new T.PerspectiveCamera(), { rain: 1, sun: new T.Vector3(1, 1, 1), moon: new T.Vector3(160, 320, -200) });
 // The moon's glint follows the moon the frame loop turns with the camera.
 assert.deepEqual(shader.uniforms.moonPosition.value.toArray(), [160, 320, -200], 'The sea takes the moon it is handed.');
-// Night: windows glow, lanterns light up, spotlights point down.
+// Night: windows glow pane by pane, lanterns light up, spotlights point down.
+const { windowClock, followWindows, WINDOW_RATE } = await load('glasgow-sun');
+const { windowLevel, windowGlow } = await load('city-materials');
 model.materialLibrary.setNight(1);
-let windows = 0;
+let windows = 0,
+  glassBatch;
 city.traverse((o) => {
-  // Lanterns carry their own glow, driven by the frame loop; windows share the library's glass.
+  // Lanterns carry their own glow, driven by the frame loop; windows share the library's glass,
+  // and each pane carries its own light in aWindow (normalised bytes, as batch() bakes them).
   if (o.isMesh && o.material.userData.surfaceKind === 'glass' && !lamps.includes(o)) {
     assert(o.material.emissiveIntensity > 0.5, 'Windows must light up at night.');
+    const a = o.geometry.attributes.aWindow;
+    assert(a && a.itemSize === 4 && a.normalized && a.array instanceof Uint8Array, 'A glass mesh without its panes\' night lights.');
+    glassBatch = o.material;
     windows++;
   }
 });
 assert(windows > 5);
+// The glass shader really reads them: a renamed chunk would drop the patch silently.
+{
+  const shader = { uniforms: {}, vertexShader: T.ShaderLib.standard.vertexShader, fragmentShader: T.ShaderLib.standard.fragmentShader };
+  glassBatch.onBeforeCompile(shader, null);
+  assert(shader.vertexShader.includes('attribute vec4 aWindow') && shader.vertexShader.includes('vWindow = on *'), 'The glass shader reads aWindow.');
+  assert(shader.fragmentShader.includes('totalEmissiveRadiance *= vWindow'), 'The glass shader lights each pane by its own light.');
+  assert(shader.uniforms.windowClock?.value?.isVector2, 'The glass shader follows the window clock.');
+}
+const panes = model.windows,
+  rooms = panes.filter((p) => ['home', 'civic', 'studio'].includes(p.role)),
+  at = (h) => windowClock(h),
+  lit = (list, h) => list.filter((p) => windowLevel(p.light, at(h)) > 0.1),
+  Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
+  todayGlow = new T.Color('#ffd29a');
+assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) => [p.place, p.light]), 'Every build lights the same panes.');
+// Evening: about half the rooms lit; the members' homes are lit late, and the studio works later.
+{
+  const evening = lit(rooms, 20).length / rooms.length;
+  assert(evening >= 0.35 && evening <= 0.65, `${Math.round(evening * 100)}% of the rooms are lit at 20:00.`);
+  // Most lit rooms are warm or today's glow; the pale cool white is an accent, not a grey board on every civic front.
+  const cool = lit(rooms, 20).filter((p) => Math.round(p.light[1] * 255) === 255).length;
+  assert(cool <= 0.15 * lit(rooms, 20).length, `${cool} of the ${lit(rooms, 20).length} rooms lit at 20:00 are cool.`);
+  for (const id of ['pengyuan-liu', 'yunlong-liu', 'qin-li'])
+    assert(lit(rooms.filter((p) => p.place === id), 23.5).length, `${id}'s home is dark at 23:30.`);
+  assert(lit(rooms.filter((p) => p.place === 'research-studio'), 1).length, 'The studio is dark at 01:00.');
+  // The archive's three north lights light one roof hall: one light, never three bands of different lamps.
+  assert.equal(rooms.filter((p) => p.place === 'city-archive' && p.at.y > 4).length, 1, 'The archive\'s north lights are not one light.');
+}
+// Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
+{
+  const role = (r) => panes.filter((p) => p.role === r);
+  assert.equal(role('dial').length, 4, 'Four clock dials.');
+  assert.equal(role('unlit').length, 1, 'One crane cab.');
+  for (const r of ['beacon', 'kiosk', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
+  for (let minute = 0; minute < 24 * 60; minute += 15) {
+    const clock = at(minute / 60);
+    assert(role('dial').every((p) => windowLevel(p.light, clock) === 1), `A clock dial is dark at minute ${minute}.`);
+    assert(['beacon', 'kiosk', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
+    assert(role('unlit').every((p) => windowLevel(p.light, clock) === 0), `The crane cab is lit at minute ${minute}.`);
+  }
+  // The dials are exactly today's glow; no pane is brighter (luminance x the night's 0.72).
+  for (const p of role('dial')) {
+    const c = windowGlow(p.light, at(20));
+    assert(['r', 'g', 'b'].every((k) => Math.abs(c[k] - todayGlow[k]) < 1e-4), 'A clock dial is not today\'s glow.');
+  }
+  // The four looks, each from its bytes: full warm, today's, cool and dim (and the studio's glass box,
+  // today's colour at 0.8 so it never reads as a lampshade). Every lit room is one of them.
+  const looks = [
+      ['full warm', 255, 0, 0.46],
+      ["today's", 255, 128, 0.5],
+      ['cool', 179, 255, 0.41],
+      ['dim', 115, 0, 0.21],
+      ['studio glass', 204, 128, 0.4],
+    ],
+    glowOf = (level, tint) => Y(windowGlow([level / 255, tint / 255, 1, 1], at(20))) * 0.72;
+  for (const [name, level, tint, want] of looks) assert(Math.abs(glowOf(level, tint) - want) < 0.01, `A ${name} pane glows at ${glowOf(level, tint).toFixed(3)}.`);
+  for (const p of lit(rooms, 20)) {
+    const bytes = p.light.slice(0, 2).map((v) => Math.round(v * 255)),
+      look = looks.find(([, level, tint]) => level === bytes[0] && tint === bytes[1]);
+    assert(look, `A lit pane at ${p.place} has no look of its own (${bytes}).`);
+    assert(Math.abs(Y(windowGlow(p.light, at(20))) * 0.72 - look[3]) < 0.01, `A ${look[0]} pane at ${p.place} glows off its look.`);
+  }
+}
 // The lighthouse beam swings over the sea at night, never across the island, and is not drawn by day.
 const beam = model.animated.find((e) => e.object.children[0]?.material?.uniforms?.strength);
 assert(beam, 'The lighthouse has a beam.');
@@ -703,6 +873,100 @@ assert.equal(lowSun(rad(-10)), 0);
       }
     }
 }
+// The windows' night clock: evening until 22:00, panes going out until 02:30, early risers from
+// 05:30 to 07:30, reset unseen at noon. The follower only moves forward in the dark, holds through
+// twilight and the autumn clock change, and copies the clock by day and at the noon reset.
+{
+  for (const h of [21.9, 12, 17.5]) assert.deepEqual(windowClock(h), { out: 0, wake: 0 }, `The windows' night has begun at ${h}.`);
+  assert.equal(windowClock(2.5).out, 1, 'Every pane that goes out is out by 02:30.');
+  assert.equal(windowClock(7.5).wake, 1, 'Every early riser is up by 07:30.');
+  const follow = (from, goal, night, dt, snap) => {
+    const state = { ...from };
+    followWindows(state, goal, night, dt, snap);
+    return state;
+  };
+  const early = { out: 0.1, wake: 0.1 },
+    ahead = { out: 0.3, wake: 0.3 };
+  for (const snap of [false, true]) {
+    assert.deepEqual(follow(early, ahead, 0.6, 1, snap), early, 'No pane goes out at dusk.');
+    assert.deepEqual(follow({ out: 0.5, wake: 0 }, { out: 0.3, wake: 0 }, 1, 1, snap), { out: 0.5, wake: 0 }, 'The panes hold when the clocks go back.');
+  }
+  const moved = follow(early, ahead, 1, 1, false);
+  assert(Math.abs(moved.out - 0.1 - WINDOW_RATE) < 1e-12 && Math.abs(moved.wake - 0.1 - WINDOW_RATE) < 1e-12, 'The panes follow at WINDOW_RATE.');
+  assert.deepEqual(follow(early, ahead, 1, 1, true), ahead, 'Reduced motion jumps to the clock.');
+  assert.deepEqual(follow({ out: 0.5, wake: 0.2 }, { out: 0.3, wake: 0 }, 0.01, 1, false), { out: 0.3, wake: 0 }, 'By day the panes copy the clock.');
+  assert.deepEqual(follow({ out: 1, wake: 1 }, { out: 0, wake: 0 }, 1, 1, false), { out: 0, wake: 0 }, 'Manual night resets at noon.');
+}
+// Through the night (20:00 to 07:30 in 20 s steps): the rooms go out one at a time until 05:30 and
+// never come back on, then early risers come on one at a time; every pane rests fully on or off,
+// none outshines today's glow, and the clock always rests on its settle points.
+const outBytes = panes.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255),
+  wakeBytes = panes.map((p) => Math.round(p.light[3] * 255)).filter((b) => b < 255);
+assert.equal(new Set(outBytes).size, outBytes.length, 'Two panes go out together.');
+assert.equal(new Set(wakeBytes).size, wakeBytes.length, 'Two early risers come on together.');
+const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v) < 0.01);
+{
+  const dialY = Y(windowGlow(panes.find((p) => p.role === 'dial').light, at(20))),
+    evening = lit(rooms, 20).length,
+    settled = (v) => v === 0 || v === 1 || Math.abs(((v * 255) % 1) - 0.6) < 1e-6;
+  let before = evening,
+    late = -1;
+  for (let s = 0; s <= 11.5 * 180; s++) {
+    const h = (20 + s / 180) % 24,
+      clock = at(h),
+      count = lit(rooms, h).length;
+    assert(Math.abs(count - before) <= 1, `${Math.abs(count - before)} rooms switch at once at ${h.toFixed(3)}.`);
+    if (s >= 9.5 * 180) assert(count >= before, `A room goes out after 05:30 (${h.toFixed(3)}).`);
+    else assert(count <= before, `A room comes back on before 05:30 (${h.toFixed(3)}).`);
+    if (s === 6.5 * 180) late = count;
+    assert(settled(clock.out) && settled(clock.wake), `The window clock is between its rest points at ${h.toFixed(3)}.`);
+    for (const p of panes) {
+      assert(atRest(p, windowLevel(p.light, clock)), `A pane at ${p.place} rests part-way at ${h.toFixed(3)}.`);
+      assert(Y(windowGlow(p.light, clock)) <= dialY + 1e-6, `A pane at ${p.place} outshines today's glow at ${h.toFixed(3)}.`);
+    }
+    before = count;
+  }
+  assert(late >= 0.3 * evening && late <= 0.75 * evening, `${late} of the evening's ${evening} lit rooms are still lit at 02:30.`);
+}
+// The page's cadence from 20:00 to 07:30: the sky every 30 s, its clock a minute at a time, and
+// 1800 frames of the follower after each. Every pane rests fully on or off after each 30 s, and
+// each switch (a pane going out, or an early riser coming on) is a lamp switched, not a dimmer or
+// a pop: about 2 s between 10% and 90%, all within one 30 s. Bytes are unique, so per frame only the
+// pane whose off byte the clock is in and the one whose wake byte it is in can be mid-switch.
+{
+  const state = windowClock(20),
+    goingOut = new Map(panes.filter((p) => p.light[2] < 1).map((p) => [Math.round(p.light[2] * 255), p])),
+    waking = new Map(panes.filter((p) => p.light[3] < 1).map((p) => [Math.round(p.light[3] * 255), p])),
+    switches = new Map();
+  let call = 0;
+  for (let minute = 0; minute <= 690; minute++) {
+    const goal = windowClock(((1200 + minute) / 60) % 24);
+    for (let twice = 0; twice < 2; twice++, call++) {
+      for (let frame = 0; frame < 1800; frame++) {
+        followWindows(state, goal, 1, 1 / 60, false);
+        const out = Math.floor(state.out * 255),
+          wake = Math.floor(state.wake * 255);
+        for (const [key, p, of] of [
+          ['out ' + out, goingOut.get(out), (p) => windowLevel(p.light, state) / p.light[0]],
+          ['wake ' + wake, waking.get(wake), (p) => windowLevel(p.light, state) / 0.8],
+        ]) {
+          if (!p) continue;
+          const fraction = of(p);
+          if (fraction <= 0.1 || fraction >= 0.9) continue;
+          const seen = switches.get(key) ?? { frames: 0, calls: new Set() };
+          seen.frames++;
+          seen.calls.add(call);
+          switches.set(key, seen);
+        }
+      }
+      for (const p of panes) assert(atRest(p, windowLevel(p.light, state)), `A pane at ${p.place} rests part-way after call ${call}.`);
+    }
+  }
+  for (const key of [...[...goingOut.keys()].map((b) => 'out ' + b), ...[...waking.keys()].map((b) => 'wake ' + b)]) {
+    const seen = switches.get(key);
+    assert(seen && seen.frames >= 115 && seen.frames <= 128 && seen.calls.size === 1, `The pane at ${key} switches over ${seen?.frames ?? 0} frames in ${seen?.calls.size ?? 0} calls.`);
+  }
+}
 console.log(
-  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, lit windows at night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
 );

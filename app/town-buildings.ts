@@ -144,6 +144,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       const dial = new T.Mesh(new T.CircleGeometry(0.85, 24), material(palette.white, 'glass'));
       dial.position.set(0, 7.75, tw / 2 + 0.1);
       dial.userData.flatGlass = true; // an even cream face under the glass glint, not a window's gradient
+      dial.userData.window = 'dial'; // lit at exactly today's glow all night
       face.add(dial);
       for (let i = 0; i < 4; i++) {
         const a = (i * Math.PI) / 2;
@@ -203,7 +204,10 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     const aw = 3.4,
       ah = 4.0,
       ax = -1.1;
-    box(shell, ax, 2.35, 0, aw - 0.24, ah, d - 0.24, palette.studioGlass, 'glass').userData.paneSpan = true; // one gentle glint over both storeys
+    const glassBox = box(shell, ax, 2.35, 0, aw - 0.24, ah, d - 0.24, palette.studioGlass, 'glass');
+    glassBox.userData.paneSpan = true; // one gentle glint over both storeys
+    // The studio works late. One 3.2 x 4 sheet of glass at a window's full glow reads as a lampshade, so it keeps 0.8.
+    glassBox.userData.windowLit = 0.8;
     for (const sx of [-1, 1])
       for (const sz of [-1, 1]) box(shell, ax + sx * (aw / 2 - 0.11), 2.35, sz * (d / 2 - 0.11), 0.22, ah, 0.22, white, 'paint');
     // The front bands stop at the door surround (0.83 either side of it) instead of crossing the door.
@@ -297,7 +301,9 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       const t=new T.Mesh(new T.ExtrudeGeometry(s,{depth:Dr-2*rb,bevelEnabled:true,bevelThickness:rb,bevelSize:rb,bevelOffset:-rb,bevelSegments:1}),material(palette.slate,'slate'));
       t.position.set(0,y0,-Dr/2+rb); t.castShadow=t.receiveShadow=true; shell.add(t);
       t.userData.roof = true; t.userData.eaveY = y0; // a tooth's box drops to the cornice top: the eave bake measures from there
-      box(shell,x0+bw+0.035,y0+(f+R)/2+0.05,0,0.07,R-f-0.25,Dr-0.6,palette.glass,'glass'); // north light faces local +x (world +z, seen at overview)
+      // North light faces local +x (world +z, seen at overview). The three light one roof hall, so at night they are one
+      // light (windowGroup), never three bands of different lamps side by side.
+      box(shell,x0+bw+0.035,y0+(f+R)/2+0.05,0,0.07,R-f-0.25,Dr-0.6,palette.glass,'glass').userData.windowGroup = 'city-archive-north-lights';
       for(const mz of [-1,1]) box(shell,x0+bw+0.08,y0+(f+R)/2+0.05,mz*(Dr-0.6)/6,0.08,R-f-0.25,0.12,palette.metal,'iron');
       box(shell,x0+bw-0.09,y0+R+0.03,0,0.28,0.16,Dr+0.04,palette.slateLight,'slate'); }
     // A fat stack rising through the first tooth (roof at 4.41 there), with a blonde band and a metal cap.

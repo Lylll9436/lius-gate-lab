@@ -20,6 +20,8 @@ import {
   warmSun,
   glasgowSky,
   glasgowSeason,
+  windowClock,
+  followWindows,
 } from './city-atmosphere';
 import { animateResident } from './city-people';
 import {
@@ -63,8 +65,11 @@ export type CityAPI = {
   focusDistrict: (id: DistrictId | null) => void;
   focusPark: () => void;
   focusBuildings: (ids: BuildingId[]) => void;
-  /** Real sky: night amount 0..1 plus solar elevation/azimuth in radians. */
-  setSky: (sky: { night: number; elevation: number; azimuth: number }) => void;
+  /**
+   * Real sky: night amount 0..1 plus solar elevation/azimuth in radians, and `hours`, the
+   * Glasgow wall-clock hours, which the windows follow; 20:00 if omitted.
+   */
+  setSky: (sky: { night: number; elevation: number; azimuth: number; hours?: number }) => void;
   setRain: (v: boolean) => void;
   /** Slow idle camera drift while nobody is touching the city. */
   setDrift: (v: boolean) => void;
@@ -552,7 +557,14 @@ export async function createCity(
     lastGovern = 0,
     clockChecked = -1e9,
     hoverSignature = '',
-    frameIndex = 0;
+    frameIndex = 0,
+    skyHours = 20,
+    paneHours = 20;
+  // The windows' night: the clock the panes are heading for (from the sky's hours) and the one
+  // they show, which follows it one pane at a time and only in the dark (glasgow-sun's followWindows).
+  // paneHours is the sky's hours at the last frame, when the panes last followed the clock.
+  const paneClock = { out: 0, wake: 0 },
+    paneGoal = { out: 0, wake: 0 };
   // Colours used every frame, allocated once.
   const tint = {
     sunDay: new T.Color('#ffe3bd'),
@@ -1118,6 +1130,9 @@ export async function createCity(
     shownZoom = camera.zoom;
     night = T.MathUtils.lerp(night, targetNight, reduced ? 1 : blend * 0.45);
     model.materialLibrary.setNight(night);
+    followWindows(paneClock, paneGoal, night, dt, reduced);
+    paneHours = skyHours;
+    model.materialLibrary.setWindows(paneClock.out, paneClock.wake);
     lighting.update(night, !!inspect);
     sky.intensity = T.MathUtils.lerp(0.85, 0.3, night);
     sun.intensity = T.MathUtils.lerp(3.8, 0.45, night);
@@ -1428,11 +1443,20 @@ export async function createCity(
     setNight(v) {
       targetNight = v ? 1 : 0;
     },
-    setSky({ night: amount, elevation, azimuth }) {
+    setSky({ night: amount, elevation, azimuth, hours = 20 }) {
       targetNight = T.MathUtils.clamp(amount, 0, 1);
       targetSunOffset.copy(sunOffsetFor(elevation, azimuth));
       targetWarmth = warmSun(elevation);
       targetGolden = lowSun(elevation);
+      // A jump of more than two hours puts the panes straight where the clock is; otherwise they
+      // follow it pane by pane. It is a jump from the last sky (sleep, a debug shot; never the
+      // clocks changing) or from the last frame: a hidden tab or a town scrolled out of view runs
+      // no frames while the page still sends the sky every half minute, minute by minute.
+      const gap = (from: number) => Math.abs(((hours - from + 36) % 24) - 12) > 2;
+      const jump = gap(skyHours) || gap(paneHours);
+      skyHours = hours;
+      Object.assign(paneGoal, windowClock(hours));
+      if (!skyKnown || jump) Object.assign(paneClock, paneGoal);
       // The first sky arrives before the first frame: no flash of noon at midnight.
       if (!skyKnown) {
         skyKnown = true;
@@ -1578,7 +1602,7 @@ export async function createCity(
       model,
       api,
       frameCost: () => frameCost,
-      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain }),
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock } }),
       /** Advance n frames of ~16.7 ms, updating and rendering regardless of visibility. */
       tick(frames = 1) {
         let t = last || performance.now();

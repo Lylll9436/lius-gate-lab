@@ -22,6 +22,7 @@ for (const name of [
   'city-water',
   'lab-navigation',
   'people-photos',
+  'glasgow-sun',
 ]) {
   const source = await fs.readFile(
     path.join(root, 'app', name + '.ts'),
@@ -633,6 +634,68 @@ const drawsFrame = (skyKnown) =>
   );
 assert.equal(drawsFrame(false), undefined, 'A frame was drawn before the first sky.');
 assert.equal(drawsFrame(true), true, 'Frames are drawn once the sky is known.');
+// The windows' clock: a jump of more than two hours puts the panes on the clock at once, measured from
+// the last sky and from the last frame. A hidden tab or a town scrolled out of view runs no frames
+// while the page keeps sending the sky minute by minute, so back after four hours the panes must be
+// on the clock, not four hours behind and going out one by one for twenty minutes.
+let setSkySource;
+function findSetSky(node) {
+  if (ts.isMethodDeclaration(node) && node.name.getText(syntax) === 'setSky') setSkySource = node.getText(syntax);
+  ts.forEachChild(node, findSetSky);
+}
+findSetSky(syntax);
+assert(setSkySource, 'The window clock check must find setSky.');
+assert(/followWindows\(paneClock, paneGoal, night, dt, reduced\);\s*paneHours = skyHours;/.test(source), 'Each frame must note the hours the panes followed.');
+{
+  const { windowClock } = await import(pathToFileURL(path.join(output, 'glasgow-sun.mjs')).href);
+  const scene = {
+      T,
+      Math,
+      Object,
+      windowClock,
+      sunOffsetFor: () => new T.Vector3(),
+      warmSun: () => 0,
+      lowSun: () => 0,
+      placeSun() {},
+      targetSunOffset: new T.Vector3(),
+      sunOffset: new T.Vector3(),
+      skyKnown: false,
+      skyHours: 20,
+      paneHours: 20,
+      paneClock: { out: 0, wake: 0 },
+      paneGoal: { out: 0, wake: 0 },
+    },
+    api = runInNewContext(
+      `${ts.transpileModule(`const api = { ${setSkySource} };`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};api;`,
+      scene,
+    ),
+    sky = (hours) => api.setSky({ night: 1, elevation: -0.3, azimuth: 0, hours: ((hours % 24) + 24) % 24 }),
+    frame = () => (scene.paneHours = scene.skyHours), // the frame loop, after followWindows
+    start = (h) => {
+      sky(h + 12);
+      sky(h);
+      frame();
+    },
+    minutes = (from, count, frames) => {
+      for (let m = 1; m <= count; m++) {
+        sky(from + m / 60);
+        if (frames) frame();
+      }
+    };
+  start(21);
+  assert.deepEqual(scene.paneClock, windowClock(21), 'A debug start puts the panes on the clock.');
+  minutes(21, 240, false);
+  assert.deepEqual(scene.paneClock, windowClock(1), 'Back after four hours without frames, the windows are not on the clock.');
+  start(23);
+  minutes(23, 90, false);
+  assert.deepEqual(scene.paneClock, windowClock(23), 'After 90 minutes without frames the windows must catch up one by one.');
+  start(22);
+  minutes(22, 240, true);
+  assert.deepEqual(scene.paneClock, windowClock(22), 'A visible town never jumps its windows.');
+  start(1.9);
+  sky(1);
+  assert.deepEqual(scene.paneClock, windowClock(1.9), 'The windows jump when the clocks go back.');
+}
 // The moon turns with the camera, as the key light does: at every bearing (the four rotate stops
 // included, with the idle drift either way) the sea's mirror direction stays as far from the moon
 // as at the opening view, so its sharp glint lobe never spreads across the water as static.
@@ -924,5 +987,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
