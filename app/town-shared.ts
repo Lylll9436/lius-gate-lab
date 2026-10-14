@@ -1,6 +1,8 @@
 import * as T from 'three';
+import type { createCityMaterials } from './city-materials';
 import * as plan from './town-plan';
 import type { XZ } from './town-plan';
+import type { Season } from './glasgow-sun';
 
 /* ------------------------------------------------------------------ */
 /* Palette, noise and layout shared by the town modules                */
@@ -93,3 +95,13 @@ export const paddockRuns = (): (readonly [number, number, number, number])[] => 
 };
 
 export const WATER = -0.028;
+
+export type TownContext = {
+  library: ReturnType<typeof createCityMaterials>;
+  material: ReturnType<typeof createCityMaterials>['material'];
+  season: Season;
+  land: T.Group;
+  lamps: T.Mesh[];
+  clocks: { hour: T.Object3D; minute: T.Object3D }[];
+  animated: { object: T.Object3D; update: (time: number, night: number) => void }[];
+};

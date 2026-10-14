@@ -5,7 +5,6 @@ import {
   createCityMaterials,
   GROUND_HEIGHT_RANGE,
   GROUND_KINDS,
-  METAL_KINDS,
   projectMaterialUV,
   type SurfaceKind,
 } from './city-materials';
@@ -30,7 +29,9 @@ import {
   hoardingWalls,
   paddockRuns,
   WATER,
+  type TownContext,
 } from './town-shared';
+import { createKit } from './town-kit';
 export { palette } from './town-shared';
 
 /**
@@ -48,12 +49,6 @@ export type Model = {
   hit?: T.Mesh;
 };
 export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: number };
-/** A roof's finish follows its colour: verdigris copper, glazed pantile, otherwise satin slate. */
-function roofKind(colour: string): SurfaceKind {
-  if (colour === palette.copper || colour === palette.copperLight) return 'copper';
-  if (colour === palette.pantile || colour === palette.pantileLight) return 'pantile';
-  return 'slate';
-}
 
 /**
  * The balloon's beat: a ring centred on the island, out over the shore and the sea, so it stays
@@ -69,22 +64,6 @@ export const BALLOON = { radius: 32, middle: 3.8, reach: 1.35, rate: 0.016 };
 type Point = [number, number, number];
 /** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
 const BAKE_RANGE = 4;
-const unitBox = new T.BoxGeometry(1, 1, 1);
-/**
- * Soft, rendered-object edges: every box thicker than a slab gets a small rounded edge,
- * so the environment light draws a highlight along it instead of a hard pixel step.
- * Geometries are shared per size; batching bakes them into the merged meshes anyway.
- */
-const roundedBoxes = new Map<string, RoundedBoxGeometry>();
-function roundedBox(w: number, h: number, d: number, radius: number, segments: number) {
-  const key = [w, h, d, radius, segments].map((n) => n.toFixed(4)).join('|');
-  let geometry = roundedBoxes.get(key);
-  if (!geometry) {
-    geometry = new RoundedBoxGeometry(w, h, d, segments, radius);
-    roundedBoxes.set(key, geometry);
-  }
-  return geometry;
-}
 
 /* ------------------------------------------------------------------ */
 /* Planting kit: baked two-tone ramps for trees, hedges and beds       */
@@ -361,309 +340,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const lamps: T.Mesh[] = [],
     clocks: { hour: T.Object3D; minute: T.Object3D }[] = [],
     animated: { object: T.Object3D; update: (time: number, night: number) => void }[] = [];
-
-  /* ---------------------------------------------------------------- */
-  /* Primitives                                                        */
-  /* ---------------------------------------------------------------- */
-  function box(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    w: number,
-    h: number,
-    d: number,
-    color: string,
-    kind?: SurfaceKind,
-    opts: { bevel?: number; segments?: number; taper?: number; ry?: number; rx?: number; rz?: number } = {},
-  ) {
-    const mat = material(color, kind);
-    const thinnest = Math.min(w, h, d);
-    // Clash bevel: r = clamp(0.2*thinnest, 0.03, 0.12), x0.6 on iron and brass; plates under 0.1 stay sharp.
-    // An explicit bevel overrides the automatic one ({ bevel: 0 } is sharp); under 0.06 is always sharp.
-    const auto =
-      thinnest >= 0.1
-        ? T.MathUtils.clamp(0.2 * thinnest, 0.03, 0.12) * (METAL_KINDS.has(mat.userData.surfaceKind) ? 0.6 : 1)
-        : 0;
-    const radius = thinnest < 0.06 ? 0 : Math.min(opts.bevel ?? auto, thinnest * 0.45);
-    let geometry: T.BufferGeometry = radius > 0 ? roundedBox(w, h, d, radius, opts.segments ?? 1) : unitBox;
-    if (opts.taper && radius > 0) { // battered plinths: top ring pulled in by `taper`
-      geometry = geometry.clone();
-      const p = geometry.getAttribute('position');
-      for (let i = 0; i < p.count; i++) {
-        const t = p.getY(i) / h + 0.5;
-        p.setX(i, p.getX(i) * (1 - (2 * opts.taper * t) / w));
-        p.setZ(i, p.getZ(i) * (1 - (2 * opts.taper * t) / d));
-      }
-    }
-    const m = new T.Mesh(geometry, mat);
-    m.position.set(x, y, z);
-    if (radius <= 0) m.scale.set(w, h, d);
-    if (opts.ry) m.rotation.y = opts.ry;
-    if (opts.rx) m.rotation.x = opts.rx;
-    if (opts.rz) m.rotation.z = opts.rz;
-    m.castShadow = m.receiveShadow = true;
-    g.add(m);
-    return m;
-  }
-  function cylinder(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    rTop: number,
-    rBottom: number,
-    h: number,
-    color: string,
-    kind?: SurfaceKind,
-    sides = 12,
-  ) {
-    // Thin posts and pivots need far fewer sides than towers and tanks.
-    const rr = Math.max(rTop, rBottom);
-    const smooth = sides < 5 ? sides : rr < 0.06 ? 8 : rr < 0.2 ? 12 : Math.max(sides, 18);
-    const m = new T.Mesh(new T.CylinderGeometry(rTop, rBottom, h, smooth), material(color, kind));
-    m.position.set(x, y, z);
-    m.castShadow = m.receiveShadow = true;
-    g.add(m);
-    return m;
-  }
-  /** A round rod of radius r from a to b (ropes, stays). */
-  function strut(g: T.Object3D, a: T.Vector3, b: T.Vector3, r: number, colour: string, kind: SurfaceKind) {
-    const d = b.clone().sub(a),
-      m = cylinder(g, 0, 0, 0, r, r, d.length(), colour, kind, 8);
-    m.position.copy(a).addScaledVector(d, 0.5);
-    m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
-    return m;
-  }
-  function cone(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    r: number,
-    h: number,
-    color: string,
-    kind?: SurfaceKind,
-    sides = 4,
-    ry = Math.PI / 4,
-  ) {
-    const smooth = sides < 5 ? sides : r < 0.2 ? 12 : Math.max(sides, 18);
-    let geo: T.BufferGeometry = new T.ConeGeometry(r, h, smooth);
-    if (smooth <= 6) { geo = geo.toNonIndexed(); geo.computeVertexNormals(); } // flat pyramid facets
-    const m = new T.Mesh(geo, material(color, kind));
-    m.position.set(x, y, z);
-    m.rotation.y = ry;
-    m.castShadow = m.receiveShadow = true;
-    g.add(m);
-    return m;
-  }
-  function sphere(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    r: number,
-    color: string,
-    kind?: SurfaceKind,
-    segments = 12,
-  ) {
-    // Small spheres (flowers, hubs, finials) become icosahedra with smooth normals.
-    const s = Math.max(segments, 18);
-    const geo =
-      r < 0.16
-        ? new T.IcosahedronGeometry(r, 1)
-        : r < 0.3
-          ? new T.IcosahedronGeometry(r, 2)
-          : new T.SphereGeometry(r, s, Math.round(s * 0.7));
-    const m = new T.Mesh(geo, material(color, kind));
-    m.position.set(x, y, z);
-    m.castShadow = m.receiveShadow = true;
-    g.add(m);
-    return m;
-  }
-  /** A boat hull plan in shape space: a rounded bow at -y (local +z after rotateX(-PI/2)), a square stern. */
-  function hullShape(hw: number, bow: number, stern: number) {
-    const s = new T.Shape(), q = Math.min(0.45, stern * 0.4);
-    s.moveTo(-hw * 0.82, stern); s.lineTo(hw * 0.82, stern); s.quadraticCurveTo(hw, stern, hw, stern - q); s.lineTo(hw, -bow * 0.15);
-    s.quadraticCurveTo(hw * 0.96, -bow * 0.8, 0, -bow); s.quadraticCurveTo(-hw * 0.96, -bow * 0.8, -hw, -bow * 0.15); s.lineTo(-hw, stern - q); s.quadraticCurveTo(-hw, stern, -hw * 0.82, stern);
-    return s;
-  }
-  /** A bevelled hull solid: spans y0 .. y0+depth+2*bevel, half-width hw+bevel, bow towards local +z. */
-  function hullSolid(g: T.Object3D, hw: number, bow: number, stern: number, y0: number, depth: number, bevel: number, colour: string, kind: SurfaceKind) {
-    const geo = new T.ExtrudeGeometry(hullShape(hw, bow, stern), { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 6 });
-    geo.rotateX(-Math.PI / 2).translate(0, y0 + bevel, 0);
-    const m = new T.Mesh(geo, material(colour, kind)); m.castShadow = m.receiveShadow = true; g.add(m); return m;
-  }
-  /**
-   * A pitched roof along the local x axis: a pentagon profile with a short fascia at the eaves,
-   * bevelled ends and a fat ridge cap. For small roofs (hut, dormers); buildings use slabRoof.
-   */
-  function pitchedRoof(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    w: number,
-    d: number,
-    rise: number,
-    color = palette.slate,
-    opts: { ridge?: boolean; ridgeColor?: string } = {},
-  ) {
-    const f = Math.min(0.16, 0.3 * rise),
-      b = 0.03;
-    const shape = new T.Shape();
-    shape.moveTo(-d / 2, 0);
-    shape.lineTo(d / 2, 0);
-    shape.lineTo(d / 2, f);
-    shape.lineTo(0, rise);
-    shape.lineTo(-d / 2, f);
-    shape.closePath();
-    const mesh = new T.Mesh(
-      new T.ExtrudeGeometry(shape, {
-        depth: w - 2 * b,
-        bevelEnabled: true,
-        bevelThickness: b,
-        bevelSize: b,
-        bevelOffset: -b,
-        bevelSegments: 1,
-      }),
-      material(color, roofKind(color)),
-    );
-    mesh.rotation.y = Math.PI / 2;
-    mesh.position.set(x - w / 2 + b, y, z);
-    mesh.castShadow = mesh.receiveShadow = true;
-    // An overhang for the eave bake, measured from the wall plate.
-    mesh.userData.roof = true;
-    mesh.userData.eaveY = y;
-    g.add(mesh);
-    const ridge = opts.ridgeColor ?? palette.slateLight;
-    if (opts.ridge !== false) box(g, x, y + rise - 0.01, z, w + 0.04, 0.12, 0.2, ridge, roofKind(ridge));
-    return mesh;
-  }
-  /** Two rounded 0.2 slabs on the plate edges (+-d/2 at y), eave/verge overhang, 0.16x0.26 ridge, stone gables tucked under. Ridge along x. Returns ridge top. */
-  function slabRoof(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, rise: number, color: string, opts: { eave?: number; verge?: number; thick?: number; ridge?: string; gable?: string; inset?: number } = {}) {
-    const e = opts.eave ?? 0.4, v = opts.verge ?? 0.25, t = opts.thick ?? 0.2, half = d / 2;
-    const a = Math.atan2(rise, half), s = Math.sin(a), c = Math.cos(a);
-    const len = (half + e + t * s) / c, zc = (half + e) / 2;
-    const yc = y + rise - ((half + e - t * s) / 2) * Math.tan(a) + (c * t) / 2;
-    for (const side of [-1, 1]) {
-      const plate = box(g, x, yc, z + side * zc, w + 2 * v, t, len, color, roofKind(color), { rx: side * a });
-      // A sloped slab's box drops below the wall top, so it says where its eave is (Step 5 bake).
-      plate.userData.roof = true;
-      plate.userData.eaveY = y;
-    }
-    const top = y + rise + t / c;
-    const ridge = opts.ridge ?? palette.slateLight;
-    box(g, x, top - 0.03, z, w + 2 * v + 0.06, 0.16, 0.26, ridge, roofKind(ridge));
-    if (opts.gable) {
-      const inner = half - (opts.inset ?? 0.15), k = (half - inner) * Math.tan(a) - 0.02;
-      const sh = new T.Shape(); sh.moveTo(-inner, 0); sh.lineTo(inner, 0);
-      if (k > 0.01) sh.lineTo(inner, k); sh.lineTo(0, rise - 0.02); if (k > 0.01) sh.lineTo(-inner, k); sh.closePath();
-      const geo = new T.ExtrudeGeometry(sh, { depth: 0.16, bevelEnabled: false });
-      for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, 'stone')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
-    }
-    return top;
-  }
-  /**
-   * A bevelled frame ring, extruded `deep` out of the wall face at z: rectangular or arched,
-   * closed (a window) or open at the foot (an arched doorway). Returns the ring outline maker.
-   */
-  function frameRing(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    w: number,
-    h: number,
-    f: number,
-    deep: number,
-    color: string,
-    kind: SurfaceKind,
-    arched = false,
-    open = false,
-  ) {
-    const r=w/2, s=new T.Shape();
-    const ring=(grow:number)=>{ const p=new T.Shape(); p.moveTo(-r-grow,-h/2-grow); p.lineTo(r+grow,-h/2-grow); if(arched){p.lineTo(r+grow,h/2); p.absarc(0,h/2,r+grow,0,Math.PI,false);} else {p.lineTo(r+grow,h/2+grow); p.lineTo(-r-grow,h/2+grow);} p.closePath(); return p; };
-    let outline=s;
-    if(open){ s.moveTo(-r-f,-h/2); s.lineTo(-r,-h/2); s.lineTo(-r,h/2); if(arched) s.absarc(0,h/2,r,Math.PI,0,true); else s.lineTo(r,h/2); s.lineTo(r,-h/2); s.lineTo(r+f,-h/2); if(arched){ s.lineTo(r+f,h/2); s.absarc(0,h/2,r+f,0,Math.PI,false);} else { s.lineTo(r+f,h/2+f); s.lineTo(-r-f,h/2+f);} s.closePath(); }
-    else { outline=ring(f); outline.holes.push(ring(0)); }
-    const b=0.02, m=new T.Mesh(new T.ExtrudeGeometry(outline,{depth:deep-2*b,bevelEnabled:true,bevelThickness:b,bevelSize:b,bevelOffset:-b,bevelSegments:1,curveSegments:8}),material(color,kind));
-    m.position.set(x,y,z+b); m.castShadow=m.receiveShadow=true; g.add(m); return ring;
-  }
-  /**
-   * A window: one chunky bevelled frame proud of the wall face at z, glass recessed 0.1 behind
-   * the frame face, a chunky sill and lintel (a keystone on arched ones). Faces local +z.
-   * `bars` is accepted for old callers and ignored: no glazing bars.
-   */
-  function windowAt(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    w: number,
-    h: number,
-    opts: { arched?: boolean; frame?: string; dress?: string; sill?: boolean; lintel?: boolean; mullion?: boolean; glass?: string; bars?: number } = {},
-  ) {
-    const f=0.11, r=w/2, frame=opts.frame??palette.trim, dress=opts.dress??palette.trim;
-    const frameKind: SurfaceKind = frame === palette.metal ? 'iron' : 'paint'; // cream and dressed frames stay matte
-    const ring=frameRing(g,x,y,z,w,h,f,0.16,frame,frameKind,opts.arched);
-    const glass=new T.Mesh(new T.ShapeGeometry(ring(0.01),8),material(opts.glass??palette.glass,'glass'));
-    glass.position.set(x,y,z+0.06); g.add(glass); // 0.1 behind the frame face
-    if(opts.mullion) box(g,x,y,z+0.08,0.08,h,0.06,frame,frameKind);
-    if(opts.sill!==false) box(g,x,y-h/2-f-0.05,z+0.11,w+2*f+0.16,0.1,0.22,dress,'stone');
-    if(opts.lintel!==false){ if(opts.arched) box(g,x,y+h/2+r+f+0.1,z+0.1,0.24,0.32,0.2,dress,'stone'); else box(g,x,y+h/2+f+0.09,z+0.09,w+2*f+0.2,0.18,0.18,dress,'stone'); }
-  }
-  /**
-   * A door on the wall face at z: one enamelled leaf with a raised rim (the centre reads recessed),
-   * a round brass knob, a 0.18 stone surround and, when the sill y is above the ground, nested 0.14
-   * risers that stand on y=0. `fanlight` is accepted for old callers and ignored; `arched` is the
-   * arched variant.
-   */
-  function door(
-    g: T.Object3D,
-    x: number,
-    y: number,
-    z: number,
-    w: number,
-    h: number,
-    color: string,
-    opts: { arched?: boolean; fanlight?: boolean; surround?: string; width?: number; landing?: number; steps?: boolean | number } = {},
-  ) {
-    const s=opts.surround??palette.trim, f=0.18;
-    box(g,x,y+h/2,z+0.05,w,h,0.1,color,'enamel');
-    for(const sx of [-1,1]) box(g,x+sx*(w/2-0.08),y+h/2,z+0.12,0.16,h,0.04,color,'enamel');
-    for(const ry of [0.08,h-0.08]) box(g,x,y+ry,z+0.12,w-0.32,0.16,0.04,color,'enamel'); // centre reads 0.04 recessed
-    sphere(g,x+w*0.3,y+h*0.5,z+0.17,0.05,palette.brass,'brass'); // round, so it can carry a highlight
-    if(opts.arched){ const fan=new T.Shape(); fan.absarc(0,0,w/2,0,Math.PI,false); fan.closePath();
-      const gl=new T.Mesh(new T.ShapeGeometry(fan,8),material(palette.glass,'glass')); gl.position.set(x,y+h,z+0.06); g.add(gl);
-      frameRing(g,x,y+h/2,z,w,h,0.2,0.24,s,'stone',true,true); box(g,x,y+h+w/2+0.2,z+0.12,0.28,0.36,0.24,s,'stone'); }
-    else { for(const sx of [-1,1]) box(g,x+sx*(w/2+f/2),y+(h+f)/2,z+0.1,f,h+f,0.2,s,'stone'); box(g,x,y+h+0.11,z+0.12,w+2*f+0.16,0.22,0.24,s,'stone'); }
-    if(opts.steps===false) return;
-    const landing=opts.landing??0, n=y>0.05?Math.max(1,Math.round(y/0.14)):0;
-    for(let i=landing>0?1:0;i<n;i++){ const tread=y-(i*y)/n, front=landing+(landing>0?i:i+1)*0.3;
-      box(g,x,tread/2,z+(front-0.05)/2,(opts.width??w+0.5)+i*0.08,tread,front+0.05,palette.plinth,'stone'); }
-  }
-  /**
-   * Corner quoins from y0 to y1: 0.45-tall blocks alternating long and short by index, tucked into
-   * the wall corner so only 0.06 stands proud. `front` caps the block length on the front face;
-   * `corners: 'front'` dresses the two front corners only.
-   */
-  function quoins(g: T.Object3D, w: number, d: number, y0: number, y1: number, color: string, opts: { front?: number; corners?: 'all' | 'front' } = {}) {
-    const proud=0.06, tall=0.45, n=Math.max(2,Math.floor((y1-y0+0.07)/(tall+0.07))), step=(y1-y0-tall)/(n-1);
-    for(const sx of [-1,1]) for(const sz of opts.corners==='front'?[1]:[-1,1]) for(let i=0;i<n;i++){
-      const long=i%2===0, lx=Math.min(long?0.45:0.3,opts.front??0.45), lz=long?0.3:0.45;
-      box(g,sx*(w/2+proud-lx/2),y0+tall/2+i*step,sz*(d/2+proud-lz/2),lx,tall,lz,color,'stone'); }
-  }
-  /** A battered, grounded base (6 degree batter) w x d plus `proud` all round, with an optional rusticated block row. Returns its height. */
-  function plinth(g: T.Object3D, w: number, d: number, color: string, opts: { x?: number; z?: number; height?: number; proud?: number; blocks?: boolean } = {}) {
-    const ph=opts.height??0.42, p=opts.proud??0.25, x=opts.x??0, z=opts.z??0;
-    box(g,x,ph/2,z,w+2*p,ph,d+2*p,color,'stone',{taper:ph*0.105}); // 6 degree batter
-    if(opts.blocks){ const run=w+2*p-0.1, n=Math.max(2,Math.round(run/0.65)), len=run/n;
-      for(const sz of [-1,1]) for(let i=0;i<n;i++) box(g,x-run/2+len*(i+0.5),ph*0.42,z+sz*(d/2+p-0.02),len-0.05,ph*0.72,0.12,i%2?color:'#b89c6c','stone'); }
-    return ph;
-  }
-  /** A fat chimney stack from y0 to top with a cap and `pots` pantile pots. */
-  function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'stone'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'pantile',18); }
+  const ctx: TownContext = { library, material, season, land, lamps, clocks, animated };
+  const kit = createKit(ctx);
+  const { box, cylinder, strut, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, windowAt, door, quoins, plinth, chimney, lampGlass, groundY } = kit;
 
   /* ---------------------------------------------------------------- */
   /* Terrain                                                           */
@@ -1199,16 +878,6 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     box(b, 0, 0.42, 0.02, 1.3, 0.1, 0.46, palette.wood, 'wood');      // seat slab, 108
     box(b, 0, 0.7, -0.19, 1.3, 0.26, 0.1, palette.wood, 'wood');      // back board, 108
     return b;
-  }
-  /**
-   * Glass for a lamp, which the frame loop lights at night. Lamps are never batched, so they miss
-   * the glass spec patch; frosted, a globe shows one soft highlight instead of pinpoint specks.
-   */
-  function lampGlass() {
-    const glass = material(palette.lantern, 'glass').clone();
-    glass.emissive.set(palette.lantern);
-    glass.roughness = 0.3;
-    return glass;
   }
   // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
   const lanternGlass = lampGlass();
@@ -2426,15 +2095,6 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   /* ---------------------------------------------------------------- */
   /* Scottish touches                                                  */
   /* ---------------------------------------------------------------- */
-  const groundRay = new T.Raycaster(),
-    down = new T.Vector3(0, -1, 0);
-  /** The built island ground's height at (x, z): its triangles, not the smooth terrainHeight they sample. */
-  function groundY(x: number, z: number) {
-    const ground = land.getObjectByName('island-ground');
-    groundRay.set(new T.Vector3(x, 10, z), down);
-    const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
-    return hit ? hit.point.y : plan.terrainHeight(x, z);
-  }
   /**
    * A heather drift: one low mat over the plan's tufts (their union gives its outline, a little
    * nibbled), heather green fading at its rim to the turf's own green, stippled with many small
