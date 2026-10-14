@@ -158,9 +158,11 @@ export function CityStage({
       aria-label={tr('Interactive city of Liu’s Gate', '刘家门的交互小城')}
     >
       <div ref={mount} className="world" />
-      {!ctl.ready && (
+      {/* While the town is built. If it cannot be, the pulse stops; in City mode the page's own
+          alert says so, since there is nothing below to read there. */}
+      {!ctl.ready && !(ctl.error && explore) && (
         <output className="stage-loading">
-          <span className="loading-dot" aria-hidden="true" />
+          {!ctl.error && <span className="loading-dot" aria-hidden="true" />}
           {ctl.error
             ? tr(
                 'The city could not load. Everything is still readable below.',
