@@ -45,7 +45,7 @@ export { BALLOON } from './town-movers';
  * - town-nature.ts: trees, hedges, beds, topiary, heather and thistles, and their seasons;
  * - town-props.ts: benches, lamps, the phone box, bins, the bandstand, the notice board, the
  *   crane, the picnic and the Wellington statue;
- * - town-harbour.ts: the pier, the harbour and the lighthouse;
+ * - town-harbour.ts: the pier, the harbour with its moorings and beach details, and the lighthouse;
  * - town-homes.ts: the three members' homes in their terrace row, and the cottages;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram and the boat;
