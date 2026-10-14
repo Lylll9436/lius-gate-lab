@@ -1,6 +1,8 @@
 import * as T from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as plan from './town-plan';
 import { palette, hash, WATER, type TownContext } from './town-shared';
+import { shoreHeight } from './town-ground';
 import type { Kit } from './town-kit';
 import type { Props } from './town-props';
 
@@ -114,6 +116,7 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       },
     });
     mooring(p, moor, pitch);
+    quay(g);
   }
   /**
    * The dinghy's lines and the boat's empty berth, pier-local. Each line runs from a fairlead
@@ -153,6 +156,77 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       head = new T.Vector3(bx, 0.36, bz),
       onEye = head.clone().addScaledVector(lift.clone().setY(0.36).sub(head).normalize(), 0.135);
     rope(p, [new T.Vector3(cx, 0.144, cz), ...coil, lift, onEye, head], palette.ropeBlue);
+  }
+  /**
+   * A Scottish creel, about 1.6x real like the crates: a D-shaped net body on a flat base, 0.46
+   * long (local z) x 0.34 wide x 0.285 tall, its netted ends in shade; three rubber-coated hoops
+   * stand 0.035 proud of the vault as ribs, and a white entrance ring sits in the +z end.
+   */
+  let creelBody: T.BufferGeometry | undefined;
+  function creel(g: T.Object3D, x: number, y: number, z: number, ry: number, net: string) {
+    if (!creelBody) {
+      const base = new T.BoxGeometry(0.34, 0.115, 0.44).translate(0, 0.0575, 0),
+        vault = new T.CylinderGeometry(0.17, 0.17, 0.44, 8, 1, false, Math.PI / 2, Math.PI).rotateX(Math.PI / 2).translate(0, 0.115, 0),
+        merged = mergeGeometries([base, vault])!,
+        n = merged.getAttribute('normal'),
+        tone = new Float32Array(n.count * 3);
+      for (let k = 0; k < n.count; k++) tone.fill(Math.abs(n.getZ(k)) > 0.9 ? 0.72 : n.getY(k) < 0.3 ? 0.9 : 1, k * 3, k * 3 + 3);
+      merged.setAttribute('color', new T.BufferAttribute(tone, 3));
+      creelBody = merged;
+    }
+    const c = new T.Group();
+    c.position.set(x, y, z);
+    c.rotation.y = ry;
+    g.add(c);
+    const body = new T.Mesh(creelBody, material(net, 'fabric'));
+    body.castShadow = body.receiveShadow = true;
+    c.add(body);
+    for (const hz of [-0.19, 0, 0.19]) {
+      // Paint, not iron: thin arcs keep iron's specular off them.
+      const hoop = new T.Mesh(new T.TorusGeometry(0.175, 0.035, 4, 6, Math.PI), material('#3a3f44', 'paint'));
+      hoop.position.set(0, 0.115, hz);
+      hoop.castShadow = hoop.receiveShadow = true;
+      c.add(hoop);
+    }
+    cylinder(c, 0, 0.17, 0.225, 0.07, 0.07, 0.03, palette.white, 'paint').rotation.x = Math.PI / 2;
+  }
+  /** A beach detail's root at shore coordinates (i, w), standing 0.01 into the sand. */
+  const onShore = (i: number, w: number) => {
+    const [x, z] = plan.shoreAt(i, w);
+    return new T.Vector3(x, shoreHeight(w) - 0.01, z);
+  };
+  /**
+   * The working quay on the hut side of the pier: a stack of five creels and one more beside it,
+   * two orange floats and a coil of rope on the dry sand, its end trailing toward the water.
+   */
+  function quay(g: T.Object3D) {
+    const S = plan.shoreProps,
+      [blue, green, orange] = palette.creel;
+    const stack = new T.Group();
+    stack.position.copy(onShore(S.creelStack.i, S.creelStack.w));
+    stack.rotation.y = plan.shoreTurn(S.creelStack.i); // local +z out to sea
+    g.add(stack);
+    // Two on the sand, two more each sunk 0.03 into a crown below, one on top across both.
+    const tiers: [number, number, number, number, string][] = [
+      [-0.2, 0, 0, 0, blue], [0.2, 0, 0.02, 0, green],
+      [-0.18, 0.255, 0.01, 0.05, orange], [0.21, 0.255, -0.02, -0.05, blue],
+      [0, 0.51, 0, 0.1, green],
+    ];
+    for (const [x, y, z, ry, net] of tiers) creel(stack, x, y, z, ry, net);
+    const lone = onShore(S.creel.i, S.creel.w);
+    creel(g, lone.x, lone.y, lone.z, plan.shoreTurn(S.creel.i) + S.creel.turn, blue);
+    for (const f of S.floats) {
+      const at = onShore(f.i, f.w);
+      sphere(g, at.x, at.y + 0.11, at.z, 0.12, palette.tramOrange, 'enamel'); // 0.02 into the sand
+    }
+    // A coil on the sand: the inner end rises out of the sand at its middle, and the outer end
+    // leaves the last turn heading out to sea and dives back in.
+    const c = onShore(S.coil.i, S.coil.w).setY(shoreHeight(S.coil.w)),
+      seaward = plan.shoreTurn(S.coil.i),
+      turns = coilPoints(c.x, c.y, c.z, 0.06, 0.19, 3, -seaward),
+      last = turns[turns.length - 1],
+      along = new T.Vector3(Math.sin(seaward), 0, Math.cos(seaward));
+    rope(g, [new T.Vector3(c.x, c.y - 0.055, c.z), ...turns, last.clone().addScaledVector(along, 0.12), last.clone().addScaledVector(along, 0.22).setY(c.y - 0.055)]);
   }
   function lighthouse(g: T.Object3D) {
     const [x, z] = plan.lighthouseRock;
