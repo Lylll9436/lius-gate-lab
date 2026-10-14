@@ -76,26 +76,49 @@ function specShader(m: T.MeshStandardMaterial, specU: SpecUniform) {
 }
 
 /**
+ * The glass glint. A pane is flat, and a flat face reflects one direction of the studio (seen
+ * from 42.6 degrees above, a window sees only the room's grey floor). So the pane's normal leans
+ * up the pane (.3 at its middle, .5 more per unit up, held within 0.6 of the middle) and turns a
+ * little across it: the reflection sweeps from the floor (low) up through the walls toward
+ * the softboxes (high), one band per pane, darker low and lighter high. The room is read at
+ * roughness .4 so the band stays soft instead of mirroring the room's edges.
+ * vPane is batch()'s pane coordinates: across the pane and up from its middle, in units.
+ * Only the studio reflection sees the lean (direct light keeps the flat pane and its 0.06
+ * roughness), so the sun and the plaza lanterns never strike a hard glint off the glass.
+ */
+const GLINT_PATCH = `{
+   vec3 flatNormal = geometryNormal;
+   vec3 upV = ( viewMatrix * vec4( 0., 1., 0., 0. ) ).xyz;
+   float tilt = .3 + .5 * clamp( vPane.y, -.6, .6 );
+   geometryNormal = normalize( geometryNormal + upV * tilt + vec3( .2 * clamp( vPane.x, -.5, .5 ), 0., 0. ) );
+   float sharp = material.roughness;
+   material.roughness = max( sharp, .4 );
+   ${SPEC_PATCH}
+   material.roughness = sharp;
+   geometryNormal = flatNormal;
+}`;
+
+/**
  * Contact and eave darkening, shaped per fragment from the two linear distances batch() bakes
  * into aBake (height above the ground, depth below an overhang; 0..1 over 4 units).
  * Linear values interpolate exactly across a face, so the bands stay crisp at any tessellation.
  * The kind's spec uniform scales its reflections; the shader text is the same for every kind,
- * so all standard solids share one program (and the clear-coated ones one more).
+ * so all standard solids share one program (and the clear-coated ones one more, glass one more).
  */
-function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform) {
+function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, glass = false) {
   m.onBeforeCompile = (shader) => {
     shader.uniforms.specBoost = specU;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aBake;\nvarying vec2 vBake;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * 4.;');
+      .replace('#include <common>', '#include <common>\nattribute vec2 aBake;\nvarying vec2 vBake;' + (glass ? '\nvarying vec2 vPane;' : ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * 4.;' + (glass ? '\nvPane = uv;' : ''));
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', SPEC_UNIFORM + '\nvarying vec2 vBake;')
+      .replace('#include <common>', SPEC_UNIFORM + '\nvarying vec2 vBake;' + (glass ? '\nvarying vec2 vPane;' : ''))
       .replace('#include <color_fragment>', `#include <color_fragment>
    float contact = mix(.55, 1., smoothstep(0., .7, vBake.x)) * mix(.82, 1., smoothstep(0., .08, vBake.x)); // guide's 0.45 foot band
    diffuseColor.rgb *= contact * mix(.7, 1., smoothstep(0., .45, vBake.y));`)
-      .replace('#include <lights_fragment_maps>', SPEC_PATCH);
+      .replace('#include <lights_fragment_maps>', glass ? GLINT_PATCH : SPEC_PATCH);
   };
-  m.customProgramCacheKey = () => 'lius-bake-solid';
+  m.customProgramCacheKey = () => (glass ? 'lius-bake-glass' : 'lius-bake-solid');
 }
 
 /** The ground masks' A channel stores terrain height over this range (units). */
@@ -262,7 +285,7 @@ export function createCityMaterials() {
    * A studio render, not a texture atlas: chalky matte clay for masonry, render and ground,
    * soft plastic foliage, satin roofs, and a few real finishes on small props only: dark
    * iron with a soft rim, muted brass, clear-coated enamel and glass. The room environment
-   * does the shading; `spec` scales only its reflections (studio 0.25 by day, so glass at 4
+   * does the shading; `spec` scales only its reflections (studio 0.25 by day, so a spec of 4
    * sees the room at full strength). Only meadows keep a broad colour drift.
    */
   const finish: Record<SurfaceKind, Finish> = {
@@ -280,7 +303,9 @@ export function createCityMaterials() {
     // Clear-coat lines on rounded edges and a soft sheen on tops; walls and top faces keep their
     // body colour (a stronger upward boost turns red tops salmon and a dome into a bauble).
     enamel: { roughness: 0.45, spec: 1.2, specFloor: 0.8, clearcoat: 1, clearcoatRoughness: 0.35 },
-    glass: { roughness: 0.06, spec: 4 },
+    // The glint's band (high) at twice the room, its floor (low) at half: windows read as glass
+    // by day, never as pale cards at overview. Night keeps the warm glow only.
+    glass: { roughness: 0.06, spec: 8, specFloor: 2 },
     foliage: { roughness: 0.8 }, // soft plastic; never a sheen (a pale rim round every tree)
     grass: { roughness: 0.95 },
     paving: { roughness: 0.92 },
@@ -360,7 +385,7 @@ export function createCityMaterials() {
       m.side = side;
       const kind = source.userData.surfaceKind as SurfaceKind;
       if (MASKED_GROUND.has(kind)) groundShader(m, kind, bakeUniforms);
-      else if (!GROUND_KINDS.has(kind)) bakeShader(m, specFor(kind));
+      else if (!GROUND_KINDS.has(kind)) bakeShader(m, specFor(kind), kind === 'glass');
       batches.set(key, m);
     }
     return batches.get(key)!;

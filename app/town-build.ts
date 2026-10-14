@@ -1861,7 +1861,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       const dial = new T.Mesh(new T.CylinderGeometry(0.85, 0.85, 0.06, 24), material(palette.white, 'glass'));
       dial.rotation.x = Math.PI / 2;
       dial.position.set(0, 7.75, tw / 2 + 0.07);
-      dial.userData.flatGlass = true; // an even cream face, not a window's gradient
+      dial.userData.flatGlass = true; // an even cream face under the glass glint, not a window's gradient
       face.add(dial);
       for (let i = 0; i < 4; i++) {
         const a = (i * Math.PI) / 2;
@@ -2294,6 +2294,24 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   /* ---------------------------------------------------------------- */
   /* Static batching by surface family                                 */
   /* ---------------------------------------------------------------- */
+  /**
+   * Pane coordinates for the glass glint, in units from the pane's middle: x across the face
+   * (to the right seen from outside, so every pane leans the same way on screen), y up. The
+   * middle is the whole opening's, so an arched pane's band runs over the arch too.
+   */
+  function paneUV(geometry: T.BufferGeometry, bounds: T.Box3) {
+    const p = geometry.getAttribute('position'),
+      n = geometry.getAttribute('normal'),
+      mid = bounds.getCenter(new T.Vector3()),
+      uv = new Float32Array(p.count * 2);
+    for (let i = 0; i < p.count; i++) {
+      // Across = up x normal; a face looking straight up or down has no across.
+      const ax = n.getZ(i), az = -n.getX(i), len = Math.hypot(ax, az);
+      uv[i * 2] = len > 0.1 ? ((p.getX(i) - mid.x) * ax + (p.getZ(i) - mid.z) * az) / len : 0;
+      uv[i * 2 + 1] = p.getY(i) - mid.y;
+    }
+    geometry.setAttribute('uv', new T.BufferAttribute(uv, 2));
+  }
   function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number } = {}) {
     const mode = opts.contact ?? 'terrain',
       localFloor = opts.localFloor ?? 0;
@@ -2360,6 +2378,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       const key = mat.uuid + (cast ? '|c' : '|n');
       if (source.userData.surfaceKind === 'grass') projectMaterialUV(geometry, 'grass');
       if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      if (k === 'glass') paneUV(geometry, bb);
       const count = geometry.getAttribute('position').count,
         previous = geometry.getAttribute('color'),
         positions = geometry.getAttribute('position'),
