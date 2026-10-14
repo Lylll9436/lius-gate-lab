@@ -1102,7 +1102,9 @@ export async function createCity(
   }
   /** One update and render. `force` runs it even in a hidden tab (debug ticking only). */
   function step(now: number, force: boolean) {
-    const dt = last ? Math.min((now - last) / 1000, 0.05) : 0;
+    // Never negative: the debug ticker runs the clock ahead of real frames, and a negative dt
+    // turns every ease into an exponential runaway (night grew past 1e18 and the town went black).
+    const dt = last ? T.MathUtils.clamp((now - last) / 1000, 0, 0.05) : 0;
     last = now;
     // Nothing is drawn before the first sky (the page sends it once the town is ready, a task
     // or two after the first frame may come): no daylit town flashing up at night.
