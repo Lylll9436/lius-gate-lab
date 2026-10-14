@@ -67,12 +67,13 @@ export const districts: {
     id: 'waterfront',
     name: { en: 'Harbour & park', zh: '港口与公园' },
     description: {
-      en: 'The brick archive, the corner park and the Highland cows’ paddock, the pier and the harbour boat.',
+      en: 'The brick archive, the corner park and the Highland cows, the pier and the harbour boat.',
       zh: '红砖档案馆、街角公园与高地牛的围栏、码头与港湾里的小船。',
     },
     color: '#58a6cc',
     // The south-west corner takes in the Highland paddock: its herd answers the pointer as the
-    // corner park, so Plan view tints it with the park.
+    // corner park, so Plan view tints it with the park. The English line keeps to three lines on
+    // the phone key's cards, as the others do: a fourth makes the whole row 16 px taller.
     outline: [
       [-14.6, 5.9],
       [12.8, 5.9],
