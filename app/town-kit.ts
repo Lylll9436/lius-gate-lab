@@ -370,19 +370,21 @@ export function createKit(ctx: TownContext) {
     });
   }
   /**
-   * A sash window on the face at z: a 0.08 painted frame `win.deep` proud (0.12), two panes (the
-   * upper sash 0.03 in front, on the outer track) and a meeting rail. `win.single` makes it one
-   * fixed light instead (a narrow cheek light): one pane, no rail, so a bay reads as glass rather
-   * than a lattice of small frames. Each pane is its own centred plane, never rotated or
-   * pre-merged, so batch() gives it pane-centred glint coordinates and its own upward gradient.
-   * Every pane carries `userData.windowGroup = win.group` (one light at night: the group's first
-   * pane, the lower one, draws it) and `sashPane`; `win.lit` adds `windowLit` (kept lit late).
+   * A sash window on the face at z: a slim 0.05 painted frame `win.deep` proud (0.08), two panes
+   * (the upper sash 0.02 in front, on the outer track) and a 0.05 meeting rail. `win.single` makes
+   * it one fixed light instead (a cheek light): one pane, no rail, so a bay reads as glass rather
+   * than a lattice of small frames. (Frames 0.08 wide and 0.12 deep hid half the glass of a narrow
+   * bay seen at an angle, which then read as stacked frames.) Each pane is its own centred plane,
+   * never rotated or pre-merged, so batch() gives it pane-centred glint coordinates and its own
+   * upward gradient. Every pane carries `userData.windowGroup = win.group` (one light at night: the
+   * group's first pane, the lower one, draws it) and `sashPane`; `win.lit` adds `windowLit` (kept
+   * lit late).
    */
   function sash(g: T.Object3D, x: number, y: number, z: number, w: number, h: number, frame: string,
     win: { group: string; lit?: boolean; single?: boolean; deep?: number }) {
-    const rail = 0.08, ph = win.single ? h : (h - rail) / 2;
-    frameRing(g, x, y, z, w, h, 0.08, win.deep ?? 0.12, frame, 'paint');
-    const panes: (readonly [number, number])[] = win.single ? [[0, 0.03]] : [[-1, 0.04], [1, 0.07]]; // lower pane first
+    const rail = 0.05, ph = win.single ? h : (h - rail) / 2;
+    frameRing(g, x, y, z, w, h, 0.05, win.deep ?? 0.08, frame, 'paint');
+    const panes: (readonly [number, number])[] = win.single ? [[0, 0.03]] : [[-1, 0.03], [1, 0.05]]; // lower pane first
     for (const [s, dz] of panes) {
       const pane = new T.Mesh(new T.PlaneGeometry(w + 0.02, ph + 0.01), material(palette.glass, 'glass'));
       pane.position.set(x, y + (s * (ph + rail)) / 2, z + dz);
@@ -391,7 +393,7 @@ export function createKit(ctx: TownContext) {
       if (win.lit) pane.userData.windowLit = true;
       g.add(pane);
     }
-    if (!win.single) box(g, x, y, z + 0.08, w + 0.02, rail, 0.05, frame, 'paint'); // 0.05 deep, so a sharp 12-triangle box
+    if (!win.single) box(g, x, y, z + 0.06, w + 0.02, rail, 0.04, frame, 'paint'); // 0.04 deep, so a sharp 12-triangle box
   }
   /** A piended bay roof: three facets to one apex on the wall, and a soffit (the shadow pass draws back faces). A bay cap. */
   function bayRoof(g: T.Object3D, b: Bay, yEave: number, rise: number, colour: string) {
