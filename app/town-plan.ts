@@ -545,7 +545,7 @@ export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] 
       spin = hash(i * 7 + 6) * Math.PI * 2;
     const wide = hash(i * 7 + 2) < 0.3,
       n = wide ? 12 : 6 + Math.floor(hash(i * 7 + 1) * 3),
-      spread = wide ? 0.55 : 0.3;
+      spread = wide ? 0.42 : 0.3;
     // A sunflower spiral of overlapping tufts, so the drift reads as one bumpy cushion.
     const lumps = Array.from({ length: n }, (_, k) => {
       const a = spin + k * 2.4 + 0.6 * hash(i * 7 + 5 + k),

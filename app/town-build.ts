@@ -189,13 +189,14 @@ function bakeRamp(m: T.Mesh, colour: string, bottom: number, top: number, tint =
 /**
  * Heather keeps its own season, like the trees: a muted mauve bloom in late summer, greyer as it
  * fades in autumn, plain green shoots in spring and a dull olive in winter, so the bare drifts
- * recede. `stem` is the dark heather green of the sides; `bloom` speckles the up-facing tops.
+ * recede. `stem` is a heather green a shade darker than the turf, so a drift's edge melts into
+ * the grass; `bloom` speckles the up-facing tops.
  */
 export function heatherLook(season: Season) {
-  if (season === 'spring') return { stem: '#5f7a3e', bloom: '#8e9a58' };
-  if (season === 'winter') return { stem: '#5c6a40', bloom: '#727050' };
-  if (season === 'autumn') return { stem: '#5a6c3c', bloom: '#937391' };
-  return { stem: '#586e3c', bloom: '#9a7499' };
+  if (season === 'spring') return { stem: '#6f8a46', bloom: '#8e9a58' };
+  if (season === 'winter') return { stem: '#66783f', bloom: '#7d7746' };
+  if (season === 'autumn') return { stem: '#6a7e46', bloom: '#937391' };
+  return { stem: '#68804a', bloom: '#9a7499' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -2205,9 +2206,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     ).normalize();
   }
   /**
-   * A heather drift: a low cushion of small, overlapping, knobbly tufts laid along the slope, dark
-   * heather green with the tops speckled in the season's bloom, so it reads as scrub and not as
-   * a pile of stones. No shadow.
+   * A heather drift: a low mat of small, overlapping, knobbly tufts laid along the slope and sunk
+   * to shallow caps, heather green with the tops speckled in the season's bloom, so it reads as
+   * scrub and not as a pile of stones. Like the turf it takes no contact shading (the dark foot band
+   * outlined every tuft as a pebble) and casts no shadow.
    */
   function heatherDrift(g: T.Object3D, drift: plan.HeatherDrift, index: number) {
     const look = heatherLook(season),
@@ -2234,8 +2236,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
         speck[i] = hash(index * 17 + k * 5 + i * 2.3);
       }
       geo.rotateY(hash(index * 5 + k) * Math.PI);
-      geo.scale(1, 0.75, 1);
-      geo.translate(0, 0.1 * l.r, 0); // a low dome, about 0.85r showing
+      geo.scale(1, 0.6, 1);
+      geo.translate(0, -0.12 * l.r, 0); // a low cap, about 0.48r showing, that meets the turf at a shallow angle
       geo.applyQuaternion(new T.Quaternion().setFromUnitVectors(up, terrainNormal(l.x, l.z)));
       geo.translate(l.x, plan.terrainHeight(l.x, l.z) + drop, l.z);
       geo.computeVertexNormals();
@@ -2246,7 +2248,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
         const top = sstep(n.getY(i), 0.3, 0.85),
           f = tone * mix(0.84, 1.04, top) * (0.92 + 0.12 * hash(index * 3 + k * 11 + i * 0.7));
         // Speckled: a top corner flowers or stays green, so the crown is mottled, never a solid cap.
-        c.copy(speck[i] < 0.9 * top ? bloom : stem);
+        c.copy(speck[i] < 0.7 * top ? bloom : stem);
         out[i * 3] = c.r * f;
         out[i * 3 + 1] = c.g * f;
         out[i * 3 + 2] = c.b * f;
@@ -2258,6 +2260,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     m.castShadow = false;
     m.receiveShadow = true;
     m.userData.noShadow = true;
+    m.userData.ground = true;
     g.add(m);
     return m;
   }
