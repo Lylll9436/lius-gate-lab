@@ -262,7 +262,7 @@ export function createCityMaterials() {
    * A studio render, not a texture atlas: chalky matte clay for masonry, render and ground,
    * soft plastic foliage, satin roofs, and a few real finishes on small props only: dark
    * iron with a soft rim, muted brass, clear-coated enamel and glass. The room environment
-   * does the shading; `spec` scales only its reflections (studio 0.25 by day, so brass at 4
+   * does the shading; `spec` scales only its reflections (studio 0.25 by day, so glass at 4
    * sees the room at full strength). Only meadows keep a broad colour drift.
    */
   const finish: Record<SurfaceKind, Finish> = {
@@ -272,11 +272,14 @@ export function createCityMaterials() {
     pantile: { roughness: 0.55, spec: 2 }, // glazed terracotta
     wood: { roughness: 0.8 },
     bark: { roughness: 0.95 },
-    iron: { roughness: 0.4, metalness: 0.5, spec: 3 },
-    // A pale core on tops and rounded parts; walls (which only see the floor) a muted, darker brass.
-    brass: { roughness: 0.3, metalness: 1, spec: 4, specFloor: 2.5 },
-    // Clear-coat lines on rounded edges and a sheen on tops; walls keep their body colour.
-    enamel: { roughness: 0.45, spec: 2, specFloor: 0.5, clearcoat: 1, clearcoatRoughness: 0.25 },
+    // A rim on walls and round sections; flat tops stay dark rather than lifting to grey.
+    iron: { roughness: 0.4, metalness: 0.5, spec: 2, specFloor: 3 },
+    // One pale core on spheres falling off into muted brass; rougher than polished, so the
+    // studio's lights merge into one highlight instead of a cluster of hot spots.
+    brass: { roughness: 0.4, metalness: 1, spec: 3 },
+    // Clear-coat lines on rounded edges and a soft sheen on tops; walls and top faces keep their
+    // body colour (a stronger upward boost turns red tops salmon and a dome into a bauble).
+    enamel: { roughness: 0.45, spec: 1.2, specFloor: 0.8, clearcoat: 1, clearcoatRoughness: 0.35 },
     glass: { roughness: 0.06, spec: 4 },
     foliage: { roughness: 0.8 }, // soft plastic; never a sheen (a pale rim round every tree)
     grass: { roughness: 0.95 },
@@ -298,7 +301,7 @@ export function createCityMaterials() {
     }
     return u;
   }
-  /** Live tuning from the console: `__city.model.materialLibrary.setSpec('enamel', 2, 0.5)` (up, floor). */
+  /** Live tuning from the console: `__city.model.materialLibrary.setSpec('enamel', 1.2, 0.8)` (up, floor). */
   function setSpec(kind: SurfaceKind, up: number, floor = up) {
     specFor(kind).value.set(up, floor);
   }
