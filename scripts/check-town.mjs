@@ -28,8 +28,7 @@ for (const name of [
   'glasgow-sun',
   'use-sky',
   'city-atmosphere',
-  'town-plan',
-  'town-build',
+  ...(await fs.readdir(path.join(root, 'app'))).filter((f) => /^town-[\w-]+\.ts$/.test(f)).map((f) => f.slice(0, -3)).sort(),
   'city-scene',
 ]) {
   const source = await fs.readFile(
