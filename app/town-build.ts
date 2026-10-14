@@ -187,15 +187,15 @@ function bakeRamp(m: T.Mesh, colour: string, bottom: number, top: number, tint =
   geo.setAttribute('color', new T.BufferAttribute(out, 3)); return m;
 }
 /**
- * Heather keeps its own season, like the trees: a muted mauve bloom in late summer, fading and
- * warmer in autumn, russet seed heads in winter and plain green-brown shoots in spring. `bloom`
- * colours the up-facing tops; `stem` the sides.
+ * Heather keeps its own season, like the trees: a muted mauve bloom in late summer, greyer as it
+ * fades in autumn, plain green shoots in spring and a dull olive in winter, so the bare drifts
+ * recede. `stem` is the dark heather green of the sides; `bloom` speckles the up-facing tops.
  */
 export function heatherLook(season: Season) {
-  if (season === 'spring') return { stem: '#5a7440', bloom: '#8a9258' };
-  if (season === 'winter') return { stem: '#5c663c', bloom: '#8a6a52' };
-  if (season === 'autumn') return { stem: '#5c7040', bloom: '#9a71a0' };
-  return { stem: '#5a7440', bloom: '#a070ad' };
+  if (season === 'spring') return { stem: '#5f7a3e', bloom: '#8e9a58' };
+  if (season === 'winter') return { stem: '#5c6a40', bloom: '#727050' };
+  if (season === 'autumn') return { stem: '#5a6c3c', bloom: '#937391' };
+  return { stem: '#586e3c', bloom: '#9a7499' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -2205,15 +2205,18 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     ).normalize();
   }
   /**
-   * A heather drift: three low, knobbly lumps, each laid along the slope and sunk by about a
-   * quarter of its height, green-brown on the sides under a crown of the season's bloom. No shadow.
+   * A heather drift: a low cushion of small, overlapping, knobbly tufts laid along the slope, dark
+   * heather green with the tops speckled in the season's bloom, so it reads as scrub and not as
+   * a pile of stones. No shadow.
    */
   function heatherDrift(g: T.Object3D, drift: plan.HeatherDrift, index: number) {
     const look = heatherLook(season),
       stem = new T.Color(look.stem),
       bloom = new T.Color(look.bloom),
       c = new T.Color(),
-      up = new T.Vector3(0, 1, 0);
+      up = new T.Vector3(0, 1, 0),
+      // The built hill runs a little under the smooth terrainHeight; follow it, measured once per drift.
+      drop = groundY(drift.x, drift.z) - plan.terrainHeight(drift.x, drift.z);
     const geos = drift.lumps.map((l, k) => {
       const ico = new T.IcosahedronGeometry(l.r, 1);
       ico.deleteAttribute('normal');
@@ -2226,23 +2229,24 @@ export function* buildTownInPhases(options: TownOptions = {}) {
       for (let i = 0; i < p.count; i++) {
         const v = new T.Vector3().fromBufferAttribute(p, i),
           seed = hash(index * 31 + k * 7 + i * 1.7);
-        v.multiplyScalar(1 + (seed - 0.5) * 0.14);
+        v.multiplyScalar(1 + (seed - 0.5) * 0.2);
         p.setXYZ(i, v.x, v.y, v.z);
         speck[i] = hash(index * 17 + k * 5 + i * 2.3);
       }
       geo.rotateY(hash(index * 5 + k) * Math.PI);
-      geo.scale(1, 0.66, 1);
-      geo.translate(0, 0.3 * l.r, 0); // 1.32r tall, 0.36r of it under the ground
+      geo.scale(1, 0.75, 1);
+      geo.translate(0, 0.1 * l.r, 0); // a low dome, about 0.85r showing
       geo.applyQuaternion(new T.Quaternion().setFromUnitVectors(up, terrainNormal(l.x, l.z)));
-      geo.translate(l.x, plan.terrainHeight(l.x, l.z), l.z);
+      geo.translate(l.x, plan.terrainHeight(l.x, l.z) + drop, l.z);
       geo.computeVertexNormals();
       const n = geo.getAttribute('normal'),
         out = new Float32Array(p.count * 3),
         tone = 0.94 + 0.1 * hash(index * 7 + k * 3);
       for (let i = 0; i < p.count; i++) {
-        const top = sstep(n.getY(i), 0.45, 0.92),
-          f = tone * mix(0.8, 1.04, top) * (0.92 + 0.12 * speck[i]);
-        c.copy(stem).lerp(bloom, top * (0.7 + 0.3 * speck[i])); // a flowering crown over green sides
+        const top = sstep(n.getY(i), 0.3, 0.85),
+          f = tone * mix(0.84, 1.04, top) * (0.92 + 0.12 * hash(index * 3 + k * 11 + i * 0.7));
+        // Speckled: a top corner flowers or stays green, so the crown is mottled, never a solid cap.
+        c.copy(speck[i] < 0.9 * top ? bloom : stem);
         out[i * 3] = c.r * f;
         out[i * 3 + 1] = c.g * f;
         out[i * 3 + 2] = c.b * f;

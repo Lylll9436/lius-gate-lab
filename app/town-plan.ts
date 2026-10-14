@@ -518,33 +518,40 @@ export type HeatherDrift = {
   id: string;
   x: number;
   z: number;
-  /** Three low lumps (world x, z and radius) that make up the drift. */
+  /** The small, low tufts (world x, z and radius) that make up the drift's mat. */
   lumps: { x: number; z: number; r: number }[];
 };
 /** How far a drift's lumps reach from its centre. */
 export const heatherReach = (d: HeatherDrift) => Math.max(...d.lumps.map((l) => Math.hypot(l.x - d.x, l.z - d.z) + l.r));
 /**
- * Heather drifts for a moorland read: a seeded scatter of at most 20 low drifts on the hills and
- * along the coast, never on the mown town lawn, the terrace, the streets or near a building, and
- * clear of the trees' trunks, the paddock, the thistles and one another.
+ * Heather on the moor: at most 12 drifts on the four hills (never on the beach), most of them
+ * small cushions of six to eight tufts and about one in three a wider patch of twelve. Candidates are
+ * seeded round each hill in turn; a drift stays off the mown town lawn, the terrace, the streets
+ * and the buildings, clear of the trees' trunks, the paddock, the thistles, the sheep, the stone
+ * ring and, by 3.5, the other drifts.
  */
 export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] {
   const drifts: HeatherDrift[] = [];
-  for (let i = 0; i < 1500 && drifts.length < 20; i++) {
-    const x = (hash(i * 7 + 3) - 0.5) * 62,
-      z = (hash(i * 7 + 4) - 0.5) * 62,
+  for (let i = 0; i < 1500 && drifts.length < 12; i++) {
+    const m = mounds[i % mounds.length],
+      ma = hash(i * 7 + 3) * Math.PI * 2,
+      md = Math.sqrt(hash(i * 7 + 4)) * m.r * 0.85;
+    const x = m.x + Math.cos(ma) * md,
+      z = m.z + Math.sin(ma) * md,
       spin = hash(i * 7 + 6) * Math.PI * 2;
-    const lumps = Array.from({ length: 3 }, (_, k) => {
-      const a = spin + k * 2.1 + 0.5 * hash(i * 7 + 5 + k),
-        d = k === 0 ? 0.06 : 0.3 + 0.12 * hash(i * 11 + k),
-        r = (k === 0 ? 0.32 : 0.26) + 0.1 * hash(i * 13 + k * 5);
+    const wide = hash(i * 7 + 2) < 0.3,
+      n = wide ? 12 : 6 + Math.floor(hash(i * 7 + 1) * 3),
+      spread = wide ? 0.55 : 0.3;
+    // A sunflower spiral of overlapping tufts, so the drift reads as one bumpy cushion.
+    const lumps = Array.from({ length: n }, (_, k) => {
+      const a = spin + k * 2.4 + 0.6 * hash(i * 7 + 5 + k),
+        d = spread * Math.sqrt((k + 0.3 * hash(i * 11 + k)) / n),
+        r = (k === 0 ? 0.2 : 0.14) + 0.07 * hash(i * 13 + k * 5);
       return { x: x + Math.cos(a) * d, z: z + Math.sin(a) * d, r };
     });
     const drift = { id: 'heather-' + drifts.length, x, z, lumps },
       reach = heatherReach(drift);
-    if (!onIsland(x, z, 0.3 + reach)) continue;
-    const coast = islandRadius(Math.atan2(z, x)) - Math.hypot(x, z);
-    if (!(terrainHeight(x, z) > 0.25 || coast < 3.0)) continue;
+    if (!onIsland(x, z, 0.3 + reach) || !(terrainHeight(x, z) > 0.2)) continue;
     if (lumps.some((l) => lawnCore(l.x, l.z) > 0.02) || distanceToStreets(x, z) < 2.5) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 0.35 * t.size + 0.5 + reach)) continue;
     if (cottages.some((c) => Math.hypot(c.x - x, c.z - z) < 3.4 + reach)) continue;
@@ -554,7 +561,7 @@ export function heatherPlan(trees: TreeSpec[] = plantingPlan()): HeatherDrift[] 
     if (thistles.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < 0.5 + reach)) continue;
     if (flock.some((s) => Math.hypot(s.x - x, s.z - z) < 0.8 + reach)) continue;
     if (Math.hypot(x - stoneRing.x, z - stoneRing.z) < stoneRing.r + 2.2) continue;
-    if (drifts.some((o) => Math.hypot(o.x - x, o.z - z) < 2.2)) continue;
+    if (drifts.some((o) => Math.hypot(o.x - x, o.z - z) < 3.5)) continue;
     drifts.push(drift);
   }
   return drifts;

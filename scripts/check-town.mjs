@@ -360,13 +360,17 @@ for (let i = 0; i < 720; i++) {
   for (const site of plan.siteList)
     assert(Math.hypot(x - site.x, z - site.z) > 8, `The balloon drifts over ${site.id}`);
 }
-// Moorland: heather drifts on the hills and the coast and thistles by the paddock, never on the
-// mown town lawn, the terrace, the streets, the beach or within 1.0 of the herd's paddock.
+// Moorland: a few heather drifts on the hills only and thistles by the paddock, never on the mown
+// town lawn, the terrace, the streets, the beach or within 1.0 of the herd's paddock.
 const inPaddock = (x, z, pad) =>
   Math.abs(x - plan.paddockReserve.x) < plan.paddockReserve.w / 2 + pad &&
   Math.abs(z - plan.paddockReserve.z) < plan.paddockReserve.d / 2 + pad;
 const heather = plan.heatherPlan(trees);
-assert(heather.length >= 12 && heather.length <= 20, 'Heather drifts: ' + heather.length);
+assert(heather.length >= 8 && heather.length <= 12, 'Heather drifts: ' + heather.length);
+for (const d of heather) {
+  assert(plan.terrainHeight(d.x, d.z) > 0.2, `${d.id} is not on a hill`);
+  for (const o of heather) assert(o === d || Math.hypot(o.x - d.x, o.z - d.z) >= 3.5, `${d.id} crowds ${o.id}`);
+}
 for (const d of heather)
   for (const l of d.lumps)
     for (const [ex, ez] of [[0, 0], [l.r, 0], [-l.r, 0], [0, l.r], [0, -l.r]]) {
