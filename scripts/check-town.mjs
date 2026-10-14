@@ -489,6 +489,8 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
   for (const id of ['pengyuan-liu', 'yunlong-liu', 'qin-li'])
     assert(lit(rooms.filter((p) => p.place === id), 23.5).length, `${id}'s home is dark at 23:30.`);
   assert(lit(rooms.filter((p) => p.place === 'research-studio'), 1).length, 'The studio is dark at 01:00.');
+  // The archive's three north lights light one roof hall: one light, never three bands of different lamps.
+  assert.equal(rooms.filter((p) => p.place === 'city-archive' && p.at.y > 4).length, 1, 'The archive\'s north lights are not one light.');
 }
 // Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
 {
