@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BuildingId, Locale } from './city-data';
 import type { DistrictId } from './city-districts';
 import {
+  ADDRESS_EVENT,
   chapterFor,
   readingChapter,
   readingContent,
@@ -276,6 +277,8 @@ export default function Home() {
         window.history.pushState(null, '', hash);
       }
     }
+    // A person's card opens its profile when a link lands on it, as a loaded address does.
+    window.dispatchEvent(new Event(ADDRESS_EVENT));
   }
   const navigateRef = useRef(navigate);
   useEffect(() => {

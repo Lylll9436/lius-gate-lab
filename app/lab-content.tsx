@@ -8,6 +8,7 @@ import {
   titleFor,
   destinations,
   parseLocation,
+  ADDRESS_EVENT,
   type ContentId,
 } from './lab-navigation';
 import {
@@ -631,8 +632,8 @@ export function PersonCard({
 }) {
   const person = people.find((p) => p.id === id);
   const [profileOpen, setProfileOpen] = useState(false);
-  // An address naming this person (on load, Back/Forward or a typed link) opens their profile.
-  // In-app links use pushState, which fires neither event.
+  // An address naming this person opens their profile: on load, Back/Forward, a typed link
+  // or an in-app link (which uses pushState and so announces itself with ADDRESS_EVENT).
   useEffect(() => {
     const sync = () => {
       const { mode, content } = parseLocation(window.location.hash);
@@ -641,9 +642,11 @@ export function PersonCard({
     sync();
     window.addEventListener('popstate', sync);
     window.addEventListener('hashchange', sync);
+    window.addEventListener(ADDRESS_EVENT, sync);
     return () => {
       window.removeEventListener('popstate', sync);
       window.removeEventListener('hashchange', sync);
+      window.removeEventListener(ADDRESS_EVENT, sync);
     };
   }, [id]);
   if (!person) return null;

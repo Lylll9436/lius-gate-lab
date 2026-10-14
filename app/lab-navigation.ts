@@ -101,6 +101,11 @@ export const tourStops: ContentId[] = [
   ...buildings.map((b) => contentForBuilding(b.id)),
   'corner-park',
 ];
+/**
+ * Fired on window when the app itself has moved to an address (pushState and replaceState
+ * fire neither popstate nor hashchange), so what follows the address can read it again.
+ */
+export const ADDRESS_EVENT = 'gate:address';
 export function parseLocation(hash: string): {
   mode: BrowseMode;
   content: ContentId;
