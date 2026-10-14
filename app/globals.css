@@ -772,9 +772,12 @@ body:has(.mode-explore),
 .tour-control > div button:hover {
   background: var(--accent-soft);
 }
+/* Under the caption's two chips (the sky chip, then Inspect's '<Building> · Architecture study',
+   30 px each with a 6 px gap from masthead + 8 px), with 10 px to spare: at masthead + 50 px it
+   covered the study chip. Narrow screens hide that chip in City mode and place the bar themselves. */
 .inspection-toolbar {
   left: 16px;
-  top: calc(var(--masthead) + 50px);
+  top: calc(var(--masthead) + 84px);
   display: flex;
   align-items: center;
   gap: 10px;
