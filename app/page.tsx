@@ -158,6 +158,8 @@ export default function Home() {
       content: 'overview',
     }),
     [active, setActive] = useState<ContentId>('overview'),
+    // Counts the city's picks, the place already open included: each one frames the camera.
+    [pick, setPick] = useState(0),
     // The footer has reached the town: the reading camera pulls back to the whole island.
     [ending, setEnding] = useState(false),
     // The reading camera's shot once the reading position has rested (see CAMERA_SETTLE_MS).
@@ -198,10 +200,13 @@ export default function Home() {
     fileBeforeDirectory.current = false;
     if (!keepTour) setTour(-1);
     // Every place picked in the city opens its file, even if the file was hidden; on a
-    // phone it opens short, so the place itself stays in view above it.
+    // phone it opens short, so the place itself stays in view above it. The camera frames it
+    // again even if it is the place already open: that also brings the town back from Inspect,
+    // which this pick has just ended.
     if (next.mode === 'city') {
       setPanelOpen(true);
       setSheetFull(false);
+      setPick((count) => count + 1);
     }
   }
   /** The file and the Directory: side by side on wide screens, one at a time otherwise. */
@@ -457,7 +462,9 @@ export default function Home() {
     api.current?.setCityMode(explore);
   }, [explore, ready]);
   // Explore mode: the address decides what the camera looks at. A pick turns the camera
-  // (the shortest way) to its subject's front; the bare city is the whole island.
+  // (the shortest way) to its subject's front; the bare city is the whole island. A pick of
+  // the place already open frames it again (it may have been panned away, or a second click
+  // stopped the glide), and leaves Inspect.
   useEffect(() => {
     const engine = api.current;
     if (mode !== 'city') return;
@@ -470,7 +477,7 @@ export default function Home() {
       document.getElementById('dossier-title')?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [mode, content, ready]);
+  }, [mode, content, ready, pick]);
   // The model follows Plan view's key: whatever turns Plan view off (its button, the Directory,
   // a pick, the tour, Inspect, reading mode, Back) takes the tints away, and in the city the
   // camera goes back to the open place, as a pick would frame it.
