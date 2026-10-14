@@ -34,7 +34,8 @@ export { BALLOON } from './town-movers';
  * Everything is procedural and merged into a few draw calls per surface family.
  *
  * This file assembles the town; each part lives in its own module:
- * - town-plan.ts: the layout every part reads (sites, streets, planting, the herd, the flock);
+ * - town-plan.ts: the layout every part reads (sites, streets, planting, the herd, the flock,
+ *   and the street life's paths: the cyclist's lane, the dog walk, the ducks and the bike rack);
  * - town-shared.ts: the palette, hash and noise, the plaza, bandstand, crane and paddock layout,
  *   the water level, and TownContext (the material library, season, land group, lamps, clocks
  *   and animated parts of one build);
@@ -43,13 +44,14 @@ export { BALLOON } from './town-movers';
  * - town-ground.ts: the island, the shore and its foam, and the baked ground masks;
  * - town-streets.ts: the ring road, pavements and avenues, and the plaza with its pool;
  * - town-nature.ts: trees, hedges, beds, topiary, heather and thistles, and their seasons;
- * - town-props.ts: benches, lamps, the phone box, bins, the bandstand, the notice board, the
- *   crane, the picnic and the Wellington statue;
+ * - town-props.ts: benches, cycle hoops, lamps, the phone box, bins, the bandstand, the notice
+ *   board, the crane, the picnic and the Wellington statue;
  * - town-harbour.ts: the pier, the harbour and the lighthouse;
  * - town-homes.ts: the three members' homes in their terrace row, and the cottages;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
- * - town-movers.ts: the balloon, the tram and the boat;
- * - town-country.ts: the Highland herd and its paddock, the sheep and the standing stones;
+ * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
+ * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
+ *   ducks on the gate's pool;
  * - town-batch.ts: batch(), which merges each group by surface family and bakes contact and
  *   eave shade into it.
  * Each module's create* factory takes the build's TownContext (and the kit, planting or props
