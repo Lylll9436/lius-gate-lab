@@ -31,12 +31,15 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     closed: boolean,
     gap?: (x: number, z: number) => boolean,
     shade = 0.03,
+    road?: number,
   ) {
     const n = points.length,
       count = closed ? n + 1 : n;
     const pos: number[] = [],
       col: number[] = [],
+      uv: number[] = [],
       idx: number[] = [];
+    let along = road ?? 0;
     const base = new T.Color(color);
     for (let k = 0; k < count; k++) {
       const i = k % n;
@@ -54,6 +57,8 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       const tone = 1 - shade / 2 + shade * noise2(p[0] * 0.8, p[1] * 0.8);
       const c = base.clone().multiplyScalar(tone);
       col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+      if (k > 0) along += Math.hypot(p[0] - points[(k - 1) % n][0], p[1] - points[(k - 1) % n][1]);
+      uv.push(width / 2, along, -width / 2, along);
     }
     for (let k = 0; k < count - 1; k++) {
       // One gap test per segment, at its midpoint.
@@ -69,6 +74,11 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     const geometry = new T.BufferGeometry();
     geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
     geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    if (road !== undefined) {
+      // A road: its uv is (across, along), in plan.roadSpot's terms, for the road shader's wear.
+      geometry.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+      geometry.userData.longitudinalUV = true;
+    }
     geometry.setIndex(idx);
     geometry.computeVertexNormals();
     const mesh = new T.Mesh(geometry, material('#ffffff', kind));
@@ -139,6 +149,62 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     g.add(mesh);
     return mesh;
   }
+  /**
+   * One end of a dropped crossing (plan.DROPPED_KERB): the ring's inner pavement where it meets the
+   * avenue's dropped kerb, `side` of the avenue, from its kerb (1.03 out) to the ramp's end, across
+   * the pavement's width (the avenue's along `a0` to `a1`, `at` its avenue's point). On top, the
+   * buff blister slabs, flat at the kerb's dropped height, then the ramp up to the pavement in three
+   * steps along the smoothstep the walkers follow; one side face toward the plaza (the avenue's
+   * pavement end covers most of it). The ring's kerb hides the far edge and the dropped kerb the
+   * near one. The slabs' uv is 1000 + their world x, z from their corner: the paving shader's
+   * blisters read it (every other vertex here has uv 0, as no projected paving uv comes near 1000).
+   */
+  function droppedCrossing(g: T.Object3D, at: (along: number, o: number) => XZ, a0: number, a1: number, side: number) {
+    const { top, kerb, tactile, ramp } = plan.DROPPED_KERB,
+      pave = plan.levels.pavement,
+      cs = [kerb, tactile, tactile + (ramp - tactile) / 3, tactile + ((ramp - tactile) * 2) / 3, ramp],
+      ys = [top, top, top + (pave - top) * (7 / 27), top + (pave - top) * (20 / 27), pave],
+      pos: number[] = [],
+      col: number[] = [],
+      uv: number[] = [];
+    const p = (along: number, c: number, y: number) => {
+      const [x, z] = at(along, side * c);
+      return new T.Vector3(x, y + plan.terrainHeight(x, z), z);
+    };
+    const slabs = [p(a0, cs[0], top), p(a1, cs[1], top)],
+      corner = [Math.min(slabs[0].x, slabs[1].x), Math.min(slabs[0].z, slabs[1].z)];
+    const quad = (a: T.Vector3, b: T.Vector3, c: T.Vector3, d: T.Vector3, outward: T.Vector3, colour: string, blisters = false) => {
+      if (b.clone().sub(a).cross(c.clone().sub(a)).dot(outward) < 0) [b, d] = [d, b];
+      const tone = new T.Color(colour);
+      for (const v of [a, b, c, a, c, d]) {
+        pos.push(v.x, v.y, v.z);
+        col.push(tone.r, tone.g, tone.b);
+        uv.push(blisters ? 1000 + v.x - corner[0] : 0, blisters ? v.z - corner[1] : 0);
+      }
+    };
+    const up = new T.Vector3(0, 1, 0),
+      [ux, uz] = at(a0 - 1, 0),
+      [ox, oz] = at(a0, 0),
+      toPlaza = new T.Vector3(ux - ox, 0, uz - oz);
+    for (let i = 0; i < 4; i++) {
+      quad(p(a0, cs[i], ys[i]), p(a0, cs[i + 1], ys[i + 1]), p(a1, cs[i + 1], ys[i + 1]), p(a1, cs[i], ys[i]), up, i ? palette.pavement : palette.tactile, !i);
+      quad(p(a0, cs[i], -0.02), p(a0, cs[i + 1], -0.02), p(a0, cs[i + 1], ys[i + 1]), p(a0, cs[i], ys[i]), toPlaza, palette.plazaDark);
+    }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    geometry.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+    geometry.userData.longitudinalUV = true; // batch() keeps the blisters' uv
+    geometry.computeVertexNormals();
+    const mesh = new T.Mesh(geometry, material('#ffffff', 'paving'));
+    mesh.name = 'dropped-crossing';
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.userData.noShadow = true;
+    mesh.userData.ground = true;
+    g.add(mesh);
+    return mesh;
+  }
   function buildStreets() {
     const R = plan.ROAD_WIDTH,
       P = plan.PAVEMENT_WIDTH,
@@ -156,7 +222,7 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     // stations where each avenue's road edge and kerb meet it.
     const ring = plan.densify(plan.ringLine, 2);
     for (const a of crossings)
-      for (const o of [R / 2, R / 2 + KERB])
+      for (const o of [R / 2, R / 2 + KERB, plan.DROPPED_KERB.ramp])
         for (const s of [-1, 1]) {
           const p: XZ = [a.to[0] + a.t[0] * o * s, a.to[1] + a.t[1] * o * s];
           if (ring.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 1e-6)) continue;
@@ -176,7 +242,7 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       return !gap((a[k][0] + a[j][0] + b[k][0] + b[j][0]) / 4, (a[k][1] + a[j][1] + b[k][1] + b[j][1]) / 4);
     };
     // Ring road, and tram rails under the tram's wheels, unbroken through the junctions.
-    ribbon(land, ring, R, roadY, palette.road, 'asphalt', true);
+    ribbon(land, ring, R, roadY, palette.road, 'asphalt', true, undefined, 0.03, 0);
     for (const s of [-1, 1])
       ribbon(land, plan.offsetPolyline(ring, s * 0.42), 0.07, roadY + 0.003, palette.metal, 'iron', true, undefined, 0).userData.noShadow = true;
     // Raised pavements and kerbs on both sides. The kerb's road face is the riser; the pavement's
@@ -186,7 +252,8 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       const [pa, pb] = edges(R / 2 + KERB / 2, R / 2 + P),
         [ka, kb] = edges(R / 2, R / 2 + KERB),
         inner = side > 0;
-      slab(land, pa, pb, pavementY, -0.02, palette.pavement, 'paving', true, inner ? openAt(pa, pb, mouth(R / 2 + KERB)) : undefined, palette.plazaDark);
+      // The inner pavement opens on to the dropped crossings (droppedCrossing), out to their ramps' ends.
+      slab(land, pa, pb, pavementY, -0.02, palette.pavement, 'paving', true, inner ? openAt(pa, pb, mouth(plan.DROPPED_KERB.ramp)) : undefined, palette.plazaDark);
       slab(land, ka, kb, kerbY, 0, palette.kerb, 'stone', true, inner ? openAt(ka, kb, mouth(R / 2 + KERB)) : undefined);
     }
     // Avenues: explicit ends. Edges start on the circle r = 5.1, under the plaza's kerb ring;
@@ -198,12 +265,21 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       const start = (o: number) => Math.sqrt(5.1 ** 2 - o ** 2) - plan.PLAZA_RADIUS,
         edge = (o: number, end: number) => [at(start(o), o), at(end, o)];
       // The road's start corners sit on r = 5.1 too, so no grass shows at the plaza rim.
-      ribbon(land, [at(start(R / 2), 0), at(a.length - R / 2, 0)], R, roadY, palette.road, 'asphalt', false);
+      ribbon(land, [at(start(R / 2), 0), at(a.length - R / 2, 0)], R, roadY, palette.road, 'asphalt', false, undefined, 0.03, 1000 * plan.ROADS.indexOf(a.id as plan.RoadId) + start(R / 2));
+      const drop = plan.droppedCrossings.find((d) => d.junction === a.id)!,
+        [d0, d1] = drop.along;
       for (const side of [-1, 1]) {
         const paveEnd = a.length - (R / 2 + P),
           kerbEnd = a.length - R / 2;
         slab(land, edge(side * (R / 2 + KERB / 2), paveEnd), edge(side * (R / 2 + P), paveEnd), pavementY, -0.02, palette.pavement, 'paving', false, undefined, palette.plazaDark);
-        slab(land, edge((side * R) / 2, kerbEnd), edge(side * (R / 2 + KERB), kerbEnd), kerbY, 0, palette.kerb, 'stone', false);
+        // The kerb in three runs: full height, dropped across the zebra's end, and a short full-height
+        // corner where it turns into the ring's kerb.
+        const kerbRun = (from: [number, number], to: number, top: number) =>
+          slab(land, [at(from[0], (side * R) / 2), at(to, (side * R) / 2)], [at(from[1], side * (R / 2 + KERB)), at(to, side * (R / 2 + KERB))], top, 0, palette.kerb, 'stone', false);
+        kerbRun([start(R / 2), start(R / 2 + KERB)], d0, kerbY);
+        kerbRun([d0, d0], d1, plan.DROPPED_KERB.top);
+        kerbRun([d1, d1], kerbEnd, kerbY);
+        droppedCrossing(land, at, d0, d1, side);
       }
       // Centre dashes, and a zebra across the mouth, where the ring's inner pavement is cut.
       for (let d = 1.6; d < a.length - 3.2; d += 1.6) {
@@ -288,8 +364,9 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
         'paving',
         plazaY,
       );
-    flat(new T.RingGeometry(poolOuter + coping - 0.01, 4.72, 64), palette.plaza, 'paving', plazaY);
-    flat(new T.RingGeometry(4.72, 5.1, 64), palette.plazaDark, 'paving', plazaY);
+    // The paving shader lays these as granite flags in rings, and the darker band as setts (plan.PLAZA_PAVING).
+    flat(new T.RingGeometry(poolOuter + coping - 0.01, plan.PLAZA_PAVING.setts, 64), palette.plaza, 'paving', plazaY);
+    flat(new T.RingGeometry(plan.PLAZA_PAVING.setts, plan.PLAZA_PAVING.rim, 64), palette.plazaDark, 'paving', plazaY);
     // The kerb ring: a lip toward the plaza, a rounded top and a face down to the grass. It opens
     // (±3) where the hall forecourt meets the plaza; a lathe angle φ lies at world (sin φ, cos φ).
     const kerbEnd = Math.PI - Math.asin(3 / 5.1);

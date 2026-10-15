@@ -106,7 +106,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
       PITCH = 0.225;
     const heads = plan.signalPosts.map((p) => {
       const post = new T.Group();
-      post.position.set(p.x, plan.levels.pavement + plan.terrainHeight(p.x, p.z), p.z);
+      post.position.set(p.x, plan.pavementTop(p.x, p.z) + plan.terrainHeight(p.x, p.z), p.z); // lower where it stands in a dropped crossing
       post.rotation.y = p.heading;
       root.add(post);
       box(post, 0, 0.05, 0, 0.2, 0.1, 0.2, palette.metal, 'iron'); // foot

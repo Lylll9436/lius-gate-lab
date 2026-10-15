@@ -651,9 +651,12 @@ export function walkLoop(offset: number): XZ[] {
 /**
  * Height of the surface under a walker: the pavement, except where an avenue opens into the
  * ring. There the inner walkers step onto the avenue's kerb (0.85-1.03 from its centre line)
- * and down to the zebra at road level, and back up on the far side.
+ * and down to the zebra at road level, and back up on the far side. Where the kerb is dropped
+ * at the zebras (droppedFloor) they walk down its ramp and over the tactile slabs instead.
  */
 export function walkFloor(x: number, z: number) {
+  const dropped = droppedFloor(x, z);
+  if (dropped !== undefined) return terrainHeight(x, z) + dropped;
   let d = Infinity;
   for (const a of avenues) if (a.crossing) d = Math.min(d, distanceToSegment([x, z], a.from, a.to));
   const step = (from: number, to: number) => {
@@ -1174,3 +1177,175 @@ export function standingStones(): StandingStone[] {
   }
   return stones;
 }
+
+/* ------------------------------------------------------------------ */
+/* Street details: plaza granite, dropped kerbs, covers and wear      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The plaza's granite, as the paving shader lays it by world position: flags in concentric rings
+ * round the gate (`ring` wide, about `flag` long, every other ring offset by half a flag; the
+ * outermost from the pool's outer coping to `setts` is narrower), and a band of darker setts
+ * (`settRows` rows, about `sett` long) from `setts` out to the kerb ring at `rim`, the band the
+ * avenues and the forecourt meet. The rings' joints fall on the pool copings' edges (2.4, and
+ * `coping`, town-shared's POOL.outer + POOL.coping), so `ring` must divide both.
+ */
+export const PLAZA_PAVING = { rim: 5.1, setts: 4.72, coping: 4.2, ring: 0.6, flag: 0.9, sett: 0.24, settRows: 2 };
+/**
+ * UK dropped kerbs at the zebras. At each end of a crossing (on the ring's inner pavement, where
+ * the walkers cross the avenue) the avenue's kerb drops to `top`, 0.02 over the road, along the
+ * whole width of the ring's inner pavement; that pavement drops with it, its first `tactile` out
+ * from the avenue's line laid in buff blister slabs, then ramps back up to the pavement by `ramp`.
+ * The ring's own kerb keeps its height beside it.
+ */
+export const DROPPED_KERB = { top: 0.04, kerb: ROAD_WIDTH / 2 + 0.18, tactile: 1.51, ramp: 2.0 };
+/** Each crossing's drop: its avenue, and the stretch of that avenue (from `from`) the drop spans: the ring's inner pavement. */
+export const droppedCrossings = signalJunctions.map((j) => ({
+  junction: j.id,
+  from: j.from,
+  u: j.u,
+  along: [j.length - (ROAD_WIDTH / 2 + PAVEMENT_WIDTH), j.length - (ROAD_WIDTH / 2 + 0.09)] as XZ,
+}));
+/**
+ * The walking surface's height above the terrain inside a dropped crossing (the road, the kerb's
+ * small step up to `top`, the tactile slabs, the ramp), or undefined outside one. The ramp is a
+ * smoothstep, flat where it meets the pavement and the slabs; the geometry follows it in three steps.
+ */
+export function droppedFloor(x: number, z: number): number | undefined {
+  const { top, tactile, ramp } = DROPPED_KERB,
+    edge = ROAD_WIDTH / 2,
+    ease = (from: number, to: number, v: number) => {
+      const t = Math.min(1, Math.max(0, (v - from) / (to - from)));
+      return t * t * (3 - 2 * t);
+    };
+  for (const d of droppedCrossings) {
+    const dx = x - d.from[0],
+      dz = z - d.from[1],
+      along = dx * d.u[0] + dz * d.u[1],
+      c = Math.abs(dx * d.u[1] - dz * d.u[0]);
+    if (along < d.along[0] || along > d.along[1] || c > ramp) continue;
+    return levels.road + (top - levels.road) * ease(edge - 0.08, edge + 0.02, c) + (levels.pavement - top) * ease(tactile, ramp, c);
+  }
+  return undefined;
+}
+/** The pavement's top above the terrain: lower in a dropped crossing. Things standing on the pavement stand on this. */
+export const pavementTop = (x: number, z: number) => droppedFloor(x, z) ?? levels.pavement;
+/**
+ * The roads' own coordinates: `along` the centre line (the ring from ringLine[0], clockwise, as
+ * the tram runs; an avenue from its plaza end, `from`) and `across` it, positive to the right of
+ * that direction (the ring's inner side; an avenue's inbound lane). The road ribbons carry the same
+ * pair in their uv (an avenue's along plus 1000 × its place in ROADS), so the road shader's wear
+ * lines up with these.
+ */
+export type RoadId = 'ring' | JunctionId;
+export const ROADS: RoadId[] = ['ring', 'south', 'west', 'east'];
+export type RoadSpot = { road: RoadId; along: number; across: number; x: number; z: number; heading: number };
+export function roadSpot(road: RoadId, along: number, across: number): RoadSpot {
+  let x: number, z: number, heading: number;
+  if (road === 'ring') ({ x, z, heading } = samplePolyline(ringLine, along, true));
+  else {
+    const a = avenues.find((v) => v.id === road)!,
+      length = Math.hypot(a.to[0] - a.from[0], a.to[1] - a.from[1]);
+    heading = Math.atan2(a.to[0] - a.from[0], a.to[1] - a.from[1]);
+    x = a.from[0] + ((a.to[0] - a.from[0]) * along) / length;
+    z = a.from[1] + ((a.to[1] - a.from[1]) * along) / length;
+  }
+  // Right of travel: (-cos h, sin h) for a heading h measured as atan2(dx, dz).
+  return { road, along, across, x: x - Math.cos(heading) * across, z: z + Math.sin(heading) * across, heading };
+}
+/**
+ * Manhole covers: round, flush, dark iron with a raised rim and a grid of lugs, drawn by the road
+ * shader at these points (city-materials' COVERS). On the ring they lie in the lanes outside the
+ * tram's rails (±0.42), 0.65 out, never between them, about every 12-20 units and on either side
+ * at random; each avenue has one in a lane, off its centre dashes. None in a junction, on a stop
+ * line or a zebra, nor beside a signal.
+ */
+export const MANHOLE = { radius: 0.14 };
+export const manholes: RoadSpot[] = (
+  [
+    ['ring', 6.1, 0.65],
+    ['ring', 20.4, -0.65],
+    ['ring', 39.0, 0.65],
+    ['ring', 52.4, -0.65],
+    ['ring', 69.4, -0.65],
+    ['ring', 82.7, 0.65],
+    ['ring', 102.2, -0.65],
+    ['south', 5.6, 0.42],
+    ['west', 3.0, -0.42],
+    ['east', 6.9, 0.42],
+  ] as const
+).map(([road, along, across]) => roadSpot(road, along, across));
+/**
+ * Drain gullies: small iron gratings (`length` along the kerb, `width` out from it) in the gutter,
+ * their outer edge 0.01 off the kerb's face, every 8-10 units along both kerbs of the ring and one
+ * a side on each avenue. Each one steps on until it is clear of the lamps' and signals' bases (0.8
+ * centre to centre), the stop lines and zebras (0.3) and, on the ring's inner kerb, the avenue
+ * mouths, where that kerb stops.
+ */
+export const GULLY = { length: 0.26, width: 0.13, across: ROAD_WIDTH / 2 - 0.01 - 0.065 };
+/** A zebra's block on its avenue: 0.9 along it, 1.32 across, centred on the ring's inner pavement. */
+export const zebras = signalJunctions.map((j) => {
+  const along = j.length - (ROAD_WIDTH / 2 + PAVEMENT_WIDTH / 2);
+  return { junction: j.id, x: j.from[0] + j.u[0] * along, z: j.from[1] + j.u[1] * along, u: j.u, half: [0.45, 0.66] as XZ };
+});
+/** Signed distance from a point to a rectangle centred at (x, z), half-sizes `half` along u and across it. */
+export function toRect(px: number, pz: number, r: { x: number; z: number; u: XZ; half: XZ }) {
+  const a = Math.abs((px - r.x) * r.u[0] + (pz - r.z) * r.u[1]) - r.half[0],
+    c = Math.abs((px - r.x) * r.u[1] - (pz - r.z) * r.u[0]) - r.half[1];
+  return Math.hypot(Math.max(a, 0), Math.max(c, 0)) + Math.min(Math.max(a, c), 0);
+}
+/** A stop line as a rectangle (its `along` is the traffic's way, the line's thin side). */
+export const stopLineRect = (l: (typeof stopLines)[number]) => ({ x: l.x, z: l.z, u: l.along, half: [STOP_LINE.width / 2, l.length / 2] as XZ });
+/** A gully as a rectangle. */
+export const gullyRect = (g: RoadSpot) => ({ x: g.x, z: g.z, u: [Math.sin(g.heading), Math.cos(g.heading)] as XZ, half: [GULLY.length / 2, GULLY.width / 2] as XZ });
+export function gullyClear(g: RoadSpot, lamps = lampPlan()) {
+  const r = gullyRect(g),
+    corners = [-1, 1].flatMap((a) => [-1, 1].map((c): XZ => [r.x + r.u[0] * a * r.half[0] + r.u[1] * c * r.half[1], r.z + r.u[1] * a * r.half[0] - r.u[0] * c * r.half[1]]));
+  if (lamps.some((l) => Math.hypot(l.x - g.x, l.z - g.z) < 0.8)) return false;
+  if (signalPosts.some((p) => Math.hypot(p.x - g.x, p.z - g.z) < 0.8)) return false;
+  for (const [x, z] of corners) {
+    if (stopLines.some((l) => toRect(x, z, stopLineRect(l)) < 0.3)) return false;
+    if (zebras.some((zb) => toRect(x, z, zb) < 0.3)) return false;
+  }
+  // The ring's inner kerb opens at each avenue mouth (to 1.03 either side of the avenue's line).
+  if (g.road === 'ring' && g.across > 0 && signalJunctions.some((j) => Math.abs(((g.along - j.ring + RING_LENGTH / 2) % RING_LENGTH + RING_LENGTH) % RING_LENGTH - RING_LENGTH / 2) < 2.2)) return false;
+  return true;
+}
+export const gullies: RoadSpot[] = (() => {
+  const out: RoadSpot[] = [],
+    lamps = lampPlan();
+  for (const side of [1, -1]) {
+    const first = side > 0 ? 1.4 : 5.3;
+    for (let s = first, k = 0; s < first + RING_LENGTH - 7.6; k++) {
+      let g = roadSpot('ring', s, side * GULLY.across);
+      while (!gullyClear(g, lamps)) g = roadSpot('ring', (s += 0.2), side * GULLY.across);
+      if (s >= first + RING_LENGTH - 7.6) break;
+      out.push(roadSpot('ring', s % RING_LENGTH, side * GULLY.across));
+      s += 8.3 + 1.4 * hash(k * 5 + (side > 0 ? 1 : 2));
+    }
+  }
+  for (const road of ['south', 'west', 'east'] as const)
+    for (const [along, side] of [[3.7, 1], [4.4, -1]] as const) out.push(roadSpot(road, along, side * GULLY.across));
+  return out;
+})();
+/**
+ * Road wear, drawn by the road shader and kept very faint: two or three repair patches of fresher
+ * asphalt (on straight runs, as world rectangles x0, z0, x1, z1), plus the darker wheel tracks and
+ * the waiting stains behind the stop lines, which follow the cyclist's lane, the rails and
+ * stopLines by themselves. A patch keeps clear of the covers, gullies, stop lines and zebras.
+ */
+export const roadPatches = (
+  [
+    ['ring', [10.6, 11.9], [-0.75, -0.2]],
+    ['ring', [94.6, 96.4], [-0.55, 0.62]],
+    ['west', [6.2, 7.3], [0.12, 0.78]],
+  ] as const
+).map(([road, [s0, s1], [c0, c1]]) => {
+  const corners = [roadSpot(road, s0, c0), roadSpot(road, s1, c1)];
+  return {
+    road,
+    along: [s0, s1] as XZ,
+    across: [c0, c1] as XZ,
+    box: [Math.min(corners[0].x, corners[1].x), Math.min(corners[0].z, corners[1].z), Math.max(corners[0].x, corners[1].x), Math.max(corners[0].z, corners[1].z)],
+  };
+});

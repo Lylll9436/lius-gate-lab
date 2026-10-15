@@ -28,6 +28,8 @@ export const palette = {
   // Harbour and shore details, each no more saturated than its family (sand, blueDoor, greenDoor, tramOrange, hedge, woodDark, wood).
   rope: '#c8b086', ropeBlue: '#46617a', net: '#94a29b',
   weed: '#5d6b3a', kelp: '#5c4a2c', driftwood: '#9d968a',
+  // The zebras' buff blister slabs (no more saturated than the sand they sit beside).
+  tactile: '#dbc38f',
 };
 export const hash = plan.hash;
 export function noise2(x: number, z: number) {
