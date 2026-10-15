@@ -1489,6 +1489,9 @@ for (const s of plan.flock) {
     assert(above > -0.15, `${s.id} has a hoof sunk ${(-above).toFixed(3)} into the hill`);
   }
 }
+// Crown tops over the ground in units of the tree's size, by kind (round and autumn trees 2.39);
+// the birch and rowan ones are measured against the built trees below.
+const TREE_TOPS = { pine: 2.27, birch: 2.58, rowan: 1.91 };
 // From the opening bearing no sheep seems to perch on a tree: hooves that land on screen within 0.9
 // of a nearer tree's axis and from 0.5 below to 0.6 above its top read as standing on the canopy.
 // The camera looks down at atan(35 / 38), as viewOffset in city-scene.ts places it.
@@ -1501,8 +1504,8 @@ for (const s of plan.flock) {
         dz = t.z - s.z,
         nearer = dx * Math.sin(yaw) + dz * Math.cos(yaw),
         across = dx * Math.cos(yaw) - dz * Math.sin(yaw),
-        // A pine's tip is at 2.27 x size; a round crown tops out at about 2.39 x size.
-        top = plan.terrainHeight(t.x, t.z) - plan.terrainHeight(s.x, s.z) + (t.kind === 'pine' ? 2.27 : 2.39) * t.size,
+        // A pine's tip is at 2.27 x size; a round crown tops out at about 2.39 x size (TREE_TOPS).
+        top = plan.terrainHeight(t.x, t.z) - plan.terrainHeight(s.x, s.z) + (TREE_TOPS[t.kind] ?? 2.39) * t.size,
         onScreen = top * Math.cos(rise) - nearer * Math.sin(rise);
       assert(
         !(nearer > 0 && Math.abs(across) < 0.9 && onScreen > -0.5 && onScreen < 0.6),
@@ -1573,6 +1576,97 @@ assert(looks('spring').has(blossomTop) && !looks('spring').has(autumnTop), 'Spri
 assert(looks('autumn').has(autumnTop) && !looks('autumn').has(blossomTop), 'Autumn turns and does not blossom.');
 for (const season of ['summer', 'winter'])
   assert(!looks(season).has(blossomTop) && !looks(season).has(autumnTop), season + ' trees stay green.');
+// Silver birch and rowan stand in for some of the outskirts' and the park's round trees: the count
+// and every place stay, the formal trees stay round, birches stand in loose groups of two or three
+// towards the coast and hills and rowans alone by a cottage, the paddock or the park, none in the
+// terrace clearing. Their fruit comes only in its season (rowan flowers in spring, berries in late
+// summer and autumn), within about 3k triangles, and the trees cost about what the round ones did.
+{
+  const nature = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    { palette } = await load('town-shared');
+  assert.equal(trees.length, 82, 'The birches and rowans change no tree count.');
+  const birches = trees.filter((t) => t.kind === 'birch'),
+    rowans = trees.filter((t) => t.kind === 'rowan');
+  // Of the 46 outskirts and park trees, about 15-20% birch and 10-15% rowan.
+  assert(birches.length >= 7 && birches.length <= 9, `${birches.length} birches`);
+  assert(rowans.length >= 5 && rowans.length <= 7, `${rowans.length} rowans`);
+  for (const t of trees)
+    if (Math.hypot(t.x, t.z) < plan.PLAZA_RADIUS || plan.distanceToStreets(t.x, t.z) < 2)
+      assert.equal(t.kind, 'round', `The formal ${t.id} turned ${t.kind}`);
+  const gap = (t, r) => Math.hypot(Math.max(0, Math.abs(t.x - r.x) - r.w / 2), Math.max(0, Math.abs(t.z - r.z) - r.d / 2)),
+    clearing = { x: plan.terraceRow.x, z: plan.terraceRow.z, w: 11, d: 2 * (plan.terraceRow.spacing + 4) };
+  for (const t of [...birches, ...rowans]) assert(gap(t, clearing) > 1, `${t.id} (${t.kind}) in the terrace clearing`);
+  for (const b of birches) {
+    const group = new Set([b]);
+    for (let grown = true; grown; ) {
+      grown = false;
+      for (const o of birches)
+        if (!group.has(o) && [...group].some((g) => Math.hypot(g.x - o.x, g.z - o.z) < 4.6)) {
+          group.add(o);
+          grown = true;
+        }
+    }
+    assert(group.size >= 2 && group.size <= 3, `${b.id} stands in a group of ${group.size} birches`);
+    const shore = plan.islandRadius(Math.atan2(b.z, b.x)) - Math.hypot(b.x, b.z);
+    assert(shore < 8.5 || plan.terrainHeight(b.x, b.z) > 0.1, `${b.id} is a birch far from the coast and the hills`);
+  }
+  for (const r of rowans) {
+    for (const o of rowans) assert(o === r || Math.hypot(o.x - r.x, o.z - r.z) >= 5, `${r.id} and ${o.id}: rowans stand alone`);
+    assert(
+      gap(r, plan.park) < 3 || gap(r, plan.paddock) < 3 || plan.cottages.some((c) => Math.hypot(c.x - r.x, c.z - r.z) < 5),
+      `${r.id} is a rowan by no cottage, paddock or park`,
+    );
+  }
+  const library = createCityMaterials(),
+    build = (season, spec) => {
+      const ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
+        g = new T.Group();
+      nature.createNature(ctx, createKit(ctx)).tree(g, spec, Number(spec.id.slice(5)));
+      g.updateMatrixWorld(true);
+      return g;
+    },
+    tris = (g, pick) => {
+      let n = 0;
+      g.traverse((o) => {
+        if (o.isMesh && pick(o)) n += (o.geometry.index?.count ?? o.geometry.getAttribute('position').count) / 3;
+      });
+      return n;
+    };
+  for (const t of [...birches, ...rowans]) {
+    const top = (new T.Box3().setFromObject(build('summer', t)).max.y - plan.terrainHeight(t.x, t.z)) / t.size;
+    assert(Math.abs(top - TREE_TOPS[t.kind]) < 0.02, `${t.id}: a ${t.kind} tops out at ${top.toFixed(3)} x size, not ${TREE_TOPS[t.kind]}`);
+  }
+  const muted = (hex, limit) => assert(hsv(hex).s <= limit + 1e-3, `${hex} is louder than its palette family`),
+    birchLeaves = {};
+  for (const season of ['spring', 'summer', 'autumn', 'winter']) {
+    let fruit = 0,
+      species = 0,
+      round = 0;
+    birchLeaves[season] = 0;
+    for (const t of [...birches, ...rowans]) {
+      const g = build(season, t),
+        look = nature.treeLook(t, Number(t.id.slice(5)), season);
+      // The canopy and autumn families top out at s 0.73 and 0.77 (#7aab2e, #c8862f).
+      for (const hex of [...look.tones, look.top, look.under]) muted(hex, 0.765);
+      fruit += tris(g, (o) => o.userData.fruit);
+      species += tris(g, (o) => !o.userData.fruit);
+      if (t.kind === 'birch') birchLeaves[season] += tris(g, (o) => o.material.userData.surfaceKind === 'foliage');
+      round += tris(build(season, { ...t, kind: 'round' }), () => true);
+      const f = nature.treeFruit(t, season);
+      assert.equal(!!f, t.kind === 'rowan' && season !== 'winter', `${t.id} ${f ? 'bears' : 'lacks'} fruit in ${season}`);
+      assert.equal(tris(g, (o) => o.userData.fruit) > 0, !!f, `${t.id}'s fruit is ${f ? 'missing' : 'out of season'} in ${season}`);
+      if (f) {
+        assert.equal(f.kind, season === 'spring' ? 'flowers' : 'berries', `${t.id} carries ${f.kind} in ${season}`);
+        muted(f.colour, f.kind === 'flowers' ? hsv(palette.white).s : hsv(palette.flowers[0]).s);
+      }
+    }
+    assert(fruit <= 3000, `${season} fruit costs ${fruit} triangles`);
+    assert(species <= 1.1 * round, `${season} birches and rowans cost ${species} triangles against ${round} as round trees`);
+  }
+  assert(birchLeaves.winter < birchLeaves.summer, 'The winter birches are a clump sparser.');
+}
 // The key light stays high all day, comes down to about 40 degrees at dawn and golden hour, and
 // goes back up for the night light.
 const { sunOffsetFor, lowSun, warmSun } = await load('city-atmosphere');
