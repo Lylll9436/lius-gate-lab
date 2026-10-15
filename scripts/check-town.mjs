@@ -235,6 +235,233 @@ for (const animal of plan.herd) {
   }
   assert.deepEqual([...lean].sort((a, b) => Number(a) - Number(b)), [false, true], 'The cyclist rides straights upright and leans on the corners.');
 }
+// Traffic signals: the UK sequence at every junction, the ring and avenue opposed with an all-red
+// between them, one period for all three and offsets that never hold all three rings on red.
+const { SIGNAL, LAP, signalState, signalJunctions, signalPosts, stopLines, STOP_LINE, TRAM_TIMETABLE, CYCLIST_TIMETABLE } = plan;
+{
+  const P = SIGNAL.period,
+    ids = signalJunctions.map((j) => j.id);
+  assert.deepEqual([...ids].sort(), ['east', 'south', 'west'], 'Signals at the three ring junctions, none at the north avenue.');
+  assert.equal(P, SIGNAL.ringGreen + SIGNAL.avenueGreen + 2 * (SIGNAL.amber + SIGNAL.allRed + SIGNAL.redAmber));
+  assert(P >= 20 && P <= 24 && SIGNAL.ringGreen > SIGNAL.avenueGreen, 'A 20-24 s cycle with the ring the larger share of green.');
+  assert(SIGNAL.amber === 3 && SIGNAL.redAmber === 2 && SIGNAL.allRed === 1, 'UK timings: amber 3 s, red+amber 2 s, all-red 1 s.');
+  assert(Number.isInteger(LAP / P) && LAP / P >= 2, `A lap (${LAP} s) is a whole number of cycles.`);
+  const step = 0.01,
+    order = ['green', 'amber', 'red', 'redAmber'];
+  for (const id of ids) {
+    // Runs of each approach's aspect over one cycle, started where the ring's green comes on.
+    const runs = { ring: [], avenue: [] };
+    let bothRed = 0;
+    for (let k = 0; k < P / step; k++) {
+      const t = plan.signalOffsets[id] + (k + 0.5) * step;
+      for (const approach of ['ring', 'avenue']) {
+        const aspect = signalState(id, approach, t),
+          list = runs[approach];
+        assert.equal(aspect, signalState(id, approach, t + P * 7), `${id} ${approach} is not periodic.`);
+        if (list.at(-1)?.aspect === aspect) list.at(-1).time += step;
+        else list.push({ aspect, time: step });
+      }
+      const ring = signalState(id, 'ring', t),
+        avenue = signalState(id, 'avenue', t);
+      assert(ring === 'red' || avenue === 'red', `At ${id} both approaches may go at t=${t.toFixed(2)} (${ring}, ${avenue}).`);
+      if (ring === 'red' && avenue === 'red') bothRed += step;
+    }
+    for (const [approach, list] of Object.entries(runs)) {
+      if (list.length > 4 && list[0].aspect === list.at(-1).aspect) list[0].time += list.pop().time;
+      const start = list.findIndex((r) => r.aspect === 'green');
+      const cycle = [...list.slice(start), ...list.slice(0, start)];
+      assert.deepEqual(cycle.map((r) => r.aspect), order, `${id} ${approach} runs ${cycle.map((r) => r.aspect).join(', ')}, not the UK sequence.`);
+      const time = Object.fromEntries(cycle.map((r) => [r.aspect, r.time]));
+      assert(Math.abs(time.amber - SIGNAL.amber) < 0.02 && Math.abs(time.redAmber - SIGNAL.redAmber) < 0.02, `${id} ${approach}: amber ${time.amber.toFixed(2)} s, red+amber ${time.redAmber.toFixed(2)} s.`);
+      assert(Math.abs(time.green - (approach === 'ring' ? SIGNAL.ringGreen : SIGNAL.avenueGreen)) < 0.02, `${id} ${approach}: green ${time.green.toFixed(2)} s.`);
+    }
+    assert(Math.abs(bothRed - 2 * SIGNAL.allRed) < 0.03, `${id} has ${bothRed.toFixed(2)} s of all-red a cycle.`);
+  }
+  for (let t = 0; t < P; t += step)
+    assert(!ids.every((id) => ['red', 'redAmber'].includes(signalState(id, 'ring', t))), `All three ring approaches are red at t=${t.toFixed(2)}.`);
+}
+// The rules of the road, frame by frame at 60 fps over five laps: each vehicle's distance only ever
+// grows, eased in and out of one stop a lap at the east junction (never an instant stop or start,
+// never creeping), its front at the stop line; it crosses a ring stop line only on green (or on
+// amber past the point where it could have stopped); every lap is the same and takes LAP seconds;
+// and the tram and the cyclist stay 20 apart.
+{
+  const P = SIGNAL.period,
+    dt = 1 / 60,
+    lineEdge = (l) => [l.x - l.along[0] * (STOP_LINE.width / 2), l.z - l.along[1] * (STOP_LINE.width / 2)],
+    ringLines = stopLines.filter((l) => l.approach === 'ring');
+  // The cyclist's pose at time 0 (the one reduced motion holds) is where it always was.
+  const laneLength = plan.polylineLength(plan.cyclistLane, true),
+    was = plan.samplePolyline(plan.cyclistLane, laneLength / 2 + 1.5, true, true),
+    now = plan.cyclistPose(0);
+  assert(Math.hypot(now.x - was.x, now.z - was.z) < 1e-9 && Math.abs(now.heading - was.heading) < 1e-9 && Math.abs(now.crank - Math.PI / 2) < 1e-9, 'The cyclist’s pose at time 0 moved out of the Life chapter’s view.');
+  for (const { name, tt, pose, distance } of [
+    { name: 'tram', tt: TRAM_TIMETABLE, pose: plan.tramPose, distance: plan.tramDistance },
+    { name: 'cyclist', tt: CYCLIST_TIMETABLE, pose: plan.cyclistPose, distance: plan.cyclistDistance },
+  ]) {
+    assert(tt.wait > 2 && Math.abs(tt.pulling + tt.cruising + tt.braking + tt.wait - LAP) < 1e-9, `The ${name}'s lap is not ${LAP} s with a wait (${tt.wait.toFixed(2)} s).`);
+    assert(tt.brake >= 1 && tt.brake <= 1.5 && tt.pull >= 1 && tt.pull <= 1.5, `The ${name} brakes or pulls away over ${tt.brake}, ${tt.pull}.`);
+    // Smoothstep easing peaks at 1.5 x speed / ramp time = 0.75 speed² / distance.
+    const most = (0.75 * tt.speed * tt.speed) / Math.min(tt.brake, tt.pull);
+    const front = (p) => [p.x + Math.sin(p.heading) * tt.nose, p.z + Math.cos(p.heading) * tt.nose];
+    let before = distance(0),
+      speedBefore = (distance(dt) - distance(-dt)) / (2 * dt),
+      standing = 0,
+      slow = 0,
+      peak = 0;
+    const stops = [],
+      fronts = new Map(ringLines.map((l) => [l, null]));
+    for (let f = 0; f <= 5 * LAP * 60; f++) {
+      const t = f * dt,
+        d = distance(t),
+        p = pose(t),
+        q = pose(t + LAP);
+      assert(Math.hypot(p.x - q.x, p.z - q.z) < 1e-7 && Math.abs(plan.angleDiff(p.heading, q.heading)) < 1e-7, `The ${name}'s lap from t=${t.toFixed(2)} differs from the next.`);
+      const speed = (distance(t + dt) - distance(t - dt)) / (2 * dt);
+      assert(d - before >= 0 && speed >= 0, `The ${name} rolls back at t=${t.toFixed(2)}.`);
+      if (f) {
+        const accel = Math.abs(speed - speedBefore) / dt;
+        peak = Math.max(peak, accel);
+        assert(accel <= most * 1.02 + 1e-6, `The ${name} changes speed by ${accel.toFixed(2)} a second² at t=${t.toFixed(2)} (most ${most.toFixed(2)}).`);
+      }
+      if (d === before && f) standing++;
+      else {
+        if (standing >= 60) stops.push({ until: t, frames: standing, front: front(pose(t - dt)) });
+        standing = 0;
+      }
+      if (speed > 0 && speed < 0.1 * tt.speed) slow++;
+      // Crossing a ring stop line's near edge, front first.
+      const [fx, fz] = front(p);
+      for (const l of ringLines) {
+        const [ex, ez] = lineEdge(l),
+          ahead = (fx - ex) * l.along[0] + (fz - ez) * l.along[1],
+          across = Math.abs((fx - l.x) * l.along[1] - (fz - l.z) * l.along[0]),
+          last = fronts.get(l);
+        if (across < plan.ROAD_WIDTH / 2 && last !== null && last <= 0 && ahead > 0) {
+          const aspect = signalState(l.junction, 'ring', t);
+          if (aspect === 'amber') {
+            // Allowed only past the point where it could have stopped: its front was under one braking distance short when the amber came on.
+            let amberOn = t;
+            while (signalState(l.junction, 'ring', amberOn - 0.01) === 'amber') amberOn -= 0.01;
+            const back = front(pose(amberOn)),
+              short = (ex - back[0]) * l.along[0] + (ez - back[1]) * l.along[1];
+            assert(short < tt.brake, `The ${name} runs the amber at ${l.junction}, t=${t.toFixed(2)}.`);
+          } else assert.equal(aspect, 'green', `The ${name} crosses the ${l.junction} stop line on ${aspect} at t=${t.toFixed(2)}.`);
+        }
+        fronts.set(l, across < plan.ROAD_WIDTH / 2 ? ahead : null);
+      }
+      before = d;
+      speedBefore = speed;
+    }
+    assert(peak > 0.5 * most, `The ${name} never brakes.`);
+    // One stop a lap, at the east junction's stop line, on red, moving off on green.
+    assert.equal(stops.length, 5, `The ${name} stops ${stops.length} times in five laps.`);
+    const east = ringLines.find((l) => l.junction === plan.STOP_JUNCTION),
+      [ex, ez] = lineEdge(east);
+    for (const s of stops) {
+      const short = (ex - s.front[0]) * east.along[0] + (ez - s.front[1]) * east.along[1];
+      assert(short >= 0 && short <= 0.1, `The ${name} stops ${short.toFixed(3)} short of the ${east.junction} stop line.`);
+      const arrived = s.until - s.frames * dt,
+        braking = arrived - tt.braking;
+      assert(['red', 'amber'].includes(signalState(east.junction, 'ring', braking + 1e-6)), `The ${name} brakes for a ${signalState(east.junction, 'ring', braking)} light.`);
+      for (let t = arrived; t < s.until - 0.6; t += 0.05) assert.notEqual(signalState(east.junction, 'ring', t), 'green', `The ${name} waits on green at t=${t.toFixed(2)}.`);
+      assert.equal(signalState(east.junction, 'ring', s.until), 'green', `The ${name} moves off on ${signalState(east.junction, 'ring', s.until)}.`);
+    }
+    // Easing passes through low speeds only briefly (under a tenth of the cruise for a fifth of each
+    // ramp): no creeping up to the line or away from it.
+    assert(slow * dt <= 5 * 0.25 * (tt.pulling + tt.braking), `The ${name} creeps for ${(slow * dt).toFixed(2)} s.`);
+    // Far into the day the timetable still repeats.
+    for (const t of [86400 * 7 + 13.37, 3e6 + 41.2]) {
+      const a = pose(t),
+        b = pose(t % LAP);
+      assert(Math.hypot(a.x - b.x, a.z - b.z) < 1e-4, `The ${name} drifts after ${t} s.`);
+    }
+  }
+  for (let f = 0; f <= 5 * LAP * 60; f++) {
+    const t = f * dt,
+      a = plan.tramPose(t),
+      b = plan.cyclistPose(t);
+    assert(Math.hypot(a.x - b.x, a.z - b.z) >= 20, `The cyclist comes within 20 of the tram at t=${t.toFixed(2)}.`);
+  }
+  // Both vehicles meet the south and west junctions on green with room either side, and the signals
+  // wait for nobody: the cyclist reaches the stop junction a cycle before the tram.
+  assert.equal(((((TRAM_TIMETABLE.go - CYCLIST_TIMETABLE.go) % LAP) + LAP) % LAP).toFixed(9), P.toFixed(9), 'The tram moves off a cycle after the cyclist.');
+}
+// The signals stand on the pavements just past their stop lines, close to the kerb and clear of the
+// walkers, the lamps, the trees, the benches and bins, the zebras, the cycle lane, the tram's swept
+// body and the terrace's clearing; the stop lines lie on the carriageway, off the zebras.
+{
+  const R = plan.ROAD_WIDTH,
+    lamps = plan.lampPlan(),
+    walks = [plan.walkLoop(1.62), plan.walkLoop(-1.62)],
+    zebras = signalJunctions.map((j) => {
+      const along = j.length - (R / 2 + plan.PAVEMENT_WIDTH / 2);
+      return { j, x: j.from[0] + j.u[0] * along, z: j.from[1] + j.u[1] * along };
+    }),
+    // A zebra's block: 0.9 along its avenue, 1.32 across it.
+    toZebra = (x, z, { j, x: zx, z: zz }) => {
+      const a = Math.abs((x - zx) * j.u[0] + (z - zz) * j.u[1]) - 0.45,
+        c = Math.abs((x - zx) * j.u[1] - (z - zz) * j.u[0]) - 0.66;
+      return Math.hypot(Math.max(a, 0), Math.max(c, 0)) + Math.min(Math.max(a, c), 0);
+    },
+    { park } = plan,
+    seats = [[0.9, 4.9], [-4.9, 0.9], [park.x + 3.3, park.z + 2.2], [park.x - 2.6, park.z + 2.1], [park.x + 1.4, park.z + 2.1]];
+  assert.equal(signalPosts.length, 6, 'Two signals at each of the three junctions.');
+  // The post's corners at its foot (0.2 square) and its backboard's (0.43 wide, from 1.03 up).
+  const corners = (p, half, back) => {
+    const c = Math.cos(p.heading),
+      s = Math.sin(p.heading);
+    return [[-half, -back], [half, -back], [-half, half], [half, half]].map(([lx, lz]) => [p.x + lx * c + lz * s, p.z - lx * s + lz * c]);
+  };
+  const tramBody = [];
+  for (let t = 0; t < LAP; t += 0.05) tramBody.push(plan.tramPose(t));
+  for (const p of signalPosts) {
+    const name = `${p.junction} ${p.approach} signal`,
+      foot = corners(p, 0.1, 0.1),
+      board = corners(p, 0.215, 0.14);
+    const ringOff = plan.distanceToPolyline([p.x, p.z], plan.ringLine, true),
+      j = signalJunctions.find((q) => q.id === p.junction),
+      avenueOff = plan.distanceToSegment([p.x, p.z], j.from, j.at);
+    if (p.approach === 'ring') assert(ringOff - 0.1 >= R / 2 + 0.18 && ringOff + 0.1 <= R / 2 + plan.PAVEMENT_WIDTH, `The ${name} stands off its pavement (${ringOff.toFixed(2)}).`);
+    else assert(avenueOff - 0.1 >= R / 2 + 0.18 && avenueOff + 0.1 <= R / 2 + plan.PAVEMENT_WIDTH && ringOff > R / 2 + plan.PAVEMENT_WIDTH, `The ${name} stands off its pavement (${avenueOff.toFixed(2)}).`);
+    // Its traffic sees it just past the stop line, facing them.
+    const line = stopLines.find((l) => l.junction === p.junction && l.approach === p.approach),
+      past = (p.x - line.x) * line.along[0] + (p.z - line.z) * line.along[1];
+    assert(past > 0.1 && past < 0.6, `The ${name} stands ${past.toFixed(2)} past its stop line.`);
+    assert(Math.abs(p.facing[0] + line.along[0]) < 1e-9 && Math.abs(p.facing[1] + line.along[1]) < 1e-9, `The ${name} does not face its traffic.`);
+    for (const walk of walks)
+      for (const [x, z] of foot) assert(plan.distanceToPolyline([x, z], walk, true) >= 0.26, `The ${name} stands in the walkers' way.`);
+    for (const l of lamps) assert(Math.hypot(l.x - p.x, l.z - p.z) >= 1.0, `The ${name} crowds ${l.id}.`);
+    for (const t of trees) assert(Math.hypot(t.x - p.x, t.z - p.z) >= t.size + 0.8, `The ${name} stands under ${t.id}.`);
+    for (const [x, z] of seats) assert(Math.hypot(x - p.x, z - p.z) >= 2, `The ${name} crowds a bench or bin.`);
+    for (const zebra of zebras) for (const [x, z] of foot) assert(toZebra(x, z, zebra) >= 0.2, `The ${name} stands on a zebra.`);
+    for (const [x, z] of board) {
+      assert(plan.distanceToPolyline([x, z], plan.cyclistLane, true) >= 0.35, `The ${name} overhangs the cycle lane.`);
+      for (const v of tramBody) {
+        // The tram's body as a rectangle 1.2 wide, its nose and tail 1.89 from its middle.
+        const c = Math.cos(v.heading),
+          s = Math.sin(v.heading),
+          lx = (x - v.x) * c - (z - v.z) * s,
+          lz = (x - v.x) * s + (z - v.z) * c;
+        assert(Math.hypot(Math.max(Math.abs(lx) - 0.6, 0), Math.max(Math.abs(lz) - TRAM_TIMETABLE.nose, 0)) >= 0.25, `The tram sweeps through the ${name}.`);
+      }
+    }
+    // The heads hang above the walkers (0.91 tall), and out of the terrace's clearing.
+    assert(!(p.x > row.x - 5.5 && p.x < row.x + 5.5 && Math.abs(p.z - row.z) < row.spacing + 4), `The ${name} stands in the terrace's clearing.`);
+  }
+  for (const l of stopLines) {
+    const j = signalJunctions.find((q) => q.id === l.junction),
+      across = [l.along[1], -l.along[0]];
+    for (const s of [-1, 1])
+      for (const w of [-1, 1]) {
+        const x = l.x + across[0] * (s * l.length) / 2 + l.along[0] * (w * STOP_LINE.width) / 2,
+          z = l.z + across[1] * (s * l.length) / 2 + l.along[1] * (w * STOP_LINE.width) / 2;
+        const road = l.approach === 'ring' ? plan.distanceToPolyline([x, z], plan.ringLine, true) : plan.distanceToSegment([x, z], j.from, j.at);
+        assert(road <= R / 2 - 0.04, `The ${l.junction} ${l.approach} stop line reaches the kerb.`);
+        for (const zebra of zebras) assert(toZebra(x, z, zebra) >= 0.2, `The ${l.junction} ${l.approach} stop line runs onto a zebra.`);
+      }
+  }
+}
 // The dog walk keeps to the open lawn east of the corner park: off the plot, the pavements and
 // the trunks, both the walker's loop and the dog's lane inside it.
 for (const [x, z] of [...plan.dogLoop, ...plan.dogLane]) {
@@ -1144,6 +1371,63 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     }
   }
 }
+// The traffic signals as built: the poles, heads, visors and boards batched into the land, so the
+// group keeps only the 18 lenses, three a head (red over amber over green, facing its traffic),
+// each its own plain standard material, the lanterns' program. Over a cycle each head lights
+// exactly its aspect's lenses, by emissive intensity alone: no material ever needs a recompile.
+// Nothing about them answers the pointer.
+{
+  const entry = model.animated.find((e) => e.object.name === 'traffic-signals');
+  assert(entry && entry.object.userData.prebatched, 'The signals are in the animated list, batched with the land.');
+  const lenses = [];
+  entry.object.traverse((o) => o.isMesh && lenses.push(o));
+  assert.equal(lenses.length, 18, `The signals keep ${lenses.length} separate meshes, not their 18 lenses.`);
+  assert.equal(new Set(lenses.map((l) => l.material)).size, 18, 'Each lens has its own material.');
+  const lantern = lamps[0].material;
+  for (const l of lenses) {
+    const m = l.material;
+    assert(m.type === lantern.type && !m.vertexColors && !m.map && !m.transparent && m.onBeforeCompile === T.Material.prototype.onBeforeCompile, 'A lens has a program of its own.');
+    assert.equal(m.customProgramCacheKey(), lantern.customProgramCacheKey(), 'A lens does not share the lanterns’ program.');
+    assert(!lamps.includes(l) && !l.castShadow, 'A lens is lit by the lamps’ night loop or casts a shadow.');
+  }
+  for (let o = entry.object; o; o = o.parent) assert(!o.userData.buildingId && !o.userData.placeId, 'The signals answer the pointer.');
+  const versions = lenses.map((l) => l.material.version),
+    want = { red: [1, 0, 0], amber: [0, 1, 0], redAmber: [1, 1, 0], green: [0, 0, 1] };
+  entry.object.updateMatrixWorld(true);
+  signalPosts.forEach((p, i) => {
+    const heads = entry.object.children[i].children.filter((c) => c.userData.keepSeparate);
+    assert(heads.length === 1 && heads[0].children.length === 3, `The ${p.junction} ${p.approach} signal has no head of three lenses.`);
+    const [red, amber, green] = heads[0].children.map((c) => c.getWorldPosition(new T.Vector3()));
+    assert(red.y > amber.y && amber.y > green.y, `The ${p.junction} ${p.approach} lenses are not red over amber over green.`);
+    assert((amber.x - p.x) * p.facing[0] + (amber.z - p.z) * p.facing[1] > 0.05, `The ${p.junction} ${p.approach} lenses face away from its traffic.`);
+    assert(red.y > 1.6 && green.y > 1.1, 'The signal heads hang too low.');
+  });
+  for (let t = 0; t < SIGNAL.period * 2; t += 0.25) {
+    entry.update(t, t > SIGNAL.period ? 1 : 0);
+    signalPosts.forEach((p, i) => {
+      const lit = entry.object.children[i].children.find((c) => c.userData.keepSeparate).children.map((c) => Number(c.material.emissiveIntensity > 0));
+      assert.deepEqual(lit, want[signalState(p.junction, p.approach, t)], `The ${p.junction} ${p.approach} signal shows the wrong lenses at t=${t}.`);
+    });
+  }
+  assert.deepEqual(lenses.map((l) => l.material.version), versions, 'A signal change recompiles a lens.');
+  entry.update(0, 0);
+  // Each vehicle's nose reaches its front: the tram's lamps at its ends, the bike's front tyre.
+  const reach = (o) => {
+    const keep = [o.position.clone(), o.rotation.clone()];
+    o.position.set(0, 0, 0);
+    o.rotation.set(0, 0, 0);
+    o.updateMatrixWorld(true);
+    const box = new T.Box3().setFromObject(o);
+    o.position.copy(keep[0]);
+    o.rotation.copy(keep[1]);
+    o.updateMatrixWorld(true);
+    return box.max.z;
+  };
+  const tramFront = reach(model.tram),
+    bikeFront = reach(model.animated.find((e) => e.object.name === 'cyclist').object);
+  assert(Math.abs(TRAM_TIMETABLE.nose - tramFront) < 0.02, `The tram's nose (${TRAM_TIMETABLE.nose}) is not its front (${tramFront.toFixed(3)}).`);
+  assert(Math.abs(CYCLIST_TIMETABLE.nose - bikeFront) < 0.02, `The bike's nose (${CYCLIST_TIMETABLE.nose}) is not its front (${bikeFront.toFixed(3)}).`);
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>
@@ -1499,5 +1783,5 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   for (const p of panes) assert.equal(windowLevel(p.light, state), windowLevel(p.light, windowClock(12)), `A pane at ${p.place} misses the noon reset.`);
 }
 console.log(
-  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
