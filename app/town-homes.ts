@@ -1,15 +1,85 @@
 import * as T from 'three';
 import * as plan from './town-plan';
-import { palette } from './town-shared';
+import type { Season } from './glasgow-sun';
+import { palette, hash, type TownContext } from './town-shared';
 import type { Bay, Kit } from './town-kit';
-import type { Nature } from './town-nature';
+import { bakeRamp, type Nature } from './town-nature';
+
+/** A colour with its HSL saturation cut by `k` (0..1): window-box blooms and painted boxes stay calmer than the beds. */
+export function muted(hex: string, k: number) {
+  const c = new T.Color(hex), hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  return '#' + c.setHSL(hsl.h, hsl.s * (1 - k), hsl.l).getHexString();
+}
+/**
+ * What the window boxes hold through the year: a leafy mound (`leaf`, lime `top`) with blooms from
+ * palette.flowers, muted, from spring to autumn (daffodil yellow and primrose white in spring,
+ * geranium red and pink in summer, pansy purple and gold in autumn), and in winter dark evergreen
+ * sprigs with a few tufts of winter heather.
+ */
+const [RED, YELLOW, PINK, WHITE, PURPLE] = palette.flowers;
+export const WINDOW_BOX: Record<Season, { leaf: string; top: string; blooms: string[]; sprigs: number }> = {
+  spring: { leaf: '#5b8a34', top: '#93bb3a', blooms: [YELLOW, WHITE, YELLOW, PINK, YELLOW].map((c) => muted(c, 0.3)), sprigs: 0 },
+  summer: { leaf: '#4f7f2e', top: '#86b234', blooms: [RED, PINK, WHITE, RED, PURPLE].map((c) => muted(c, 0.3)), sprigs: 0 },
+  autumn: { leaf: '#5a7634', top: '#8a9a3e', blooms: [PURPLE, YELLOW, PURPLE, WHITE].map((c) => muted(c, 0.3)), sprigs: 0 },
+  winter: { leaf: '#3f6236', top: '#5e7f45', blooms: ['#b48aa2', '#b48aa2'], sprigs: 2 },
+};
+/** A small smooth blob (20 triangles): a window-box bloom, heather tuft or trailing leaf. */
+const blobGeometry = (() => {
+  const g = new T.IcosahedronGeometry(1, 0);
+  g.setAttribute('normal', g.getAttribute('position').clone());
+  g.normalizeNormals();
+  return g;
+})();
 
 /* ------------------------------------------------------------------ */
 /* Homes: the terrace row and the cottages                             */
 /* ------------------------------------------------------------------ */
-export function createHomes(kit: Kit, nature: Nature) {
-  const { box, cylinder, sphere, slabRoof, windowAt, door, quoins, plinth, chimney, bayOutline, cantedPrism, bayFaces, sash, bayRoof } = kit;
+export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
+  const { material, season } = ctx;
+  const { box, cylinder, cone, sphere, slabRoof, windowAt, door, quoins, plinth, chimney, bayOutline, cantedPrism, bayFaces, sash, bayRoof } = kit;
   const { hedge, flowerBed } = nature;
+  /** A blob of radius r, squashed to `squash` of its height, that casts no shadow. */
+  function blob(g: T.Object3D, x: number, y: number, z: number, r: number, colour: string, squash = 0.75) {
+    const m = new T.Mesh(blobGeometry, material(colour, 'foliage'));
+    m.position.set(x, y, z);
+    m.scale.set(r, r * squash, r);
+    m.rotation.y = hash(x * 17 + z * 5) * 3;
+    m.castShadow = false;
+    m.receiveShadow = true;
+    m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * A window box on a face (local +z out of the wall): a painted timber box `length` long and
+   * `depth` deep from its back at z, its foot at y, holding a leafy mound and the season's planting
+   * (WINDOW_BOX). It stands in front of the window frame and below the glass: seen from the town's
+   * camera (42.6 degrees down) the planting's tops fall below the glass's foot.
+   */
+  function windowBox(g: T.Object3D, x: number, y: number, z: number, length: number, depth: number, paint: string, seed: number) {
+    const H = 0.12,
+      look = WINDOW_BOX[season],
+      zc = z + depth / 2;
+    box(g, x, y + H / 2, zc, length, H, depth, paint, 'paint');
+    bakeRamp(box(g, x, y + H + 0.015, zc, length - 0.05, 0.07, depth - 0.035, '#ffffff', 'foliage', { bevel: 0.03 }), look.leaf, 0.85, 1.05, look.top, 0.4);
+    // Fewer, fatter blooms read as flowers; a row of small ones reads as beads. Each stays inside
+    // the box's front face (r at most 0.55 of its depth).
+    const n = Math.max(3, Math.round(length / 0.17)),
+      top = y + H + 0.04,
+      big = Math.min(0.064, depth * 0.52);
+    for (let i = 0; i < n; i++) {
+      const r = big * (0.85 + 0.15 * hash(seed + i * 5)),
+        along = ((i + 0.5) / n - 0.5) * (length - 2 * big - 0.02) + (hash(seed + i * 11) - 0.5) * 0.03,
+        across = (hash(seed + i * 7) - 0.5) * Math.max(0, depth - 2 * r - 0.01);
+      if (look.sprigs && i % 2 === 0) {
+        // Winter: a little dark conifer sprig between the heather tufts.
+        const sprig = cone(g, x + along, top + 0.045, zc + across, r * 0.8, 0.15, '#3a5a34', 'foliage', 6, hash(seed + i));
+        sprig.castShadow = false;
+        sprig.userData.noShadow = true;
+      } else blob(g, x + along, top + 0.01 * hash(seed + i * 3), zc + across, r, look.blooms[(seed + i) % look.blooms.length]);
+    }
+  }
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
     const w = site.w,
       d = site.d;
@@ -49,6 +119,9 @@ export function createHomes(kit: Kit, nature: Nature) {
     cantedPrism(shell, bay, 0.56, 0.68, dress, 'stone', 0.06).userData.band = true; // sill course; frames sit on it
     cantedPrism(shell, bay, P, 1.76, stone); // ground storey
     storey(0, 1.2, 0.86); // glass 0.77-1.63, frames 0.69-1.71
+    // A window box on the front's sill course, in front of the frame and under the glass's foot
+    // (0.765); painted like the door. Inside z 2.85, as everything above 0.7 on the bay is.
+    windowBox(faces[0].face, 0, 0.6, 0.085, 0.58, 0.105, muted(doorColor, 0.25), seed * 13 + 3);
     if (variant === 'villa') {
       // The West End main-door villa: a cornice (its cap, front at z 2.74) under a stone balustrade.
       cantedPrism(shell, bay, 1.76, 1.96, dress, 'stone', 0.09).userData.bayCap = true;
@@ -130,8 +203,11 @@ export function createHomes(kit: Kit, nature: Nature) {
     plinth(root,w,d,palette.plinth,{height:P,proud:0.2});
     box(root,0,P+h/2,0,w,h,d,c.color,'stone');
     const pan=index%2===1, ridge=slabRoof(root,0,top,0,w,d,1.4,pan?palette.pantile:palette.slate,{eave:0.25,verge:0.25,inset:0,ridge:pan?palette.pantileLight:palette.slateLight,gable:c.color});
-    door(root,0.6,P,d/2,0.75,1.5,[palette.greenDoor,palette.blueDoor,palette.redDoor][index%3],{landing:0.2,width:1.0});
+    const doorColour = [palette.greenDoor, palette.blueDoor, palette.redDoor][index % 3];
+    door(root,0.6,P,d/2,0.75,1.5,doorColour,{landing:0.2,width:1.0});
     const pane = windowAt(root,-0.65,1.2,d/2,0.7,0.75,{frame:palette.trim});
+    // A window box on the sill (top 0.715), against the frame's face (d/2 + 0.16), under the glass (foot 0.83).
+    windowBox(root, -0.65, 0.716, d / 2 + 0.165, 0.84, 0.15, muted(doorColour, 0.25), index * 11 + 5);
     if (c.nightLight) pane.userData.nightLight = true; // a dim lamp left on all night (town-batch)
     chimney(root,-(w/2-0.35),ridge-0.8,ridge+0.45,0,c.color,palette.trim,1);
     // Front garden sized to the room before the pavement: a hedge with a gap at the door, and a path from the step.

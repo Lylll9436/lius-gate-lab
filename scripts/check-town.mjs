@@ -900,6 +900,75 @@ for (const [id, m] of models) {
       }
   }
 }
+// Window boxes, under the ground-floor front window of each home (on its bay's sill course) and of
+// each cottage (on the sill): planted, in front of the frame and never in the glass or the doorway,
+// and low enough that from the town's camera (35 up for every 38 across) no leaf or bloom stands
+// over the glass: what lies dz in front of a pane shows on it dz × 35/38 lower. A rounded box has
+// vertices only at its bevels, so this reads triangles, not vertices.
+{
+  const RISE = 35 / 38;
+  /** Triangles of `meshes` within `reach` of `centre` (world), in a building's frame (front +z). */
+  const local = (meshes, toLocal, centre, reach) => {
+    const out = [],
+      w = new T.Vector3();
+    for (const o of meshes) {
+      const p = o.geometry.attributes.position,
+        index = o.geometry.index,
+        m = toLocal.clone().multiply(o.matrixWorld),
+        kind = o.material.userData.surfaceKind,
+        n = index ? index.count : p.count;
+      for (let i = 0; i < n; i += 3) {
+        if (w.fromBufferAttribute(p, index ? index.getX(i) : i).applyMatrix4(o.matrixWorld).distanceTo(centre) > reach) continue;
+        const tri = [0, 1, 2].map((j) => new T.Vector3().fromBufferAttribute(p, index ? index.getX(i + j) : i + j).applyMatrix4(m));
+        out.push({ tri, kind, box: new T.Box3().setFromPoints(tri) });
+      }
+    }
+    return out;
+  };
+  /**
+   * The front pane found among `tris` in `search` (a Box3: its foot, sides and plane), then the
+   * window box in front of it: planted (paint and foliage), clear of the glass and of `doors`
+   * (Box3s), and under the foot as the camera sees it.
+   */
+  const windowBox = (name, tris, search, doors) => {
+    const glass = tris.filter((t) => t.kind === 'glass' && search.containsBox(t.box)).flatMap((t) => t.tri);
+    assert(glass.length >= 3, `${name}: no front pane found`);
+    const foot = Math.min(...glass.map((p) => p.y)),
+      left = Math.min(...glass.map((p) => p.x)) + 0.03,
+      right = Math.max(...glass.map((p) => p.x)) - 0.03,
+      low = glass.filter((p) => p.y < foot + 0.05),
+      plane = low.reduce((s, p) => s + p.z, 0) / low.length;
+    const front = new T.Box3(new T.Vector3(left, foot - 0.35, plane + 0.02), new T.Vector3(right, foot + 0.3, plane + 0.45)),
+      inFront = tris.filter((t) => t.kind !== 'glass' && t.box.intersectsBox(front) && t.box.min.y > front.min.y && t.box.max.y < front.max.y && t.box.min.z > front.min.z && t.box.max.z < front.max.z);
+    const planted = inFront.filter((t) => t.kind === 'foliage' && t.box.min.y > foot - 0.1).length,
+      painted = inFront.filter((t) => t.kind === 'paint' && t.box.max.z > plane + 0.1 && t.box.max.y < foot).length;
+    assert(planted >= 20 && painted >= 6, `${name}: no planted window box under the front window (${planted} leaf, ${painted} board triangles)`);
+    for (const { tri, kind, box } of inFront) {
+      for (const p of tri) assert(p.y - (p.z - plane) * RISE < foot + 0.005, `${name}: ${kind} at ${p.toArray().map((n) => n.toFixed(3))} stands over the glass (foot ${foot.toFixed(3)})`);
+      if (kind === 'foliage' || kind === 'paint') assert(!doors.some((d) => d.intersectsBox(box)), `${name}: the window box reaches the doorway at ${box.min.toArray().map((n) => n.toFixed(3))}`);
+    }
+    // Nothing of the box goes into the glass: no leaf or board in the pane's own layer above its foot.
+    const layer = new T.Box3(new T.Vector3(left, foot + 0.02, plane - 0.02), new T.Vector3(right, foot + 0.3, plane + 0.02));
+    for (const { kind, box } of tris)
+      if (kind === 'foliage' || kind === 'paint') assert(!layer.intersectsBox(box), `${name}: the window box cuts the glass at ${box.min.toArray().map((n) => n.toFixed(3))}`);
+  };
+  const B = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(x0, y0, z0), new T.Vector3(x1, y1, z1));
+  for (const id of plan.chapterSubjects.people) {
+    const { shell, root } = models.get(id),
+      { d } = plan.sites[id];
+    shell.updateMatrixWorld(true);
+    // The bay's lower front sash, and the door leaf and its surround grown 0.05.
+    windowBox(id, local(shell.children.filter((o) => o.isMesh), shell.matrixWorld.clone().invert(), root.position, 4), B(-0.98, 0.6, d / 2 + 0.5, -0.38, 1.25, d / 2 + 0.62), [B(-0.06, 0, d / 2 - 0.05, 1.1, 2.4, d / 2 + 0.35)]);
+  }
+  const landMeshes = [];
+  model.land.traverse((o) => o.isMesh && landMeshes.push(o));
+  plan.cottages.forEach((c, i) => {
+    const at = new T.Vector3(c.x, plan.terrainHeight(c.x, c.z), c.z),
+      frame = new T.Matrix4().makeRotationY(c.rotation).setPosition(at);
+    // The cottage's front window (0.7 × 0.75 at x -0.65, y 1.2) and its door (0.75 wide at x 0.6, its 0.18 surround) grown 0.05.
+    windowBox(`cottage ${i}`, local(landMeshes, frame.clone().invert(), at, 2.6), B(-1.05, 0.7, 1.2, -0.25, 1.6, 1.3), [B(-0.005, 0, 1.15, 1.205, 2.0, 1.75)]);
+  });
+}
 // The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
 {
   const studio = new T.Box3().setFromObject(models.get('research-studio').root),
