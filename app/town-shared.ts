@@ -108,5 +108,6 @@ export type TownContext = {
   land: T.Group;
   lamps: T.Mesh[];
   clocks: { hour: T.Object3D; minute: T.Object3D }[];
-  animated: { object: T.Object3D; update: (time: number, night: number) => void }[];
+  /** Moving parts; `rain` (0..1, the scene's) is passed to those that answer the weather. */
+  animated: { object: T.Object3D; update: (time: number, night: number, rain?: number) => void }[];
 };

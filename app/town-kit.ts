@@ -1,8 +1,10 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { METAL_KINDS, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, type TownContext } from './town-shared';
+import type { Season } from './glasgow-sun';
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                          */
@@ -15,6 +17,87 @@ function roofKind(colour: string): SurfaceKind {
 }
 /** A canted bay's plan on its wall (see bayOutline): centre x, wall face z0, root width, projection and cant per side. */
 export type Bay = { x: number; z0: number; root: number; depth: number; cant: number };
+/**
+ * Ivy on a wall, in the wall's own plan (x along the face, y up from the ground, +z out of it).
+ * `areas` are the rectangles [x0, y0, x1, y1] it covers (their union, with a ragged edge), `keep`
+ * the ones it never reaches (openings with their frames, sills and keystones, and a margin), and
+ * `plinth` a battered base it climbs over (proud at the foot, `proud - batter` at its top, `h`).
+ */
+export type IvySpec = {
+  areas: [number, number, number, number][];
+  keep: [number, number, number, number][];
+  plinth?: { h: number; proud: number; batter: number };
+  seed: number;
+};
+/**
+ * The ivy's leaves by season: deep green, fresher in spring, darker in winter; in autumn the reds
+ * and rusts of Boston ivy, each no more saturated than the brick and the hedge it is drawn from.
+ */
+export const IVY: Record<Season, { tones: string[]; top: string }> = {
+  spring: { tones: ['#5a9040', '#66a046', '#528838'], top: '#9cc456' },
+  summer: { tones: ['#4f8236', '#5a8e3c', '#467832'], top: '#8ab450' },
+  autumn: { tones: ['#a84c32', '#b25e36', '#984530', '#8e6638'], top: '#d08250' },
+  winter: { tones: ['#4a6a40', '#527446', '#43603a'], top: '#76925e' },
+};
+/** Ivy clumps' spacing on the wall: one clump about every 0.24, each about 0.4 to 0.5 across, so they overlap into one lumpy mass. */
+const IVY_STEP = 0.24;
+/**
+ * The ivy's clumps for a spec (x, y, z of each centre on the wall, radius r): each area is packed
+ * on its own staggered grid, centred on its width (so a narrow pier of wall between two windows
+ * still gets a full column), clumps already covered by another area's are skipped, and the edge
+ * is made ragged by dropping a share of the outermost clumps (not a stem's) and jittering the rest.
+ * A clump that would reach a `keep` box shrinks to fit beside it (down to 0.09) or is left out.
+ */
+export function ivyLumps(spec: IvySpec) {
+  const out: { x: number; y: number; z: number; r: number }[] = [],
+    h = (n: number) => plan.hash(spec.seed * 97 + n);
+  // A clump spans r every way once spun (its 0.85 squash may stand upright).
+  const clear = (x: number, y: number, r: number) => !spec.keep.some(([a, b, c, d]) => x + r > a && x - r < c && y + r > b && y - r < d);
+  let k = 0;
+  spec.areas.forEach(([a, b, c, d]) => {
+    const cols = Math.max(1, Math.round((c - a) / IVY_STEP)),
+      dx = (c - a) / cols,
+      rows = Math.max(1, Math.round((d - b) / (IVY_STEP * 0.8))),
+      dy = (d - b) / rows;
+    for (let row = 0; row < rows; row++) {
+      const odd = row % 2 === 1 && cols > 1,
+        n = odd ? cols - 1 : cols;
+      for (let col = 0; col < n; col++, k++) {
+        // A ragged edge: the top row, and the sides of an area wider than a stem (a stem keeps its
+        // clumps, or it parts into floating tufts).
+        const edge = (cols > 2 && (col === 0 || col === n - 1)) || row === rows - 1;
+        if (edge && h(k * 5 + 7) < 0.3) continue;
+        const px = a + (col + (odd ? 1 : 0.5)) * dx + (h(k * 3) - 0.5) * 0.08,
+          py = b + (row + 0.5) * dy + (h(k * 3 + 1) - 0.5) * 0.07;
+        if (out.some((o) => Math.hypot(o.x - px, o.y - py) < IVY_STEP * 0.55)) continue;
+        let r = IVY_STEP * (0.78 + 0.24 * h(k * 3 + 2));
+        while (r >= 0.09 && !clear(px, py, r)) r *= 0.8;
+        if (r < 0.09) continue;
+        const p = spec.plinth,
+          wall = p && py < p.h ? p.proud - (p.batter * py) / p.h : 0;
+        out.push({ x: px, y: Math.max(py, r * 0.6), z: wall + r * 0.2, r });
+      }
+    }
+  });
+  return out;
+}
+/**
+ * One ivy clump before its placing: the front of a smooth blob (the icosahedron's faces that do
+ * not face the wall, 15 of its 20), since the wall hides the rest.
+ */
+const ivyBlob = (() => {
+  const ico = new T.IcosahedronGeometry(1, 0),
+    p = ico.getAttribute('position'),
+    kept: number[] = [];
+  for (let f = 0; f < p.count; f += 3)
+    if (p.getZ(f) + p.getZ(f + 1) + p.getZ(f + 2) > -1.2) for (let j = 0; j < 9; j++) kept.push(p.array[f * 3 + j]);
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(kept, 3));
+  g.setAttribute('normal', new T.Float32BufferAttribute(kept, 3));
+  g.normalizeNormals();
+  ico.dispose();
+  return g;
+})();
 const unitBox = new T.BoxGeometry(1, 1, 1);
 /**
  * Soft, rendered-object edges: every box thicker than a slab gets a small rounded edge,
@@ -469,6 +552,44 @@ export function createKit(ctx: TownContext) {
     return glass;
   }
 
+  /**
+   * Ivy on a face (local +z out of the wall): one mesh of soft leaf clumps (the fronts of smooth blobs,
+   * flattened against the wall) over ivyLumps(spec), in the season's IVY tones. Each clump is a
+   * shade of its own; clumps darken toward the ground, and their up- and out-facing
+   * sides take the lighter `top`, so the patch reads as layered leaves rather than a green slab.
+   */
+  function ivy(g: T.Object3D, spec: IvySpec) {
+    const look = IVY[ctx.season],
+      top = new T.Color(look.top),
+      c = new T.Color(),
+      m4 = new T.Matrix4(),
+      q = new T.Quaternion(),
+      h = (n: number) => plan.hash(spec.seed * 131 + n);
+    const parts = ivyLumps(spec).map(({ x, y, z, r }, k) => {
+      const geo = ivyBlob.clone();
+      q.setFromEuler(new T.Euler(0, 0, h(k) * Math.PI));
+      geo.applyMatrix4(m4.compose(new T.Vector3(x, y, z), q, new T.Vector3(r, r * 0.85, r * 0.55)));
+      const base = new T.Color(look.tones[Math.floor(h(k + 0.5) * look.tones.length)]),
+        value = (0.84 + 0.18 * Math.min(1, y / 1.2)) * (0.9 + 0.14 * h(k + 0.25)),
+        n = geo.getAttribute('normal'),
+        colour = new Float32Array(n.count * 3);
+      for (let i = 0; i < n.count; i++) {
+        const lift = Math.max(0, n.getY(i) * 0.6 + n.getZ(i) * 0.4);
+        c.copy(base).lerp(top, 0.35 * lift * lift).multiplyScalar(value);
+        colour.set([c.r, c.g, c.b], i * 3);
+      }
+      geo.setAttribute('color', new T.BufferAttribute(colour, 3));
+      return geo;
+    });
+    if (!parts.length) return undefined;
+    const geometry = mergeGeometries(parts)!;
+    parts.forEach((p) => p.dispose());
+    const m = new T.Mesh(geometry, material('#ffffff', 'foliage'));
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  }
+
   const groundRay = new T.Raycaster(),
     down = new T.Vector3(0, -1, 0);
   /** The built island ground's height at (x, z): its triangles, not the smooth terrainHeight they sample. */
@@ -478,6 +599,6 @@ export function createKit(ctx: TownContext) {
     const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
     return hit ? hit.point.y : plan.terrainHeight(x, z);
   }
-  return { box, cylinder, strut, bollard, rope, eye, coilPoints, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, bayRoof, door, quoins, plinth, chimney, lampGlass, groundY };
+  return { box, cylinder, strut, bollard, rope, eye, coilPoints, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, bayRoof, door, quoins, plinth, chimney, lampGlass, groundY, ivy };
 }
 export type Kit = ReturnType<typeof createKit>;

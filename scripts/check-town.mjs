@@ -900,6 +900,231 @@ for (const [id, m] of models) {
       }
   }
 }
+// Window boxes, under the ground-floor front window of each home (on its bay's sill course) and of
+// each cottage (on the sill): planted, in front of the frame and never in the glass or the doorway,
+// and low enough that from the town's camera (35 up for every 38 across) no leaf or bloom stands
+// over the glass: what lies dz in front of a pane shows on it dz × 35/38 lower. A rounded box has
+// vertices only at its bevels, so this reads triangles, not vertices.
+{
+  const RISE = 35 / 38;
+  /** Triangles of `meshes` within `reach` of `centre` (world), in a building's frame (front +z). */
+  const local = (meshes, toLocal, centre, reach) => {
+    const out = [],
+      w = new T.Vector3();
+    for (const o of meshes) {
+      const p = o.geometry.attributes.position,
+        index = o.geometry.index,
+        m = toLocal.clone().multiply(o.matrixWorld),
+        kind = o.material.userData.surfaceKind,
+        n = index ? index.count : p.count;
+      for (let i = 0; i < n; i += 3) {
+        if (w.fromBufferAttribute(p, index ? index.getX(i) : i).applyMatrix4(o.matrixWorld).distanceTo(centre) > reach) continue;
+        const tri = [0, 1, 2].map((j) => new T.Vector3().fromBufferAttribute(p, index ? index.getX(i + j) : i + j).applyMatrix4(m));
+        out.push({ tri, kind, box: new T.Box3().setFromPoints(tri) });
+      }
+    }
+    return out;
+  };
+  /**
+   * The front pane found among `tris` in `search` (a Box3: its foot, sides and plane), then the
+   * window box in front of it: planted (paint and foliage), clear of the glass and of `doors`
+   * (Box3s), and under the foot as the camera sees it.
+   */
+  const windowBox = (name, tris, search, doors) => {
+    const glass = tris.filter((t) => t.kind === 'glass' && search.containsBox(t.box)).flatMap((t) => t.tri);
+    assert(glass.length >= 3, `${name}: no front pane found`);
+    const foot = Math.min(...glass.map((p) => p.y)),
+      left = Math.min(...glass.map((p) => p.x)) + 0.03,
+      right = Math.max(...glass.map((p) => p.x)) - 0.03,
+      low = glass.filter((p) => p.y < foot + 0.05),
+      plane = low.reduce((s, p) => s + p.z, 0) / low.length;
+    const front = new T.Box3(new T.Vector3(left, foot - 0.35, plane + 0.02), new T.Vector3(right, foot + 0.3, plane + 0.45)),
+      inFront = tris.filter((t) => t.kind !== 'glass' && t.box.intersectsBox(front) && t.box.min.y > front.min.y && t.box.max.y < front.max.y && t.box.min.z > front.min.z && t.box.max.z < front.max.z);
+    const planted = inFront.filter((t) => t.kind === 'foliage' && t.box.min.y > foot - 0.1).length,
+      painted = inFront.filter((t) => t.kind === 'paint' && t.box.max.z > plane + 0.1 && t.box.max.y < foot).length;
+    assert(planted >= 20 && painted >= 6, `${name}: no planted window box under the front window (${planted} leaf, ${painted} board triangles)`);
+    for (const { tri, kind, box } of inFront) {
+      for (const p of tri) assert(p.y - (p.z - plane) * RISE < foot + 0.005, `${name}: ${kind} at ${p.toArray().map((n) => n.toFixed(3))} stands over the glass (foot ${foot.toFixed(3)})`);
+      if (kind === 'foliage' || kind === 'paint') assert(!doors.some((d) => d.intersectsBox(box)), `${name}: the window box reaches the doorway at ${box.min.toArray().map((n) => n.toFixed(3))}`);
+    }
+    // Nothing of the box goes into the glass: no leaf or board in the pane's own layer above its foot.
+    const layer = new T.Box3(new T.Vector3(left, foot + 0.02, plane - 0.02), new T.Vector3(right, foot + 0.3, plane + 0.02));
+    for (const { kind, box } of tris)
+      if (kind === 'foliage' || kind === 'paint') assert(!layer.intersectsBox(box), `${name}: the window box cuts the glass at ${box.min.toArray().map((n) => n.toFixed(3))}`);
+  };
+  const B = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(x0, y0, z0), new T.Vector3(x1, y1, z1));
+  for (const id of plan.chapterSubjects.people) {
+    const { shell, root } = models.get(id),
+      { d } = plan.sites[id];
+    shell.updateMatrixWorld(true);
+    // The bay's lower front sash, and the door leaf and its surround grown 0.05.
+    windowBox(id, local(shell.children.filter((o) => o.isMesh), shell.matrixWorld.clone().invert(), root.position, 4), B(-0.98, 0.6, d / 2 + 0.5, -0.38, 1.25, d / 2 + 0.62), [B(-0.06, 0, d / 2 - 0.05, 1.1, 2.4, d / 2 + 0.35)]);
+  }
+  const landMeshes = [];
+  model.land.traverse((o) => o.isMesh && landMeshes.push(o));
+  plan.cottages.forEach((c, i) => {
+    const at = new T.Vector3(c.x, plan.terrainHeight(c.x, c.z), c.z),
+      frame = new T.Matrix4().makeRotationY(c.rotation).setPosition(at);
+    // The cottage's front window (0.7 × 0.75 at x -0.65, y 1.2) and its door (0.75 wide at x 0.6, its 0.18 surround) grown 0.05.
+    windowBox(`cottage ${i}`, local(landMeshes, frame.clone().invert(), at, 2.6), B(-1.05, 0.7, 1.2, -0.25, 1.6, 1.3), [B(-0.005, 0, 1.15, 1.205, 2.0, 1.75)]);
+  });
+}
+// Ivy on two walls only: the archive's south wall and one cottage's blank +x gable. It grows up
+// from the ground, never over a window (its glass grown by the frame, 0.2 to the sides and below
+// for the sill, 0.3 above for the keystone), never round a corner, and stays under the cornice or
+// the verge.
+{
+  const triangles = (o, toLocal) => {
+    const p = o.geometry.attributes.position,
+      m = toLocal.clone().multiply(o.matrixWorld),
+      out = [];
+    for (let i = 0; i < p.count; i += 3) out.push(new T.Box3().setFromPoints([0, 1, 2].map((j) => new T.Vector3().fromBufferAttribute(p, i + j).applyMatrix4(m))));
+    return out;
+  };
+  // The archive (front +z, south wall at +x): its only foliage is the ivy.
+  const archive = models.get('city-archive').shell,
+    { w, d } = plan.sites['city-archive'],
+    toShell = archive.matrixWorld.clone().invert();
+  const ivy = archive.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'foliage').flatMap((o) => triangles(o, toShell)),
+    glass = archive.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'glass').flatMap((o) => triangles(o, toShell));
+  assert(ivy.length > 300, `The archive's ivy is ${ivy.length} triangles.`);
+  const south = glass.filter((b) => b.min.x > w / 2 - 0.05 && b.max.y < 3.5);
+  const windows = [-1, 1].map((s) => {
+    const own = south.filter((b) => Math.sign(b.min.z + b.max.z) === s);
+    assert(own.length >= 2, 'The archive’s south windows are missing.');
+    const box = own.reduce((a, b) => a.union(b), new T.Box3());
+    return new T.Box3(new T.Vector3(w / 2 - 0.5, box.min.y - 0.2, box.min.z - 0.2), new T.Vector3(w / 2 + 1, box.max.y + 0.3, box.max.z + 0.2));
+  });
+  let low = Infinity;
+  for (const b of ivy) {
+    assert(b.min.x > w / 2 - 0.12 && Math.abs(b.min.z) < d / 2 - 0.2 && Math.abs(b.max.z) < d / 2 - 0.2, `Archive ivy off its south wall (or round a pier) at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    assert(b.max.y < 3.65, `Archive ivy over the cornice at ${b.max.toArray().map((n) => n.toFixed(2))}`);
+    for (const win of windows) assert(!win.intersectsBox(b), `Archive ivy over a window at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    low = Math.min(low, b.min.y);
+  }
+  assert(low < 0.05, 'The archive’s ivy does not reach the ground.');
+  // The cottage's gable (local +x at 1.4, its front at +z 1.2, the wall up to 2.3 under a 1.4 rise): ivy
+  // from the ground into the gable, off both corners and under the verge. Nothing else of the land's
+  // foliage stands this close to the wall.
+  const { IVY_COTTAGE } = await load('town-homes');
+  const c = plan.cottages[IVY_COTTAGE],
+    toCottage = new T.Matrix4().makeRotationY(c.rotation).setPosition(c.x, plan.terrainHeight(c.x, c.z), c.z).invert(),
+    gable = [];
+  model.land.traverse((o) => {
+    if (!o.isMesh || o.material.userData.surfaceKind !== 'foliage') return;
+    for (const b of triangles(o, toCottage)) if (b.min.x > 1.25 && b.max.x < 1.75 && Math.abs(b.min.z) < 1.5 && b.max.y < 3.5) gable.push(b);
+  });
+  assert(gable.length > 200, `The cottage gable's ivy is ${gable.length} triangles.`);
+  low = Infinity;
+  for (const b of gable) {
+    const z = Math.max(Math.abs(b.min.z), Math.abs(b.max.z));
+    assert(z < 1.2 - 0.05, `Cottage ivy round the gable's corner at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    assert(b.max.y < 2.3 + 1.38 * (1 - z / 1.2) - 0.05, `Cottage ivy under the verge at ${b.max.toArray().map((n) => n.toFixed(2))}`);
+    low = Math.min(low, b.min.y);
+  }
+  assert(low < 0.05, 'The cottage’s ivy does not reach the ground.');
+}
+// The back greens: each terrace home's washing line stands in its own back garden (behind its back
+// wall, inside its own width, so never in a gap or a front garden), well inside the shore, clear of
+// the trees behind the gaps and of the dog walk. The washing sways by turning its one group (no
+// vertex moves), so little that the lines' ends stay in the crossbars, and is taken in while it rains.
+{
+  const { WASHING } = await load('town-homes');
+  const trees = plan.plantingPlan(),
+    v = new T.Vector3();
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { w, d } = plan.sites[id],
+      washing = shell.getObjectByName('washing'),
+      entry = model.animated.find((e) => e.object === washing);
+    assert(washing && entry, `${id} has no washing line.`);
+    assert(washing.children.length === 1 && washing.children[0].isMesh && !washing.children[0].castShadow, `${id}: the washing is one mesh that casts nothing.`);
+    const positions = washing.children[0].geometry.attributes.position.array.slice(),
+      toShell = shell.matrixWorld.clone().invert();
+    let sway = 0;
+    for (let t = 0; t < 60; t += 0.37) {
+      entry.update(t, 0, 0);
+      assert(washing.visible, `${id}: the washing is not out on a dry day.`);
+      sway = Math.max(sway, Math.abs(washing.rotation.x));
+      shell.updateMatrixWorld(true);
+      const box = new T.Box3().setFromObject(washing),
+        posts = [-1, 1].map((s) => new T.Vector3(s * WASHING.half, 0, -(d / 2 + WASHING.back)).applyMatrix4(shell.matrixWorld));
+      for (const p of [...posts, ...[0, 1, 2, 3].map((k) => new T.Vector3(k & 1 ? box.max.x : box.min.x, box.min.y, k & 2 ? box.max.z : box.min.z))]) {
+        v.copy(p).applyMatrix4(toShell);
+        assert(Math.abs(v.x) < w / 2 - 0.1 && v.z < -(d / 2 + 0.25 + 0.5), `${id}: the washing leaves its back garden at ${p.toArray().map((n) => n.toFixed(2))}`);
+        assert(plan.onIsland(p.x, p.z, 0.6), `${id}: the washing is by the beach at ${p.toArray().map((n) => n.toFixed(2))}`);
+        assert(plan.distanceToPolyline([p.x, p.z], plan.dogLoop, true) > 3, `${id}: the washing is on the dog walk.`);
+        for (const tree of trees) assert(Math.hypot(tree.x - p.x, tree.z - p.z) > 1.3 * tree.size + 0.2, `${id}: the washing runs into ${tree.id}.`);
+      }
+      assert(box.min.y > 0.6, `${id}: the washing trails on the lawn.`);
+    }
+    assert(sway < 0.15 && sway * WASHING.spread < 0.03, `${id}: the washing swings ${sway.toFixed(3)} rad, pulling its lines from the crossbars.`);
+    // From the People chapter's bearing (and the idle drift either side) the home hides its washing:
+    // a pole and a cloth peeking past a corner into the gap beside it read like a little sign. Each
+    // point looks toward the camera and must meet the home (beyond its own pole and crossbar).
+    {
+      const ray = new T.Raycaster(),
+        solid = shell.children.filter((o) => o.isMesh),
+        z = -(d / 2 + WASHING.back),
+        H = WASHING.height,
+        cloth = washing.children[0].geometry.attributes.position,
+        points = [
+          ...[-1, 1].flatMap((s) => [0.2, 0.8, H + 0.07].map((y) => new T.Vector3(s * WASHING.half, y, z).applyMatrix4(shell.matrixWorld))),
+          ...[-1, 1].flatMap((s) => [-1, 1].map((e) => new T.Vector3(s * WASHING.half, H, z + e * (WASHING.spread + 0.06)).applyMatrix4(shell.matrixWorld))),
+          ...Array.from({ length: Math.ceil(cloth.count / 5) }, (_, i) => new T.Vector3().fromBufferAttribute(cloth, i * 5).applyMatrix4(washing.children[0].matrixWorld)),
+        ];
+      ray.near = 0.45;
+      for (const b of [plan.chapterBearings.people - 0.16, plan.chapterBearings.people, plan.chapterBearings.people + 0.16])
+        for (const p of points) {
+          ray.set(p, new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38).normalize());
+          assert(ray.intersectObjects(solid, false).length > 0, `${id}: the People chapter sees its washing past the home at ${p.toArray().map((n) => n.toFixed(2))}`);
+        }
+    }
+    assert.deepEqual(washing.children[0].geometry.attributes.position.array, positions, `${id}: the washing's vertices move on the CPU.`);
+    entry.update(12, 0, 1);
+    assert(!washing.visible && washing.scale.x < 0.01, `${id}: the washing is left out in the rain.`);
+    entry.update(0, 0, 0);
+  }
+}
+// The Research Studio's Mackintosh window: slim bars just proud of the glass box's front and back
+// (never in the glass, never across the entrance), no thinner than 0.04, casting nothing, with
+// mullions at least 0.18 apart, and the glass itself still one sheet that glints as a curtain wall
+// and is lit late. The rose on the door stays on its leaf.
+{
+  const studio = models.get('research-studio').shell,
+    { d } = plan.sites['research-studio'],
+    face = (d - 0.24) / 2,
+    toShell = studio.matrixWorld.clone().invert(),
+    bars = { 1: [], [-1]: [] },
+    v = new T.Vector3();
+  for (const o of studio.children) {
+    if (!o.isMesh || o.material.userData.surfaceKind !== 'paint') continue;
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i += 3) {
+      const b = new T.Box3();
+      for (let j = 0; j < 3; j++) b.expandByPoint(v.fromBufferAttribute(p, i + j).applyMatrix4(toShell.clone().multiply(o.matrixWorld)));
+      // A bar's outer face: flat in z, just proud of the glass, over the glass box's span.
+      const z = (b.min.z + b.max.z) / 2;
+      if (b.max.z - b.min.z > 1e-3 || Math.abs(Math.abs(z) - face) > 0.05 || Math.abs(z) < face || b.min.x < -2.6 || b.max.x > 0.4 || b.min.y < 0.55 || b.max.y > 4.37) continue;
+      assert(!o.castShadow, 'A Mackintosh bar casts a shadow.');
+      bars[Math.sign(z)].push(b);
+    }
+  }
+  for (const s of [1, -1]) {
+    assert(bars[s].length >= 40, `The studio's ${s > 0 ? 'front' : 'back'} has ${bars[s].length} Mackintosh bar faces.`);
+    for (const b of bars[s]) {
+      assert(Math.min(b.max.x - b.min.x, b.max.y - b.min.y) >= 0.04 - 1e-6, `A Mackintosh bar thinner than 0.04 at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+      if (s > 0) assert(!(b.max.x > -2.01 && b.min.x < -0.19 && b.min.y < 2.67), `A Mackintosh bar crosses the studio's entrance at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    }
+    const xs = [...new Set(bars[s].filter((b) => b.max.y - b.min.y > 1).map((b) => ((b.min.x + b.max.x) / 2).toFixed(3)))].map(Number).sort((a, b) => a - b);
+    assert(xs.length >= 3, 'The studio’s mullions are missing.');
+    for (let i = 1; i < xs.length; i++) assert(xs[i] - xs[i - 1] >= 0.18, `Studio mullions ${xs[i - 1]} and ${xs[i]} are too close to stay calm far off.`);
+  }
+  const glass = studio.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'glass' && o.geometry.attributes.position.count >= 24);
+  assert(glass.length >= 1, 'The studio has no glass box.');
+  const lit = model.windows.filter((w) => w.place === 'research-studio' && Math.abs(w.light[0] - 0.8) < 0.01);
+  assert(lit.length >= 1, 'The studio’s glass box is no longer lit late at 0.8.');
+}
 // The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
 {
   const studio = new T.Box3().setFromObject(models.get('research-studio').root),
