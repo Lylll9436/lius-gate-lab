@@ -969,6 +969,61 @@ for (const [id, m] of models) {
     windowBox(`cottage ${i}`, local(landMeshes, frame.clone().invert(), at, 2.6), B(-1.05, 0.7, 1.2, -0.25, 1.6, 1.3), [B(-0.005, 0, 1.15, 1.205, 2.0, 1.75)]);
   });
 }
+// Ivy on two walls only: the archive's south wall and one cottage's blank +x gable. It grows up
+// from the ground, never over a window (its glass grown by the frame, 0.2 to the sides and below
+// for the sill, 0.3 above for the keystone), never round a corner, and stays under the cornice or
+// the verge.
+{
+  const triangles = (o, toLocal) => {
+    const p = o.geometry.attributes.position,
+      m = toLocal.clone().multiply(o.matrixWorld),
+      out = [];
+    for (let i = 0; i < p.count; i += 3) out.push(new T.Box3().setFromPoints([0, 1, 2].map((j) => new T.Vector3().fromBufferAttribute(p, i + j).applyMatrix4(m))));
+    return out;
+  };
+  // The archive (front +z, south wall at +x): its only foliage is the ivy.
+  const archive = models.get('city-archive').shell,
+    { w, d } = plan.sites['city-archive'],
+    toShell = archive.matrixWorld.clone().invert();
+  const ivy = archive.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'foliage').flatMap((o) => triangles(o, toShell)),
+    glass = archive.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'glass').flatMap((o) => triangles(o, toShell));
+  assert(ivy.length > 300, `The archive's ivy is ${ivy.length} triangles.`);
+  const south = glass.filter((b) => b.min.x > w / 2 - 0.05 && b.max.y < 3.5);
+  const windows = [-1, 1].map((s) => {
+    const own = south.filter((b) => Math.sign(b.min.z + b.max.z) === s);
+    assert(own.length >= 2, 'The archive’s south windows are missing.');
+    const box = own.reduce((a, b) => a.union(b), new T.Box3());
+    return new T.Box3(new T.Vector3(w / 2 - 0.5, box.min.y - 0.2, box.min.z - 0.2), new T.Vector3(w / 2 + 1, box.max.y + 0.3, box.max.z + 0.2));
+  });
+  let low = Infinity;
+  for (const b of ivy) {
+    assert(b.min.x > w / 2 - 0.12 && Math.abs(b.min.z) < d / 2 - 0.2 && Math.abs(b.max.z) < d / 2 - 0.2, `Archive ivy off its south wall (or round a pier) at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    assert(b.max.y < 3.65, `Archive ivy over the cornice at ${b.max.toArray().map((n) => n.toFixed(2))}`);
+    for (const win of windows) assert(!win.intersectsBox(b), `Archive ivy over a window at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    low = Math.min(low, b.min.y);
+  }
+  assert(low < 0.05, 'The archive’s ivy does not reach the ground.');
+  // The cottage's gable (local +x at 1.4, its front at +z 1.2, the wall up to 2.3 under a 1.4 rise): ivy
+  // from the ground into the gable, off both corners and under the verge. Nothing else of the land's
+  // foliage stands this close to the wall.
+  const { IVY_COTTAGE } = await load('town-homes');
+  const c = plan.cottages[IVY_COTTAGE],
+    toCottage = new T.Matrix4().makeRotationY(c.rotation).setPosition(c.x, plan.terrainHeight(c.x, c.z), c.z).invert(),
+    gable = [];
+  model.land.traverse((o) => {
+    if (!o.isMesh || o.material.userData.surfaceKind !== 'foliage') return;
+    for (const b of triangles(o, toCottage)) if (b.min.x > 1.25 && b.max.x < 1.75 && Math.abs(b.min.z) < 1.5 && b.max.y < 3.5) gable.push(b);
+  });
+  assert(gable.length > 200, `The cottage gable's ivy is ${gable.length} triangles.`);
+  low = Infinity;
+  for (const b of gable) {
+    const z = Math.max(Math.abs(b.min.z), Math.abs(b.max.z));
+    assert(z < 1.2 - 0.05, `Cottage ivy round the gable's corner at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    assert(b.max.y < 2.3 + 1.38 * (1 - z / 1.2) - 0.05, `Cottage ivy under the verge at ${b.max.toArray().map((n) => n.toFixed(2))}`);
+    low = Math.min(low, b.min.y);
+  }
+  assert(low < 0.05, 'The cottage’s ivy does not reach the ground.');
+}
 // The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
 {
   const studio = new T.Box3().setFromObject(models.get('research-studio').root),

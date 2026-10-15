@@ -24,6 +24,8 @@ export const WINDOW_BOX: Record<Season, { leaf: string; top: string; blooms: str
   autumn: { leaf: '#5a7634', top: '#8a9a3e', blooms: [PURPLE, YELLOW, PURPLE, WHITE].map((c) => muted(c, 0.3)), sprigs: 0 },
   winter: { leaf: '#3f6236', top: '#5e7f45', blooms: ['#b48aa2', '#b48aa2'], sprigs: 2 },
 };
+/** The cottage (plan.cottages index) with ivy on its blank +x gable. */
+export const IVY_COTTAGE = 0;
 /** A small smooth blob (20 triangles): a window-box bloom, heather tuft or trailing leaf. */
 const blobGeometry = (() => {
   const g = new T.IcosahedronGeometry(1, 0);
@@ -37,7 +39,7 @@ const blobGeometry = (() => {
 /* ------------------------------------------------------------------ */
 export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
   const { material, season } = ctx;
-  const { box, cylinder, cone, sphere, slabRoof, windowAt, door, quoins, plinth, chimney, bayOutline, cantedPrism, bayFaces, sash, bayRoof } = kit;
+  const { box, cylinder, cone, sphere, slabRoof, windowAt, door, quoins, plinth, chimney, bayOutline, cantedPrism, bayFaces, sash, bayRoof, ivy } = kit;
   const { hedge, flowerBed } = nature;
   /** A blob of radius r, squashed to `squash` of its height, that casts no shadow. */
   function blob(g: T.Object3D, x: number, y: number, z: number, r: number, colour: string, squash = 0.75) {
@@ -210,6 +212,22 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     windowBox(root, -0.65, 0.716, d / 2 + 0.165, 0.84, 0.15, muted(doorColour, 0.25), index * 11 + 5);
     if (c.nightLight) pane.userData.nightLight = true; // a dim lamp left on all night (town-batch)
     chimney(root,-(w/2-0.35),ridge-0.8,ridge+0.45,0,c.color,palette.trim,1);
+    // Ivy on one cottage's blank +x gable (the cottage south of the row, whose gable faces the
+    // People chapter): rooted in a narrow stem at the plinth, it spreads over the wall and up into
+    // the gable's peak, kept off both corners and inside the gable under the verge. Here the front
+    // is the face's -x.
+    if (index === IVY_COTTAGE) {
+      const face = new T.Group();
+      face.position.x = w / 2;
+      face.rotation.y = Math.PI / 2;
+      root.add(face);
+      ivy(face, {
+        areas: [[-0.15, 0, 0.6, 0.75], [-0.6, 0.65, 0.95, 1.75], [-0.3, 1.7, 0.75, 2.45], [0, 2.4, 0.45, 2.8]],
+        keep: [[-3, 0, -1.06, 5], [1.06, 0, 3, 5], [-3, 3.0, 3, 5]],
+        plinth: { h: P, proud: 0.2, batter: P * 0.105 },
+        seed: 11,
+      });
+    }
     // Front garden sized to the room before the pavement: a hedge with a gap at the door, and a path from the step.
     const fx = c.x + (Math.sin(c.rotation) * d) / 2,
       fz = c.z + (Math.cos(c.rotation) * d) / 2;

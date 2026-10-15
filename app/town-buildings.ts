@@ -10,7 +10,7 @@ import type { Props } from './town-props';
 /* ------------------------------------------------------------------ */
 export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, props: Props) {
   const { material, lamps, clocks, animated } = ctx;
-  const { box, cylinder, cone, sphere, slabRoof, windowAt, door, plinth, lampGlass } = kit;
+  const { box, cylinder, cone, sphere, slabRoof, windowAt, door, plinth, lampGlass, ivy } = kit;
   const { topiary } = nature;
   const { bench } = props;
   function buildGate(shell: T.Group) {
@@ -302,6 +302,18 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       face.rotation.y = (side * Math.PI) / 2;
       shell.add(face);
       for (const z of [-0.95, 0.95]) windowAt(face, z, 1.75, 0, 0.9, 1.3, arched);
+      // Ivy on the south wall (seen from the overview and in the archive's chapter), over its back
+      // half (this face's +x; the front is -x): it climbs from the plinth between the two arched
+      // windows and round the back one, runs along the plinth under them and along under the
+      // cornice, and never reaches a window (frame, sill or keystone, plus 0.06), a corner pier or
+      // the cornice. Its front edge is ragged, so the front half stays bare brick.
+      if (side === 1)
+        ivy(face, {
+          areas: [[-0.5, 0, 2.03, 0.8], [-0.3, 0, 0.3, 3.6], [1.6, 0, 2.03, 3.2], [-0.7, 3.2, 2.03, 3.6]],
+          keep: [[0.25, 0.87, 1.65, 3.26], [-1.65, 0.87, -0.25, 3.26], [2.03, 0, 3, 5], [-3, 0, -2.03, 5], [-3, 3.62, 3, 5]],
+          plinth: { h: 0.45, proud: 0.25, batter: 0.047 },
+          seed: 7,
+        });
     }
     // The centre hoist bay: an arched door at dock height, a grounded dock, the hoist beam and block, crates.
     door(shell, 0, 0.45, d / 2, 1.3, 2.0, palette.greenDoor, { arched: true, surround: palette.brickLight, steps: false });
