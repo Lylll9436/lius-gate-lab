@@ -37,10 +37,12 @@ const blobGeometry = (() => {
 /**
  * Each terrace home's back green (the lawn between its back wall and the beach) has a washing line,
  * in the home's own frame (front +z): two T-posts `back` behind the wall face, `half` either side of
- * the home's middle (inside its 2.6 width, so never in a gap between homes), and two lines `spread`
- * either side of the crossbars' middle, `height` up.
+ * the home's middle (well inside its 2.6 width, so never in a gap between homes), and two lines
+ * `spread` either side of the crossbars' middle, `height` up. From the People chapter (and its idle
+ * drift) the home hides it all: posts 0.95 out and 1.4 back peeked past a home's corner into the gap
+ * beside it, a pole with a crossbar and a cloth that read like a little sign.
  */
-export const WASHING = { back: 1.4, half: 0.95, height: 1.45, spread: 0.15 };
+export const WASHING = { back: 1.15, half: 0.6, height: 1.45, spread: 0.15 };
 type Garment = 'sheet' | 'towel' | 'shirt' | 'cloth';
 /**
  * What hangs on each home's lines (by its seed): [line (-1 the beach side, 1 the house side), what,
@@ -48,9 +50,9 @@ type Garment = 'sheet' | 'towel' | 'shirt' | 'cloth';
  * glass, brass, heather, hedge); the two lines' pieces never overlap along the line.
  */
 const LAUNDRY: [number, Garment, number, string, string?][][] = [
-  [[-1, 'sheet', -0.45, '#ece6d8'], [-1, 'towel', 0.55, '#cf9a80', '#b07a64'], [1, 'shirt', 0.05, '#a9bccb']],
-  [[-1, 'towel', -0.55, '#d8bc7c', '#b39858'], [-1, 'sheet', 0.3, '#dfe3d6'], [1, 'shirt', -0.2, '#efe9dc'], [1, 'cloth', 0.72, '#c9b8a8', '#a08878']],
-  [[-1, 'shirt', -0.5, '#b7a6bf'], [-1, 'sheet', 0.3, '#e8e0d0'], [1, 'towel', -0.05, '#9fb3a0', '#7f977f']],
+  [[-1, 'sheet', -0.22, '#ece6d8'], [-1, 'towel', 0.33, '#cf9a80', '#b07a64'], [1, 'shirt', 0.12, '#a9bccb']],
+  [[-1, 'towel', -0.33, '#d8bc7c', '#b39858'], [-1, 'sheet', 0.2, '#dfe3d6'], [1, 'shirt', -0.22, '#efe9dc'], [1, 'cloth', 0.36, '#c9b8a8', '#a08878']],
+  [[-1, 'shirt', -0.27, '#b7a6bf'], [-1, 'sheet', 0.26, '#e8e0d0'], [1, 'towel', 0, '#9fb3a0', '#7f977f']],
 ];
 
 /* ------------------------------------------------------------------ */
@@ -147,16 +149,16 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     for (const [s, what, x, colour, stripe] of LAUNDRY[seed % LAUNDRY.length]) {
       const lz = s * spread,
         y = sag(x);
-      if (what === 'sheet') cloth(wash, x, lz, 0.65, 0.52, colour, 4, y);
+      if (what === 'sheet') cloth(wash, x, lz, 0.5, 0.48, colour, 4, y);
       else if (what === 'towel' || what === 'cloth') {
-        const [w, h] = what === 'towel' ? [0.32, 0.48] : [0.25, 0.32];
+        const [w, h] = what === 'towel' ? [0.28, 0.44] : [0.24, 0.3];
         cloth(wash, x, lz, w, h, colour, 2, y);
         box(wash, x, y - h + 0.08, lz, w + 0.004, 0.05, 0.03, stripe ?? colour, 'fabric').userData.noShadow = true;
       } else {
         // A shirt pegged by its shoulders: the body and two sleeves hanging out and down.
-        cloth(wash, x, lz, 0.34, 0.38, colour, 2, y);
+        cloth(wash, x, lz, 0.32, 0.36, colour, 2, y);
         for (const side of [-1, 1]) {
-          const sleeve = box(wash, x + side * 0.21, y - 0.1, lz, 0.13, 0.18, 0.022, colour, 'fabric', { rz: side * 0.5 });
+          const sleeve = box(wash, x + side * 0.2, y - 0.1, lz, 0.12, 0.17, 0.022, colour, 'fabric', { rz: side * 0.5 });
           sleeve.castShadow = false;
           sleeve.userData.noShadow = true;
         }
@@ -318,7 +320,7 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
       face.rotation.y = Math.PI / 2;
       root.add(face);
       ivy(face, {
-        areas: [[-0.15, 0, 0.6, 0.75], [-0.6, 0.65, 0.95, 1.75], [-0.3, 1.7, 0.75, 2.45], [0, 2.4, 0.45, 2.8]],
+        areas: [[0, 0, 0.45, 0.85], [-0.6, 0.65, 0.95, 1.75], [-0.3, 1.7, 0.75, 2.45], [0, 2.4, 0.45, 2.8]],
         keep: [[-3, 0, -1.06, 5], [1.06, 0, 3, 5], [-3, 3.0, 3, 5]],
         plinth: { h: P, proud: 0.2, batter: P * 0.105 },
         seed: 11,

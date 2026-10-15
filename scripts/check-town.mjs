@@ -1051,7 +1051,7 @@ for (const [id, m] of models) {
         posts = [-1, 1].map((s) => new T.Vector3(s * WASHING.half, 0, -(d / 2 + WASHING.back)).applyMatrix4(shell.matrixWorld));
       for (const p of [...posts, ...[0, 1, 2, 3].map((k) => new T.Vector3(k & 1 ? box.max.x : box.min.x, box.min.y, k & 2 ? box.max.z : box.min.z))]) {
         v.copy(p).applyMatrix4(toShell);
-        assert(Math.abs(v.x) < w / 2 - 0.1 && v.z < -(d / 2 + 0.35 + 0.6), `${id}: the washing leaves its back garden at ${p.toArray().map((n) => n.toFixed(2))}`);
+        assert(Math.abs(v.x) < w / 2 - 0.1 && v.z < -(d / 2 + 0.25 + 0.5), `${id}: the washing leaves its back garden at ${p.toArray().map((n) => n.toFixed(2))}`);
         assert(plan.onIsland(p.x, p.z, 0.6), `${id}: the washing is by the beach at ${p.toArray().map((n) => n.toFixed(2))}`);
         assert(plan.distanceToPolyline([p.x, p.z], plan.dogLoop, true) > 3, `${id}: the washing is on the dog walk.`);
         for (const tree of trees) assert(Math.hypot(tree.x - p.x, tree.z - p.z) > 1.3 * tree.size + 0.2, `${id}: the washing runs into ${tree.id}.`);
@@ -1059,6 +1059,27 @@ for (const [id, m] of models) {
       assert(box.min.y > 0.6, `${id}: the washing trails on the lawn.`);
     }
     assert(sway < 0.15 && sway * WASHING.spread < 0.03, `${id}: the washing swings ${sway.toFixed(3)} rad, pulling its lines from the crossbars.`);
+    // From the People chapter's bearing (and the idle drift either side) the home hides its washing:
+    // a pole and a cloth peeking past a corner into the gap beside it read like a little sign. Each
+    // point looks toward the camera and must meet the home (beyond its own pole and crossbar).
+    {
+      const ray = new T.Raycaster(),
+        solid = shell.children.filter((o) => o.isMesh),
+        z = -(d / 2 + WASHING.back),
+        H = WASHING.height,
+        cloth = washing.children[0].geometry.attributes.position,
+        points = [
+          ...[-1, 1].flatMap((s) => [0.2, 0.8, H + 0.07].map((y) => new T.Vector3(s * WASHING.half, y, z).applyMatrix4(shell.matrixWorld))),
+          ...[-1, 1].flatMap((s) => [-1, 1].map((e) => new T.Vector3(s * WASHING.half, H, z + e * (WASHING.spread + 0.06)).applyMatrix4(shell.matrixWorld))),
+          ...Array.from({ length: Math.ceil(cloth.count / 5) }, (_, i) => new T.Vector3().fromBufferAttribute(cloth, i * 5).applyMatrix4(washing.children[0].matrixWorld)),
+        ];
+      ray.near = 0.45;
+      for (const b of [plan.chapterBearings.people - 0.16, plan.chapterBearings.people, plan.chapterBearings.people + 0.16])
+        for (const p of points) {
+          ray.set(p, new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38).normalize());
+          assert(ray.intersectObjects(solid, false).length > 0, `${id}: the People chapter sees its washing past the home at ${p.toArray().map((n) => n.toFixed(2))}`);
+        }
+    }
     assert.deepEqual(washing.children[0].geometry.attributes.position.array, positions, `${id}: the washing's vertices move on the CPU.`);
     entry.update(12, 0, 1);
     assert(!washing.visible && washing.scale.x < 0.01, `${id}: the washing is left out in the rain.`);

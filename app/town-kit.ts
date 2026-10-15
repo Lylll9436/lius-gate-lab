@@ -45,8 +45,8 @@ const IVY_STEP = 0.24;
  * The ivy's clumps for a spec (x, y, z of each centre on the wall, radius r): each area is packed
  * on its own staggered grid, centred on its width (so a narrow pier of wall between two windows
  * still gets a full column), clumps already covered by another area's are skipped, and the edge
- * is made ragged by dropping a share of the outermost clumps and jittering the rest. A clump that
- * would reach a `keep` box shrinks to fit beside it (down to 0.09) or is left out.
+ * is made ragged by dropping a share of the outermost clumps (not a stem's) and jittering the rest.
+ * A clump that would reach a `keep` box shrinks to fit beside it (down to 0.09) or is left out.
  */
 export function ivyLumps(spec: IvySpec) {
   const out: { x: number; y: number; z: number; r: number }[] = [],
@@ -63,8 +63,10 @@ export function ivyLumps(spec: IvySpec) {
       const odd = row % 2 === 1 && cols > 1,
         n = odd ? cols - 1 : cols;
       for (let col = 0; col < n; col++, k++) {
-        const edge = col === 0 || col === n - 1 || row === rows - 1;
-        if (edge && h(k * 5 + 7) < 0.3) continue; // a ragged edge
+        // A ragged edge: the top row, and the sides of an area wider than a stem (a stem keeps its
+        // clumps, or it parts into floating tufts).
+        const edge = (cols > 2 && (col === 0 || col === n - 1)) || row === rows - 1;
+        if (edge && h(k * 5 + 7) < 0.3) continue;
         const px = a + (col + (odd ? 1 : 0.5)) * dx + (h(k * 3) - 0.5) * 0.08,
           py = b + (row + 0.5) * dy + (h(k * 3 + 1) - 0.5) * 0.07;
         if (out.some((o) => Math.hypot(o.x - px, o.y - py) < IVY_STEP * 0.55)) continue;
