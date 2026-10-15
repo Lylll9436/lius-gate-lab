@@ -1782,6 +1782,186 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   for (const [key, count] of switching) assert(count >= 9 && count <= 16, `The pane at ${key} switches over ${count} frames at the noon reset.`);
   for (const p of panes) assert.equal(windowLevel(p.light, state), windowLevel(p.light, windowClock(12)), `A pane at ${p.place} misses the noon reset.`);
 }
+// Street details. The manhole covers lie on the carriageway, in the ring's lanes outside the rails
+// (never between or on them) or in an avenue's lane off its centre dashes, about every 12-20 units
+// round the ring; the gullies sit in the gutter against a kerb (never at an avenue mouth, where the
+// ring's inner kerb opens), every 8-10 units along both kerbs and one a side on each avenue. Both keep
+// clear of the rails, the zebras, the stop lines, the signal posts and the lamps' bases, of each other
+// and of the repair patches. The road shader draws exactly the plan's covers and gullies.
+{
+  const R = plan.ROAD_WIDTH,
+    { manholes, gullies, roadPatches, MANHOLE, GULLY, zebras, toRect, stopLineRect, gullyRect } = plan,
+    r = MANHOLE.radius,
+    lamps = plan.lampPlan(),
+    rails = [-1, 1].map((s) => plan.offsetPolyline(plan.ringLine, s * 0.42)),
+    ringLength = plan.polylineLength(plan.ringLine, true),
+    patchRect = (p) => ({ x: (p.box[0] + p.box[2]) / 2, z: (p.box[1] + p.box[3]) / 2, u: [1, 0], half: [(p.box[2] - p.box[0]) / 2, (p.box[3] - p.box[1]) / 2] }),
+    avenueOf = (road) => plan.avenues.find((a) => a.id === road);
+  const ringCovers = manholes.filter((c) => c.road === 'ring');
+  assert(ringCovers.length >= 6 && manholes.length - ringCovers.length === 3, 'Covers lie round the ring and one in each avenue.');
+  for (const road of ['south', 'west', 'east']) assert(manholes.some((c) => c.road === road), `The ${road} avenue has no cover.`);
+  const coverAlong = ringCovers.map((c) => c.along).sort((a, b) => a - b);
+  coverAlong.forEach((s, i) => {
+    const gap = (coverAlong[(i + 1) % coverAlong.length] - s + ringLength) % ringLength;
+    assert(gap >= 12 && gap <= 20, `Covers ${gap.toFixed(1)} apart on the ring.`);
+  });
+  for (const c of manholes) {
+    const name = `The cover at ${c.road} ${c.along}`;
+    if (c.road === 'ring') {
+      const d = plan.distanceToPolyline([c.x, c.z], plan.ringLine, true);
+      assert(d + r <= R / 2 - 0.03, `${name} reaches the kerb.`);
+      for (const rail of rails) assert(plan.distanceToPolyline([c.x, c.z], rail, true) >= 0.035 + r + 0.02, `${name} lies on a rail.`);
+      assert(d > 0.42, `${name} lies between the rails.`);
+      for (const j of signalJunctions) assert(Math.hypot(c.x - j.at[0], c.z - j.at[1]) >= 2.5, `${name} lies in the ${j.id} junction.`);
+    } else {
+      const a = avenueOf(c.road),
+        d = plan.distanceToSegment([c.x, c.z], a.from, a.to);
+      assert(d + r <= R / 2 - 0.03 && d - r >= 0.1, `${name} is off its lane (${d.toFixed(2)} from the centre line).`);
+      assert(plan.distanceToPolyline([c.x, c.z], plan.ringLine, true) >= R / 2 + r + 0.3, `${name} lies at the ring.`);
+    }
+    for (const z of zebras) assert(toRect(c.x, c.z, z) >= r + 0.3, `${name} lies on a zebra.`);
+    for (const l of stopLines) assert(toRect(c.x, c.z, stopLineRect(l)) >= r + 0.3, `${name} lies on a stop line.`);
+    for (const p of signalPosts) assert(Math.hypot(p.x - c.x, p.z - c.z) >= 0.8, `${name} lies beside a signal.`);
+    for (const g of gullies) assert(toRect(c.x, c.z, gullyRect(g)) >= r + 0.25, `${name} crowds a gully.`);
+    for (const p of roadPatches) assert(toRect(c.x, c.z, patchRect(p)) >= r + 0.1, `${name} lies on a repair patch.`);
+  }
+  for (const side of [1, -1]) {
+    const along = gullies.filter((g) => g.road === 'ring' && Math.sign(g.across) === side).map((g) => g.along).sort((a, b) => a - b);
+    assert(along.length >= 10, `Only ${along.length} gullies along the ring's ${side > 0 ? 'inner' : 'outer'} kerb.`);
+    along.forEach((s, i) => {
+      const gap = (along[(i + 1) % along.length] - s + ringLength) % ringLength;
+      assert(gap >= 7.5 && gap <= 11, `Gullies ${gap.toFixed(1)} apart on the ring's ${side > 0 ? 'inner' : 'outer'} kerb.`);
+    });
+  }
+  for (const road of ['south', 'west', 'east'])
+    for (const side of [1, -1]) assert(gullies.some((g) => g.road === road && Math.sign(g.across) === side), `The ${road} avenue lacks a gully on one side.`);
+  for (const g of gullies) {
+    const name = `The gully at ${g.road} ${g.along.toFixed(1)}`,
+      rect = gullyRect(g),
+      d = g.road === 'ring' ? plan.distanceToPolyline([g.x, g.z], plan.ringLine, true) : plan.distanceToSegment([g.x, g.z], avenueOf(g.road).from, avenueOf(g.road).to);
+    // Against the kerb's face (R / 2 out), 0.01 off it.
+    assert(Math.abs(d + GULLY.width / 2 - (R / 2 - 0.01)) < 0.01, `${name} is not in the gutter (${d.toFixed(3)} out).`);
+    if (g.road === 'ring') for (const rail of rails) assert(plan.distanceToPolyline([g.x, g.z], rail, true) >= 0.035 + GULLY.width / 2 + 0.15, `${name} lies by a rail.`);
+    // The ring's inner kerb opens at the avenue mouths (to 1.03 either side of the avenue's line).
+    if (g.road === 'ring' && g.across > 0)
+      for (const j of signalJunctions) {
+        const along = Math.abs((g.x - j.at[0]) * j.t[0] + (g.z - j.at[1]) * j.t[1]);
+        assert(along >= R / 2 + 0.18 + GULLY.length / 2 + 0.2 || Math.hypot(g.x - j.at[0], g.z - j.at[1]) > 5, `${name} has no kerb beside it at the ${j.id} mouth.`);
+      }
+    for (const l of lamps) assert(Math.hypot(l.x - g.x, l.z - g.z) >= 0.8, `${name} lies by ${l.id}'s base.`);
+    for (const p of signalPosts) assert(Math.hypot(p.x - g.x, p.z - g.z) >= 0.8, `${name} lies by a signal's base.`);
+    const corners = [-1, 1].flatMap((a) => [-1, 1].map((c) => [rect.x + rect.u[0] * a * rect.half[0] + rect.u[1] * c * rect.half[1], rect.z + rect.u[1] * a * rect.half[0] - rect.u[0] * c * rect.half[1]]));
+    for (const [x, z] of corners) {
+      for (const zb of zebras) assert(toRect(x, z, zb) >= 0.3, `${name} lies on a zebra.`);
+      for (const l of stopLines) assert(toRect(x, z, stopLineRect(l)) >= 0.3, `${name} lies on a stop line.`);
+      for (const p of roadPatches) assert(toRect(x, z, patchRect(p)) >= 0.05, `${name} lies on a repair patch.`);
+    }
+  }
+  // The repair patches lie on the carriageway of a straight run, clear of the zebras and stop lines.
+  assert(roadPatches.length >= 2 && roadPatches.length <= 3, 'Two or three repair patches.');
+  for (const p of roadPatches) {
+    const [x0, z0, x1, z1] = p.box,
+      corners = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]];
+    for (const [x, z] of corners) {
+      const d = p.road === 'ring' ? plan.distanceToPolyline([x, z], plan.ringLine, true) : plan.distanceToSegment([x, z], avenueOf(p.road).from, avenueOf(p.road).to);
+      assert(d <= R / 2 - 0.05, `A repair patch on the ${p.road} leaves the carriageway.`);
+      for (const zb of zebras) assert(toRect(x, z, zb) >= 0.3, `A repair patch on the ${p.road} reaches a zebra.`);
+      for (const l of stopLines) assert(toRect(x, z, stopLineRect(l)) >= 0.3, `A repair patch on the ${p.road} reaches a stop line.`);
+    }
+    if (p.road === 'ring') assert(Math.abs(plan.roadSpot('ring', p.along[0], 0).heading - plan.roadSpot('ring', p.along[1], 0).heading) < 1e-9, `A repair patch lies on a corner of the ring.`);
+  }
+  // One road program draws them all: every road is one asphalt material, its uv the plan's (across, along).
+  const asphalt = [],
+    paving = [];
+  model.land.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.material.userData.surfaceKind === 'asphalt') asphalt.push(o);
+    if (o.material.userData.surfaceKind === 'paving') paving.push(o);
+  });
+  assert.equal(new Set(asphalt.map((o) => o.material)).size, 1, 'The roads take more than one material.');
+  assert.equal(new Set(paving.map((o) => o.material)).size, 1, 'The paving takes more than one material.');
+  for (const o of asphalt) {
+    const uv = o.geometry.getAttribute('uv');
+    for (let i = 0; i < uv.count; i++) assert(Math.abs(uv.getX(i)) <= R / 2 + 1e-4 && uv.getY(i) > -1 && uv.getY(i) < 1000 * plan.ROADS.length, 'An asphalt vertex has no road uv.');
+  }
+  const road = patchedShader(asphalt[0].material).fragmentShader;
+  assert(road.includes(`ROAD_COVER[${manholes.length}]`) && road.includes(`ROAD_GULLY[${gullies.length}]`) && road.includes(`ROAD_PATCH[${roadPatches.length}]`) && road.includes(`ROAD_STOP[${stopLines.length}]`), 'The road shader does not draw the plan’s covers, gullies, patches and stop lines.');
+  assert(!/uniform\s+\w+\s+ROAD_/.test(road), 'The road details became uniforms (the lamps need the uniform budget).');
+}
+// The dropped kerbs: at both ends of each zebra the walkers' floor runs from the road over the
+// dropped kerb (0.02 up) and the tactile slabs, then up the ramp to the pavement, never stepping
+// back down; the built surface is where they walk. Six buff slab tops carry the blisters' uv, flat at
+// the dropped height across the ring's inner pavement; the signal standing in a dropped crossing (the
+// west junction's ring signal) has its foot on the slabs, not in the air.
+{
+  const { DROPPED_KERB: D, droppedCrossings } = plan,
+    ray = new T.Raycaster(),
+    ground = [],
+    paving = [];
+  model.land.traverse((o) => o.isMesh && ['paving', 'stone', 'asphalt'].includes(o.material.userData.surfaceKind) && ground.push(o));
+  model.land.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'paving' && paving.push(o));
+  const surface = (x, z) => {
+    ray.set(new T.Vector3(x, 3, z), new T.Vector3(0, -1, 0));
+    return ray.intersectObjects(ground, false)[0]?.point.y;
+  };
+  let tactile = 0;
+  for (const d of droppedCrossings) {
+    const walk = d.along[1] + plan.ROAD_WIDTH / 2 + 0.09 - 1.62; // the inner walkers' line, 1.62 in from the ring's centre line
+    for (const side of [-1, 1]) {
+      const at = (c) => [d.from[0] + d.u[0] * walk + d.u[1] * c * side, d.from[1] + d.u[1] * walk - d.u[0] * c * side];
+      let last = -Infinity;
+      for (let c = 0; c <= D.ramp + 0.3; c += 0.02) {
+        const [x, z] = at(c),
+          y = plan.walkFloor(x, z) - plan.terrainHeight(x, z);
+        assert(y >= last - 1e-9, `The ${d.junction} crossing's floor steps down at ${c.toFixed(2)} out.`);
+        last = y;
+        if (c > D.kerb + 0.02 && c < D.tactile) assert(Math.abs(y - D.top) < 1e-9, `The ${d.junction} crossing is not dropped at ${c.toFixed(2)} out.`);
+        if (c > D.kerb + 0.02) {
+          const built = surface(x, z) - plan.terrainHeight(x, z);
+          assert(Math.abs(built - y) < 0.012, `At the ${d.junction} crossing, ${c.toFixed(2)} out, the walkers' floor is ${y.toFixed(3)} but the paving ${built.toFixed(3)}.`);
+        }
+      }
+      assert(Math.abs(last - plan.levels.pavement) < 1e-9, `The ${d.junction} crossing's ramp does not reach the pavement.`);
+    }
+  }
+  for (const o of paving) {
+    const uv = o.geometry.getAttribute('uv'),
+      pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < uv.count; i++) {
+      if (uv.getX(i) < 500) continue;
+      tactile++;
+      const x = pos.getX(i),
+        z = pos.getZ(i),
+        y = pos.getY(i) - plan.terrainHeight(x, z);
+      const inside = droppedCrossings.some((d) => {
+        const along = (x - d.from[0]) * d.u[0] + (z - d.from[1]) * d.u[1],
+          c = Math.abs((x - d.from[0]) * d.u[1] - (z - d.from[1]) * d.u[0]);
+        return along > d.along[0] - 1e-4 && along < d.along[1] + 1e-4 && c > D.kerb - 1e-4 && c < D.tactile + 1e-4;
+      });
+      assert(Math.abs(y - D.top) < 1e-6 && inside, 'A blister slab lies outside the flat of a dropped crossing.');
+      assert(uv.getX(i) - 1000 >= -1e-4 && uv.getX(i) - 1000 <= 1.1 && uv.getY(i) >= -1e-4 && uv.getY(i) <= 1.1, 'A blister slab’s uv does not start at its corner.');
+    }
+  }
+  assert.equal(tactile, droppedCrossings.length * 2 * 6, 'Each end of each zebra has one buff blister slab top.');
+  for (const p of signalPosts) {
+    const floor = plan.pavementTop(p.x, p.z);
+    let foot = Infinity;
+    model.land.traverse((o) => {
+      if (!o.isMesh || o.material.userData.surfaceKind !== 'iron') return;
+      const pos = o.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i) - p.x) < 0.11 && Math.abs(pos.getZ(i) - p.z) < 0.11) foot = Math.min(foot, pos.getY(i));
+    });
+    assert(Math.abs(foot - plan.terrainHeight(p.x, p.z) - floor) < 0.01, `The ${p.junction} ${p.approach} signal's foot is at ${foot.toFixed(3)}, its pavement at ${floor.toFixed(3)}.`);
+  }
+  assert(signalPosts.some((p) => plan.droppedFloor(p.x, p.z) !== undefined), 'No signal stands in a dropped crossing any more: drop this check’s reason.');
+  // The plaza's granite: its rings' joints fall on the pool copings' edges, the setts band lies
+  // between the outer coping and the kerb ring.
+  const { PLAZA_PAVING: G } = plan,
+    { POOL } = await load('town-shared');
+  assert(Math.abs(G.coping - (POOL.outer + POOL.coping)) < 1e-9, 'PLAZA_PAVING.coping is not the outer coping’s edge.');
+  for (const r of [POOL.inner - POOL.coping, G.coping]) assert(Math.abs(r / G.ring - Math.round(r / G.ring)) < 1e-9, 'The plaza’s rings of flags do not meet the pool copings.');
+  assert(G.setts < G.rim && G.setts > G.coping, 'The setts band lies outside the plaza rim or over the copings.');
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
