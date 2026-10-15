@@ -34,11 +34,30 @@ const blobGeometry = (() => {
   return g;
 })();
 
+/**
+ * Each terrace home's back green (the lawn between its back wall and the beach) has a washing line,
+ * in the home's own frame (front +z): two T-posts `back` behind the wall face, `half` either side of
+ * the home's middle (inside its 2.6 width, so never in a gap between homes), and two lines `spread`
+ * either side of the crossbars' middle, `height` up.
+ */
+export const WASHING = { back: 1.4, half: 0.95, height: 1.45, spread: 0.15 };
+type Garment = 'sheet' | 'towel' | 'shirt' | 'cloth';
+/**
+ * What hangs on each home's lines (by its seed): [line (-1 the beach side, 1 the house side), what,
+ * x along the line, colour, stripe]. Muted colours, each within a palette family (white, sandstone,
+ * glass, brass, heather, hedge); the two lines' pieces never overlap along the line.
+ */
+const LAUNDRY: [number, Garment, number, string, string?][][] = [
+  [[-1, 'sheet', -0.45, '#ece6d8'], [-1, 'towel', 0.55, '#cf9a80', '#b07a64'], [1, 'shirt', 0.05, '#a9bccb']],
+  [[-1, 'towel', -0.55, '#d8bc7c', '#b39858'], [-1, 'sheet', 0.3, '#dfe3d6'], [1, 'shirt', -0.2, '#efe9dc'], [1, 'cloth', 0.72, '#c9b8a8', '#a08878']],
+  [[-1, 'shirt', -0.5, '#b7a6bf'], [-1, 'sheet', 0.3, '#e8e0d0'], [1, 'towel', -0.05, '#9fb3a0', '#7f977f']],
+];
+
 /* ------------------------------------------------------------------ */
 /* Homes: the terrace row and the cottages                             */
 /* ------------------------------------------------------------------ */
 export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
-  const { material, season } = ctx;
+  const { material, season, animated } = ctx;
   const { box, cylinder, cone, sphere, slabRoof, windowAt, door, quoins, plinth, chimney, bayOutline, cantedPrism, bayFaces, sash, bayRoof, ivy } = kit;
   const { hedge, flowerBed } = nature;
   /** A blob of radius r, squashed to `squash` of its height, that casts no shadow. */
@@ -81,6 +100,81 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
         sprig.userData.noShadow = true;
       } else blob(g, x + along, top + 0.01 * hash(seed + i * 3), zc + across, r, look.blooms[(seed + i) % look.blooms.length]);
     }
+  }
+  /** A piece of cloth hung from y = 0 (its top edge on the line): a thin slab with soft vertical folds, casting nothing. */
+  function cloth(g: T.Object3D, x: number, z: number, w: number, h: number, colour: string, folds: number, y = 0) {
+    const geo = new T.BoxGeometry(w, h, 0.025, folds, 1, 1),
+      p = geo.getAttribute('position');
+    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) + 0.016 * Math.sin((p.getX(i) / w + 0.5) * Math.PI * folds));
+    geo.computeVertexNormals();
+    const m = new T.Mesh(geo, material(colour, 'fabric'));
+    m.position.set(x, y - h / 2 - 0.004, z);
+    m.castShadow = false;
+    m.receiveShadow = true;
+    m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * The back green's washing: two painted T-posts (part of the home) and, between their crossbars,
+   * two lines with the home's LAUNDRY. The lines and the washing are one group pivoting on the
+   * crossbars' middle, so the frame loop sways it by turning that one group a little (no vertex is
+   * moved), and takes it all in, lines and all, while it rains (as a Glasgow back court's ropes were
+   * put up on washing day). It casts nothing, like the drying net on the beach.
+   */
+  function washingLine(shell: T.Group, d: number, seed: number) {
+    const { back, half, height: H, spread } = WASHING,
+      z = -(d / 2 + back),
+      pole = '#8f8270'; // weathered paint, between the lawn and the stone in value
+    for (const s of [-1, 1]) {
+      box(shell, s * half, (H + 0.07) / 2, z, 0.08, H + 0.07, 0.08, pole, 'paint');
+      box(shell, s * half, H, z, 0.07, 0.07, 2 * spread + 0.12, pole, 'paint');
+    }
+    const wash = new T.Group();
+    wash.name = 'washing';
+    wash.position.set(0, H, z);
+    wash.userData.keepSeparate = true;
+    shell.add(wash);
+    for (const s of [-1, 1]) {
+      // Each end buried in a crossbar; a gentle sag between.
+      const curve = new T.QuadraticBezierCurve3(new T.Vector3(-half, 0, s * spread), new T.Vector3(0, -0.07, s * spread), new T.Vector3(half, 0, s * spread)),
+        line = new T.Mesh(new T.TubeGeometry(curve, 8, 0.012, 4), material('#e9e4d8', 'fabric'));
+      line.castShadow = false;
+      line.userData.noShadow = true;
+      wash.add(line);
+    }
+    const sag = (x: number) => -0.07 * (1 - (x / half) ** 2);
+    for (const [s, what, x, colour, stripe] of LAUNDRY[seed % LAUNDRY.length]) {
+      const lz = s * spread,
+        y = sag(x);
+      if (what === 'sheet') cloth(wash, x, lz, 0.65, 0.52, colour, 4, y);
+      else if (what === 'towel' || what === 'cloth') {
+        const [w, h] = what === 'towel' ? [0.32, 0.48] : [0.25, 0.32];
+        cloth(wash, x, lz, w, h, colour, 2, y);
+        box(wash, x, y - h + 0.08, lz, w + 0.004, 0.05, 0.03, stripe ?? colour, 'fabric').userData.noShadow = true;
+      } else {
+        // A shirt pegged by its shoulders: the body and two sleeves hanging out and down.
+        cloth(wash, x, lz, 0.34, 0.38, colour, 2, y);
+        for (const side of [-1, 1]) {
+          const sleeve = box(wash, x + side * 0.21, y - 0.1, lz, 0.13, 0.18, 0.022, colour, 'fabric', { rz: side * 0.5 });
+          sleeve.castShadow = false;
+          sleeve.userData.noShadow = true;
+        }
+      }
+    }
+    wash.traverse((o) => { if (o instanceof T.Mesh) o.castShadow = false; });
+    const phase = seed * 1.7;
+    const update = (time: number, _night: number, rain = 0) => {
+      // Taken in once the rain sets in: hidden, and shrunk to its pivot so Inspect's copy (which
+      // follows the group's pose, not its visibility) is taken in with it.
+      const dry = rain < 0.25;
+      wash.visible = dry;
+      wash.scale.setScalar(dry ? 1 : 1e-3);
+      // A breeze off the sea: a slight lean toward the house and a slow, uneven sway.
+      wash.rotation.x = -0.05 + 0.06 * Math.sin(time * 1.1 + phase) + 0.025 * Math.sin(time * 2.6 + phase * 2);
+    };
+    update(0, 0, 0);
+    animated.push({ object: wash, update });
   }
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
     const w = site.w,
@@ -192,6 +286,8 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     if (room >= 1.2) flowerBed(shell, bay.x, 0, d / 2 + 0.9, 1.0, 0.4, seed * 31);
     if (room >= 1.75) hedge(shell, -0.1, 0, d / 2 + Math.min(1.4, room - 0.35), w - 0.5, 0, 0.55, { at: doorX + 0.1, width: 1.0 });
     if (room - 0.85 >= 0.2) box(shell, doorX, 0.03, d / 2 + (0.85 + room) / 2, 0.8, 0.06, room - 0.85, palette.plaza, 'paving');
+    // The back green: a washing line behind the home, inside its own width.
+    washingLine(shell, d, seed);
   }
 
   function buildCottage(g: T.Object3D, c: (typeof plan.cottages)[number], index: number) {

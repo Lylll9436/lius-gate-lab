@@ -1024,6 +1024,47 @@ for (const [id, m] of models) {
   }
   assert(low < 0.05, 'The cottage’s ivy does not reach the ground.');
 }
+// The back greens: each terrace home's washing line stands in its own back garden (behind its back
+// wall, inside its own width, so never in a gap or a front garden), well inside the shore, clear of
+// the trees behind the gaps and of the dog walk. The washing sways by turning its one group (no
+// vertex moves), so little that the lines' ends stay in the crossbars, and is taken in while it rains.
+{
+  const { WASHING } = await load('town-homes');
+  const trees = plan.plantingPlan(),
+    v = new T.Vector3();
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { w, d } = plan.sites[id],
+      washing = shell.getObjectByName('washing'),
+      entry = model.animated.find((e) => e.object === washing);
+    assert(washing && entry, `${id} has no washing line.`);
+    assert(washing.children.length === 1 && washing.children[0].isMesh && !washing.children[0].castShadow, `${id}: the washing is one mesh that casts nothing.`);
+    const positions = washing.children[0].geometry.attributes.position.array.slice(),
+      toShell = shell.matrixWorld.clone().invert();
+    let sway = 0;
+    for (let t = 0; t < 60; t += 0.37) {
+      entry.update(t, 0, 0);
+      assert(washing.visible, `${id}: the washing is not out on a dry day.`);
+      sway = Math.max(sway, Math.abs(washing.rotation.x));
+      shell.updateMatrixWorld(true);
+      const box = new T.Box3().setFromObject(washing),
+        posts = [-1, 1].map((s) => new T.Vector3(s * WASHING.half, 0, -(d / 2 + WASHING.back)).applyMatrix4(shell.matrixWorld));
+      for (const p of [...posts, ...[0, 1, 2, 3].map((k) => new T.Vector3(k & 1 ? box.max.x : box.min.x, box.min.y, k & 2 ? box.max.z : box.min.z))]) {
+        v.copy(p).applyMatrix4(toShell);
+        assert(Math.abs(v.x) < w / 2 - 0.1 && v.z < -(d / 2 + 0.35 + 0.6), `${id}: the washing leaves its back garden at ${p.toArray().map((n) => n.toFixed(2))}`);
+        assert(plan.onIsland(p.x, p.z, 0.6), `${id}: the washing is by the beach at ${p.toArray().map((n) => n.toFixed(2))}`);
+        assert(plan.distanceToPolyline([p.x, p.z], plan.dogLoop, true) > 3, `${id}: the washing is on the dog walk.`);
+        for (const tree of trees) assert(Math.hypot(tree.x - p.x, tree.z - p.z) > 1.3 * tree.size + 0.2, `${id}: the washing runs into ${tree.id}.`);
+      }
+      assert(box.min.y > 0.6, `${id}: the washing trails on the lawn.`);
+    }
+    assert(sway < 0.15 && sway * WASHING.spread < 0.03, `${id}: the washing swings ${sway.toFixed(3)} rad, pulling its lines from the crossbars.`);
+    assert.deepEqual(washing.children[0].geometry.attributes.position.array, positions, `${id}: the washing's vertices move on the CPU.`);
+    entry.update(12, 0, 1);
+    assert(!washing.visible && washing.scale.x < 0.01, `${id}: the washing is left out in the rain.`);
+    entry.update(0, 0, 0);
+  }
+}
 // The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
 {
   const studio = new T.Box3().setFromObject(models.get('research-studio').root),

@@ -105,7 +105,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   city.add(land);
   const lamps: T.Mesh[] = [],
     clocks: { hour: T.Object3D; minute: T.Object3D }[] = [],
-    animated: { object: T.Object3D; update: (time: number, night: number) => void }[] = [];
+    animated: { object: T.Object3D; update: (time: number, night: number, rain?: number) => void }[] = [];
   const ctx: TownContext = { library, material, season, land, lamps, clocks, animated };
   const kit = createKit(ctx), nature = createNature(ctx, kit), props = createProps(ctx, kit);
   const { buildTerrain } = createGround(ctx);

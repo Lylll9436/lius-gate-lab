@@ -1206,7 +1206,7 @@ export async function createCity(
     const pose = plan.boatPose(time);
     boat.position.set(pose.x, model.waterLevel + pose.y, pose.z);
     boat.rotation.set(0, pose.heading, pose.roll);
-    for (const entry of animated) entry.update(time, night);
+    for (const entry of animated) entry.update(time, night, rain);
     if (now - clockChecked > 15000) {
       clockChecked = now;
       setClocks();
