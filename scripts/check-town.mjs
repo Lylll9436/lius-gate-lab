@@ -245,13 +245,28 @@ for (const [x, z] of [...plan.dogLoop, ...plan.dogLane]) {
   for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) >= 0.95, `The dog walk runs into ${t.id}`);
   assert(plan.terrainHeight(x, z) === 0, 'The dog walk climbs a hill');
 }
-// The cyclist, the walker and the dog turn evenly round their sampled corners. Their true arcs
-// turn them about 0.37°, 0.95° and 2.3° a frame at 60 fps; a heading that stepped at each vertex
-// jumped 9°, 15° and 16.6° and held still between. Each heading also stays with the way it moves.
+// Everything that moves round a sampled corner turns evenly through it: the cyclist, the dog
+// walker and the dog, the tram and the people on the ring's pavements. Their true arcs turn them
+// about 0.37°, 0.95°, 2.3°, 0.4° and at most 0.28° a frame at 60 fps; a heading that stepped at each
+// vertex jumped 9°, 15°, 16.6°, 9° and 9° and held still between. Each heading also stays with the
+// way it moves (the outer walkers go round the other way, facing back along the loop).
 {
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)),
-    deg = Math.PI / 180;
+    deg = Math.PI / 180,
+    innerWalk = plan.walkLoop(1.62),
+    outerWalk = plan.walkLoop(-1.62),
+    pace = 0.85 * 1.15; // the fastest walker (town-build: 0.85 x 0.85-1.15)
   for (const { name, pose, most } of [
+    { name: 'tram', pose: (t) => plan.tramPose(t), most: 0.6 },
+    { name: 'inner walker', pose: (t) => plan.samplePolyline(innerWalk, pace * t, true, true), most: 0.4 },
+    {
+      name: 'outer walker',
+      pose: (t) => {
+        const p = plan.samplePolyline(outerWalk, -pace * t, true, true);
+        return { ...p, heading: p.heading + Math.PI };
+      },
+      most: 0.4,
+    },
     { name: 'cyclist', pose: (t) => plan.cyclistPose(t), most: 0.5 },
     { name: 'dog walker', pose: (t) => plan.dogWalkPose(t).walker, most: 1.2 },
     { name: 'dog', pose: (t) => plan.dogWalkPose(t).dog, most: 3 },
@@ -266,7 +281,7 @@ for (const [x, z] of [...plan.dogLoop, ...plan.dogLane]) {
       last = p;
     }
   }
-  // Without `smooth`, samplePolyline keeps the segment's own heading (the tram and the walkers).
+  // Without `smooth`, samplePolyline keeps the segment's own heading (only positions are read that way).
   const square = [[0, 0], [0, 1], [1, 1], [1, 0]];
   assert.equal(plan.samplePolyline(square, 0.9, true).heading, 0, 'The plain heading is the segment’s.');
   assert(Math.abs(plan.samplePolyline(square, 1, true, true).heading - Math.PI / 4) < 1e-12, 'A smooth heading is halfway round at the vertex.');

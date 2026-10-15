@@ -627,8 +627,25 @@ export const tramLoop = ringLine;
 /** The tram's pace on the ring (units per second). The cyclist keeps the same lap time. */
 export const TRAM_SPEED = 2.1;
 const RING_LENGTH = polylineLength(ringLine, true);
-/** Where the tram is at `time` (seconds of town time; held at 0 under reduced motion). */
-export const tramPose = (time: number) => samplePolyline(tramLoop, (TRAM_SPEED * time) % RING_LENGTH, true);
+/** Half the distance between the tram's two bogies (its skirts at z ±1.1 in buildTram). */
+const TRAM_BOGIE = 1.1;
+/**
+ * Where the tram is at `time` (seconds of town time; held at 0 under reduced motion). Like a real
+ * tram it rides on two bogies that both stay on the rails: the body sits midway between them and
+ * faces from the rear one to the front one, so it swings round each corner arc as one smooth turn
+ * instead of stepping 9° at every sample of the arc, and its ends overhang the curve as a long
+ * car's do.
+ */
+export const tramPose = (time: number) => {
+  const d = (TRAM_SPEED * time) % RING_LENGTH,
+    front = samplePolyline(tramLoop, d + TRAM_BOGIE, true),
+    rear = samplePolyline(tramLoop, d - TRAM_BOGIE, true);
+  return {
+    x: (front.x + rear.x) / 2,
+    z: (front.z + rear.z) / 2,
+    heading: Math.atan2(front.x - rear.x, front.z - rear.z),
+  };
+};
 /**
  * The cyclist's lane: 0.6 outside the ring's centre line. The ring runs clockwise on the map and
  * negative offsets are its outer side, so the cyclist keeps left, as in Glasgow: clear of the

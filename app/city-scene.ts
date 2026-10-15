@@ -1183,7 +1183,8 @@ export async function createCity(
     for (const walker of walkers) {
       const before = plan.samplePolyline(walker.loop, walker.distance, true);
       if (!paused) walker.distance += walker.speed * dt;
-      const pose = plan.samplePolyline(walker.loop, walker.distance, true);
+      // A smooth heading: the ring's corners are sampled every 9°, too coarse to turn by.
+      const pose = plan.samplePolyline(walker.loop, walker.distance, true, true);
       animateResident(
         walker.root,
         Math.hypot(pose.x - before.x, pose.z - before.z),
