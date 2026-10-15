@@ -1,5 +1,5 @@
 import * as T from 'three';
-import { PLAZA_PAVING } from './town-plan';
+import { GULLY, MANHOLE, PLAZA_PAVING, gullies, manholes } from './town-plan';
 
 export type SurfaceKind =
   | 'stone'
@@ -171,6 +171,37 @@ diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.88,.87,.86),vec3(.85,.84,.83),smoothste
  * shimmer at the overview. `fw` is world units per pixel along the more foreshortened axis.
  */
 const f3 = (v: number) => v.toFixed(3);
+const vec4s = (name: string, rows: number[][]) => `const vec4 ${name}[${rows.length}] = vec4[${rows.length}](${rows.map((r) => `vec4(${r.map(f3).join(',')})`).join(',')});`;
+/**
+ * The road: the plan's covers and gullies (centre and road direction), as constants: no uniforms,
+ * so the many lights' uniform budget is untouched.
+ */
+const ROAD_PARS = () => `
+${vec4s('ROAD_COVER', manholes.map((c) => [c.x, c.z, Math.sin(c.heading), Math.cos(c.heading)]))}
+${vec4s('ROAD_GULLY', gullies.map((g) => [g.x, g.z, Math.sin(g.heading), Math.cos(g.heading)]))}
+`;
+/**
+ * The road's iron, by world position. Its patterns are full from about zoom 2 (`near`) and gone at
+ * the overview, where only a soft trace of the covers and gullies stays.
+ * - Covers: a dark iron lid with a raised rim (its slopes tilt the normal) and a grid of square
+ *   lugs; gullies: an iron frame round slots across the road. Both turn the road iron-like
+ *   (groundIron: smoother, a little metallic).
+ */
+const ROAD_DETAIL = `float near=1.-smoothstep(.016,.04,fw);
+float lugNear=1.-smoothstep(.011,.02,fw);
+for(int i=0;i<ROAD_COVER.length();i++){vec2 d=vGroundP.xz-ROAD_COVER[i].xy;float r=length(d);if(r>${f3(MANHOLE.radius + 0.04)})continue;
+float lid=1.-smoothstep(${f3(MANHOLE.radius)}-fw,${f3(MANHOLE.radius)}+fw,r),rimUp=smoothstep(.102,.118,r),rimDown=smoothstep(.128,.142,r),rim=rimUp*(1.-rimDown);
+vec2 l=abs(fract(vec2(dot(d,ROAD_COVER[i].zw),dot(d,vec2(-ROAD_COVER[i].w,ROAD_COVER[i].z)))/.05)-.5);float aa=fw/.05;
+float lug=(1.-smoothstep(.26-aa,.26+aa,l.x))*(1.-smoothstep(.26-aa,.26+aa,l.y))*(1.-rimUp);
+float tone=mix(mix(.6,.8,lug),.68,1.-lugNear);tone=mix(tone,.9,rim);
+diffuseColor.rgb*=mix(1.,tone,lid*(.5+.5*near));groundIron=max(groundIron,lid);
+groundBump+=d/max(r,1e-4)*(.5*4.*rimDown*(1.-rimDown)-.5*4.*rimUp*(1.-rimUp))*lugNear;}
+for(int i=0;i<ROAD_GULLY.length();i++){vec2 d=vGroundP.xz-ROAD_GULLY[i].xy;if(dot(d,d)>.04)continue;
+vec2 l=vec2(dot(d,ROAD_GULLY[i].zw),dot(d,vec2(-ROAD_GULLY[i].w,ROAD_GULLY[i].z)));vec2 e=abs(l)-vec2(${f3(GULLY.length / 2)},${f3(GULLY.width / 2)});float edge=max(e.x,e.y);
+float grate=1.-smoothstep(-fw,fw,edge),frame=smoothstep(-.02-fw,-.02+fw,edge),aa=fw/.044;
+float slot=(1.-smoothstep(.3-aa,.3+aa,abs(fract(l.x/.044+.5)-.5)))*(1.-frame);
+float tone=mix(.8,mix(mix(.72,.3,slot),.5,1.-lugNear),1.-frame);
+diffuseColor.rgb*=mix(1.,tone,grate*(.5+.5*near));groundIron=max(groundIron,grate);}`;
 /**
  * The paving: the buff blister slabs of the dropped crossings (their uv is 1000 + world x, z from
  * the slabs' corner), the plaza's granite in rings round the gate (a touch cooler than the
@@ -212,8 +243,8 @@ type BakeUniforms = { groundMasks: { value: T.Texture }; maskExtent: { value: nu
  * mown town lawn that carries a soft 1.5-unit checker, A the terrain height (so only
  * surfaces lying on the ground are shaded, not roof lawns or raised floors).
  * Paving gets offset flags whose joints fade out once a flag is too small on screen; the plaza
- * its granite rings and setts and the dropped crossings their blister slabs (PAVING), which tilt
- * the normal (groundBump).
+ * its granite rings and setts and the dropped crossings their blister slabs (PAVING). Asphalt
+ * gets the road's covers and gullies (ROAD_DETAIL); both may tilt the normal (groundBump).
  * Sand gets the wet band: its uv.x is the exact width out from the outline (the shore mesh
  * sets it), and from a swash mark wandering about 2.2 out down to the waterline the sand is
  * darker, darkest at the foam. Any other sand surface needs uv.x = 0 to stay dry.
@@ -223,7 +254,7 @@ function groundShader(m: T.MeshStandardMaterial, kind: SurfaceKind, uniforms: Ba
   const lawn = `vec2 q=vGroundP.xz/1.5;vec2 tri=abs(fract(q*.5)*2.-1.);vec2 fw=fwidth(q)+1e-4;vec2 e=smoothstep(.5-fw,.5+fw,tri);float ch=e.x+e.y-2.*e.x*e.y;
 diffuseColor.rgb*=mix(vec3(.93,.95,.90),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
   const sand = kind === 'sand',
-    street = kind === 'paving';
+    street = kind === 'paving' || kind === 'asphalt';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.groundMasks = uniforms.groundMasks;
     shader.uniforms.maskExtent = uniforms.maskExtent;
@@ -231,16 +262,19 @@ diffuseColor.rgb*=mix(vec3(.93,.95,.90),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;' + (sand ? '\nvarying float vShoreW;' : '') + (street ? '\nvarying vec2 vGroundUV;' : ''))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundP = (modelMatrix * vec4(transformed, 1.)).xyz;' + (sand ? '\nvShoreW = uv.x;' : '') + (street ? '\nvGroundUV = uv;' : ''));
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;' + (sand ? SHORE_PARS : '') + (street ? '\nvarying vec2 vGroundUV;' : ''))
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;' + (sand ? SHORE_PARS : '') + (street ? '\nvarying vec2 vGroundUV;' : '') + (kind === 'asphalt' ? ROAD_PARS() : ''))
       .replace('#include <color_fragment>', `#include <color_fragment>
-${sand ? 'float shoreWet=0.;\n' : ''}${street ? 'vec2 groundBump=vec2(0.);\n' : ''}{
+${sand ? 'float shoreWet=0.;\n' : ''}${street ? 'float groundIron=0.;vec2 groundBump=vec2(0.);\n' : ''}{
 ${sand ? SHORE_WET + '\n' : ''}vec4 gs=texture2D(groundMasks,vGroundP.xz/(2.*maskExtent)+.5);
 float nearGround=1.-smoothstep(.2,.5,vGroundP.y-gs.a*${GROUND_HEIGHT_RANGE.toFixed(1)});
-${street ? 'float fw=max(fwidth(vGroundP.x),fwidth(vGroundP.z))+1e-5;\n' : ''}${kind === 'grass' ? lawn : kind === 'paving' ? PAVING() : ''}
+${street ? 'float fw=max(fwidth(vGroundP.x),fwidth(vGroundP.z))+1e-5;\n' : ''}${kind === 'grass' ? lawn : kind === 'paving' ? PAVING() : kind === 'asphalt' ? ROAD_DETAIL : ''}
 diffuseColor.rgb*=mix(vec3(1.),${tint},gs.r*nearGround);
 }`);
-    // The blisters' bumps (world x, z tilts of the normal).
-    if (street) shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal=normalize(normal+(viewMatrix*vec4(groundBump.x,0.,groundBump.y,0.)).xyz);');
+    // The covers' and gullies' iron, and the bumps of rims and blisters (world x, z tilts of the normal).
+    if (street)
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.55,groundIron);metalnessFactor=mix(metalnessFactor,.35,groundIron);')
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal=normalize(normal+(viewMatrix*vec4(groundBump.x,0.,groundBump.y,0.)).xyz);');
   };
   m.customProgramCacheKey = () => 'lius-ground-' + kind;
 }
