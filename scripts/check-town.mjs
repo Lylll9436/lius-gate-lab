@@ -1892,6 +1892,90 @@ for (const season of ['summer', 'winter'])
   }
   assert(birchLeaves.winter < birchLeaves.summer, 'The winter birches are a clump sparser.');
 }
+// The trees leave the homes' details in view: from the overview (each quarter turn) and from every
+// chapter that faces them, no tree of any kind stands between the camera and the ivy on the
+// archive's south wall or the cottage gable, or a window box on a home or a cottage. Tested leaf by
+// leaf toward the camera (35 up for every 38 across) through the fullest crowns, summer and autumn.
+{
+  const nature = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    { IVY_COTTAGE } = await load('town-homes');
+  const library = createCityMaterials(),
+    grove = (season, centre) => {
+      const ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
+        make = nature.createNature(ctx, createKit(ctx)),
+        g = new T.Group();
+      for (const t of trees) if (Math.hypot(t.x - centre.x, t.z - centre.z) < 14) make.tree(g, t, Number(t.id.slice(5)));
+      g.updateMatrixWorld(true);
+      return g.children.flatMap((t) => t.children.filter((o) => o.isMesh));
+    };
+  /** World centroids of `meshes`' foliage triangles whose centroid, in `frame`'s space, is inside `box`. */
+  const leaves = (meshes, frame, box) => {
+    const toLocal = frame.clone().invert(),
+      out = [],
+      a = new T.Vector3(),
+      b = new T.Vector3(),
+      c = new T.Vector3();
+    for (const o of meshes) {
+      if (!o.isMesh || o.material.userData.surfaceKind !== 'foliage') continue;
+      const p = o.geometry.attributes.position,
+        index = o.geometry.index,
+        n = index ? index.count : p.count,
+        at = (i) => (index ? index.getX(i) : i);
+      for (let i = 0; i < n; i += 3) {
+        a.fromBufferAttribute(p, at(i)).applyMatrix4(o.matrixWorld);
+        b.fromBufferAttribute(p, at(i + 1)).applyMatrix4(o.matrixWorld);
+        c.fromBufferAttribute(p, at(i + 2)).applyMatrix4(o.matrixWorld);
+        const world = a.clone().add(b).add(c).divideScalar(3);
+        if (box.containsPoint(world.clone().applyMatrix4(toLocal))) out.push(world);
+      }
+    }
+    return out;
+  };
+  const B = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(x0, y0, z0), new T.Vector3(x1, y1, z1)),
+    landMeshes = [],
+    details = [];
+  model.land.traverse((o) => o.isMesh && landMeshes.push(o));
+  // Each detail: its leaves, and the way its wall faces (world, horizontal).
+  const face = (frame, x, z) => new T.Vector3(x, 0, z).transformDirection(frame).setY(0).normalize();
+  {
+    const { shell } = models.get('city-archive');
+    shell.updateMatrixWorld(true);
+    const { w, d } = plan.sites['city-archive'];
+    details.push({ name: 'the archive’s ivy', points: leaves(shell.children, shell.matrixWorld, B(w / 2 - 0.2, -1, -d / 2, w / 2 + 0.5, 4, d / 2)), facing: face(shell.matrixWorld, 1, 0) });
+  }
+  plan.cottages.forEach((c, i) => {
+    const frame = new T.Matrix4().makeRotationY(c.rotation).setPosition(c.x, plan.terrainHeight(c.x, c.z), c.z);
+    details.push({ name: `cottage ${i}’s window box`, points: leaves(landMeshes, frame, B(-1.05, 0.45, 1.2, -0.25, 1.15, 1.7)), facing: face(frame, 0, 1) });
+    if (i === IVY_COTTAGE) details.push({ name: `cottage ${i}’s ivy`, points: leaves(landMeshes, frame, B(1.25, -1, -1.5, 1.75, 3.5, 1.5)), facing: face(frame, 1, 0) });
+  });
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { d } = plan.sites[id];
+    shell.updateMatrixWorld(true);
+    details.push({ name: `${id}’s window box`, points: leaves(shell.children, shell.matrixWorld, B(-1.0, 0.3, d / 2 + 0.45, -0.36, 1.0, d / 2 + 0.75)), facing: face(shell.matrixWorld, 0, 1) });
+  }
+  const bearings = [...new Set([...[0, 1, 2, 3].map((k) => plan.chapterBearings.overview + (k * Math.PI) / 2), ...Object.values(plan.chapterBearings)])],
+    ray = new T.Raycaster();
+  ray.near = 0.08;
+  for (const season of ['summer', 'autumn'])
+    for (const { name, points, facing } of details) {
+      assert(points.length >= 12, `${name}: only ${points.length} leaves found`);
+      const centre = points.reduce((s, p) => s.add(p), new T.Vector3()).divideScalar(points.length),
+        crowns = grove(season, centre);
+      for (const b of bearings) {
+        const toward = new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38).normalize();
+        if (facing.dot(new T.Vector3(toward.x, 0, toward.z).normalize()) < 0.25) continue;
+        let hidden = 0;
+        for (const p of points) {
+          ray.set(p, toward);
+          if (ray.intersectObjects(crowns, false).length) hidden++;
+        }
+        assert(hidden <= 0.02 * points.length, `${season}: trees hide ${hidden} of ${points.length} leaves of ${name} from the camera at bearing ${b.toFixed(2)}`);
+      }
+    }
+}
 // The key light stays high all day, comes down to about 40 degrees at dawn and golden hour, and
 // goes back up for the night light.
 const { sunOffsetFor, lowSun, warmSun } = await load('city-atmosphere');
