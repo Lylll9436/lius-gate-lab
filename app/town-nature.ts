@@ -20,11 +20,47 @@ const TREE = {
   trunk: palette.bark, pineTrunk: palette.pineBark,
 };
 /**
+ * Silver birch: a light yellow-green crown that turns butter yellow in autumn and, like the other
+ * broadleaves, keeps a muted green in winter (paler here, and one clump sparser).
+ */
+const BIRCH: Record<Season, { tones: string[]; top: string; under: string }> = {
+  spring: { tones: ['#a6c65a', '#afcb62'], top: '#e0e892', under: '#62893e' },
+  summer: { tones: ['#9cbb4c', '#a5c255'], top: '#d9e183', under: '#58803a' },
+  autumn: { tones: ['#cab034', '#d0b73e'], top: '#e6cd5c', under: '#8c7424' },
+  winter: { tones: ['#809a58', '#88a05e'], top: '#bac392', under: '#4a6640' },
+};
+/** Birch bark: cream-white, a few dark marks and a dark, rough foot. */
+const BIRCH_BARK = { body: '#e2dbcc', foot: '#5d5750', mark: '#55504a' };
+/** Rowan: a deep, slightly cool green that turns orange-red in autumn. */
+const ROWAN: Record<Season, { tones: string[]; top: string; under: string }> = {
+  spring: { tones: ['#4e9052', '#559556'], top: '#a2c47a', under: '#285a38' },
+  summer: { tones: ['#468a4c', '#4e9052'], top: '#9cc27a', under: '#245536' },
+  autumn: { tones: ['#bc5634', '#c45e37'], top: '#e2945a', under: '#7c3624' },
+  winter: { tones: ['#5a8250', '#618756'], top: '#a0b38a', under: '#2b4b38' },
+};
+const ROWAN_BARK = '#7b6f63';
+export type TreeFruit = { kind: 'flowers' | 'berries'; colour: string; clusters: number };
+/**
+ * What a rowan carries: creamy flat flower heads in spring, a few ripening orange berry clusters
+ * in (late) summer, full scarlet clusters in autumn and nothing in winter. Other trees carry none.
+ * The colours stay inside their palette families (white, the flower red); the berries are the
+ * small accent that may be the most saturated thing in frame.
+ */
+export function treeFruit(spec: plan.TreeSpec, season: Season): TreeFruit | null {
+  if (spec.kind !== 'rowan') return null;
+  if (season === 'spring') return { kind: 'flowers', colour: palette.white, clusters: 7 };
+  if (season === 'summer') return { kind: 'berries', colour: '#cc6a3e', clusters: 4 };
+  if (season === 'autumn') return { kind: 'berries', colour: '#c4453a', clusters: 5 };
+  return null;
+}
+/**
  * The season on the round trees. The accent trees (the plan's 'autumn' kind and every 23rd
  * round tree) blossom in spring and turn in autumn; in summer every canopy is green, and in
- * winter a muted, darker green.
+ * winter a muted, darker green. Birches and rowans wear their own looks (BIRCH, ROWAN).
  */
 export function treeLook(spec: plan.TreeSpec, index: number, season: Season) {
+  if (spec.kind === 'birch') return BIRCH[season];
+  if (spec.kind === 'rowan') return ROWAN[season];
   const accent = spec.kind === 'autumn' || (index * 7) % 23 === 0;
   if (season === 'winter') return TREE.winter;
   if (!accent || season === 'summer') return TREE.round;
@@ -80,6 +116,132 @@ function pine(t: T.Group, s: number, index: number, add: (g: T.BufferGeometry, k
   add(mergeGeometries(geos)!, 'foliage');
   return t;
 }
+type AddPart = (g: T.BufferGeometry, k: SurfaceKind) => void;
+type Look = { tones: string[]; top: string; under: string };
+/** A slim open tube from a to b (radius ra at a, rb at b), painted from `colour` at a to `colour` × fade at b. */
+function limb(a: T.Vector3, b: T.Vector3, ra: number, rb: number, radial: number, colour: string, fade: number) {
+  const d = b.clone().sub(a), g = new T.CylinderGeometry(rb, ra, d.length(), radial, 1, true);
+  g.translate(0, d.length() / 2, 0);
+  paintByHeight(g, colour, (y) => mix(1, fade, y / d.length()));
+  g.applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize()));
+  return g.translate(a.x, a.y, a.z);
+}
+/** A birch clump: a canopy lump stretched `tall`, whose lower half hangs a little longer and narrower, so it droops. */
+function droopingLump(r: number, x: number, y: number, z: number, spin: number, tall = 1) {
+  const g = canopyLump(r, 1, 0, 0, 0, spin), p = g.getAttribute('position'), n = g.getAttribute('normal'), v3 = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    const v = p.getY(i), t = Math.max(0, -v / (0.85 * r)), taper = 1 - 0.16 * t, stretch = tall * (v < 0 ? 1.28 : 1);
+    p.setXYZ(i, p.getX(i) * taper, v * stretch, p.getZ(i) * taper);
+    // The ellipsoid's normal for the stretch (the taper's slope is left out): it keeps the lump smooth.
+    v3.set(n.getX(i) / taper, n.getY(i) / stretch, n.getZ(i) / taper).normalize();
+    n.setXYZ(i, v3.x, v3.y, v3.z);
+  }
+  return g.translate(x, y, z);
+}
+/** Fruit on a crown's clumps: rowan berry clusters (four small berries each) or flat flower heads. */
+const fruitBlob = (() => { const g = new T.IcosahedronGeometry(1, 0); g.setAttribute('normal', g.getAttribute('position').clone()); g.normalizeNormals(); g.deleteAttribute('uv'); return g; })(); // 20 tris, smooth
+function fruit(spheres: number[][], s: number, index: number, f: TreeFruit) {
+  const base = new T.Color(f.colour), c = new T.Color(), parts: T.BufferGeometry[] = [];
+  const blob = (x: number, y: number, z: number, r: number, squash: number, shade: number) => {
+    const g = fruitBlob.clone().scale(r, r * squash, r).translate(x, y, z), n = g.getAttribute('position').count;
+    c.copy(base).multiplyScalar(shade);
+    g.setAttribute('color', new T.Float32BufferAttribute(Array.from({ length: n }, () => [c.r, c.g, c.b]).flat(), 3));
+    parts.push(g);
+  };
+  // Round the outer clumps (every sphere but the first, the crown's top), on their outer faces.
+  const outer = spheres.slice(1);
+  for (let k = 0; k < f.clusters; k++) {
+    const [cx, cy, cz, cr] = outer[k % outer.length],
+      out = Math.atan2(cz, cx) + (hash(index * 17 + k * 5) - 0.5) * 1.1,
+      up = f.kind === 'flowers' ? 0.45 + 0.4 * hash(index * 19 + k) : -0.2 + 0.35 * hash(index * 19 + k),
+      x = cx + Math.cos(out) * Math.cos(up) * cr,
+      y = cy + Math.sin(up) * cr * 0.85,
+      z = cz + Math.sin(out) * Math.cos(up) * cr,
+      spin = hash(index * 23 + k) * Math.PI * 2;
+    if (f.kind === 'flowers') {
+      // A flat-topped head: one broad floret cushion and two smaller ones tucked under its rim.
+      blob(x, y + 0.03 * s, z, 0.15 * s, 0.45, 0.97 + 0.05 * hash(index * 29 + k));
+      for (const a of [0, 2.4]) blob(x + Math.cos(spin + a) * 0.13 * s, y - 0.005 * s, z + Math.sin(spin + a) * 0.13 * s, 0.1 * s, 0.5, 0.9);
+    } else {
+      const r = 0.065 * s;
+      // Three berries in a loose triangle and one hanging below them, the lower ones a shade darker.
+      for (const [a, dy, shade] of [[0, 0, 1.04], [2.1, -0.4, 0.96], [4.2, -0.3, 1.0], [1.0, -1.7, 0.86]])
+        blob(x + Math.cos(spin + a) * (a ? 1.7 * r : 0), y + dy * r, z + Math.sin(spin + a) * (a ? 1.7 * r : 0), r, 1, shade);
+    }
+  }
+  return mergeGeometries(parts)!;
+}
+/**
+ * Silver birch: a slim trunk leaning a little and curving into its lean, cream-white with a few
+ * dark marks (a pair of close rows each, dark on part of the round) and a dark foot, under a small,
+ * narrow crown held high: one tall oval clump with three small drooping ones (two in winter)
+ * spiralling round it on short pale limbs. Separate clumps stacked up the trunk read as topiary.
+ */
+function birch(t: T.Group, s: number, index: number, look: Look, season: Season, add: AddPart) {
+  const H = 2.1 * s,
+    lean = (0.07 + 0.07 * hash(index * 11 + 2)) / H,
+    bend = (y: number) => lean * y * y,
+    radial = 6,
+    marks = [0.4 + 0.06 * hash(index * 11 + 3), 0.72 + 0.08 * hash(index * 11 + 4)],
+    rows = [0, 0.05, 0.16, 0.28, marks[0] - 0.03, marks[0] + 0.03, (marks[0] + marks[1]) / 2, marks[1] - 0.03, marks[1] + 0.03, 1.05, 1.5, 2.1];
+  const trunk = new T.LatheGeometry(rows.map((y) => new T.Vector2((mix(0.1, 0.055, y / 2.1) + (y < 0.1 ? 0.022 * (1 - y / 0.1) : 0)) * s, y * s)), radial);
+  const p = trunk.getAttribute('position'), body = new T.Color(BIRCH_BARK.body), foot = new T.Color(BIRCH_BARK.foot), mark = new T.Color(BIRCH_BARK.mark), c = new T.Color(), out = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const col = Math.floor(i / rows.length) % radial, row = i % rows.length, y = p.getY(i);
+    // A ragged dark foot, then the white bark; marks on two or three neighbouring sides of their row pair.
+    c.copy(foot).lerp(body, sstep(y, (0.08 + 0.08 * hash(index * 3 + col)) * s, (0.24 + 0.06 * hash(index * 5 + col)) * s));
+    const m = row >= 4 && row <= 8 && row !== 6 ? (row < 6 ? 0 : 1) : -1;
+    if (m >= 0 && (col - Math.floor(hash(index * 7 + m) * radial) + radial) % radial < 2 + m) c.lerp(mark, 0.8);
+    // Shaded where the crown closes over it.
+    const f = mix(1, 0.6, sstep(y, 1.2 * s, H));
+    out[i*3] = c.r*f; out[i*3+1] = c.g*f; out[i*3+2] = c.b*f;
+    p.setX(i, p.getX(i) + bend(y));
+  }
+  trunk.setAttribute('color', new T.BufferAttribute(out, 3));
+  add(trunk, 'bark');
+  const spin = hash(index * 13) * Math.PI * 2,
+    spheres = [[bend(2.05 * s), 2.05 * s, 0, 0.46 * s]],
+    sides = [[1.66, 0.34, 0], [1.86, 0.32, 2.3], [2.06, 0.3, 4.4]].filter((_, k) => season !== 'winter' || k !== 1);
+  for (const [y0, r, turn] of sides) {
+    const a = spin + turn + (hash(index * 13 + turn) - 0.5) * 0.6,
+      d = (0.42 + 0.05 * hash(index * 13 + turn + 5)) * s,
+      y = (y0 + 0.06 * hash(index * 13 + turn + 9)) * s;
+    spheres.push([bend(y) + Math.cos(a) * d, y, Math.sin(a) * d, r * s]);
+  }
+  const limbs = spheres.slice(1).map(([x, y, z]) => limb(new T.Vector3(bend(y - 0.34 * s), y - 0.34 * s, 0), new T.Vector3(x, y, z), 0.03 * s, 0.02 * s, 5, BIRCH_BARK.body, 0.62));
+  add(mergeGeometries(limbs)!, 'bark');
+  const geos = spheres.map(([x, y, z, r], k) => droopingLump(r, x, y, z, hash(index + k) * 3, k === 0 ? 1.35 : 1));
+  // The ramp starts below the crown: a light, airy crown with no deep underside.
+  paintCanopy(geos, spheres, look, look.tones[hash(index * 5 + 1) < 0.5 ? 0 : 1], 1.05 * s, 2.6 * s);
+  add(mergeGeometries(geos)!, 'foliage');
+  return t;
+}
+/**
+ * Rowan: smaller than the round trees (0.85 of their scale), a grey-brown trunk forking into two
+ * limbs, and a rounded, open crown: a top clump over four that stand a little apart. Its fruit
+ * (treeFruit) sits on the outer clumps' faces.
+ */
+function rowan(t: T.Group, size: number, index: number, look: Look, f: TreeFruit | null, add: AddPart, quiet: (g: T.BufferGeometry) => void) {
+  const s = 0.85 * size;
+  const trunk = new T.CylinderGeometry(0.08*s, 0.115*s, 1.1*s, 8, 2, true).translate(0, 0.55*s, 0);
+  const flare = new T.CylinderGeometry(0.115*s, 0.17*s, 0.12*s, 8, 1, true).translate(0, 0.06*s, 0);
+  const wood = mergeGeometries([trunk, flare])!;
+  paintByHeight(wood, ROWAN_BARK, (y) => y < 0.8*s ? 1.0 : mix(1.0, 0.55, (y - 0.8*s) / (0.3*s)));
+  add(wood, 'bark');
+  const spheres = [[0, 1.8 * s, 0, 0.52 * s]];
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + (hash(index * 13 + k) - 0.5) * 0.5,
+      d = (0.52 + 0.06 * hash(index * 13 + k + 5)) * s;
+    spheres.push([Math.cos(a) * d, (1.5 + 0.1 * hash(index * 13 + k + 9)) * s, Math.sin(a) * d, (0.38 + 0.05 * hash(index * 13 + k + 2)) * s]);
+  }
+  const fork = new T.Vector3(0, 0.9 * s, 0);
+  add(mergeGeometries([1, 3].map((k) => limb(fork, new T.Vector3(spheres[k][0] * 0.7, spheres[k][1] * 0.95, spheres[k][2] * 0.7), 0.05 * s, 0.032 * s, 6, ROWAN_BARK, 0.7)))!, 'bark');
+  const geos = spheres.map(([x, y, z, r], k) => canopyLump(r, 1, x, y, z, hash(index + k) * 3));
+  paintCanopy(geos, spheres, look, look.tones[hash(index * 5 + 1) < 0.5 ? 0 : 1], 1.05 * s, 2.3 * s);
+  add(mergeGeometries(geos)!, 'foliage');
+  if (f) quiet(fruit(spheres, s, index, f));
+  return t;
+}
 export const BLOOMS = palette.flowers;
 const bloomGeometry = (() => { const g = new T.IcosahedronGeometry(0.1, 0); g.setAttribute('normal', g.getAttribute('position').clone()); g.normalizeNormals(); return g; })(); // 20 tris, smooth blob
 /**
@@ -122,6 +284,13 @@ export function createNature(ctx: TownContext, kit: Kit) {
     const s = spec.size;
     const add = (geo: T.BufferGeometry, kind: SurfaceKind) => { const m = new T.Mesh(geo, material('#ffffff', kind)); m.castShadow = m.receiveShadow = true; t.add(m); };
     if (spec.kind === 'pine') return pine(t, s, index, add);
+    if (spec.kind === 'birch') return birch(t, s, index, treeLook(spec, index, season), season, add);
+    if (spec.kind === 'rowan')
+      return rowan(t, s, index, treeLook(spec, index, season), treeFruit(spec, season), add, (geo) => {
+        // Berries and flower heads: small, so they cast no shadow (like the beds' blooms).
+        const m = new T.Mesh(geo, material('#ffffff', 'foliage'));
+        m.castShadow = false; m.receiveShadow = true; m.userData.noShadow = true; m.userData.fruit = true; t.add(m);
+      });
     // A thick flared trunk (about 30% shows below the canopy; the batch bake darkens its base)
     // under a fat main lump and two or three side lumps, painted two-tone in tree space.
     const look = treeLook(spec, index, season);

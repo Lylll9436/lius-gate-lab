@@ -479,7 +479,7 @@ export type TreeSpec = {
   x: number;
   z: number;
   size: number;
-  kind: 'round' | 'pine' | 'autumn';
+  kind: 'round' | 'pine' | 'autumn' | 'birch' | 'rowan';
   id: string;
 };
 function nearJunction(x: number, z: number, radius: number) {
@@ -534,6 +534,7 @@ export function plantingPlan(): TreeSpec[] {
     }
   // Park: four trees framing the bandstand, each at least 3.4 from the park centre and clear of
   // the flower beds, the benches, the memory board and the gravel strip.
+  const parkFrom = trees.length;
   for (const [dx, dz, size, kind] of [[-3.4, 0.1, 1.05, 'round'], [3.6, -0.6, 0.95, 'autumn'], [-3.3, -2.25, 0.9, 'round'], [3.4, -2.35, 0.85, 'round']] as const)
     push(park.x + dx, park.z + dz, size, kind);
   // Terrace gardens: one tree behind each gap, never in a gap or a front garden. The trunks stand
@@ -544,6 +545,7 @@ export function plantingPlan(): TreeSpec[] {
   ] as XZ[])
     push(x, z, 0.85, 'round');
   // Outskirts: a seeded scatter that keeps clear of streets, sites and the shore.
+  const scatterFrom = trees.length;
   for (let i = 0; i < 900 && trees.length < 118; i++) {
     const x = (hash(i * 5 + 1) - 0.5) * 60,
       z = (hash(i * 5 + 2) - 0.5) * 60;
@@ -565,7 +567,55 @@ export function plantingPlan(): TreeSpec[] {
   }
   // The paddock takes the one scatter tree that stood in it. Filtering afterwards (rather than
   // in the scatter loop) leaves every other tree, and its id, where it was.
-  return trees.filter((t) => !insideRect(t.x, t.z, paddock, 1.2));
+  return scottishSpecies(trees.filter((t) => !insideRect(t.x, t.z, paddock, 1.2)), [parkFrom, parkFrom + 4], scatterFrom);
+}
+/**
+ * Silver birch and rowan among the outskirts' and the park's round trees. Only `kind` changes:
+ * every tree keeps its place, size and id, and the ring, avenue, plaza and terrace-garden trees,
+ * the pines and the autumn accents stay as they are. Both are picked by a hash of the tree's id
+ * number, so dropping a tree from the plan changes no other tree's species.
+ * - Rowans stand alone (none within ROWAN_APART of another) by a cottage, the paddock's edge or
+ *   the park's edge, the park's own trees included.
+ * - Birches stand in loose groups of two or three on the hills and towards the coast and moor:
+ *   a seed tree and its nearest one or two neighbours within BIRCH_REACH.
+ * Nothing changes in the terrace clearing.
+ */
+const ROWANS = 6,
+  ROWAN_APART = 5,
+  BIRCHES = 9,
+  BIRCH_REACH = 4.6;
+function scottishSpecies(trees: TreeSpec[], parkIds: [number, number], scatterFrom: number) {
+  const number = (t: TreeSpec) => Number(t.id.slice(5)),
+    gap = (t: TreeSpec, r: { x: number; z: number; w: number; d: number }) =>
+      Math.hypot(Math.max(0, Math.abs(t.x - r.x) - r.w / 2), Math.max(0, Math.abs(t.z - r.z) - r.d / 2)),
+    inPark = (t: TreeSpec) => number(t) >= parkIds[0] && number(t) < parkIds[1],
+    byHash = (seed: number) => (a: TreeSpec, b: TreeSpec) => hash(number(a) * 13 + seed) - hash(number(b) * 13 + seed);
+  // The round trees that may change: not an accent (treeLook turns every 23rd), not in the clearing.
+  const open = trees.filter(
+    (t) =>
+      t.kind === 'round' &&
+      (number(t) * 7) % 23 !== 0 &&
+      (number(t) >= scatterFrom || inPark(t)) &&
+      !insideRect(t.x, t.z, terraceClearing, 1.5),
+  );
+  const rowanSpot = (t: TreeSpec) =>
+    inPark(t) || gap(t, park) < 3 || gap(t, paddock) < 3 || cottages.some((c) => Math.hypot(c.x - t.x, c.z - t.z) < 5);
+  const rowans: TreeSpec[] = [];
+  for (const t of open.filter(rowanSpot).sort(byHash(5)))
+    if (rowans.length < ROWANS && rowans.every((r) => Math.hypot(r.x - t.x, r.z - t.z) >= ROWAN_APART)) rowans.push(t);
+  const wild = (t: TreeSpec) =>
+    !rowans.includes(t) && (terrainHeight(t.x, t.z) > 0.1 || islandRadius(Math.atan2(t.z, t.x)) - Math.hypot(t.x, t.z) < 7.5);
+  const birches: TreeSpec[] = [];
+  for (const seed of open.filter(wild).sort(byHash(9))) {
+    if (birches.length >= BIRCHES - 1 || birches.includes(seed)) continue;
+    const want = hash(number(seed) * 13 + 1) < 0.5 ? 2 : 3,
+      group = [seed, ...open
+        .filter((t) => t !== seed && !rowans.includes(t) && !birches.includes(t) && Math.hypot(t.x - seed.x, t.z - seed.z) < BIRCH_REACH)
+        .sort((a, b) => Math.hypot(a.x - seed.x, a.z - seed.z) - Math.hypot(b.x - seed.x, b.z - seed.z))]
+        .slice(0, Math.min(want, BIRCHES - birches.length));
+    if (group.length >= 2) birches.push(...group);
+  }
+  return trees.map((t) => (rowans.includes(t) ? { ...t, kind: 'rowan' as const } : birches.includes(t) ? { ...t, kind: 'birch' as const } : t));
 }
 
 export type LampSpec = { x: number; z: number; id: string };
