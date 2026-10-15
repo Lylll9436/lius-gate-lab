@@ -601,9 +601,12 @@ export function walkLoop(offset: number): XZ[] {
 /**
  * Height of the surface under a walker: the pavement, except where an avenue opens into the
  * ring. There the inner walkers step onto the avenue's kerb (0.85-1.03 from its centre line)
- * and down to the zebra at road level, and back up on the far side.
+ * and down to the zebra at road level, and back up on the far side. Where the kerb is dropped
+ * at the zebras (droppedFloor) they walk down its ramp and over the tactile slabs instead.
  */
 export function walkFloor(x: number, z: number) {
+  const dropped = droppedFloor(x, z);
+  if (dropped !== undefined) return terrainHeight(x, z) + dropped;
   let d = Infinity;
   for (const a of avenues) if (a.crossing) d = Math.min(d, distanceToSegment([x, z], a.from, a.to));
   const step = (from: number, to: number) => {
@@ -1138,3 +1141,42 @@ export function standingStones(): StandingStone[] {
  * `coping`, town-shared's POOL.outer + POOL.coping), so `ring` must divide both.
  */
 export const PLAZA_PAVING = { rim: 5.1, setts: 4.72, coping: 4.2, ring: 0.6, flag: 0.9, sett: 0.24, settRows: 2 };
+/**
+ * UK dropped kerbs at the zebras. At each end of a crossing (on the ring's inner pavement, where
+ * the walkers cross the avenue) the avenue's kerb drops to `top`, 0.02 over the road, along the
+ * whole width of the ring's inner pavement; that pavement drops with it, its first `tactile` out
+ * from the avenue's line laid in buff blister slabs, then ramps back up to the pavement by `ramp`.
+ * The ring's own kerb keeps its height beside it.
+ */
+export const DROPPED_KERB = { top: 0.04, kerb: ROAD_WIDTH / 2 + 0.18, tactile: 1.51, ramp: 2.0 };
+/** Each crossing's drop: its avenue, and the stretch of that avenue (from `from`) the drop spans: the ring's inner pavement. */
+export const droppedCrossings = signalJunctions.map((j) => ({
+  junction: j.id,
+  from: j.from,
+  u: j.u,
+  along: [j.length - (ROAD_WIDTH / 2 + PAVEMENT_WIDTH), j.length - (ROAD_WIDTH / 2 + 0.09)] as XZ,
+}));
+/**
+ * The walking surface's height above the terrain inside a dropped crossing (the road, the kerb's
+ * small step up to `top`, the tactile slabs, the ramp), or undefined outside one. The ramp is a
+ * smoothstep, flat where it meets the pavement and the slabs; the geometry follows it in three steps.
+ */
+export function droppedFloor(x: number, z: number): number | undefined {
+  const { top, tactile, ramp } = DROPPED_KERB,
+    edge = ROAD_WIDTH / 2,
+    ease = (from: number, to: number, v: number) => {
+      const t = Math.min(1, Math.max(0, (v - from) / (to - from)));
+      return t * t * (3 - 2 * t);
+    };
+  for (const d of droppedCrossings) {
+    const dx = x - d.from[0],
+      dz = z - d.from[1],
+      along = dx * d.u[0] + dz * d.u[1],
+      c = Math.abs(dx * d.u[1] - dz * d.u[0]);
+    if (along < d.along[0] || along > d.along[1] || c > ramp) continue;
+    return levels.road + (top - levels.road) * ease(edge - 0.08, edge + 0.02, c) + (levels.pavement - top) * ease(tactile, ramp, c);
+  }
+  return undefined;
+}
+/** The pavement's top above the terrain: lower in a dropped crossing. Things standing on the pavement stand on this. */
+export const pavementTop = (x: number, z: number) => droppedFloor(x, z) ?? levels.pavement;

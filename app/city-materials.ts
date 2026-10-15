@@ -172,16 +172,23 @@ diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.88,.87,.86),vec3(.85,.84,.83),smoothste
  */
 const f3 = (v: number) => v.toFixed(3);
 /**
- * The paving: the plaza's granite in rings round the gate (a touch cooler than the
+ * The paving: the buff blister slabs of the dropped crossings (their uv is 1000 + world x, z from
+ * the slabs' corner), the plaza's granite in rings round the gate (a touch cooler than the
  * sandstone pavements, each flag's tone a little its own) with its band of darker setts
- * (plan.PLAZA_PAVING), and everywhere else the offset flags. Derivatives are taken before the branches.
+ * (plan.PLAZA_PAVING), and everywhere else the offset flags. The blisters are domes on a 0.06 grid
+ * (tilting the normal), the slabs 0.24 square. Derivatives are taken before the branches.
  */
 const PAVING = () => {
   const { rim, setts, coping, ring, flag, sett, settRows } = PLAZA_PAVING,
     rowWidth = (rim - setts) / settRows,
     inner = Math.round(coping / ring);
   return `vec2 tq=vGroundP.xz/.9;tq.x+=.5*step(1.,mod(floor(tq.y),2.));vec2 fj=fwidth(tq);float pr=length(vGroundP.xz);
-if(pr<${f3(rim)}){float ang=atan(vGroundP.z,vGroundP.x)/6.2831853,ri,r0,r1,len;
+if(vGroundUV.x>500.){vec2 t=vec2(vGroundUV.x-1000.,vGroundUV.y);vec2 c=fract(t/.06)-.5;float rr=length(c)*.06;
+float studNear=1.-smoothstep(.011,.02,fw),stud=1.-smoothstep(.017-fw*.7,.017+fw*.7,rr);
+vec2 jf=abs(fract(t/.24+.5)-.5)*.24;float sj=1.-smoothstep(0.,.012+fw,min(jf.x,jf.y));
+diffuseColor.rgb*=(1.+.03*stud*studNear)*(1.-.16*sj*(1.-smoothstep(.02,.04,fw)));
+groundBump+=c*.06/.017*.7*stud*studNear;}
+else if(pr<${f3(rim)}){float ang=atan(vGroundP.z,vGroundP.x)/6.2831853,ri,r0,r1,len;
 if(pr<${f3(inner * ring)}){ri=floor(pr/${f3(ring)});r0=ri*${f3(ring)};r1=r0+${f3(ring)};len=${f3(flag)};}
 else if(pr<${f3(setts)}){ri=${inner.toFixed(1)};r0=${f3(inner * ring)};r1=${f3(setts)};len=${f3(flag)};}
 else{ri=${(inner + 1).toFixed(1)}+floor((pr-${f3(setts)})/${f3(rowWidth)});r0=${f3(setts)}+(ri-${(inner + 1).toFixed(1)})*${f3(rowWidth)};r1=r0+${f3(rowWidth)};len=${f3(sett)};}
@@ -205,7 +212,8 @@ type BakeUniforms = { groundMasks: { value: T.Texture }; maskExtent: { value: nu
  * mown town lawn that carries a soft 1.5-unit checker, A the terrain height (so only
  * surfaces lying on the ground are shaded, not roof lawns or raised floors).
  * Paving gets offset flags whose joints fade out once a flag is too small on screen; the plaza
- * its granite rings and setts (PAVING).
+ * its granite rings and setts and the dropped crossings their blister slabs (PAVING), which tilt
+ * the normal (groundBump).
  * Sand gets the wet band: its uv.x is the exact width out from the outline (the shore mesh
  * sets it), and from a swash mark wandering about 2.2 out down to the waterline the sand is
  * darker, darkest at the foam. Any other sand surface needs uv.x = 0 to stay dry.
@@ -214,22 +222,25 @@ function groundShader(m: T.MeshStandardMaterial, kind: SurfaceKind, uniforms: Ba
   const tint = kind === 'grass' || kind === 'soil' ? 'vec3(.52, .60, .40)' : 'vec3(.62, .58, .50)';
   const lawn = `vec2 q=vGroundP.xz/1.5;vec2 tri=abs(fract(q*.5)*2.-1.);vec2 fw=fwidth(q)+1e-4;vec2 e=smoothstep(.5-fw,.5+fw,tri);float ch=e.x+e.y-2.*e.x*e.y;
 diffuseColor.rgb*=mix(vec3(.93,.95,.90),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
-  const sand = kind === 'sand';
+  const sand = kind === 'sand',
+    street = kind === 'paving';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.groundMasks = uniforms.groundMasks;
     shader.uniforms.maskExtent = uniforms.maskExtent;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;' + (sand ? '\nvarying float vShoreW;' : ''))
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundP = (modelMatrix * vec4(transformed, 1.)).xyz;' + (sand ? '\nvShoreW = uv.x;' : ''));
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;' + (sand ? '\nvarying float vShoreW;' : '') + (street ? '\nvarying vec2 vGroundUV;' : ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundP = (modelMatrix * vec4(transformed, 1.)).xyz;' + (sand ? '\nvShoreW = uv.x;' : '') + (street ? '\nvGroundUV = uv;' : ''));
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;' + (sand ? SHORE_PARS : ''))
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGroundP;\nuniform sampler2D groundMasks;\nuniform float maskExtent;' + (sand ? SHORE_PARS : '') + (street ? '\nvarying vec2 vGroundUV;' : ''))
       .replace('#include <color_fragment>', `#include <color_fragment>
-${sand ? 'float shoreWet=0.;\n' : ''}{
+${sand ? 'float shoreWet=0.;\n' : ''}${street ? 'vec2 groundBump=vec2(0.);\n' : ''}{
 ${sand ? SHORE_WET + '\n' : ''}vec4 gs=texture2D(groundMasks,vGroundP.xz/(2.*maskExtent)+.5);
 float nearGround=1.-smoothstep(.2,.5,vGroundP.y-gs.a*${GROUND_HEIGHT_RANGE.toFixed(1)});
-${kind === 'paving' ? 'float fw=max(fwidth(vGroundP.x),fwidth(vGroundP.z))+1e-5;\n' : ''}${kind === 'grass' ? lawn : kind === 'paving' ? PAVING() : ''}
+${street ? 'float fw=max(fwidth(vGroundP.x),fwidth(vGroundP.z))+1e-5;\n' : ''}${kind === 'grass' ? lawn : kind === 'paving' ? PAVING() : ''}
 diffuseColor.rgb*=mix(vec3(1.),${tint},gs.r*nearGround);
 }`);
+    // The blisters' bumps (world x, z tilts of the normal).
+    if (street) shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal=normalize(normal+(viewMatrix*vec4(groundBump.x,0.,groundBump.y,0.)).xyz);');
   };
   m.customProgramCacheKey = () => 'lius-ground-' + kind;
 }
