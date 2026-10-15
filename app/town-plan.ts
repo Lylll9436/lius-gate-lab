@@ -1124,3 +1124,17 @@ export function standingStones(): StandingStone[] {
   }
   return stones;
 }
+
+/* ------------------------------------------------------------------ */
+/* Street details: plaza granite, dropped kerbs, covers and wear      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The plaza's granite, as the paving shader lays it by world position: flags in concentric rings
+ * round the gate (`ring` wide, about `flag` long, every other ring offset by half a flag; the
+ * outermost from the pool's outer coping to `setts` is narrower), and a band of darker setts
+ * (`settRows` rows, about `sett` long) from `setts` out to the kerb ring at `rim`, the band the
+ * avenues and the forecourt meet. The rings' joints fall on the pool copings' edges (2.4, and
+ * `coping`, town-shared's POOL.outer + POOL.coping), so `ring` must divide both.
+ */
+export const PLAZA_PAVING = { rim: 5.1, setts: 4.72, coping: 4.2, ring: 0.6, flag: 0.9, sett: 0.24, settRows: 2 };

@@ -288,8 +288,9 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
         'paving',
         plazaY,
       );
-    flat(new T.RingGeometry(poolOuter + coping - 0.01, 4.72, 64), palette.plaza, 'paving', plazaY);
-    flat(new T.RingGeometry(4.72, 5.1, 64), palette.plazaDark, 'paving', plazaY);
+    // The paving shader lays these as granite flags in rings, and the darker band as setts (plan.PLAZA_PAVING).
+    flat(new T.RingGeometry(poolOuter + coping - 0.01, plan.PLAZA_PAVING.setts, 64), palette.plaza, 'paving', plazaY);
+    flat(new T.RingGeometry(plan.PLAZA_PAVING.setts, plan.PLAZA_PAVING.rim, 64), palette.plazaDark, 'paving', plazaY);
     // The kerb ring: a lip toward the plaza, a rounded top and a face down to the grass. It opens
     // (±3) where the hall forecourt meets the plaza; a lathe angle φ lies at world (sin φ, cos φ).
     const kerbEnd = Math.PI - Math.asin(3 / 5.1);
