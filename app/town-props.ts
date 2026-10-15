@@ -68,6 +68,85 @@ export function createProps(ctx: TownContext, kit: Kit) {
     lamps.push(lantern);
     return post;
   }
+  /**
+   * The lenses: dark glass tinted red, amber or green (`dark`), and lit by their own emissive
+   * (`lit`), a clear bright red, amber or green that reads by day and at night with nothing
+   * spilling off the glass. The light alone carries a lit lens's colour: sunlight on a bright base
+   * as well would wash it out to salmon and peach under the tone curve. `on` says which aspects
+   * light it (red and amber both show in red+amber). These may be the most saturated small accents
+   * in the frame after the grade.
+   */
+  const LENSES: { lit: string; dark: string; on: (a: plan.Aspect) => boolean }[] = [
+    { lit: '#ff3426', dark: '#3d1c19', on: (a) => a === 'red' || a === 'redAmber' },
+    { lit: '#ffa21f', dark: '#3d2d16', on: (a) => a === 'amber' || a === 'redAmber' },
+    { lit: '#1fe39b', dark: '#163a2c', on: (a) => a === 'green' },
+  ];
+  /** A lit lens's emissive intensity; an unlit one has none. */
+  const LENS_GLOW = 0.95;
+  /**
+   * UK traffic signals at the ring's three junctions (plan.signalPosts), two each: a slim iron pole
+   * on a small foot, a black head with three round lenses (red over amber over green) under short
+   * visors, and a narrow black backboard, in the street lamps' chunky proportions and about their
+   * height. No lettering, no signs. Poles, heads, visors and boards batch with the land; the lenses
+   * stay apart (keepSeparate), one small mesh and one material per lens, all made here at build time.
+   * The frame loop (the animated entry) re-reads each signal's aspect from town time
+   * (plan.signalState) and sets a lens's emissive intensity only when its signal changes, so no
+   * aspect ever compiles a shader or adds a program: the lens material is the lanterns' plain
+   * standard one. Like the lamps they take no pointer, follow the town's Plan tints and hide with it
+   * in Inspect; paused or under reduced motion, town time holds and so do they.
+   */
+  function trafficSignals(g: T.Object3D) {
+    const root = new T.Group();
+    root.name = 'traffic-signals';
+    root.userData.prebatched = true; // the static parts batch with the land; the lenses stay apart
+    g.add(root);
+    const black = palette.ink,
+      lensGeometry = new T.CylinderGeometry(0.078, 0.078, 0.03, 14).rotateX(Math.PI / 2),
+      HEAD_Y = 1.47,
+      PITCH = 0.225;
+    const heads = plan.signalPosts.map((p) => {
+      const post = new T.Group();
+      post.position.set(p.x, plan.levels.pavement + plan.terrainHeight(p.x, p.z), p.z);
+      post.rotation.y = p.heading;
+      root.add(post);
+      box(post, 0, 0.05, 0, 0.2, 0.1, 0.2, palette.metal, 'iron'); // foot
+      const pole = new T.Mesh(new T.CylinderGeometry(0.045, 0.052, 1.1, 10, 1, true), material(palette.metal, 'iron'));
+      pole.position.y = 0.1 + 0.55; // into the head's underside
+      pole.castShadow = pole.receiveShadow = true;
+      post.add(pole);
+      box(post, 0, HEAD_Y, 0, 0.27, 0.72, 0.2, black, 'enamel'); // head, 1.11..1.83
+      box(post, 0, HEAD_Y, -0.12, 0.43, 0.88, 0.04, black, 'enamel'); // backboard, behind the head
+      const lenses = new T.Group();
+      lenses.userData.keepSeparate = true;
+      post.add(lenses);
+      const meshes = LENSES.map((look, k) => {
+        const y = HEAD_Y + PITCH * (1 - k);
+        // A short visor over each lens: a longer one would hide the lit glass from the high camera.
+        box(post, 0, y + 0.095, 0.12, 0.19, 0.02, 0.04, black, 'enamel');
+        const lens = new T.Mesh(
+          lensGeometry,
+          new T.MeshStandardMaterial({ color: look.dark, emissive: look.lit, emissiveIntensity: 0, roughness: 0.3, metalness: 0 }),
+        );
+        lens.material.name = 'signal-lens';
+        lens.position.set(0, y, 0.112);
+        lens.castShadow = lens.receiveShadow = false;
+        lenses.add(lens);
+        return lens;
+      });
+      return { post: p, meshes, shown: '' as plan.Aspect | '' };
+    });
+    const update = (time: number) => {
+      for (const head of heads) {
+        const aspect = plan.signalState(head.post.junction, head.post.approach, time);
+        if (aspect === head.shown) continue;
+        head.shown = aspect;
+        head.meshes.forEach((lens, k) => (lens.material.emissiveIntensity = LENSES[k].on(aspect) ? LENS_GLOW : 0));
+      }
+    };
+    update(0);
+    animated.push({ object: root, update });
+    return root;
+  }
   /** A red enamel phone box: a stone plinth, a fat body with one big pane per face, a blank cream band, a crown and a pyramid hat. */
   function phoneBox(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
     const p = new T.Group(); p.position.set(x, y, z); p.rotation.y = ry; g.add(p);
@@ -298,6 +377,6 @@ export function createProps(ctx: TownContext, kit: Kit) {
     cylinder(hat, 0, 0.03 + 0.4 * 0.36, 0, 0.105, 0.105, 0.06, palette.white, 'enamel', 12);
     return root;
   }
-  return { bench, cycleHoop, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington };
+  return { bench, cycleHoop, lamp, trafficSignals, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington };
 }
 export type Props = ReturnType<typeof createProps>;

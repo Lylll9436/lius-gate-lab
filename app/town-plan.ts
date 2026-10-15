@@ -624,11 +624,278 @@ export const tramLoop = ringLine;
 /* Street life                                                         */
 /* ------------------------------------------------------------------ */
 
-/** The tram's pace on the ring (units per second). The cyclist keeps the same lap time. */
+/** The tram's cruising pace on the ring (units per second). The cyclist keeps the same lap time. */
 export const TRAM_SPEED = 2.1;
 const RING_LENGTH = polylineLength(ringLine, true);
 /** Half the distance between the tram's two bogies (its skirts at z ±1.1 in buildTram). */
 const TRAM_BOGIE = 1.1;
+/**
+ * The cyclist's lane: 0.6 outside the ring's centre line. The ring runs clockwise on the map and
+ * negative offsets are its outer side, so the cyclist keeps left, as in Glasgow: clear of the
+ * tram's rails (0.42) and inside the kerb (0.85).
+ */
+export const cyclistLane = offsetPolyline(ringLine, -0.6);
+const LANE_LENGTH = polylineLength(cyclistLane, true);
+/**
+ * Where the cyclist is at time 0 (the pose reduced motion holds): just into the south-west corner,
+ * where the Life chapter's camera sees the whole bike rather than half of it behind an outer ring
+ * tree. Everything else in the timetable below is measured from here.
+ */
+const CYCLIST_START = LANE_LENGTH / 2 + 1.5;
+
+/* ------------------------------------------------------------------ */
+/* Traffic signals and the rules of the road                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * UK signals where the three avenues meet the ring (the north avenue ends at the Town Hall and
+ * has none). Every junction runs the same cycle: the ring approach shows green, then amber, then
+ * red; after a second of all-red the avenue shows red+amber, green and amber; after another second
+ * of all-red the ring shows red+amber and then green again. The ring gets the larger share of the
+ * green. `period` (P) is the sum of the parts: change the greens to change it.
+ */
+export const SIGNAL = (() => {
+  const parts = { ringGreen: 5, avenueGreen: 3, amber: 3, allRed: 1, redAmber: 2 };
+  return { ...parts, period: parts.ringGreen + parts.avenueGreen + 2 * (parts.amber + parts.allRed + parts.redAmber) };
+})();
+/** A signal's aspect: the UK sequence runs green, amber, red, red+amber, green. */
+export type Aspect = 'green' | 'amber' | 'red' | 'redAmber';
+export type Approach = 'ring' | 'avenue';
+export type JunctionId = 'south' | 'west' | 'east';
+/** The ring approach's aspect `u` seconds into its junction's cycle (its green comes on at 0). */
+function ringAspect(u: number): Aspect {
+  const { ringGreen, amber, redAmber, period } = SIGNAL;
+  return u < ringGreen ? 'green' : u < ringGreen + amber ? 'amber' : u < period - redAmber ? 'red' : 'redAmber';
+}
+/** The avenue approach's aspect `u` seconds into the cycle: red all through the ring's turn and the all-reds. */
+function avenueAspect(u: number): Aspect {
+  const { ringGreen, avenueGreen, amber, allRed, redAmber } = SIGNAL,
+    v = u - (ringGreen + amber + allRed);
+  return v < 0 ? 'red' : v < redAmber ? 'redAmber' : v < redAmber + avenueGreen ? 'green' : v < redAmber + avenueGreen + amber ? 'amber' : 'red';
+}
+/** Distance along a closed polyline to the point on it nearest `p`. */
+function alongPolyline(points: XZ[], p: XZ) {
+  let best = Infinity,
+    at = 0,
+    walked = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i],
+      b = points[(i + 1) % points.length],
+      length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const d = distanceToSegment(p, a, b);
+    if (d < best) {
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (length * length || 1)));
+      best = d;
+      at = walked + t * length;
+    }
+    walked += length;
+  }
+  return at;
+}
+/**
+ * The signalled junctions: the centre `at`, the avenue's direction out of the plaza `u`, the
+ * clockwise ring traffic's direction there `t` (every junction lies on a straight run of the ring),
+ * and how far round the ring and the cyclist's lane it lies.
+ */
+export const signalJunctions = avenues
+  .filter((a) => a.crossing)
+  .map((a) => {
+    const length = Math.hypot(a.to[0] - a.from[0], a.to[1] - a.from[1]),
+      u: XZ = [(a.to[0] - a.from[0]) / length, (a.to[1] - a.from[1]) / length],
+      ringAt = alongPolyline(ringLine, a.to),
+      { heading } = samplePolyline(ringLine, ringAt, true);
+    return {
+      id: a.id as JunctionId,
+      at: a.to,
+      from: a.from,
+      length,
+      u,
+      t: [Math.sin(heading), Math.cos(heading)] as XZ,
+      ring: ringAt,
+      lane: alongPolyline(cyclistLane, a.to),
+    };
+  });
+const junctionById = (id: JunctionId) => signalJunctions.find((j) => j.id === id)!;
+/**
+ * The white stop lines: across the ring's whole carriageway `setback` before each junction's
+ * centre (its middle; `width` wide), and across the avenue's outbound lane `avenueBack` short of
+ * the avenue's end, on the plaza side of its zebra. Vehicles stop `gap` short of the line.
+ */
+export const STOP_LINE = { setback: 1.55, avenueBack: 2.55, width: 0.12, gap: 0.05 };
+/**
+ * The signal posts, just past their stop lines: the ring's on its near-side (left, outer) kerb
+ * `ringSetback` before the junction's centre and `ringOffset` out from the ring's centre line, the
+ * avenue's on the avenue's left pavement `avenueBack` short of its end, `avenueOffset` from its
+ * centre line. Both offsets keep the posts between the kerb (to 1.03) and the walkers (1.62).
+ */
+export const SIGNAL_POST = { ringSetback: 1.25, ringOffset: 1.22, avenueBack: 2.25, avenueOffset: 1.2 };
+/**
+ * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
+ * gardens and the gaps between them); the moorland props and the signals keep out of it too.
+ */
+const terraceClearing = { x: terraceRow.x, z: terraceRow.z, w: 11, d: 2 * (terraceRow.spacing + 4) };
+export type SignalPost = { junction: JunctionId; approach: Approach; x: number; z: number; facing: XZ; heading: number };
+/**
+ * Two signals per junction, each facing the traffic it controls: the ring's faces the clockwise
+ * traffic coming up to the junction, the avenue's the traffic coming out from the plaza. The west
+ * junction's ring signal would stand on the outer pavement in front of the terrace's gardens, in
+ * the clearing the homes keep (terraceClearing), so it stands on the inner kerb instead, as an
+ * offside primary does. `heading` is rotation.y turning a post's local +z (its lenses) to `facing`.
+ */
+export const signalPosts: SignalPost[] = signalJunctions.flatMap((j) => {
+  const { ringSetback, ringOffset, avenueBack, avenueOffset } = SIGNAL_POST,
+    inner: XZ = [-j.t[1], j.t[0]], // right of the ring traffic: into the ring
+    left: XZ = [j.u[1], -j.u[0]]; // left of the avenue traffic leaving the plaza
+  const ringAt = (side: number): XZ => [
+    j.at[0] - j.t[0] * ringSetback + inner[0] * ringOffset * side,
+    j.at[1] - j.t[1] * ringSetback + inner[1] * ringOffset * side,
+  ];
+  const outer = ringAt(-1),
+    [rx, rz] = insideRect(outer[0], outer[1], terraceClearing, 0.5) ? ringAt(1) : outer,
+    along = j.length - avenueBack,
+    ax = j.from[0] + j.u[0] * along + left[0] * avenueOffset,
+    az = j.from[1] + j.u[1] * along + left[1] * avenueOffset;
+  const post = (approach: Approach, x: number, z: number, facing: XZ): SignalPost => ({
+    junction: j.id,
+    approach,
+    x,
+    z,
+    facing,
+    heading: Math.atan2(facing[0], facing[1]),
+  });
+  return [post('ring', rx, rz, [-j.t[0], -j.t[1]]), post('avenue', ax, az, [-j.u[0], -j.u[1]])];
+});
+/**
+ * The stop lines as boxes: centre, the direction of the traffic they stop (`along`, the line's
+ * thin side) and their length across the road.
+ */
+export const stopLines = signalJunctions.flatMap((j) => {
+  const { setback, avenueBack } = STOP_LINE,
+    left: XZ = [j.u[1], -j.u[0]],
+    half = ROAD_WIDTH / 2;
+  return [
+    { junction: j.id, approach: 'ring' as Approach, x: j.at[0] - j.t[0] * setback, z: j.at[1] - j.t[1] * setback, along: j.t, length: ROAD_WIDTH - 0.1 },
+    {
+      junction: j.id,
+      approach: 'avenue' as Approach,
+      x: j.from[0] + j.u[0] * (j.length - avenueBack) + left[0] * (half / 2 + 0.005),
+      z: j.from[1] + j.u[1] * (j.length - avenueBack) + left[1] * (half / 2 + 0.005),
+      along: j.u,
+      length: half - 0.11,
+    },
+  ];
+});
+
+/**
+ * The rules of the road. The tram and the cyclist run clockwise and each obeys the ring signals:
+ * once a lap it comes up to the east junction on red, brakes to a stop with its front at the stop
+ * line, waits, and moves off REACT seconds after its green comes on; at the south and west
+ * junctions it always meets green, mid-way through it. Everything is a pure function of town
+ * time: no state is kept from frame to frame, so reduced motion (time held at 0), Inspect, the
+ * checks and the reading camera all see the same thing.
+ *
+ * Periodic by construction: a lap, with its wait and the time lost braking and pulling away, takes
+ * exactly LAP = 3 x SIGNAL.period seconds and every lap is the same. Each vehicle's wait is what is
+ * left of LAP after its drive (its timetable's `wait`). The cyclist rides a cycle ahead of the tram:
+ * it stops at the east junction one cycle before the tram does, about a third of a lap away (the
+ * two keep at least 20 apart; half a lap would need LAP = 2 or 4 cycles, a much faster or slower
+ * ride). The junctions' offsets follow from that timetable (signalOffsets below), so changing
+ * SIGNAL, LAP, a speed or a start re-solves them; check-town proves the result.
+ */
+export const LAP = 3 * SIGNAL.period;
+/** Seconds between a vehicle's green coming on and its moving off. */
+const REACT = 0.5;
+/** The junction where both vehicles stop each lap: the one the opening overview shows clear of the hero copy on most screens. */
+export const STOP_JUNCTION: JunctionId = 'east';
+/**
+ * How each vehicle drives: its cruising `speed`, the distances over which it brakes to a stop and
+ * pulls away again (`brake`, `pull`; the speed eases along a smoothstep in time, so neither end has
+ * a jolt), and its `nose`, how far its front reaches ahead of the point its pose is taken at: the
+ * tram's front bogie plus its overhang (the lamps at z 1.8, r 0.09), the bike's front tyre.
+ */
+export const TRAM_DRIVE = { speed: TRAM_SPEED, brake: 1.5, pull: 1.5, nose: TRAM_BOGIE + 0.79 };
+export const CYCLIST_DRIVE = { speed: (TRAM_SPEED * LANE_LENGTH) / RING_LENGTH, brake: 1.2, pull: 1.2, nose: 0.45 };
+type Drive = typeof TRAM_DRIVE;
+/**
+ * A vehicle's timetable: it moves off its stop at time `go` (and every LAP after), from distance
+ * `stopAt` round its path (and one `length` further each lap). Pulling away takes 2 pull / speed
+ * seconds, braking 2 brake / speed, and it stands for `wait`.
+ */
+function timetable(drive: Drive, length: number, stopAt: number, go: number) {
+  const pulling = (2 * drive.pull) / drive.speed,
+    braking = (2 * drive.brake) / drive.speed,
+    cruising = (length - drive.pull - drive.brake) / drive.speed;
+  return { ...drive, length, stopAt, go, pulling, cruising, braking, wait: LAP - pulling - cruising - braking };
+}
+export type Timetable = ReturnType<typeof timetable>;
+/** Distance round its path at `time`: pull away, cruise, brake, stand; the same every lap. */
+export function driveDistance(tt: Timetable, time: number) {
+  const lap = Math.floor((time - tt.go) / LAP),
+    s = time - tt.go - lap * LAP,
+    { pull, brake, speed, pulling, cruising, braking, length } = tt;
+  let along: number;
+  if (s < pulling) {
+    const x = s / pulling;
+    along = pull * x * x * x * (2 - x); // speed × smoothstep(x)
+  } else if (s < pulling + cruising) along = pull + speed * (s - pulling);
+  else if (s < pulling + cruising + braking) {
+    const x = (s - pulling - cruising) / braking;
+    along = length - brake + brake * x * (2 - 2 * x * x + x * x * x); // speed × (1 - smoothstep(x))
+  } else along = length;
+  return tt.stopAt + lap * length + along;
+}
+/** The near edge of a junction's ring stop line, as a distance round a path that passes it at `at`. */
+const lineEdge = (at: number) => at - STOP_LINE.setback - STOP_LINE.width / 2;
+/**
+ * The cyclist cruises through CYCLIST_START at time 0, reaches the east stop line `gap` further on
+ * (braking over its last `brake`), stands, and moves off at `go`; the tram moves off the same stop
+ * one cycle later.
+ */
+const cyclistStop = lineEdge(junctionById(STOP_JUNCTION).lane) - STOP_LINE.gap - CYCLIST_DRIVE.nose,
+  cyclistGap = (((cyclistStop - CYCLIST_START) % LANE_LENGTH) + LANE_LENGTH) % LANE_LENGTH,
+  cyclistWait = timetable(CYCLIST_DRIVE, LANE_LENGTH, 0, 0).wait,
+  cyclistGo = (cyclistGap + CYCLIST_DRIVE.brake) / CYCLIST_DRIVE.speed + cyclistWait;
+export const CYCLIST_TIMETABLE = timetable(CYCLIST_DRIVE, LANE_LENGTH, CYCLIST_START + cyclistGap, cyclistGo);
+export const TRAM_TIMETABLE = timetable(
+  TRAM_DRIVE,
+  RING_LENGTH,
+  lineEdge(junctionById(STOP_JUNCTION).ring) - STOP_LINE.gap - TRAM_DRIVE.nose,
+  cyclistGo + SIGNAL.period,
+);
+/** The tram's distance round the ring (its bogies' midpoint) and the cyclist's round its lane, at `time`. */
+export const tramDistance = (time: number) => driveDistance(TRAM_TIMETABLE, time);
+export const cyclistDistance = (time: number) => driveDistance(CYCLIST_TIMETABLE, time);
+/**
+ * When a vehicle's front crosses a junction's ring stop line, in seconds after it moves off (it is
+ * cruising by then), with `at` the junction's distance round the vehicle's path.
+ */
+function passAfterGo(tt: Timetable, at: number) {
+  const ahead = (((lineEdge(at) - tt.nose - tt.stopAt) % tt.length) + tt.length) % tt.length;
+  return tt.pulling + (ahead - tt.pull) / tt.speed;
+}
+/**
+ * Each junction's offset: when its ring green comes on, in seconds of the cycle. At the stop
+ * junction the green comes on REACT before the vehicles move off; elsewhere the green is centred
+ * on the two vehicles' passes (a cycle apart in time, so a fraction of a second apart in phase).
+ */
+export const signalOffsets = Object.fromEntries(
+  signalJunctions.map((j) => {
+    const P = SIGNAL.period,
+      wrap = (t: number) => ((t % P) + P) % P;
+    if (j.id === STOP_JUNCTION) return [j.id, wrap(CYCLIST_TIMETABLE.go - REACT)];
+    const tram = TRAM_TIMETABLE.go + passAfterGo(TRAM_TIMETABLE, j.ring),
+      bike = CYCLIST_TIMETABLE.go + passAfterGo(CYCLIST_TIMETABLE, j.lane),
+      apart = wrap(bike - tram + P / 2) - P / 2;
+    return [j.id, wrap(tram + apart / 2 - SIGNAL.ringGreen / 2)];
+  }),
+) as Record<JunctionId, number>;
+/** What a junction's signal shows its approach at `time` (seconds of town time). */
+export function signalState(junction: JunctionId, approach: Approach, time: number): Aspect {
+  const P = SIGNAL.period,
+    u = (((time - signalOffsets[junction]) % P) + P) % P;
+  return approach === 'ring' ? ringAspect(u) : avenueAspect(u);
+}
+
 /**
  * Where the tram is at `time` (seconds of town time; held at 0 under reduced motion). Like a real
  * tram it rides on two bogies that both stay on the rails: the body sits midway between them and
@@ -646,19 +913,6 @@ export const tramPose = (time: number) => {
     heading: Math.atan2(front.x - rear.x, front.z - rear.z),
   };
 };
-/**
- * The cyclist's lane: 0.6 outside the ring's centre line. The ring runs clockwise on the map and
- * negative offsets are its outer side, so the cyclist keeps left, as in Glasgow: clear of the
- * tram's rails (0.42) and inside the kerb (0.85).
- */
-export const cyclistLane = offsetPolyline(ringLine, -0.6);
-const LANE_LENGTH = polylineLength(cyclistLane, true);
-/**
- * Where the cyclist sets off: half a lap from the tram's start, and 1.5 further on, into the
- * south-west corner, where the Life chapter's camera sees the whole bike at time 0 (the pose
- * reduced motion holds) rather than half of it behind an outer ring tree.
- */
-const CYCLIST_START = LANE_LENGTH / 2 + 1.5;
 /**
  * The cyclist at `time`: about half a lap from the tram (by lap fraction, so the two never meet),
  * steering evenly round the four corner arcs (a smooth heading, not one 9° step per sample) and
@@ -753,11 +1007,6 @@ export const DUCK_REST = 0.0965;
  */
 export const bikeRack = { x: 5.93, y: 0.06, hoops: [-5.95, -5.35], parked: [0, 1] };
 
-/**
- * The clearing round the terrace row that the outskirts' trees keep out of (the three homes, their
- * gardens and the gaps between them); the moorland props keep out of it too.
- */
-const terraceClearing = { x: terraceRow.x, z: terraceRow.z, w: 11, d: 2 * (terraceRow.spacing + 4) };
 /**
  * Thistles at the foot of the paddock's dyke, in two tight clumps of four plants by its south
  * (sea) corners: 0.23-0.47 out from the wall's outer face, so each rosette (r 0.17) clears the

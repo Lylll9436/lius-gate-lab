@@ -35,6 +35,7 @@ export { BALLOON, followDrift } from './town-movers';
  *
  * This file assembles the town; each part lives in its own module:
  * - town-plan.ts: the layout every part reads (sites, streets, planting, the herd, the flock,
+ *   the traffic signals, their timing and the rules of the road the tram and the cyclist keep,
  *   and the street life's paths: the cyclist's lane, the dog walk, the ducks and the bike rack);
  * - town-shared.ts: the palette, hash and noise, the plaza, bandstand, crane and paddock layout,
  *   the water level, and TownContext (the material library, season, land group, lamps, clocks
@@ -44,8 +45,8 @@ export { BALLOON, followDrift } from './town-movers';
  * - town-ground.ts: the island, the shore and its foam, and the baked ground masks;
  * - town-streets.ts: the ring road, pavements and avenues, and the plaza with its pool;
  * - town-nature.ts: trees, hedges, beds, topiary, heather and thistles, and their seasons;
- * - town-props.ts: benches, cycle hoops, lamps, the phone box, bins, the bandstand, the notice
- *   board, the crane, the picnic and the Wellington statue;
+ * - town-props.ts: benches, cycle hoops, lamps, the traffic signals, the phone box, bins, the
+ *   bandstand, the notice board, the crane, the picnic and the Wellington statue;
  * - town-harbour.ts: the pier, the harbour with its moorings and beach details, and the lighthouse;
  * - town-homes.ts: the three members' homes in their terrace row, and the cottages;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
@@ -115,7 +116,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
   const { batch, windows } = createBatch(ctx);
-  const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
+  const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, trafficSignals, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
   /**
    * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
    * the Highland-cow outing lives) through an invisible box under the park's own hit box. The
@@ -192,6 +193,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   phoneBox(land, plan.phoneBoxSpot[0], plan.levels.plaza, plan.phoneBoxSpot[1], -0.6);
   bin(land, 0.9, plan.levels.plaza, 4.9);
   bin(land, -4.9, plan.levels.plaza, 0.9);
+  // Traffic signals at the three ring junctions; their lenses follow town time (plan.signalState).
+  trafficSignals(land);
   // Terrace gardens: a flower bed in each gap between the three homes, standing on the lawn (y 0).
   for (const [side, seed] of [[-0.5, 41], [0.5, 43]] as const)
     flowerBed(land, plan.terraceRow.x + 0.4, 0, plan.terraceRow.z + side * plan.terraceRow.spacing, 1.4, 0.8, seed);

@@ -215,6 +215,10 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
         box(land, x, roadY + 0.004, z, 0.24 + Math.abs(a.u[0]) * 0.66, 0.006, 0.24 + Math.abs(a.u[1]) * 0.66, palette.roadLine, 'paint');
       }
     }
+    // The signals' white stop lines (plan.stopLines): across the ring's carriageway before each
+    // junction's mouth, over the rails, and across the avenue's outbound lane before its zebra.
+    for (const l of plan.stopLines)
+      box(land, l.x, roadY + 0.004, l.z, l.length, 0.006, plan.STOP_LINE.width, palette.roadLine, 'paint', { ry: Math.atan2(l.along[0], l.along[1]) });
     // The north avenue is the Town Hall's forecourt: one paved slab from the hall plinth to the
     // plaza rim (z -6.3 to -5.1), its top and sides coloured by facing.
     {
