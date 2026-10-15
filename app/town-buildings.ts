@@ -234,16 +234,19 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     // are a glass-tinted white and sit where the glint is brightest and the coping's eave shade
     // falls, only on the upper storey, so far off they fade into the glass rather than crawl as a
     // fine bright pattern when the camera pans (on both storeys and in white they added about half
-    // again to the face's sub-pixel flicker at overview; as built, about a fifth, much of it the
-    // mullions' own edges). The glass box itself is unchanged, so its glint (paneSpan) and its night
-    // light stay as they are, and the bars show dark over the lit glass at night.
+    // again to the face's sub-pixel flicker at overview). Every bar is 0.07, coc-guide's least for a
+    // tertiary detail: at overview a thinner bar is under a pixel wide and crawls. As built the bars
+    // add nothing at the opening bearing and about a tenth on the faces the Rotate bearings turn to
+    // the camera, nearly all of it the mullions' own edges. The glass box itself is unchanged, so
+    // its glint (paneSpan) and its night light stay as they are, and the bars show dark over the
+    // lit glass at night.
     {
       const bar = (x: number, y: number, z: number, w: number, h: number, colour = white) => {
           const m = box(shell, x, y, z, w, h, 0.035, colour, 'paint', { bevel: 0 });
           m.castShadow = false;
           m.userData.noShadow = true;
         },
-        slim = 0.045,
+        slim = 0.07,
         grid = '#d0dbdf', // the head grid's bars: a glass-tinted white, so the fine grid stays faint far off
         bays = [
           [ax - aw / 2 + 0.22, ax - aw / 6 - 0.07],
