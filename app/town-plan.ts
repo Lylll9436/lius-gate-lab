@@ -897,14 +897,14 @@ export function signalState(junction: JunctionId, approach: Approach, time: numb
 }
 
 /**
- * Where the tram is at `time` (seconds of town time; held at 0 under reduced motion). Like a real
- * tram it rides on two bogies that both stay on the rails: the body sits midway between them and
- * faces from the rear one to the front one, so it swings round each corner arc as one smooth turn
- * instead of stepping 9° at every sample of the arc, and its ends overhang the curve as a long
- * car's do.
+ * Where the tram is at `time` (seconds of town time; held at 0 under reduced motion), as its
+ * timetable drives it. Like a real tram it rides on two bogies that both stay on the rails: the
+ * body sits midway between them and faces from the rear one to the front one, so it swings round
+ * each corner arc as one smooth turn instead of stepping 9° at every sample of the arc, and its
+ * ends overhang the curve as a long car's do.
  */
 export const tramPose = (time: number) => {
-  const d = (TRAM_SPEED * time) % RING_LENGTH,
+  const d = tramDistance(time),
     front = samplePolyline(tramLoop, d + TRAM_BOGIE, true),
     rear = samplePolyline(tramLoop, d - TRAM_BOGIE, true);
   return {
@@ -914,17 +914,17 @@ export const tramPose = (time: number) => {
   };
 };
 /**
- * The cyclist at `time`: about half a lap from the tram (by lap fraction, so the two never meet),
- * steering evenly round the four corner arcs (a smooth heading, not one 9° step per sample) and
- * leaning into them (eased over a unit either side of each arc's start), the crank turning with
- * the distance ridden (the pedals level at time 0).
+ * The cyclist at `time`, as its timetable drives it: steering evenly round the four corner arcs (a
+ * smooth heading, not one 9° step per sample) and leaning into them (eased over a unit either side
+ * of each arc's start), the crank turning with the distance ridden, so it stands still while the
+ * bike waits at a red (the pedals level at time 0).
  */
 export function cyclistPose(time: number) {
-  const d = (TRAM_SPEED * time * LANE_LENGTH) / RING_LENGTH,
-    p = samplePolyline(cyclistLane, d + CYCLIST_START, true, true);
+  const d = cyclistDistance(time),
+    p = samplePolyline(cyclistLane, d, true, true);
   const k = Math.min(Math.abs(p.x) - (ring.hw - ring.radius), Math.abs(p.z - ring.cz) - (ring.hd - ring.radius)),
     t = Math.min(1, Math.max(0, k + 0.6));
-  return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * d + Math.PI / 2 };
+  return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * (d - CYCLIST_START) + Math.PI / 2 };
 }
 /**
  * The dog walk: a slim lap of the open lawn between the corner park's east edge and the south

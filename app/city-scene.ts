@@ -1198,7 +1198,8 @@ export async function createCity(
       );
       walker.root.rotation.y = pose.heading + (walker.speed < 0 ? Math.PI : 0);
     }
-    // The tram runs on town time, as the cyclist does half a lap away (plan.cyclistPose).
+    // The tram runs on town time and keeps to the signals, as the cyclist does a cycle ahead of it
+    // (plan.tramPose, plan.cyclistPose); the signals' lenses follow in the animated list.
     const vehicle = plan.tramPose(time);
     tram.position.set(vehicle.x, plan.levels.road, vehicle.z);
     tram.rotation.y = vehicle.heading;

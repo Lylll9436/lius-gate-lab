@@ -281,7 +281,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     update(0);
     animated.push({ object: dogWalk, update });
   }
-  // A cyclist on the ring, keeping left on its outer side half a lap from the tram: a generic
+  // A cyclist on the ring, keeping left on its outer side a signal cycle ahead of the tram: a generic
   // rider in an oat jacket and a slate helmet on a red bike with a front lamp (a dot the frame
   // loop lights at night). The bike, the body and the arms are one rigid rig; the legs pedal.
   const cyclist = new T.Group(),
