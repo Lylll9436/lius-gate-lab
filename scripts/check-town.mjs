@@ -1065,6 +1065,45 @@ for (const [id, m] of models) {
     entry.update(0, 0, 0);
   }
 }
+// The Research Studio's Mackintosh window: slim bars just proud of the glass box's front and back
+// (never in the glass, never across the entrance), no thinner than 0.04, casting nothing, with
+// mullions at least 0.18 apart, and the glass itself still one sheet that glints as a curtain wall
+// and is lit late. The rose on the door stays on its leaf.
+{
+  const studio = models.get('research-studio').shell,
+    { d } = plan.sites['research-studio'],
+    face = (d - 0.24) / 2,
+    toShell = studio.matrixWorld.clone().invert(),
+    bars = { 1: [], [-1]: [] },
+    v = new T.Vector3();
+  for (const o of studio.children) {
+    if (!o.isMesh || o.material.userData.surfaceKind !== 'paint') continue;
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i += 3) {
+      const b = new T.Box3();
+      for (let j = 0; j < 3; j++) b.expandByPoint(v.fromBufferAttribute(p, i + j).applyMatrix4(toShell.clone().multiply(o.matrixWorld)));
+      // A bar's outer face: flat in z, just proud of the glass, over the glass box's span.
+      const z = (b.min.z + b.max.z) / 2;
+      if (b.max.z - b.min.z > 1e-3 || Math.abs(Math.abs(z) - face) > 0.05 || Math.abs(z) < face || b.min.x < -2.6 || b.max.x > 0.4 || b.min.y < 0.55 || b.max.y > 4.37) continue;
+      assert(!o.castShadow, 'A Mackintosh bar casts a shadow.');
+      bars[Math.sign(z)].push(b);
+    }
+  }
+  for (const s of [1, -1]) {
+    assert(bars[s].length >= 40, `The studio's ${s > 0 ? 'front' : 'back'} has ${bars[s].length} Mackintosh bar faces.`);
+    for (const b of bars[s]) {
+      assert(Math.min(b.max.x - b.min.x, b.max.y - b.min.y) >= 0.04 - 1e-6, `A Mackintosh bar thinner than 0.04 at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+      if (s > 0) assert(!(b.max.x > -2.01 && b.min.x < -0.19 && b.min.y < 2.67), `A Mackintosh bar crosses the studio's entrance at ${b.min.toArray().map((n) => n.toFixed(2))}`);
+    }
+    const xs = [...new Set(bars[s].filter((b) => b.max.y - b.min.y > 1).map((b) => ((b.min.x + b.max.x) / 2).toFixed(3)))].map(Number).sort((a, b) => a - b);
+    assert(xs.length >= 3, 'The studio’s mullions are missing.');
+    for (let i = 1; i < xs.length; i++) assert(xs[i] - xs[i - 1] >= 0.18, `Studio mullions ${xs[i - 1]} and ${xs[i]} are too close to stay calm far off.`);
+  }
+  const glass = studio.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'glass' && o.geometry.attributes.position.count >= 24);
+  assert(glass.length >= 1, 'The studio has no glass box.');
+  const lit = model.windows.filter((w) => w.place === 'research-studio' && Math.abs(w.light[0] - 0.8) < 0.01);
+  assert(lit.length >= 1, 'The studio’s glass box is no longer lit late at 0.8.');
+}
 // The bike rack is part of the Research Studio, inside its footprint, so it answers as the studio.
 {
   const studio = new T.Box3().setFromObject(models.get('research-studio').root),

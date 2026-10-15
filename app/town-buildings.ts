@@ -4,6 +4,7 @@ import { palette, type TownContext } from './town-shared';
 import type { Kit } from './town-kit';
 import type { Nature } from './town-nature';
 import type { Props } from './town-props';
+import { muted } from './town-homes';
 
 /* ------------------------------------------------------------------ */
 /* Buildings                                                           */
@@ -226,6 +227,45 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     }
     for (const sz of [-1, 1]) for (const mx of [-aw / 6, aw / 6]) box(shell, ax + mx, 2.35, sz * (d / 2 - 0.11), 0.14, ah, 0.14, white, 'paint', { bevel: 0 });
     box(shell, ax - aw / 2 + 0.11, 2.35, 0, 0.14, ah, 0.14, white, 'paint', { bevel: 0 });
+    // Mackintosh's studio window (the Glasgow School of Art's north front), on the front and the
+    // back of the glass box: in each bay a slim white mullion down the middle of each storey, and
+    // under the coping a grid of small squares two rows deep and four across. The bars stand just
+    // proud of the glass and cast nothing (a thin caster ghosts in the shadow map). The grid's bars
+    // are a glass-tinted white and sit where the glint is brightest and the coping's eave shade
+    // falls, only on the upper storey, so far off they fade into the glass rather than crawl as a
+    // fine bright pattern when the camera pans (on both storeys and in white they added about half
+    // again to the face's sub-pixel flicker at overview; as built, about a fifth, much of it the
+    // mullions' own edges). The glass box itself is unchanged, so its glint (paneSpan) and its night
+    // light stay as they are, and the bars show dark over the lit glass at night.
+    {
+      const bar = (x: number, y: number, z: number, w: number, h: number, colour = white) => {
+          const m = box(shell, x, y, z, w, h, 0.035, colour, 'paint', { bevel: 0 });
+          m.castShadow = false;
+          m.userData.noShadow = true;
+        },
+        slim = 0.045,
+        grid = '#d0dbdf', // the head grid's bars: a glass-tinted white, so the fine grid stays faint far off
+        bays = [
+          [ax - aw / 2 + 0.22, ax - aw / 6 - 0.07],
+          [ax - aw / 6 + 0.07, ax + aw / 6 - 0.07],
+          [ax + aw / 6 + 0.07, ax + aw / 2 - 0.22],
+        ],
+        storeys = [[0.57, 2.24], [2.46, 4.35]]; // between the bands, and up to the coping
+      for (const sz of [-1, 1])
+        bays.forEach(([x0, x1], i) =>
+          storeys.forEach(([y0, y1], j) => {
+            if (sz === 1 && i === 1 && j === 0) return; // the entrance
+            const z = sz * ((d - 0.24) / 2 + 0.0205),
+              cx = (x0 + x1) / 2,
+              q = (x1 - x0) / 4,
+              foot = sz === 1 && i === 1 ? 2.68 : y0; // over the entrance, from the door's lintel up
+            bar(cx, (foot + y1) / 2, z, slim, y1 - foot);
+            if (j === 0) return; // the head grid only under the coping
+            for (const k of [1, 2]) bar(cx, y1 - k * q, z, x1 - x0, slim, grid);
+            for (const s of [-1, 1]) bar(cx + s * q, y1 - q, z, slim, 2 * q, grid);
+          }),
+        );
+    }
     box(shell, 1.6, 1.85, 0, 2.4, 3.0, d - 0.6, palette.render, 'paint');
     const side = new T.Group();
     side.position.x = 2.8;
@@ -263,6 +303,29 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     box(shell, ax, 2.7, d / 2 + 0.6, 2.6, 0.22, 1.2, white, 'paint');
     for (const sx of [-1, 1]) cylinder(shell, ax + sx * 1.1, 1.3, d / 2 + 1.05, 0.08, 0.08, 2.6, palette.metal, 'iron');
     door(shell, ax, 0.35, d / 2 - 0.12, 1.3, 2.1, '#3f6f8f', { surround: palette.metal, landing: 0.37, width: 2.0 });
+    // A stylised Mackintosh rose in relief on the door's panel, below the canopy's shade where the
+    // chapter sees it: an upright oval ring round an inner rose-pink ring and heart, set a little
+    // high like the rose's furled centre, over a two-by-two grid of small squares. Abstract geometry
+    // in the frame's white and a muted rose that casts nothing. No stem (a ring on a stem with a
+    // crossbar of leaves reads as a sign) and no wide oval (round a dark heart it reads as an eye).
+    {
+      const panel = d / 2 - 0.02, // the leaf's recessed centre panel
+        cy = 1.32,
+        rose = muted('#f18fb0', 0.45),
+        relief = (m: T.Mesh, x: number, y: number, sx = 1, sy = 1) => {
+          m.position.set(x, y, panel + 0.012);
+          m.scale.set(sx, sy, 1);
+          m.castShadow = false;
+          m.receiveShadow = true;
+          m.userData.noShadow = true;
+          shell.add(m);
+          return m;
+        };
+      relief(new T.Mesh(new T.TorusGeometry(0.15, 0.02, 4, 18), material(white, 'paint')), ax, cy, 0.9, 1);
+      relief(new T.Mesh(new T.TorusGeometry(0.085, 0.018, 4, 14), material(rose, 'paint')), ax, cy + 0.02, 0.9, 1);
+      relief(new T.Mesh(new T.CylinderGeometry(0.04, 0.04, 0.024, 10), material(rose, 'paint')), ax, cy + 0.035, 1, 1).rotation.x = Math.PI / 2;
+      for (const x of [-0.045, 0.045]) for (const y of [-0.25, -0.34]) box(shell, ax + x, cy + y, panel + 0.012, 0.065, 0.065, 0.024, white, 'paint', { bevel: 0 }).userData.noShadow = true;
+    }
     box(shell, ax, 0.03, d / 2 + 1.2, 3.2, 0.06, 1.8, palette.pavement, 'paving'); // from the plinth foot, like the path
     bench(shell, ax - 0.85, 0.06, d / 2 + 1.85);
   }
