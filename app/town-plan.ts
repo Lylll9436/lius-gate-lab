@@ -1183,7 +1183,9 @@ export const pavementTop = (x: number, z: number) => droppedFloor(x, z) ?? level
 /**
  * The roads' own coordinates: `along` the centre line (the ring from ringLine[0], clockwise, as
  * the tram runs; an avenue from its plaza end, `from`) and `across` it, positive to the right of
- * that direction (the ring's inner side; an avenue's inbound lane).
+ * that direction (the ring's inner side; an avenue's inbound lane). The road ribbons carry the same
+ * pair in their uv (an avenue's along plus 1000 × its place in ROADS), so the road shader's wear
+ * lines up with these.
  */
 export type RoadId = 'ring' | JunctionId;
 export const ROADS: RoadId[] = ['ring', 'south', 'west', 'east'];
@@ -1276,3 +1278,24 @@ export const gullies: RoadSpot[] = (() => {
     for (const [along, side] of [[3.7, 1], [4.4, -1]] as const) out.push(roadSpot(road, along, side * GULLY.across));
   return out;
 })();
+/**
+ * Road wear, drawn by the road shader and kept very faint: two or three repair patches of fresher
+ * asphalt (on straight runs, as world rectangles x0, z0, x1, z1), plus the darker wheel tracks and
+ * the waiting stains behind the stop lines, which follow the cyclist's lane, the rails and
+ * stopLines by themselves. A patch keeps clear of the covers, gullies, stop lines and zebras.
+ */
+export const roadPatches = (
+  [
+    ['ring', [10.6, 11.9], [-0.75, -0.2]],
+    ['ring', [94.6, 96.4], [-0.55, 0.62]],
+    ['west', [6.2, 7.3], [0.12, 0.78]],
+  ] as const
+).map(([road, [s0, s1], [c0, c1]]) => {
+  const corners = [roadSpot(road, s0, c0), roadSpot(road, s1, c1)];
+  return {
+    road,
+    along: [s0, s1] as XZ,
+    across: [c0, c1] as XZ,
+    box: [Math.min(corners[0].x, corners[1].x), Math.min(corners[0].z, corners[1].z), Math.max(corners[0].x, corners[1].x), Math.max(corners[0].z, corners[1].z)],
+  };
+});

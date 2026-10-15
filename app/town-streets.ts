@@ -31,12 +31,15 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     closed: boolean,
     gap?: (x: number, z: number) => boolean,
     shade = 0.03,
+    road?: number,
   ) {
     const n = points.length,
       count = closed ? n + 1 : n;
     const pos: number[] = [],
       col: number[] = [],
+      uv: number[] = [],
       idx: number[] = [];
+    let along = road ?? 0;
     const base = new T.Color(color);
     for (let k = 0; k < count; k++) {
       const i = k % n;
@@ -54,6 +57,8 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       const tone = 1 - shade / 2 + shade * noise2(p[0] * 0.8, p[1] * 0.8);
       const c = base.clone().multiplyScalar(tone);
       col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+      if (k > 0) along += Math.hypot(p[0] - points[(k - 1) % n][0], p[1] - points[(k - 1) % n][1]);
+      uv.push(width / 2, along, -width / 2, along);
     }
     for (let k = 0; k < count - 1; k++) {
       // One gap test per segment, at its midpoint.
@@ -69,6 +74,11 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
     const geometry = new T.BufferGeometry();
     geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
     geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    if (road !== undefined) {
+      // A road: its uv is (across, along), in plan.roadSpot's terms, for the road shader's wear.
+      geometry.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+      geometry.userData.longitudinalUV = true;
+    }
     geometry.setIndex(idx);
     geometry.computeVertexNormals();
     const mesh = new T.Mesh(geometry, material('#ffffff', kind));
@@ -232,7 +242,7 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       return !gap((a[k][0] + a[j][0] + b[k][0] + b[j][0]) / 4, (a[k][1] + a[j][1] + b[k][1] + b[j][1]) / 4);
     };
     // Ring road, and tram rails under the tram's wheels, unbroken through the junctions.
-    ribbon(land, ring, R, roadY, palette.road, 'asphalt', true);
+    ribbon(land, ring, R, roadY, palette.road, 'asphalt', true, undefined, 0.03, 0);
     for (const s of [-1, 1])
       ribbon(land, plan.offsetPolyline(ring, s * 0.42), 0.07, roadY + 0.003, palette.metal, 'iron', true, undefined, 0).userData.noShadow = true;
     // Raised pavements and kerbs on both sides. The kerb's road face is the riser; the pavement's
@@ -255,7 +265,7 @@ export function createStreets(ctx: TownContext, kit: Kit, nature: Nature) {
       const start = (o: number) => Math.sqrt(5.1 ** 2 - o ** 2) - plan.PLAZA_RADIUS,
         edge = (o: number, end: number) => [at(start(o), o), at(end, o)];
       // The road's start corners sit on r = 5.1 too, so no grass shows at the plaza rim.
-      ribbon(land, [at(start(R / 2), 0), at(a.length - R / 2, 0)], R, roadY, palette.road, 'asphalt', false);
+      ribbon(land, [at(start(R / 2), 0), at(a.length - R / 2, 0)], R, roadY, palette.road, 'asphalt', false, undefined, 0.03, 1000 * plan.ROADS.indexOf(a.id as plan.RoadId) + start(R / 2));
       const drop = plan.droppedCrossings.find((d) => d.junction === a.id)!,
         [d0, d1] = drop.along;
       for (const side of [-1, 1]) {
