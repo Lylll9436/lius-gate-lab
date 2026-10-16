@@ -26,7 +26,7 @@ const CORNER_REACH = 1;
  */
 const CORNER_SPAN = 0.9;
 /** The top-lit gradient: an object's tone at its foot and at its top (5 units up at most). */
-const TOP_LIT = [0.94, 1.04] as const;
+const TOP_LIT = [0.91, 1.055] as const;
 /** A mesh whose box in g is its own: a plain or rounded box turned only in quarter turns. */
 function isSquareBox(o: T.Mesh, toG: T.Matrix4) {
   if (!(o.geometry instanceof RoundedBoxGeometry) && o.geometry.type !== 'BoxGeometry') return false;

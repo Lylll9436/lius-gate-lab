@@ -170,11 +170,13 @@ type WindowUniform = { value: T.Vector2 };
  * Surface patterns: restrained procedural texture for the solids, in the bake shader. Every
  * pattern is drawn from the batch's own coordinates (vSurfP, the merged mesh's position; vSurfUV,
  * batch()'s surface coordinates in units), so it holds still on the model as the camera moves.
- * Every one fades to its base tone by its size on screen (sFade): a fine pattern (brick, slate,
- * planks, grain, bark, the leaves) is whole while its period spans 4 CSS pixels and gone at 2.5; the
- * broad ones that would read at the overview (ashlar, pantile, copper seams, the foliage's
- * clusters) wait for 7 and are gone at 4.5, so the opening view stays clean and the detail
- * arrives from about zoom 2 (ashlar, roofs) to zoom 4 (brick). Sizes on screen are measured
+ * Every one fades to its base tone by its size on screen (sFade): slate and planks, regular lines
+ * seen at every zoom and the most prone to moire, are whole while their period spans 5 CSS pixels
+ * and gone at 3; brick (only ever seen close) and the soft noise ones (grain, bark, streaks, the
+ * leaves) whole from 4 and gone at 2.5; the broad ones that would read at the overview (ashlar,
+ * pantile, copper seams, the foliage's clusters) wait for 7-10 and are gone by 4.5-7. So the
+ * opening view stays clean and the detail arrives from about zoom 2 (ashlar, roofs) to zoom 4
+ * (brick). Sizes on screen are measured
  * along the steepest direction (the length of each coordinate's screen gradient), so a wall seen
  * at a slant fades by its true spacing. The fade counts CSS pixels (device pixels over the pixel
  * ratio, surfacePx), so a Retina screen shows the same detail at a given zoom as any other, only
@@ -228,6 +230,9 @@ vec2 de=6.*t*(1.-t)/bev*sign(.5*b.size-b.f);return vec3(e.x*e.y,de.x*e.y,e.x*de.
  *   staggered butt joint about every 2.4).
  * 8 bark: vertical grooves with lighter ridges. 9 foliage: soft leafy clusters in tone and normal.
  * 10 paint, render, enamel: only a faint broad drift. Roof patterns keep to sloped faces.
+ * Each pattern keeps its surface's mean tone (brick's lighter mortar is paid for by slightly darker
+ * bricks, slate's shaded courses by slightly lighter slates), so nothing brightens or darkens as
+ * the detail fades in with the zoom.
  */
 const SURFACE_PATTERN = `vec2 surfDH=vec2(0.);float surfH=0.;
 {int look=int(vBake.w*255.+.5);
@@ -237,7 +242,7 @@ if(look>0){float S=surfaceGain[look];vec3 sn=normalize(vSurfN),col=diffuseColor.
 float roof=smoothstep(.12,.3,sn.y)*(1.-smoothstep(.975,.995,sn.y)),wall=1.-smoothstep(.55,.8,abs(sn.y));
 if(look==1){Blocks b=blocks(q,.11,.24,0.,.5);float fy=sFade(.11,fq.y,2.5,4.)*wall,fx=sFade(.24,fq.x,2.5,4.)*fy;
 float j=max(sLine(b.jd.y,.014,fq.y)*fy,sLine(b.jd.x,.014,fq.x)*fx),kk=sh2(vec2(b.col,b.row)+7.1)-.5;
-col*=(1.+.04*(sn3(vec3(q*2.,2.3))-.5)*sFade(.5,max(fq.x,fq.y),2.5,4.)*wall*S)*(1.+fy*S*.075*(b.k-.5))*(1.+fy*S*kk*vec3(.03,-.004,-.03));
+col*=(1.+.04*(sn3(vec3(q*2.,2.3))-.5)*sFade(.5,max(fq.x,fq.y),2.5,4.)*wall*S)*(1.+fy*S*(.075*(b.k-.5)-.06))*(1.+fy*S*kk*vec3(.03,-.004,-.03));
 col=mix(col,mix(col,vec3(dot(col,vec3(.2126,.7152,.0722))),.55)*1.45,.85*j*S);
 hq=.005*fy*S*sFade(.022,max(fq.x,fq.y),1.,2.)*arris(b,.014,.022);}
 else if(look==2){Blocks b=blocks(q,.34,.62,.35,-1.);float fy=sFade(.34,fq.y,4.5,7.)*wall,fx=sFade(.45,fq.x,4.5,7.)*fy;
@@ -246,19 +251,19 @@ float jk=mix(.34,.17,smoothstep(.08,.45,dot(col,vec3(.2126,.7152,.0722))));col*=
 float low=(1.-smoothstep(.1,1.3,vBake.x))*(.55+.45*sn3(vSurfP*vec3(2.2,.8,2.2)));col*=1.-.06*low*wall*S;
 hq=.004*fy*S*sFade(.03,max(fq.x,fq.y),1.,2.)*arris(b,.012,.03);}
 else if(look==3){col*=1.+.025*(sn3(vSurfP*1.4+3.7)-.5)*S;}
-else if(look==4){Blocks b=blocks(q,.15,.26,.25,.5);float fy=sFade(.15,fq.y,2.5,4.)*roof,fx=sFade(.26,fq.x,2.5,4.)*fy;
+else if(look==4){Blocks b=blocks(q,.15,.26,.25,.5);float fy=sFade(.15,fq.y,3.,5.)*roof,fx=sFade(.26,fq.x,3.,5.)*fy;
 float jy=sLine(b.jd.y,.018,fq.y)*fy,jx=sLine(b.jd.x,.01,fq.x)*fx,t=b.f.y/.15;
-col*=(1.+fy*S*(.08*(b.k-.5)+.06*(.5-t)-.1*smoothstep(.6,1.,t)))*(1.-(.26*jy+.07*jx)*S);
+col*=(1.+fy*S*(.05+.08*(b.k-.5)+.06*(.5-t)-.1*smoothstep(.6,1.,t)))*(1.-(.26*jy+.07*jx)*S);
 hq.yz=fy*S*(.07*(vec2(sh2(vec2(b.col,b.row)+2.9),sh2(vec2(b.col,b.row)+5.1))-.5)-vec2(0.,.05));}
 else if(look==5){float P=.32,ph=6.2831853*q.x/P;Blocks b=blocks(q,.3,P,0.,0.);
-float fy=sFade(.3,fq.y,4.5,7.)*roof,fw=sFade(P,fq.x,4.5,7.)*roof;float jy=sLine(b.jd.y,.022,fq.y)*fy;
-col*=(1.+fw*S*(.04*sin(ph+.6)+.02*sin(2.*ph)+.06*(b.k-.5)))*(1.-.22*jy*S);hq.y=.02*fw*S*(cos(ph)+.7*cos(2.*ph))*6.2831853/P;}
-else if(look==6){float sd=min(fract(q.x/.42),1.-fract(q.x/.42))*.42,fs=sFade(.42,fq.x,5.,8.)*(1.-smoothstep(.975,.995,sn.y));
+float fy=sFade(.3,fq.y,5.5,8.)*roof,fw=sFade(P,fq.x,5.5,8.)*roof;float jy=sLine(b.jd.y,.022,fq.y)*fy;
+col*=(1.+fw*S*(.06+.04*sin(ph+.6)+.02*sin(2.*ph)+.06*(b.k-.5)))*(1.-.22*jy*S);hq.y=.02*fw*S*(cos(ph)+.7*cos(2.*ph))*6.2831853/P;}
+else if(look==6){float sd=min(fract(q.x/.42),1.-fract(q.x/.42))*.42,fs=sFade(.42,fq.x,7.,10.)*(1.-smoothstep(.975,.995,sn.y));
 float seam=sLine(sd,.024,fq.x)*fs;float st=sn3(vec3(q.x*6.,q.y*.45,1.7))*.7+sn3(vec3(q.x*15.,q.y*1.1,5.3))*.3;
 float fst=sFade(.17,fq.x,2.5,4.);col*=mix(vec3(1.),mix(vec3(.95,.955,.96),vec3(1.06,1.08,1.075),st),fst*S)*(1.+.08*seam*S);
 float tt=clamp((sd-.012)/.02,0.,1.);hq.y=-.004*fs*S*6.*tt*(1.-tt)/.02*sign(.5-fract(q.x/.42));}
 else if(look==7){float planked=step(q.y,500.);vec2 w=vec2(q.x,q.y-1000.*(1.-planked));Blocks b=blocks(w,.15,2.4,.3,-1.);
-float fy=sFade(.15,fq.y,2.5,4.)*planked,fx=sFade(.6,fq.x,2.5,4.)*fy;float jy=sLine(b.jd.y,.012,fq.y)*fy,jx=sLine(b.jd.x,.01,fq.x)*fx;
+float fy=sFade(.15,fq.y,3.,5.)*planked,fx=sFade(.6,fq.x,3.,5.)*fy;float jy=sLine(b.jd.y,.012,fq.y)*fy,jx=sLine(b.jd.x,.01,fq.x)*fx;
 float g=sn3(vec3(w.x*1.3,w.y*11.,b.row*planked*3.1)),fg=sFade(.09,fq.y,2.5,4.);
 col*=(1.+fy*S*.08*(b.k-.5))*(1.-(.3*jy+.25*jx)*S)*(1.+.07*(g-.5)*fg*S);
 hq=.004*fy*S*sFade(.016,max(fq.x,fq.y),1.,2.)*arris(b,.012,.016);}
