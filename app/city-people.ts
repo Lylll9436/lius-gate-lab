@@ -134,7 +134,8 @@ const COATS = ['#5f7186', '#7d8a5c', '#a8735a', '#c2a878', '#6d6378', '#4f6b66',
   HAIR = ['#5a4030', '#2d2a28', '#b89b6a', '#7e5040', '#9a948c'],
   SCARF = ['#e9e1d0', '#c9ad78', '#b98a8f', '#8fa9ad'],
   SHOES = ['#2d2a28', '#4a3426', '#3a3f45'],
-  STYLES: HairStyle[] = ['crop', 'bob', 'beanie', 'parted', 'bun', 'cap', 'crop'],
+  // The seven pavement walkers, then the dog walker's flat cap and the cyclist's helmet.
+  STYLES: HairStyle[] = ['crop', 'bob', 'beanie', 'parted', 'bun', 'cap', 'crop', 'cap', 'helmet'],
   EYES = '#2b2622';
 /** A shade of a colour: darker below 1, lighter above. */
 const shade = (c: string, k: number) => '#' + new T.Color(c).multiplyScalar(k).getHexString();
@@ -187,8 +188,9 @@ function hair(style: HairStyle, colour: string) {
     if (style === 'bun') out.push(paint(blob([0.058, 0.055, 0.055], [0, y + 0.095, -0.105], 10), colour), paint(new T.TorusGeometry(0.045, 0.012, 5, 12).rotateX(-0.9).translate(0, y + 0.072, -0.082), dark));
     if (style === 'cap') {
       // A flat cap: a soft, flat crown pulled forward over the brow and a short peak.
-      out.push(paint(blob([a + 0.02, 0.046, c + 0.036], [0, y + 0.098, 0.02], 16, [0.2, 0, 0]), colour));
-      out.push(paint(blob([0.115, 0.013, 0.07], [0, y + 0.068, 0.175], 12, [0.3, 0, 0]), shade(colour, 0.68)));
+      // The crown stops short of the brow, so the peak shows from above.
+      out.push(paint(blob([a + 0.02, 0.046, c + 0.016], [0, y + 0.098, -0.008], 16, [0.18, 0, 0]), colour));
+      out.push(paint(blob([0.11, 0.014, 0.072], [0, y + 0.072, 0.15], 12, [0.32, 0, 0]), shade(colour, 0.68)));
     }
   } else if (style === 'bob') {
     // Hair to the jaw all round, open at the face, with a fringe to the brows.

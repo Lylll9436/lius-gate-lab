@@ -2378,7 +2378,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     library = createCityMaterials(),
     box = new T.Box3();
   for (let i = 0; i < 9; i++) {
-    const r = createResident(i, library.material, i === 7 ? { style: 'cap' } : i === 8 ? { style: 'helmet' } : {});
+    const r = createResident(i, library.material);
     r.updateMatrixWorld(true);
     box.setFromObject(r);
     // The rider (8) only ever sits, so his helmet may stand a little prouder.
