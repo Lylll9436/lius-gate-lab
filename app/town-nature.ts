@@ -31,18 +31,18 @@ const BIRCH: Record<Season, { tones: string[]; top: string; under: string }> = {
 };
 /** Birch bark: cream-white, a few dark marks and a dark, rough foot. */
 const BIRCH_BARK = { body: '#e2dbcc', foot: '#5d5750', mark: '#55504a' };
-/** Rowan: a deep, slightly cool green that turns orange-red in autumn. */
+/** Rowan: a deep, slightly cool green that turns orange in autumn, under its crimson berries. */
 const ROWAN: Record<Season, { tones: string[]; top: string; under: string }> = {
   spring: { tones: ['#4e9052', '#559556'], top: '#a2c47a', under: '#285a38' },
   summer: { tones: ['#468a4c', '#4e9052'], top: '#9cc27a', under: '#245536' },
-  autumn: { tones: ['#bc5634', '#c45e37'], top: '#e2945a', under: '#7c3624' },
+  autumn: { tones: ['#c46a34', '#cc7438'], top: '#e2945a', under: '#7c3624' },
   winter: { tones: ['#5a8250', '#618756'], top: '#a0b38a', under: '#2b4b38' },
 };
 const ROWAN_BARK = '#7b6f63';
 export type TreeFruit = { kind: 'flowers' | 'berries'; colour: string; clusters: number };
 /**
  * What a rowan carries: creamy flat flower heads in spring, a few ripening orange berry clusters
- * in (late) summer, full scarlet clusters in autumn and nothing in winter. Other trees carry none.
+ * in (late) summer, full crimson clusters in autumn and nothing in winter. Other trees carry none.
  * The colours stay inside their palette families (white, the flower red); the berries are the
  * small accent that may be the most saturated thing in frame.
  */
@@ -50,7 +50,7 @@ export function treeFruit(spec: plan.TreeSpec, season: Season): TreeFruit | null
   if (spec.kind !== 'rowan') return null;
   if (season === 'spring') return { kind: 'flowers', colour: palette.white, clusters: 7 };
   if (season === 'summer') return { kind: 'berries', colour: '#cc6a3e', clusters: 4 };
-  if (season === 'autumn') return { kind: 'berries', colour: '#c4453a', clusters: 5 };
+  if (season === 'autumn') return { kind: 'berries', colour: '#ad2f3a', clusters: 5 };
   return null;
 }
 /**
@@ -88,6 +88,14 @@ export type Clump = {
   sy?: number; detail?: number; florets?: number; amp?: number; droop?: number; sag?: number;
   /** A frond: drawn out `long` times along the bearing `heading` (rowan sprays reach outward). */
   long?: number; heading?: number;
+  /**
+   * A weeping hem: below the clump's middle each floret hangs down by up to `weep` × r, further
+   * the lower it sits, while the valleys between them stay, so the hem parts into hanging tassels
+   * (the birch's pendulous twigs).
+   */
+  weep?: number;
+  /** Lay the clump on a slope: its own up (the axis `sy` squashes and `sag` hangs along) turned to this unit vector. */
+  up?: T.Vector3;
 };
 /** Unit icospheres, indexed so the displaced vertices stay shared and the clumps shade smooth. */
 const balls = new Map<number, T.BufferGeometry>();
@@ -128,6 +136,8 @@ function clumpGeometry(c: Clump): BuiltClump {
     lump = new Float32Array(p.count),
     h = (n: number) => hash(c.seed * 13.7 + n),
     spin = new T.Quaternion().setFromEuler(new T.Euler(h(1) * 6.283, h(2) * 6.283, h(3) * 6.283)),
+    tilt = c.up ? new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), c.up) : null,
+    turned = new T.Vector3(),
     dirs: T.Vector3[] = [];
   for (let k = 0; k < K; k++) {
     const y = 1 - (2 * (k + 0.5)) / K, ring = Math.sqrt(1 - y * y), a = k * 2.39996 + (h(k + 4) - 0.5) * 0.6;
@@ -154,6 +164,7 @@ function clumpGeometry(c: Clump): BuiltClump {
       const t = -y / c.r, taper = 1 - 0.16 * t * droop;
       x *= taper; z *= taper; y *= 1 + 0.28 * droop;
     }
+    if (c.weep && uy < 0.15) y -= c.weep * c.r * (0.15 - uy) * Math.min(1, l) ** 2;
     if (c.long) {
       // Out along the heading, the tip hanging lowest (the sag below reads the stretched spray as one).
       const ch = Math.cos(c.heading ?? 0), sh = Math.sin(c.heading ?? 0), along = (x * ch + z * sh) * c.long, across = -x * sh + z * ch;
@@ -161,7 +172,10 @@ function clumpGeometry(c: Clump): BuiltClump {
       x = along * ch - across * sh;
       z = along * sh + across * ch;
     } else if (sag) y -= sag * c.r * ((x * x + z * z) / (c.r * c.r));
-    p.setXYZ(i, c.x + x, c.y + y * sy, c.z + z);
+    if (tilt) {
+      const v = turned.set(x, y * sy, z).applyQuaternion(tilt);
+      p.setXYZ(i, c.x + v.x, c.y + v.y, c.z + v.z);
+    } else p.setXYZ(i, c.x + x, c.y + y * sy, c.z + z);
   }
   geo.computeVertexNormals();
   return { geo, lump, clump: c };
@@ -174,8 +188,9 @@ function cullHidden(built: BuiltClump[]) {
   // Each clump's centre, 1 / squash and the squared radius of its solid core.
   const n = built.length, table = new Float64Array(n * 5);
   built.forEach(({ clump: o }, j) => {
-    const core = o.r * (1 - (o.amp ?? 0.1) * 1.1 - (o.droop || o.sag ? 0.12 : 0.04));
-    table.set([o.x, o.y, o.z, 1 / (o.sy ?? 0.85), core * core], j * 5);
+    // A tilted clump's squash no longer runs up and down: test its core as a sphere as thin as the squash.
+    const core = o.r * (1 - (o.amp ?? 0.1) * 1.1 - (o.droop || o.sag ? 0.12 : 0.04)) * (o.up ? Math.min(1, o.sy ?? 0.85) : 1);
+    table.set([o.x, o.y, o.z, o.up ? 1 : 1 / (o.sy ?? 0.85), core * core], j * 5);
   });
   built.forEach(({ geo }, k) => {
     const P = geo.getAttribute('position').array as Float32Array, count = P.length / 3, index = geo.getIndex()!, hidden = new Uint8Array(count), kept: number[] = [];
@@ -205,11 +220,11 @@ function cullHidden(built: BuiltClump[]) {
  * than the valleys between them. Up-facing tops lean to the look's warm `top`, the underside to
  * its cool `under`.
  */
-function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, core: T.Vector3, seed: number, opts: { floor?: number; valley?: number; lift?: number; gain?: number } = {}) {
+function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, core: T.Vector3, seed: number, opts: { floor?: number; valley?: number; lift?: number; gain?: number; crease?: number } = {}) {
   const top = new T.Color(look.top), under = new T.Color(look.under), a = new T.Color(look.tones[0]), b = new T.Color(look.tones[1] ?? look.tones[0]),
-    c = new T.Color(), base = new T.Color(), toCore = new T.Vector3(), floor = opts.floor ?? 0.5, valley = opts.valley ?? 0.8, lift = opts.lift ?? 0.38,
+    c = new T.Color(), base = new T.Color(), toCore = new T.Vector3(), floor = opts.floor ?? 0.5, valley = opts.valley ?? 0.8, lift = opts.lift ?? 0.38, crease = opts.crease ?? 0.26,
     heights = built.map(({ clump }) => clump.y), lo = Math.min(...heights), hi = Math.max(...heights),
-    others = new Float64Array(built.flatMap(({ clump: o }) => [o.x, o.y, o.z, 1 / (o.sy ?? 0.85), o.r]));
+    others = new Float64Array(built.flatMap(({ clump: o }) => [o.x, o.y, o.z, o.up ? 1 : 1 / (o.sy ?? 0.85), o.r]));
   built.forEach(({ geo, lump }, k) => {
     const h = (n: number) => hash(seed * 7.3 + k * 3.1 + n);
     base.copy(a).lerp(b, 0.6 * hash(seed * 3.7 + 1) + 0.4 * h(1)).offsetHSL((h(2) - 0.5) * 0.03, 0, 0);
@@ -225,13 +240,34 @@ function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, cor
         if (j === k * 5) continue;
         const dx = x - others[j], dy = (y - others[j + 1]) * others[j + 3], dz = z - others[j + 2], r = others[j + 4],
           gap = Math.sqrt(dx * dx + dy * dy + dz * dz) - r;
-        if (gap > 0 && gap < 0.3 * r) f *= 1 - 0.26 * (1 - sstep(gap, 0, 0.3 * r));
+        if (gap > 0 && gap < 0.3 * r) f *= 1 - crease * (1 - sstep(gap, 0, 0.3 * r));
       }
       c.copy(base).lerp(under, 0.32 * (1 - v)).lerp(top, lift * sstep(v, 0.5, 1) * Math.max(0, ny));
       out[i * 3] = c.r * f; out[i * 3 + 1] = c.g * f; out[i * 3 + 2] = c.b * f;
     }
     geo.setAttribute('color', new T.BufferAttribute(out, 3));
   });
+}
+/**
+ * Lean each clump's normals toward the crown's own round (an ellipsoid round `centre`, `squash`
+ * as tall as it is wide): the light then reads the crown as one soft volume with lumps in it
+ * instead of a cluster of separate balls, each with its own lit side and dark rim. `weight` 0
+ * keeps each clump's own shading, 1 the crown's alone.
+ */
+function softenNormals(built: BuiltClump[], centre: T.Vector3, squash: number, weight: number) {
+  const k = 1 / (squash * squash);
+  for (const { geo } of built) {
+    const P = geo.getAttribute('position').array as Float32Array, n = geo.getAttribute('normal'), N = n.array as Float32Array;
+    for (let i = 0; i < N.length; i += 3) {
+      const ox = P[i] - centre.x, oy = (P[i + 1] - centre.y) * k, oz = P[i + 2] - centre.z, ol = Math.hypot(ox, oy, oz) || 1,
+        x = N[i] * (1 - weight) + (ox / ol) * weight, y = N[i + 1] * (1 - weight) + (oy / ol) * weight, z = N[i + 2] * (1 - weight) + (oz / ol) * weight,
+        l = Math.hypot(x, y, z) || 1;
+      N[i] = x / l;
+      N[i + 1] = y / l;
+      N[i + 2] = z / l;
+    }
+    n.needsUpdate = true;
+  }
 }
 /** Build, cull and merge a crown's clumps; returns the geometry and its top (tree space). */
 function crown(clumps: Clump[]) {
@@ -339,26 +375,29 @@ function fruit(sprays: Clump[], s: number, index: number, f: TreeFruit) {
   };
   for (let k = 0; k < f.clusters; k++) {
     const h = (n: number) => hash(index * 19 + k * 5.3 + n),
-      { x: cx, y: cy, z: cz, r, sy = 0.85, sag = 0, long = 1, heading } = sprays[k % sprays.length],
+      { x: cx, y: cy, z: cz, r, sy = 0.85, sag = 0, long = 1, heading, up: tilt } = sprays[k % sprays.length],
       out = (heading ?? Math.atan2(cz, cx)) + (h(1) - 0.5) * (long > 1 ? 0.3 : 0.9),
-      spin = h(2) * Math.PI * 2;
+      spin = h(2) * Math.PI * 2,
+      // A point on the spray, from its own frame (laid on its slope when it has one) to the tree's.
+      on = (x: number, y: number, z: number) => {
+        const v = new T.Vector3(x, y, z);
+        if (tilt) v.applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), tilt));
+        return [cx + v.x, cy + v.y, cz + v.z];
+      };
     if (f.kind === 'flowers') {
       // A flat-topped head on the spray's upper face: one broad floret cushion and two smaller ones under its rim.
       const up = 0.5 + 0.35 * h(3),
-        x = cx + Math.cos(out) * Math.cos(up) * r,
-        y = cy + Math.sin(up) * r * sy,
-        z = cz + Math.sin(out) * Math.cos(up) * r;
+        [x, y, z] = on(Math.cos(out) * Math.cos(up) * r, Math.sin(up) * r * sy, Math.sin(out) * Math.cos(up) * r);
       blob(fruitBlob, x, y + 0.03 * s, z, 0.14 * s, 0.42, 0.97 + 0.05 * h(4));
       for (const a of [0, 2.4]) blob(fruitBlob, x + Math.cos(spin + a) * 0.12 * s, y - 0.005 * s, z + Math.sin(spin + a) * 0.12 * s, 0.09 * s, 0.5, 0.9);
     } else {
       // A bunch hanging from the spray's rim: three tiers of berries (four, three, two), each tier
       // smaller and turned a little, the lower ones a shade darker in the bunch's own shade.
       const rim = 0.72 + 0.14 * h(5),
-        x = cx + Math.cos(out) * r * long * rim,
-        z = cz + Math.sin(out) * r * long * rim,
-        y = cy - (sag * r * (rim * rim + 0.6 * rim) + 0.3 * r) * sy - 0.01 * s,
-        b = 0.05 * s;
-      [[4, 1.25, 0, 1.04], [3, 0.85, -1.35, 0.96], [2, 0.45, -2.45, 0.88]].forEach(([count, spread, dy, value], tier) => {
+        b = 0.06 * s,
+        [x, top, z] = on(Math.cos(out) * r * long * rim, -(sag * r * (rim * rim + 0.6 * rim) + 0.3 * r) * sy, Math.sin(out) * r * long * rim),
+        y = top - 0.01 * s;
+      [[4, 1.1, 0, 1.04], [3, 0.75, -1.2, 0.95], [2, 0.38, -2.2, 0.86]].forEach(([count, spread, dy, value], tier) => {
         for (let j = 0; j < count; j++) {
           const a = spin + tier * 0.7 + (j / count) * Math.PI * 2 + (h(6 + j + tier * 4) - 0.5) * 0.5;
           blob(berry, x + Math.cos(a) * spread * b, y + dy * b, z + Math.sin(a) * spread * b, b * (0.92 + 0.16 * h(20 + j + tier * 4)), 0.92, value * (0.95 + 0.08 * h(30 + j + tier * 4)));
@@ -371,9 +410,9 @@ function fruit(sprays: Clump[], s: number, index: number, f: TreeFruit) {
 /**
  * Silver birch: a slim trunk leaning a little and curving into its lean, cream-white with a few
  * dark marks (a pair of close rows each, dark on part of the round) and a dark foot, under a
- * narrow, airy crown held high: a small top clump over seven drooping clumps (five in winter)
- * spiralling down round the upper trunk on short pale limbs, with gaps between them, light all
- * through (no deep underside). Big clumps stacked up the trunk read as topiary or cotton buds.
+ * narrow, airy crown held high: a body of small overlapping clumps over a fringe of smaller
+ * weeping ones on fine pale twigs, light all through (no deep underside). Big clumps stacked up
+ * the trunk read as topiary or cotton buds; separate egg-shaped clumps read as a bunch of grapes.
  */
 function birch(t: T.Group, s: number, index: number, look: Look, season: Season, add: AddPart) {
   const H = 2.1 * s,
@@ -397,33 +436,47 @@ function birch(t: T.Group, s: number, index: number, look: Look, season: Season,
   }
   trunk.setAttribute('color', new T.BufferAttribute(out, 3));
   add(trunk, 'bark');
-  // The crown: a top clump, then clumps spiralling down by the golden angle, each a little further
-  // out and smaller, hanging (droop) like the birch's weeping twigs.
+  // The crown: a narrow body of three big soft clumps at the top of the trunk (a leader over two),
+  // and round its foot four smaller clumps (two in winter) hanging lower and further out on fine
+  // pale twigs that arch out and down, with sky between them. Every clump's hem weeps into
+  // tassels like the birch's pendulous twigs, more the lower it hangs.
   const spin = hash(index * 13) * Math.PI * 2,
-    n = season === 'winter' ? 6 : 9,
     h = (k: number) => hash(index * 13 + k * 3.7),
-    clumps: Clump[] = [{ x: bend(2.24 * s), y: 2.24 * s, z: 0, r: 0.22 * s, sy: 1.15, detail: 2, florets: 9, amp: 0.13, droop: 2, seed: index * 7 + 1 }];
-  for (let k = 0; k < n; k++) {
-    const q = k / (n - 1),
-      a = spin + k * 2.39996 + (h(k) - 0.5) * 0.5,
-      d = mix(0.2, 0.34, q) * s + 0.04 * s * h(k + 9),
-      y = mix(2.12, 1.38, q) * s + 0.05 * s * (h(k + 17) - 0.5);
-    clumps.push({ x: bend(y) + Math.cos(a) * d, y, z: Math.sin(a) * d, r: mix(0.19, 0.17, q) * s * (0.92 + 0.16 * h(k + 25)), sy: 1.2, detail: 2, florets: 8, amp: 0.13, droop: 2.6, seed: index * 7 + 2 + k });
+    hang = season === 'winter' ? 2 : 4,
+    clumps: Clump[] = [{ x: bend(2.28 * s), y: 2.28 * s, z: 0, r: 0.2 * s, sy: 1.25, detail: 3, florets: 10, amp: 0.13, droop: 0.6, weep: 0.3, seed: index * 7 + 1 }];
+  for (let j = 0; j < 2; j++) {
+    const a = spin + j * Math.PI + (h(j) - 0.5) * 0.8, d = (0.12 + 0.03 * h(j + 3)) * s, y = (1.97 + 0.06 * (h(j + 5) - 0.5)) * s;
+    clumps.push({ x: bend(y) + Math.cos(a) * d, y, z: Math.sin(a) * d, r: (0.2 + 0.02 * h(j + 7)) * s, sy: 1.2, detail: 3, florets: 10, amp: 0.13, droop: 0.8, weep: 0.45, seed: index * 7 + 2 + j });
+  }
+  for (let j = 0; j < hang; j++) {
+    const a = spin + 0.8 + (j / hang) * Math.PI * 2 + (h(j + 10) - 0.5) * 0.7, d = (0.26 + 0.04 * h(j + 13)) * s, y = (mix(1.74, 1.5, hang > 1 ? j / (hang - 1) : 0) + 0.05 * (h(j + 16) - 0.5)) * s;
+    clumps.push({ x: bend(y) + Math.cos(a) * d, y, z: Math.sin(a) * d, r: (0.145 + 0.025 * h(j + 19)) * s, sy: 1.25, detail: 2, florets: 7, amp: 0.14, droop: 0.8, weep: 0.6, seed: index * 7 + 4 + j });
   }
   const { built, top } = crown(clumps),
-    dy = BIRCH_TOP * s - top;
-  paintCrown(built, look, 1.2 * s, 2.6 * s, new T.Vector3(bend(1.9 * s), 1.9 * s, 0), index, { floor: 0.66, valley: 0.86 });
+    dy = BIRCH_TOP * s - top,
+    middle = new T.Vector3(bend(1.95 * s), 1.95 * s, 0);
+  paintCrown(built, look, 1.25 * s, 2.6 * s, middle, index, { floor: 0.8, valley: 0.86, crease: 0.12 });
+  softenNormals(built, middle, 1.6, 0.45);
   add(mergeCrown(built, dy), 'foliage');
-  const limbs = clumps.slice(1).map(({ x, y, z }) => limb(new T.Vector3(bend(y - 0.3 * s), y - 0.3 * s, 0), new T.Vector3(x, y + dy - 0.04 * s, z), 0.028 * s, 0.016 * s, 5, shade(BIRCH_BARK.body, 0.8), 0.7));
+  // Pale limbs: the body's rise from the trunk into their clumps; the hanging clumps' twigs arch
+  // out from the trunk and down into the top of their clump, so each shows above it.
+  const pale = shade(BIRCH_BARK.body, 0.8),
+    limbs = clumps.slice(1).flatMap(({ x, y, z }, j) => {
+      if (j < 2) return [limb(new T.Vector3(bend(y - 0.3 * s), y - 0.3 * s, 0), new T.Vector3(x, y + dy - 0.04 * s, z), 0.028 * s, 0.016 * s, 5, pale, 0.7)];
+      const from = new T.Vector3(bend(y + 0.12 * s), y + 0.12 * s, 0),
+        elbow = new T.Vector3(mix(from.x, x, 0.6), y + dy + 0.3 * s, mix(0, z, 0.6)),
+        end = new T.Vector3(x, y + dy + 0.12 * s, z);
+      return [limb(from, elbow, 0.022 * s, 0.015 * s, 5, pale, 0.85), limb(elbow, end, 0.015 * s, 0.011 * s, 5, shade(BIRCH_BARK.body, 0.68), 0.9)];
+    });
   add(mergeGeometries(limbs)!, 'bark');
   return t;
 }
 /**
  * Rowan: smaller than the round trees (0.85 of their scale), a grey-brown trunk with a slight
- * bend forking into three limbs, and an open, rounded crown of feathery sprays rather than balls:
- * a top spray over a ring of four and a lower ring of four or five further out (leaving a gap
- * toward the camera, like the round trees), each spray flattened, its rim hanging down like a
- * pinnate leaf and its florets small. Its fruit (treeFruit) hangs in bunches from the sprays' rims.
+ * bend forking into three limbs, and an upright oval crown of small, flattened, lumpy sprays laid
+ * over its dome like feathers (each about half a round tree's clump across, the side ones
+ * standing), rather than a cluster of balls. Its fruit (treeFruit) hangs in bunches from the rims
+ * of the lowest sprays.
  */
 function rowan(t: T.Group, size: number, index: number, look: Look, f: TreeFruit | null, add: AddPart, quiet: (g: T.BufferGeometry) => void, facing: number) {
   const s = 0.85 * size,
@@ -442,39 +495,45 @@ function rowan(t: T.Group, size: number, index: number, look: Look, f: TreeFruit
   const trunkShade = (y: number) => mix(1.0, 0.6, sstep(y, 0.55 * s, F + 0.1 * s));
   paintByHeight(wood, ROWAN_BARK, trunkShade);
   add(wood, 'bark');
-  // The crown: small, finely lumped sprays spread over an open dome round a little core (a seeded
+  // The crown: small, lumpy sprays packed over an open dome round a little core (a seeded
   // sunflower spiral, so no rings show), each drawn out a little along its own bearing and hanging
-  // at the tip; the lowest ones leave a gap toward the camera, like the round trees'.
+  // at the tip; the lowest ones leave a gap toward the camera, like the round trees'. They are
+  // half the round trees' clumps across, so the crown reads finer, and they share the crown's
+  // light (softenNormals), so it reads as one feathery dome, not a cluster of balls.
   const [tx, tz] = bend(F),
-    clumps: Clump[] = [{ x: tx, y: 1.48 * s, z: tz, r: 0.36 * s, sy: 0.8, detail: 1, florets: 6, seed: index * 13 + 1 }], // the core
-    N = 11,
+    clumps: Clump[] = [{ x: tx, y: 1.56 * s, z: tz, r: 0.34 * s, sy: 1.05, detail: 1, florets: 6, seed: index * 13 + 1 }], // the core
+    N = 16,
     turn = h(5) * Math.PI * 2;
   for (let k = 0; k < N; k++) {
     const q = (k + 0.5) / N,
-      polar = Math.acos(1 - 1.25 * q), // from the top down to about 105 degrees
+      polar = Math.acos(1 - 1.3 * q), // from the top down to about 107 degrees
       a = turn + k * 2.39996,
       off = Math.abs(((a - facing) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-    if (polar > 1.2 && off < 0.6) continue; // the gap under the rim, toward the camera
-    const d = Math.sin(polar) * 0.5 * s,
-      y = 1.5 * s + Math.cos(polar) * 0.4 * s,
-      r = (0.21 + 0.04 * h(9 + k) + 0.04 * (1 - q)) * s;
-    clumps.push({ x: tx + Math.cos(a) * d, y, z: tz + Math.sin(a) * d, r, sy: 0.82, sag: 0.18, long: 1.25 + 0.15 * h(20 + k), heading: a + (h(30 + k) - 0.5) * 1.2, detail: 2, florets: 13, amp: 0.11, seed: index * 13 + 2 + k });
+    if (polar > 1.2 && off < 0.55) continue; // the gap under the rim, toward the camera
+    const d = Math.sin(polar) * 0.45 * s,
+      y = 1.56 * s + Math.cos(polar) * 0.46 * s,
+      r = (0.14 + 0.025 * h(9 + k) + 0.025 * (1 - q)) * s;
+    // Each spray lies along the dome (its up most of the way to the dome's), so the side ones stand.
+    const up = new T.Vector3(Math.cos(a) * Math.sin(polar), Math.cos(polar), Math.sin(a) * Math.sin(polar)).normalize().lerp(new T.Vector3(0, 1, 0), 0.3).normalize();
+    clumps.push({ x: tx + Math.cos(a) * d, y, z: tz + Math.sin(a) * d, r, sy: 0.75, sag: 0.2, long: 1.3 + 0.15 * h(20 + k), heading: a + (h(30 + k) - 0.5) * 1.6, detail: 2, florets: 8, amp: 0.16, up, seed: index * 13 + 2 + k });
   }
   const { built, top } = crown(clumps),
     dy = ROWAN_TOP * size - top;
-  // A rowan's warm top only glints: lifted further, its autumn scarlet turns to flesh pink after the grade.
-  paintCrown(built, look, 1.05 * s, 2.3 * s, new T.Vector3(tx, 1.5 * s, tz), index, { floor: 0.52, lift: 0.18, gain: 0.93 });
+  // A rowan's warm top only glints: lifted further, its autumn orange turns to flesh pink after the grade.
+  paintCrown(built, look, 1.05 * s, 2.3 * s, new T.Vector3(tx, 1.5 * s, tz), index, { floor: 0.52, lift: 0.18, gain: 0.93, crease: 0.12 });
+  softenNormals(built, new T.Vector3(tx, 1.56 * s, tz), 1.05, 0.5);
   add(mergeCrown(built, dy), 'foliage');
   // Three limbs from the fork into the lowest sprays round the gap; bunches hang from the lower sprays first.
   const fork = new T.Vector3(tx, F - 0.04 * s, tz),
     outer = clumps.slice(1).sort((p, q) => p.y - q.y),
     ends = outer.slice(0, 3);
   add(mergeGeometries(ends.map((c) => limb(fork, new T.Vector3(mix(tx, c.x, 0.7), c.y + dy - 0.08 * s, mix(tz, c.z, 0.7)), 0.05 * s, 0.025 * s, 6, shade(ROWAN_BARK, trunkShade(F)), 0.75)))!, 'bark');
-  // The fruit hangs on the outer sprays, those toward the camera first (so the bunches show from
-  // the opening bearing), from the side of the rim that faces out.
+  // The berries hang from the outer sprays round the crown's sides, the flower heads sit on the
+  // sprays over its top; those toward the camera first (so they show from the opening bearing),
+  // on the side that faces out.
   const toward = (c: Clump) => Math.cos(Math.atan2(c.z - tz, c.x - tx) - facing);
   if (f)
-    quiet(fruit(outer.filter((c) => Math.hypot(c.x - tx, c.z - tz) > 0.3 * s).sort((p, q) => toward(q) - toward(p)).map((c) => ({ ...c, y: c.y + dy, heading: Math.atan2(c.z - tz, c.x - tx) })), s, index, f));
+    quiet(fruit(outer.filter((c) => (f.kind === 'flowers' ? c.y > 1.75 * s : Math.hypot(c.x - tx, c.z - tz) > 0.3 * s)).sort((p, q) => toward(q) - toward(p)).map((c) => ({ ...c, y: c.y + dy, heading: Math.atan2(c.z - tz, c.x - tx) })), s, index, f));
   return t;
 }
 /**
@@ -522,6 +581,7 @@ function roundTree(t: T.Group, s: number, index: number, look: Look, add: AddPar
   const { built, top } = crown(clumps),
     dy = ROUND_TOP * s - top;
   paintCrown(built, look, 1.0 * s, 2.4 * s, new T.Vector3(tx, 1.6 * s, tz), index);
+  softenNormals(built, new T.Vector3(tx, 1.7 * s, tz), 0.75, 0.25);
   add(mergeCrown(built, dy), 'foliage');
   // Three limbs from the fork: into the two lower clumps either side of the gap and the upper one
   // at the back, so a Y opens under the crown's rim.
