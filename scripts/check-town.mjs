@@ -2365,6 +2365,107 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   for (const r of [POOL.inner - POOL.coping, G.coping]) assert(Math.abs(r / G.ring - Math.round(r / G.ring)) < 1e-9, 'The plaza’s rings of flags do not meet the pool copings.');
   assert(G.setts < G.rim && G.setts > G.coping, 'The setts band lies outside the plaza rim or over the copings.');
 }
+// Surface materiality (city-materials' SURFACE_PATTERN, batch()'s surface coordinates and bake). The
+// patterns add no batch and no program: brick and ashlar batch as stone, and every solid shares the
+// bake program. Every pattern fades out before its features fall below 2.5 CSS px (only an arris
+// bump, inside its pattern's own fade, goes finer). The archive's walls are coursed brick from their
+// foot; the homes', the hall's and the gate's walls are ashlar; the homes' roofs are slate, coursed
+// up the slope. A wall darkens toward the plinth it stands on but not at its head (the corner bake
+// never darkens a whole face).
+{
+  const { GROUND_KINDS } = await load('city-materials'),
+    programs = new Set();
+  let solids = 0;
+  city.traverse((o) => {
+    if (!o.isMesh) return;
+    const kind = o.material.userData.surfaceKind;
+    assert(kind !== 'brick' && kind !== 'ashlar', `${o.material.name}: brick and ashlar batch with stone`);
+    const bake = o.geometry.getAttribute('aBake');
+    if (!bake) return;
+    assert.equal(bake.itemSize, 4, `${o.material.name}: aBake has ${bake.itemSize} components`);
+    if (kind === 'glass' || GROUND_KINDS.has(kind)) return;
+    solids++;
+    programs.add(o.material.customProgramCacheKey());
+    for (let i = 0; i < bake.count; i++) assert(Math.round(bake.getW(i) * 255) <= 10, `${o.material.name}: an unknown surface pattern`);
+  });
+  assert(solids > 0 && programs.size <= 1, `The batched solids use ${programs.size} programs: ${[...programs].join(', ')}`);
+  let fades = 0;
+  city.traverse((o) => {
+    if (fades || !o.isMesh || o.material.customProgramCacheKey?.() !== 'lius-bake-solid') return;
+    for (const [, size, lo] of patchedShader(o.material).fragmentShader.matchAll(/sFade\(([.\d]+),[\w.]+(?:\([^)]*\))?,([.\d]+),[.\d]+\)/g)) {
+      fades++;
+      assert(Number(lo) >= 2.5 || Number(size) <= 0.03, `A surface pattern of ${size} is drawn down to ${lo} px`);
+    }
+  });
+  assert(fades >= 15, `Only ${fades} surface fades found in the bake shader`);
+  const v = new T.Vector3(),
+    n = new T.Vector3();
+  /** Vertices of `shell`'s batches with pattern `pattern` on the face (normal z > 0.99) at z = `z`. */
+  const faceOf = (shell, pattern, z) => {
+    const out = [];
+    for (const o of shell.children) {
+      const bake = o.isMesh && o.geometry.getAttribute('aBake');
+      if (!bake) continue;
+      const p = o.geometry.getAttribute('position'),
+        nn = o.geometry.getAttribute('normal'),
+        uv = o.geometry.getAttribute('uv');
+      for (let i = 0; i < p.count; i++)
+        if (Math.round(bake.getW(i) * 255) === pattern && n.fromBufferAttribute(nn, i).z > 0.99 && Math.abs(v.fromBufferAttribute(p, i).z - z) < 2e-3)
+          out.push({ x: v.x, y: v.y, u: uv.getX(i), w: uv.getY(i), corner: bake.getZ(i) });
+    }
+    return out;
+  };
+  /** A wall face: darker toward its foot (`foot`), its head (`head`) untouched. */
+  const footAndHead = (name, face, foot, head) => {
+    const low = face.filter((p) => Math.abs(p.y - foot) < 0.12),
+      high = face.filter((p) => Math.abs(p.y - head) < 0.12);
+    assert(low.length && high.length, `${name}: no wall face found at ${foot} and ${head}`);
+    assert(low.every((p) => p.corner < 0.2), `${name}: the wall does not darken toward its plinth`);
+    assert(high.every((p) => p.corner >= 0.35), `${name}: the corner bake darkens the wall's head`);
+  };
+  {
+    const { shell } = models.get('city-archive'),
+      { w, d } = plan.sites['city-archive'],
+      wall = faceOf(shell, 1, d / 2);
+    assert(wall.length >= 4, 'The archive’s front wall is not brick.');
+    for (const p of wall) assert(Math.abs(p.w - (p.y - 0.45)) < 1e-3 && Math.abs(p.u - p.x) < 1e-3 && Math.abs(p.x) < w / 2, `The archive’s brick courses do not start at the wall’s foot (${p.x}, ${p.y}).`);
+    footAndHead('The archive', wall, 0.57, 3.53);
+  }
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { d } = plan.sites[id];
+    footAndHead(id, faceOf(shell, 2, d / 2), 0.54, 2.9);
+    // The slate roofs: coursed up the slope (uv.y grows with height on every flat sloped face; a
+    // bevel's corner, where the normal turns within a triangle, fades its pattern out instead).
+    let slopes = 0;
+    for (const o of shell.children) {
+      const bake = o.isMesh && o.geometry.getAttribute('aBake');
+      if (!bake) continue;
+      const p = o.geometry.getAttribute('position'),
+        nn = o.geometry.getAttribute('normal'),
+        uv = o.geometry.getAttribute('uv');
+      for (let i = 0; i + 2 < p.count; i += 3) {
+        if (Math.round(bake.getW(i) * 255) !== 4 || n.fromBufferAttribute(nn, i).y < 0.3 || n.y > 0.95) continue;
+        if ([1, 2].some((k) => v.fromBufferAttribute(nn, i + k).dot(n) < 0.999)) continue;
+        const ys = [0, 1, 2].map((k) => p.getY(i + k)),
+          ws = [0, 1, 2].map((k) => uv.getY(i + k)),
+          lo = ys.indexOf(Math.min(...ys)),
+          hi = ys.indexOf(Math.max(...ys));
+        if (ys[hi] - ys[lo] < 0.05) continue;
+        slopes++;
+        assert(ws[hi] > ws[lo], `${id}: a slate face is not coursed up its slope`);
+      }
+    }
+    assert(slopes >= 4, `${id}: no slate roof found`);
+  }
+  footAndHead('The hall', faceOf(models.get('town-hall').shell, 2, 2.3), 0.62, 4.18);
+  let gate = 0;
+  models.get('lius-gate').shell.traverse((o) => {
+    const bake = o.isMesh && o.geometry.getAttribute('aBake');
+    if (bake) for (let i = 0; i < bake.count; i++) gate += Math.round(bake.getW(i) * 255) === 2;
+  });
+  assert(gate >= 100, 'The gate is not ashlar.');
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
