@@ -214,7 +214,7 @@ vec3 arris(Blocks b,float jw,float bev){vec2 t=clamp((b.jd-.5*jw)/bev,0.,1.),e=t
 vec2 de=6.*t*(1.-t)/bev*sign(.5*b.size-b.f);return vec3(e.x*e.y,de.x*e.y,e.x*de.y);}`;
 /**
  * The patterns (by batch()'s aBake.w; surfaceGain scales each, 1 as built):
- * 1 brick: running bond 0.11 x 0.24, slightly lighter mortar, +-3.75% per brick (and a touch warmer
+ * 1 brick: running bond 0.11 x 0.24, slightly lighter mortar, +-4.5% per brick (and a touch warmer
  *   or cooler), a rounded arris at the joints; a soft mottle at a brick's scale stays once the
  *   courses are gone.
  * 2 ashlar: courses of 0.34 (batch() fits one or two courses to a plinth), blocks about 0.62 long in
@@ -242,8 +242,8 @@ if(look>0){float S=surfaceGain[look];vec3 sn=normalize(vSurfN),col=diffuseColor.
 float roof=smoothstep(.12,.3,sn.y)*(1.-smoothstep(.975,.995,sn.y)),wall=1.-smoothstep(.55,.8,abs(sn.y));
 if(look==1){Blocks b=blocks(q,.11,.24,0.,.5);float fy=sFade(.11,fq.y,2.5,4.)*wall,fx=sFade(.24,fq.x,2.5,4.)*fy;
 float j=max(sLine(b.jd.y,.014,fq.y)*fy,sLine(b.jd.x,.014,fq.x)*fx),kk=sh2(vec2(b.col,b.row)+7.1)-.5;
-col*=(1.+.04*(sn3(vec3(q*2.,2.3))-.5)*sFade(.5,max(fq.x,fq.y),2.5,4.)*wall*S)*(1.+fy*S*(.075*(b.k-.5)-.06))*(1.+fy*S*kk*vec3(.03,-.004,-.03));
-col=mix(col,mix(col,vec3(dot(col,vec3(.2126,.7152,.0722))),.55)*1.45,.85*j*S);
+col*=(1.+.04*(sn3(vec3(q*2.,2.3))-.5)*sFade(.5,max(fq.x,fq.y),2.5,4.)*wall*S)*(1.+fy*S*(.09*(b.k-.5)-.075))*(1.+fy*S*kk*vec3(.03,-.004,-.03));
+col=mix(col,mix(col,vec3(dot(col,vec3(.2126,.7152,.0722))),.55)*1.6,.9*j*S);
 hq=.005*fy*S*sFade(.022,max(fq.x,fq.y),1.,2.)*arris(b,.014,.022);}
 else if(look==2){Blocks b=blocks(q,.34,.62,.35,-1.);float fy=sFade(.34,fq.y,4.5,7.)*wall,fx=sFade(.45,fq.x,4.5,7.)*fy;
 float j=max(sLine(b.jd.y,.012,fq.y)*fy,sLine(b.jd.x,.012,fq.x)*fx);
