@@ -1554,8 +1554,9 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     }
   }
 }
-// The people are batched part by part (9 or 10 meshes each, the satchel's wood making the
-// difference: each limb is one mesh, its shoe or hand matte like it). The dog walker is one more of them; the dog is four meshes (its body, the only
+// The people are batched part by part, 8 meshes each: the body's cloth (coat, collar, hair or hat,
+// any satchel) and its skin (head and face), and each thigh, shin and arm, their colours on the
+// vertices (each limb one mesh, its shoe or mitten matte like it). The dog walker is one more of them; the dog is four meshes (its body, the only
 // part that casts, its legs, its head and its tail) and keeps its pivots apart from its body.
 {
   const meshesIn = (o) => {
@@ -1563,12 +1564,12 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     o.traverse((c) => (n += c.isMesh ? 1 : 0));
     return n;
   };
-  for (const w of walkers) assert([9, 10].includes(meshesIn(w.root)), `A walker is ${meshesIn(w.root)} meshes`);
+  for (const w of walkers) assert.equal(meshesIn(w.root), 8, `A walker is ${meshesIn(w.root)} meshes`);
   const dogWalk = model.animated.find((e) => e.object.name === 'dog-walk');
   assert(dogWalk && dogWalk.object.userData.prebatched, 'The dog walk is batched with the people.');
   const [figure, dog] = dogWalk.object.children;
   assert.equal(dog.name, 'dog');
-  assert([9, 10].includes(meshesIn(figure)), `The dog walker is ${meshesIn(figure)} meshes`);
+  assert.equal(meshesIn(figure), 8, `The dog walker is ${meshesIn(figure)} meshes`);
   assert.equal(meshesIn(dog), 4, 'The dog is four meshes.');
   const cast = [];
   dog.traverse((c) => c.isMesh && c.castShadow && cast.push(c));
@@ -1584,7 +1585,9 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   assert(rig.children.every((c) => c.isMesh) && rig.children.length <= 5, 'The cyclist’s rig is a few batched meshes.');
   assert(!rig.children.some((c) => c.material.userData.surfaceKind === 'stone'), 'The cyclist’s rig has a stone batch.');
   assert.equal(rig.children.filter((c) => lamps.includes(c)).length, 1, 'The bike has one lamp.');
-  assert.equal(meshesIn(cyclist.object), 8, `The cyclist is ${meshesIn(cyclist.object)} meshes`);
+  // Five in the rig (the bike's paint, the lamp, the coat, the arms with the bike's small cloth parts, and the head,
+  // whose neck makes it tall enough to cast) and one for each thigh and shin.
+  assert.equal(meshesIn(cyclist.object), 9, `The cyclist is ${meshesIn(cyclist.object)} meshes`);
   const shoe = new T.Vector3();
   for (let t = 0; t < 4; t += 0.02) {
     cyclist.update(t, 0);
@@ -2364,6 +2367,96 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   assert(Math.abs(G.coping - (POOL.outer + POOL.coping)) < 1e-9, 'PLAZA_PAVING.coping is not the outer coping’s edge.');
   for (const r of [POOL.inner - POOL.coping, G.coping]) assert(Math.abs(r / G.ring - Math.round(r / G.ring)) < 1e-9, 'The plaza’s rings of flags do not meet the pool copings.');
   assert(G.setts < G.rim && G.setts > G.coping, 'The setts band lies outside the plaza rim or over the copings.');
+}
+// The figures (city-people.ts): Clash villagers no taller than 0.91 (under the signal heads), soles
+// on y 0 at rest, the head about a third of the height, every look keeping the animation's pivots;
+// and the collie keeps its size. No colour on them is more saturated than 0.55 (HSV, sRGB; the
+// palette's own clothes were up to 0.77), so they stay muted and generic.
+{
+  const { createResident, createDog } = await load('city-people'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    box = new T.Box3();
+  for (let i = 0; i < 9; i++) {
+    const r = createResident(i, library.material, i === 7 ? { style: 'cap' } : i === 8 ? { style: 'helmet' } : {});
+    r.updateMatrixWorld(true);
+    box.setFromObject(r);
+    // The rider (8) only ever sits, so his helmet may stand a little prouder.
+    assert(box.max.y <= (i === 8 ? 0.94 : 0.91) && Math.abs(box.min.y) < 0.004, `Resident ${i} stands from ${box.min.y.toFixed(3)} to ${box.max.y.toFixed(3)}.`);
+    assert(Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) < 0.27, `Resident ${i} is wider than the walkers' clearances allow.`);
+    for (const name of ['body', 'leg-left', 'leg-right', 'arm-left', 'arm-right']) assert(r.getObjectByName(name), `Resident ${i} has no ${name}.`);
+    for (const name of ['leg-left', 'leg-right']) assert(r.getObjectByName(name).getObjectByName('knee'), `Resident ${i}'s ${name} has no knee.`);
+    const skin = r.getObjectByName('body').children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'paint'),
+      head = new T.Box3().setFromObject(skin),
+      share = (head.max.y - 0.6) / box.max.y;
+    assert(share > 0.3 && share < 0.37, `Resident ${i}'s head is ${(share * 100).toFixed(0)}% of the height.`);
+    r.traverse((m) => {
+      if (!m.isMesh) return;
+      const c = m.geometry.getAttribute('color'),
+        colour = new T.Color();
+      assert(c, `Resident ${i} has a part without colours on its vertices.`);
+      for (let k = 0; k < c.count; k += 7) {
+        colour.fromBufferAttribute(c, k).convertLinearToSRGB();
+        const max = Math.max(colour.r, colour.g, colour.b);
+        assert(!max || (max - Math.min(colour.r, colour.g, colour.b)) / max <= 0.55, `Resident ${i} wears a colour louder than the town's (${colour.getHexString()}).`);
+      }
+    });
+  }
+  // The collie: its body about 0.33 long, its ears under 0.33 and its paws on the ground, nose to tail under 0.62.
+  const dog = createDog(library.material);
+  dog.updateMatrixWorld(true);
+  box.setFromObject(dog);
+  const size = box.getSize(new T.Vector3()),
+    trunk = new T.Box3().setFromObject(dog.children.find((m) => m.isMesh && m.castShadow)).getSize(new T.Vector3());
+  assert(trunk.z > 0.3 && trunk.z < 0.4 && size.z < 0.62 && box.max.y < 0.33 && Math.abs(box.min.y) < 0.004, `The dog is ${size.toArray().map((v) => v.toFixed(2)).join(' x ')}.`);
+}
+// The Wellington statue as built (before batching, at its own origin): the bronze stands on its
+// plate, touching it only over the plate (in at least three of its corners: three hooves down, one
+// lifted) and all of it over the cornice's top; the cone rests on the Duke's head; the bronze's colours are no
+// louder than palette.bronze; and the whole statue costs at most 26k triangles.
+{
+  const { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    { palette } = await load('town-shared'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    root = createProps(ctx, createKit(ctx)).wellington(new T.Group());
+  root.position.set(0, 0, 0);
+  root.rotation.set(0, 0, 0);
+  root.updateMatrixWorld(true);
+  const meshes = [];
+  root.traverse((o) => o.isMesh && meshes.push(o));
+  const count = (m) => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3,
+    bronze = meshes.filter((m) => m.material.userData.surfaceKind === 'iron').sort((a, b) => count(b) - count(a))[0],
+    plate = meshes.find((m) => m.userData.band),
+    plateBox = new T.Box3().setFromObject(plate),
+    cast = new T.Box3().setFromObject(bronze);
+  assert(meshes.reduce((n, m) => n + count(m), 0) <= 26000, 'The statue costs more than 26k triangles.');
+  assert(Math.abs(cast.min.y - plateBox.max.y) < 0.006, `The bronze's lowest point is ${(cast.min.y - plateBox.max.y).toFixed(3)} off the plate.`);
+  assert(cast.min.x > -0.65 && cast.max.x < 0.65 && cast.min.z > -1.05 && cast.max.z < 1.05, 'The bronze overhangs the cornice.');
+  const p = bronze.geometry.getAttribute('position'),
+    v = new T.Vector3(),
+    corners = new Set();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).applyMatrix4(bronze.matrixWorld);
+    if (v.y > plateBox.max.y + 0.012) continue;
+    assert(v.x > plateBox.min.x && v.x < plateBox.max.x && v.z > plateBox.min.z && v.z < plateBox.max.z, 'The bronze touches down off its plate.');
+    corners.add(`${Math.sign(v.x)}${Math.sign(v.z)}`);
+  }
+  assert(corners.size >= 3, `Only ${corners.size} of the horse's corners stand on the plate.`);
+  const hat = meshes.filter((m) => m.material.userData.surfaceKind === 'enamel'),
+    cone = new T.Box3();
+  for (const m of hat) cone.expandByObject(m);
+  assert(cone.min.y - cast.max.y > -0.045 && cone.min.y - cast.max.y < 0.01, `The cone's foot is ${(cone.min.y - cast.max.y).toFixed(3)} from the top of the Duke's head.`);
+  const c = bronze.geometry.getAttribute('color'),
+    hsv = (col) => {
+      const max = Math.max(col.r, col.g, col.b);
+      return max ? (max - Math.min(col.r, col.g, col.b)) / max : 0;
+    },
+    limit = hsv(new T.Color(palette.bronze).convertLinearToSRGB()),
+    colour = new T.Color();
+  for (let i = 0; i < c.count; i += 5) assert(hsv(colour.fromBufferAttribute(c, i).convertLinearToSRGB()) <= limit + 1e-3, 'The bronze is louder than palette.bronze.');
 }
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
