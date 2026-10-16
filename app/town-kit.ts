@@ -76,8 +76,12 @@ const ivyWall = (spec: IvySpec, y: number) => {
  * The ivy's woody stems, in the wall's plan: one rooted below the ground in each area that
  * starts at the ground (two in a wide one, none closer than 0.3 to another), climbing with a
  * gentle wander while it stays inside the areas, below their tops and 0.06 clear of every `keep`
- * box, and stopping short of the top; each sends out one side shoot. Each stem is its points
- * (x, y) from the root up; the shoots come after the stems.
+ * box, and stopping short of the top; each sends out one side shoot. Where stems climb into a
+ * raised band (an area off the ground at least twice as wide as it is tall, like the run under a
+ * cornice) they turn into runners along it with a gentle wave, the leftmost running both ways
+ * and each of the others to the right until it meets the next or leaves the band, so the band's
+ * leaves hang from a stem instead of floating in tufts. Each is its points (x, y) from where it
+ * starts.
  */
 export function ivyStems(spec: IvySpec) {
   const h = (n: number) => plan.hash(spec.seed * 53 + n),
@@ -104,7 +108,26 @@ export function ivyStems(spec: IvySpec) {
     const from = pts[Math.floor(pts.length * (0.35 + 0.3 * h(k * 7 + 3)))];
     return climb(from[0], from[1], (h(k * 7 + 4) < 0.5 ? -1 : 1) * 0.75, k * 7 + 5, 6);
   });
-  return [...stems, ...shoots.filter((p) => p.length >= 3)];
+  const runners: [number, number][][] = [];
+  for (const [a, b, c, d] of spec.areas) {
+    if (b < 0.01 || c - a < 2 * (d - b)) continue;
+    const tops = stems.map((pts) => pts[pts.length - 1]).filter(([x, y]) => x > a && x < c && y > b - 0.15).sort((p, q) => p[0] - q[0]);
+    tops.forEach(([sx, sy], k) => {
+      const y0 = Math.min(Math.max(sy, b + 0.1), d - 0.16),
+        run = (dir: number, stop: number) => {
+          const pts: [number, number][] = [[sx, sy]];
+          for (let x = sx + dir * 0.07, i = 0; i < 60 && dir * (stop - x) > 0; i++, x += dir * 0.07) {
+            const y = y0 + 0.025 * Math.sin(x * 7.3 + h(k * 7 + 9) * 6);
+            if (!ok(x, y)) break;
+            pts.push([x, y]);
+          }
+          if (pts.length >= 3) runners.push(pts);
+        };
+      if (k === 0) run(-1, a);
+      run(1, k + 1 < tops.length ? tops[k + 1][0] - 0.05 : c);
+    });
+  }
+  return { stems, shoots: shoots.filter((p) => p.length >= 3), runners };
 }
 /** Ivy clumps' spacing on the wall: one clump about every 0.24, each about 0.4 to 0.5 across, so they overlap into one lumpy mass. */
 const IVY_STEP = 0.24;
@@ -630,7 +653,8 @@ export function createKit(ctx: TownContext) {
    *   stay green) with a small jitter of its own, darker low on the wall and deeper in the mass;
    *   they cast no shadow, so no speckle of leaf shadows sits on the wall or the mass;
    * - a few woody stems (ivyStems) on the wall, showing at the foot, where the leaves thin out
-   *   beside them, and through the gaps.
+   *   beside them, and through the gaps; runners carry a ragged string of leaves along a band
+   *   (under the archive's cornice) between its tufts.
    * Leaves and stems keep `keep` clear by their whole reach.
    */
   function ivy(g: T.Object3D, spec: IvySpec) {
@@ -681,8 +705,10 @@ export function createKit(ctx: TownContext) {
       }
       return z;
     };
-    const stems = ivyStems(spec),
-      feet = stems.map((p) => p[0]).filter(([, y]) => y < 0),
+    const { stems: climbers, shoots, runners } = ivyStems(spec),
+      stems = [...climbers, ...shoots, ...runners],
+      feet = climbers.map((p) => p[0]),
+      wallOut = new T.Vector3(0, 0, 1),
       x0 = Math.min(...spec.areas.map((a) => a[0])), x1 = Math.max(...spec.areas.map((a) => a[2])),
       y0 = Math.min(...spec.areas.map((a) => a[1])), y1 = Math.max(...spec.areas.map((a) => a[3])),
       STEP = 0.074,
@@ -697,9 +723,13 @@ export function createKit(ctx: TownContext) {
         const px = x0 - 0.1 + (col + (row % 2) * 0.5) * STEP + (h(k * 5) - 0.5) * 0.05,
           py = y + (h(k * 5 + 1) - 0.5) * 0.04;
         if (px > x1 + 0.1) break;
-        // Inside the clumps' reach, with a ragged rim.
+        // Inside the clumps' reach, with a ragged rim, or (most of the way) along a runner.
         const reach = 1 + 0.36 * (noise2(px * 5 + spec.seed, py * 5 - spec.seed) - 0.5);
-        if (!lumps.some((l) => Math.hypot(px - l.x, (py - l.y) / 0.85) < l.r * reach)) continue;
+        if (
+          !lumps.some((l) => Math.hypot(px - l.x, (py - l.y) / 0.85) < l.r * reach) &&
+          !(h(k * 5 + 6) < 0.8 && runners.some((run) => run.some(([x, y]) => Math.abs(px - x) < 0.05 && Math.abs(py - y) < 0.075)))
+        )
+          continue;
         // A leaf that would reach a keep box comes smaller (down to 0.07) or not at all.
         const clear = (r: number) => !spec.keep.some(([a, b, cc, d]) => px + r > a && px - r < cc && py + r > b && py - r < d);
         let size = 0.075 + 0.035 * h(k * 5 + 2);
@@ -722,7 +752,9 @@ export function createKit(ctx: TownContext) {
         for (let i = 0; i < LEAF.shade.length; i++) {
           v.fromArray(LEAF.position, i * 3).applyMatrix4(m4);
           position.push(v.x, v.y, v.z);
-          v.fromArray(LEAF.normal, i * 3).applyQuaternion(q);
+          // A third of the way to the wall's own normal: leaves turned every way would each take a
+          // different light, and that speckle twinkles when the camera pans.
+          v.fromArray(LEAF.normal, i * 3).applyQuaternion(q).lerp(wallOut, 0.35).normalize();
           normal.push(v.x, v.y, v.z);
           const f = value * LEAF.shade[i];
           colour.push(c.r * f, c.g * f, c.b * f);
@@ -744,7 +776,7 @@ export function createKit(ctx: TownContext) {
       const path = new T.CatmullRomCurve3(pts.map(([x, y]) => new T.Vector3(x, y, 0))),
         rows = Math.max(4, Math.round(pts.length * 1.5)),
         radial = 5,
-        thick = s < feet.length ? 1 : 0.6, // the side shoots come after the stems
+        thick = s < climbers.length ? 1 : 0.6, // the side shoots and runners come after the stems
         out: number[] = [],
         tris: number[] = [];
       for (let i = 0; i <= rows; i++) {
