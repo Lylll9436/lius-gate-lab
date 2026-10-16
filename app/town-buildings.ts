@@ -419,11 +419,13 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
   /**
    * An archive window on a wall face at z (local +z out of the wall): the glass set back near the
    * wall in a slim iron frame, cast-iron glazing bars (a mullion, a transom at the springing and
-   * two head bars, so the arch is a fan of four lights), and a deep sandstone surround (0.24 proud,
+   * two head bars, so the arch is a fan of four lights), and a deep sandstone surround (0.2 proud,
    * so the reveal reads): plain jambs, imposts on the string course's line, six voussoirs and a
    * tapered keystone, and a sill whose front overhangs a narrower bed, a drip line under its lip.
    * Everything stays within 0.70 of the middle and between 0.88 and 3.2 high for a 0.9 x 1.3
-   * window at 1.75 (the ivy's keep boxes). Returns the pane (night lights).
+   * window at 1.75 (the ivy's keep boxes), and at most 0.24 out of the wall (the keystone, the
+   * sill and the imposts): on the side walls that is the cornice's reach, so the building's
+   * bounds, hit box and framing stay as they were. Returns the pane (night lights).
    */
   function archWindow(g: T.Object3D, x: number, y: number, z: number, w: number, h: number) {
     const r = w / 2,
@@ -432,7 +434,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       R0 = r + f,
       R1 = R0 + 0.17,
       jamb = 0.15,
-      deep = 0.24,
+      deep = 0.2,
       foot = y - h / 2 - f;
     const ring = frameRing(g, x, y, z + 0.02, w, h, f, 0.1, palette.metal, 'iron', true);
     // The pane stays where windowAt put it (0.06 out): its centre seeds its night light.
@@ -453,9 +455,9 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     );
     const stone: Piece[] = [
       ...voussoirs(R0, R1, deep, [x, spring, z]),
-      { geometry: keystone(R0 - 0.03, R1 + 0.1, 0.18, 0.28, deep + 0.06), at: [x, spring, z] },
-      { geometry: chamfered(2 * (R0 + jamb + 0.02), 0.09, 0.27), at: [x, foot - 0.045, z + 0.135] }, // sill
-      { geometry: chamfered(2 * (R0 + jamb) - 0.06, 0.06, 0.2), at: [x, foot - 0.12, z + 0.1] }, // its bed, under the drip
+      { geometry: keystone(R0 - 0.03, R1 + 0.1, 0.18, 0.28, deep + 0.04), at: [x, spring, z] },
+      { geometry: chamfered(2 * (R0 + jamb + 0.02), 0.09, 0.24), at: [x, foot - 0.045, z + 0.12] }, // sill
+      { geometry: chamfered(2 * (R0 + jamb) - 0.06, 0.06, 0.17), at: [x, foot - 0.12, z + 0.085] }, // its bed, under the drip
     ];
     for (const s of [-1, 1]) {
       stone.push({ geometry: chamfered(jamb, spring - 0.12 - foot, deep), at: [x + s * (R0 + jamb / 2), (foot + spring - 0.12) / 2, z + deep / 2] });
@@ -722,7 +724,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     // A fat stack rising through the first tooth in a lead collar dressed to the slope: a blonde
     // band, a crown corbelled out in two chunky brick courses (0.07 each, so each top catches a
     // line of light), a weathered sandstone cap with a drip and two chimney pots (the taller one's
-    // rim at 8.07, under the old cap's 8.1, so the bounds stay put).
+    // rim at 8.1, the old cap's height, so the bounds stay put).
     cylinder(shell, -2.5, 5.5, -1.8, 0.41, 0.48, 3.3, palette.brick, 'stone');
     // (The collar is matte: in iron's finish its sunlit top read as a pale washer.)
     cylinder(shell, -2.5, y0 + f + ((R - f) * (-2.5 + Wr / 2)) / bw + 0.02, -1.8, 0.6, 0.6, 0.05, palette.lead, 'slate').rotation.z = slope;
@@ -731,7 +733,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     cylinder(shell, -2.5, 7.52, -1.8, 0.5, 0.61, 0.14, palette.plinth, 'stone');
     cluster(
       shell,
-      [[-0.21, 0.42], [0.21, 0.33]].flatMap(([dx, h]): Piece[] => [
+      [[-0.21, 0.45], [0.21, 0.35]].flatMap(([dx, h]): Piece[] => [
         { geometry: new T.CylinderGeometry(0.12, 0.16, h, 14), at: [-2.5 + dx, 7.59 + h / 2, -1.8] },
         { geometry: new T.CylinderGeometry(0.145, 0.145, 0.06, 14), at: [-2.5 + dx, 7.62 + h, -1.8] },
       ]),
