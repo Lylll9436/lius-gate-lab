@@ -205,7 +205,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   moorland(land, trees);
   plan.flock.forEach((spec, i) => blackfaceSheep(land, spec, i));
   standingStoneRing(land);
+  yield 'park, harbour and moorland';
+  // The statue's bronze is sculpted from distance grids (tens of ms), so it is a phase of its own.
   wellington(land);
+  yield 'the Wellington statue';
   hotAirBalloon(city);
   highlandPaddock(land);
   yield 'park, harbour and landmarks';

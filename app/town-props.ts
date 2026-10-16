@@ -9,13 +9,25 @@ import {
   type TownContext,
 } from './town-shared';
 import type { Kit } from './town-kit';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { ellipsoid, mouldedBlock, noise3, roundBox, roundCone, sculpt, squashX, strand, torus, within } from './town-sculpt';
+
+/**
+ * The Wellington statue's materials: grey granite (a shade lighter on the cornice and the
+ * panels) and the bronze's patina, its verdigris (no more saturated than the copper roofs) and
+ * the worn bright bronze where it is rubbed (no more saturated than palette.bronze).
+ */
+const STATUE = {
+  granite: '#aca598', cornice: '#b2ab9e', panel: '#b2ab9e',
+  plate: '#575645', patina: '#735f46', verdigris: '#7fae9c', worn: '#a8865a',
+};
 
 /* ------------------------------------------------------------------ */
 /* Furniture, planting, small things                                   */
 /* ------------------------------------------------------------------ */
 export function createProps(ctx: TownContext, kit: Kit) {
   const { material, lamps, animated } = ctx;
-  const { box, cylinder, cone, sphere, lampGlass } = kit;
+  const { box, cylinder, cone, lampGlass } = kit;
   /** A chunky bench: two leg slabs with back posts, one seat slab and one back board. */
   function bench(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
     const b = new T.Group(); b.position.set(x, y, z); b.rotation.y = ry; g.add(b);
@@ -315,13 +327,19 @@ export function createProps(ctx: TownContext, kit: Kit) {
     return rug;
   }
   /**
-   * The Duke of Wellington as Glasgow knows him: a dark bronze rider on a chunky standing horse, an
-   * orange traffic cone on his head, on a plain stone plinth (a base course, a battered die and a
-   * cornice; no inscription) over a 12-sided paved pad. About 3.6 to the cone's tip.
+   * The Duke of Wellington as Glasgow knows him: a bronze rider on a walking horse, an orange
+   * traffic cone on his head, on a grey granite plinth over a 12-sided paved pad (about 3.6 to the
+   * cone's tip). The bronze is sculpted (town-sculpt.ts): the horse's barrel, arched neck and
+   * bowed head, its legs (the near foreleg lifted mid-stride) and its tail are blended solids, as
+   * is the Duke in his cloak and riding boots, one hand on the reins and the other resting on his
+   * thigh, all one closed casting on a bronze base plate. Its colour is painted on the vertices:
+   * a dark patina, verdigris settled on the tops and in the hollows (and a little run down the
+   * flanks), and the bright bronze the hands of passers-by have rubbed on the horse's knees and
+   * muzzle and the Duke's boot toes. The plinth has a base moulding, a die with a plain raised
+   * panel on each face (no inscription), and a cornice whose top the plate stands on.
    */
   function wellington(g: T.Object3D) {
-    const [x, z] = plan.statueSpot,
-      bronze = '#5f5a4a'; // dark, cool bronze (s 0.22) on the iron finish: half metal, so the sun still models it
+    const [x, z] = plan.statueSpot;
     const root = new T.Group();
     root.position.set(x, 0, z);
     root.rotation.y = plan.statueHeading;
@@ -330,52 +348,301 @@ export function createProps(ctx: TownContext, kit: Kit) {
     pad.position.y = 0.05;
     pad.receiveShadow = true;
     root.add(pad);
-    box(root, 0, 0.21, 0, 1.5, 0.22, 2.3, palette.plinth, 'stone'); // base course 0.10..0.32
-    box(root, 0, 0.795, 0, 1.2, 0.95, 2.0, palette.blonde, 'stone', { taper: 0.05 }); // die 0.32..1.27
-    box(root, 0, 1.35, 0, 1.38, 0.16, 2.18, palette.trim, 'stone'); // cornice 1.27..1.43
-    const y0 = 1.43;
-    // The horse, chunky and nose to the hall steps: a deep barrel on short, stout legs (the near
-    // foreleg stepping forward), the neck leaning well forward and the head bowed.
-    for (const sx of [-0.16, 0.16])
-      for (const sz of [-0.42, 0.42]) {
-        const step = sx > 0 && sz > 0 ? 0.18 : 0;
-        box(root, sx, y0 + 0.28, sz + step * 0.25, 0.17, 0.56, 0.17, bronze, 'iron', { rx: -step }); // leg
-      }
-    box(root, 0, y0 + 0.78, 0, 0.56, 0.56, 1.3, bronze, 'iron', { bevel: 0.18 }); // barrel
-    const neck = new T.Group();
-    neck.position.set(0, y0 + 0.92, 0.48);
-    neck.rotation.x = 0.75;
-    root.add(neck);
-    box(neck, 0, 0.22, 0, 0.32, 0.55, 0.34, bronze, 'iron');
-    box(neck, 0, 0.24, -0.17, 0.07, 0.5, 0.07, bronze, 'iron'); // mane
-    const head = new T.Group();
-    head.position.set(0, y0 + 1.3, 0.82);
-    head.rotation.x = 1.0;
-    root.add(head);
-    box(head, 0, 0.02, 0.12, 0.24, 0.26, 0.5, bronze, 'iron'); // head, nose down
-    for (const s of [-1, 1]) box(head, s * 0.07, 0.16, -0.1, 0.05, 0.12, 0.05, bronze, 'iron', { rx: -0.8 }); // ear, upright on the poll
-    const tail = new T.Group();
-    tail.position.set(0, y0 + 0.95, -0.64);
-    tail.rotation.x = -0.3;
-    root.add(tail);
-    box(tail, 0, -0.22, 0, 0.1, 0.45, 0.12, bronze, 'iron');
-    // The rider, smaller than the horse: saddle cloth, legs down the flanks, torso, arms forward to the reins, head.
-    box(root, 0, y0 + 1.07, -0.05, 0.64, 0.04, 0.5, bronze, 'iron');
+    const solid = (geometry: T.BufferGeometry, colour: string, kind: SurfaceKind) => {
+      const m = new T.Mesh(geometry, material(colour, kind));
+      m.castShadow = m.receiveShadow = true;
+      root.add(m);
+      return m;
+    };
+    // The plinth: a plain base block with a torus and a cove up to the die (battered 0.01), and a
+    // cornice (cove, corona, rounded top edge) in its own mesh, which batching takes as the
+    // overhang that shades the die's head.
+    const [HX, HZ] = [0.75, 1.15],
+      y0 = 1.43;
+    solid(mouldedBlock(HX, HZ, [
+      { s: 0, y: 0.1, sharp: true }, { s: 0, y: 0.22, sharp: true }, { s: 0.03, y: 0.22, sharp: true },
+      { s: 0.042, y: 0.235 }, { s: 0.036, y: 0.26 }, { s: 0.046, y: 0.284 }, { s: 0.07, y: 0.298, sharp: true },
+      { s: 0.1, y: 0.305 }, { s: 0.12, y: 0.33 }, { s: 0.13, y: 0.36, sharp: true }, { s: 0.14, y: 1.2, sharp: true },
+    ]), STATUE.granite, 'stone');
+    solid(mouldedBlock(HX, HZ, [
+      { s: 0.15, y: 1.19, sharp: true }, { s: 0.135, y: 1.215 }, { s: 0.11, y: 1.245 }, { s: 0.08, y: 1.27 },
+      { s: 0.06, y: 1.285, sharp: true }, { s: 0.06, y: 1.37, sharp: true }, { s: 0.072, y: 1.405 }, { s: 0.1, y: y0, sharp: true },
+    ]), STATUE.cornice, 'stone');
+    // A plain raised panel on each face of the die (0.035 proud, bevelled), never lettered.
     for (const s of [-1, 1]) {
-      box(root, s * 0.31, y0 + 0.88, 0.04, 0.14, 0.4, 0.18, bronze, 'iron'); // leg
-      box(root, s * 0.21, y0 + 1.3, 0.06, 0.1, 0.32, 0.12, bronze, 'iron', { rx: -0.6 }); // arm, hands forward to the reins
+      box(root, s * 0.612, 0.78, 0, 0.07, 0.56, 1.5, STATUE.panel, 'stone', { bevel: 0.025 });
+      box(root, 0, 0.78, s * 1.012, 0.86, 0.56, 0.07, STATUE.panel, 'stone', { bevel: 0.025 });
     }
-    box(root, 0, y0 + 1.31, -0.05, 0.34, 0.45, 0.25, bronze, 'iron'); // torso
-    sphere(root, 0, y0 + 1.67, -0.03, 0.15, bronze, 'iron');
-    // The cone, knocked a little askew: a square foot, the cone and its white band.
+    // The bronze plate the horse stands on (a band, so batching never takes it for an overhang).
+    box(root, 0, y0 + 0.02, 0, 0.64, 0.06, 1.36, STATUE.plate, 'iron', { bevel: 0.025 }).userData.band = true;
+    const casting = bronzeCasting(),
+      bronze = solid(casting.geometry, '#ffffff', 'iron');
+    bronze.position.y = y0 + 0.05;
+    // The cone, knocked askew on the Duke's head: an orange square foot, the cone and its white band.
     const hat = new T.Group();
-    hat.position.set(0, y0 + 1.79, -0.03);
-    hat.rotation.z = 0.15;
+    hat.position.set(casting.crown[0], y0 + 0.05 + casting.crown[1] + 0.004, casting.crown[2]);
+    hat.rotation.set(-0.08, 0, 0.17);
     root.add(hat);
-    box(hat, 0, 0.015, 0, 0.28, 0.03, 0.28, palette.tramOrange, 'enamel');
-    cone(hat, 0, 0.21, 0, 0.15, 0.36, palette.tramOrange, 'enamel', 12, 0);
-    cylinder(hat, 0, 0.03 + 0.4 * 0.36, 0, 0.105, 0.105, 0.06, palette.white, 'enamel', 12);
+    box(hat, 0, 0.012, 0, 0.27, 0.03, 0.27, palette.tramOrange, 'enamel', { bevel: 0.012 });
+    const coneShape = (r0: number, r1: number, y0c: number, y1c: number) =>
+      new T.LatheGeometry([[0, y0c], [r0, y0c], [r0 * 0.98, y0c + 0.008], [r1 * 1.02, y1c - 0.008], [r1, y1c], [0, y1c]].map(([r, y]) => new T.Vector2(r, y)), 20);
+    const conePart = (r0: number, r1: number, a: number, b: number, colour: string) => {
+      const m = new T.Mesh(coneShape(r0, r1, a, b), material(colour, 'enamel'));
+      m.castShadow = m.receiveShadow = true;
+      hat.add(m);
+    };
+    // Height 0.36 from r 0.105 at y 0.025 to a rounded tip: the band stands 0.004 proud between 0.15 and 0.215.
+    const rAt = (y: number) => 0.105 + (0.016 - 0.105) * ((y - 0.025) / 0.335);
+    conePart(0.105, 0.016, 0.025, 0.36, palette.tramOrange);
+    conePart(rAt(0.15) + 0.004, rAt(0.215) + 0.004, 0.15, 0.215, palette.white);
     return root;
+  }
+  /**
+   * The casting's geometry in the plate's frame (y 0 on its top, the horse facing +z, its near
+   * side +x, the side the opening view sees), its colour on the vertices. The sculpt grid is
+   * 0.025: finer things (the ears, the bridle, the reins, the stirrups and their leathers) are
+   * small meshes of their own, merged in.
+   */
+  function bronzeCasting() {
+    type V = [number, number, number];
+    const add = (a: V, b: V, k = 1): V => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+    const G = 0.025,
+      lo: V = [-0.38, -0.04, -0.94],
+      hi: V = [0.38, 1.86, 1.08];
+    const horse = sculpt(lo, hi, G);
+    // The body, compact and deep, Clash-chunky: barrel, chest and croup, the two lobes of the
+    // breast, the withers and the dock; then the haunches and the sloped shoulders on each side.
+    horse
+      .add(ellipsoid([0, 0.74, -0.02], [0.2, 0.225, 0.42]))
+      .add(ellipsoid([0, 0.75, 0.27], [0.19, 0.235, 0.22]), 0.1)
+      .add(ellipsoid([0, 0.79, -0.33], [0.195, 0.23, 0.25]), 0.1)
+      .add(ellipsoid([0, 0.92, 0.2], [0.075, 0.07, 0.16]), 0.08)
+      .add(ellipsoid([0, 0.93, -0.55], [0.06, 0.065, 0.07]), 0.06);
+    for (const s of [-1, 1])
+      horse
+        .add(ellipsoid([s * 0.07, 0.66, 0.43], [0.085, 0.11, 0.075]), 0.06)
+        .add(ellipsoid([s * 0.085, 0.76, -0.37], [0.125, 0.2, 0.21]), 0.08)
+        .add(ellipsoid([s * 0.095, 0.76, 0.3], [0.105, 0.2, 0.12], [-0.35, 0, 0]), 0.06);
+    // A saddle cloth over the barrel (a rounded outline, a soft rolled edge) and a girth under it,
+    // laid over the body as blended so far; the saddle itself, with its pommel and cantle.
+    horse
+      .layer(roundBox([0, 0.83, -0.06], [0.32, 0.17, 0.26], 0.12), 0.03, 0.05)
+      .layer(roundBox([0, 0.5, 0.13], [0.32, 0.25, 0.035], 0.02), 0.022, 0.025)
+      .add(ellipsoid([0, 0.975, -0.06], [0.165, 0.06, 0.21]), 0.03)
+      .add(ellipsoid([0, 1.03, -0.22], [0.12, 0.05, 0.05]), 0.03)
+      .add(ellipsoid([0, 1.02, 0.12], [0.07, 0.045, 0.045]), 0.03);
+    // The neck, arched, thick and deeper than it is wide.
+    const N: V[] = [[0, 0.84, 0.36], [0, 1.05, 0.5], [0, 1.22, 0.6], [0, 1.34, 0.65]],
+      NR = [0.175, 0.15, 0.12, 0.1];
+    horse.add(squashX(strand(N, NR), 0.74), 0.1);
+    // The head, big and bowed: P the poll, D from the poll to the muzzle's tip, F the way the face looks.
+    const P: V = [0, 1.37, 0.67],
+      D: V = [0, -0.3, 0.25],
+      F: V = [0, 0.64, 0.768],
+      H = (t: number, f = 0, side = 0): V => add(add(add(P, D, t), F, f), [side, 0, 0]),
+      tilt: V = [0.876, 0, 0];
+    horse
+      .add(ellipsoid(H(0.14, 0.0), [0.1, 0.1, 0.125], tilt), 0.07) // cranium
+      .add(ellipsoid(H(0.42, -0.08), [0.092, 0.1, 0.1], tilt), 0.05) // the round jowl
+      .add(squashX(roundCone(H(0.18, 0.02), H(0.82), 0.078, 0.062), 0.86), 0.05) // the face
+      .add(ellipsoid(H(0.86, -0.025), [0.074, 0.07, 0.082], tilt), 0.04) // muzzle
+      .add(ellipsoid(H(0.84, -0.1), [0.05, 0.035, 0.052], tilt), 0.025) // lower lip
+      .add(ellipsoid(H(0.05, 0.075), [0.042, 0.024, 0.06], tilt), 0.02); // the forelock
+    for (const s of [-1, 1])
+      horse
+        .add(ellipsoid(H(0.9, 0.0, s * 0.045), [0.026, 0.03, 0.028], tilt), 0.015) // flared nostrils
+        .add(ellipsoid(H(0.26, 0.03, s * 0.083), [0.024, 0.03, 0.036], tilt), 0.012) // eyes
+        .add(ellipsoid(H(0.2, 0.06, s * 0.07), [0.026, 0.018, 0.045], tilt), 0.015); // brows
+    // The mane: a rolled crest from poll to withers and six broad locks along it, each leaning a
+    // little to the off side, so the crest's line is scalloped.
+    const crest = (t: number): V => {
+      const u = t * (N.length - 1),
+        i = Math.min(N.length - 2, Math.floor(u)),
+        f = u - i,
+        a = N[i],
+        b = N[i + 1],
+        r = NR[i] + (NR[i + 1] - NR[i]) * f,
+        l = Math.hypot(b[1] - a[1], b[2] - a[2]);
+      return add(add(a, [0, b[1] - a[1], b[2] - a[2]], f), [0, (b[2] - a[2]) / l, -(b[1] - a[1]) / l], r * 0.86);
+    };
+    horse.add(strand([0.98, 0.7, 0.4, 0.08].map(crest), [0.032, 0.04, 0.044, 0.036]), 0.04);
+    for (let i = 0; i < 6; i++) {
+      const c = crest(0.93 - i * 0.165);
+      horse.add(ellipsoid(add(c, [-0.014, 0.012, 0]), [0.034, 0.05, 0.055], [-0.55, 0, 0.35]), 0.03);
+    }
+    // The legs through their joints, each one smooth strand: forearm or gaskin, knee or hock,
+    // cannon, fetlock and pastern; the knees and fetlocks rounded out and the hooves flat-soled.
+    // The off foreleg (-x, the side the opening view sees) is lifted mid-stride, its knee forward
+    // and its hoof tucked back.
+    const hoof = (a: V, b: V, flat: boolean) => {
+      const c = roundCone(a, b, 0.05, 0.066);
+      horse.add(flat ? within(c, roundBox([b[0], 0.08, b[2]], [0.12, 0.08, 0.12], 0), 0.012) : c, 0.015);
+    };
+    const leg = (pts: V[], r: number[], flat: boolean) => {
+      horse.add(strand(pts.slice(0, -1), r), 0.08);
+      horse.add(ellipsoid(pts[2], [0.062, 0.066, 0.066]), 0.03).add(ellipsoid(pts[3], [0.054, 0.052, 0.058]), 0.02);
+      hoof(pts[pts.length - 2], pts[pts.length - 1], flat);
+    };
+    leg([[0.1, 0.66, 0.31], [0.1, 0.5, 0.36], [0.1, 0.33, 0.38], [0.1, 0.12, 0.38], [0.1, 0.075, 0.405], [0.1, 0.0, 0.43]], [0.1, 0.08, 0.06, 0.052, 0.046], true);
+    leg([[-0.1, 0.66, 0.31], [-0.1, 0.52, 0.42], [-0.1, 0.42, 0.52], [-0.1, 0.22, 0.47], [-0.1, 0.175, 0.43], [-0.1, 0.12, 0.375]], [0.1, 0.08, 0.06, 0.052, 0.046], false);
+    // Hind: the gaskin from the stifle, the hock (and its point), the cannon and fetlock; the far one steps forward.
+    for (const [s, step] of [[-1, 0], [1, 0.07]] as const) {
+      const X = s * 0.11;
+      leg([[X, 0.68, -0.33], [X, 0.5, -0.27 + step * 0.4], [X, 0.32, -0.44 + step], [X, 0.12, -0.42 + step], [X, 0.075, -0.395 + step], [X, 0.0, -0.37 + step]], [0.11, 0.085, 0.06, 0.052, 0.046], true);
+      horse.add(ellipsoid([X, 0.34, -0.48 + step], [0.036, 0.04, 0.036]), 0.02);
+    }
+    // The tail: carried off the dock in an arch, then falling full to below the hocks in three
+    // locks that part a little towards their tips, grooved where they meet.
+    const TAIL: V[] = [[0, 0.93, -0.58], [0, 0.91, -0.68], [0, 0.8, -0.75], [0.01, 0.62, -0.765], [0.02, 0.45, -0.745], [0.03, 0.31, -0.71]];
+    horse.add(strand(TAIL, [0.05, 0.055, 0.06, 0.062, 0.054, 0.036]), 0.05);
+    for (const s of [-1, 1])
+      horse.add(strand(TAIL.slice(2).map((p, i): V => add(p, [s * (0.03 + 0.016 * i), 0.012 * i * (s + 2) - 0.01, -0.006 * i])), [0.05, 0.052, 0.044, 0.03]), 0.015);
+    // The Duke, chunky, with a big head: seat, coat and chest, square shoulders under a cloak that
+    // hangs down his back and spreads over the croup, a high collar, and a round head
+    // with a strong nose, a brow, ears and hair under the cone; his coat's skirts fall over the saddle.
+    const duke = sculpt(lo, hi, G);
+    duke
+      .add(ellipsoid([0, 1.07, -0.07], [0.14, 0.08, 0.13]))
+      .add(roundCone([0, 1.12, -0.07], [0, 1.3, -0.06], 0.112, 0.12), 0.05)
+      .add(ellipsoid([0, 1.29, -0.035], [0.12, 0.09, 0.09]), 0.04);
+    for (const s of [-1, 1])
+      duke
+        .add(ellipsoid([s * 0.122, 1.35, -0.06], [0.066, 0.055, 0.066]), 0.04) // shoulder
+        .add(roundBox([s * 0.15, 0.99, -0.1], [0.022, 0.09, 0.1], 0.02, [0.1, 0, s * 0.3]), 0.025); // coat skirt
+    // The cloak: a layer over his back and shoulders, its hem spread on the croup behind the saddle.
+    duke
+      .layer(roundBox([0, 1.22, -0.2], [0.24, 0.25, 0.15], 0.06), 0.028, 0.04)
+      .add(ellipsoid([0, 1.0, -0.26], [0.19, 0.065, 0.13]), 0.07);
+    duke
+      .add(torus([0, 1.405, -0.06], 0.06, 0.03), 0.015) // high collar
+      .add(roundCone([0, 1.4, -0.05], [0, 1.46, -0.04], 0.05, 0.05), 0.02) // neck
+      .add(ellipsoid([0, 1.565, -0.03], [0.11, 0.12, 0.11]), 0.03) // head
+      .add(ellipsoid([0, 1.49, 0.01], [0.08, 0.058, 0.08]), 0.04) // jaw and chin
+      .add(ellipsoid([0, 1.576, 0.068], [0.064, 0.014, 0.022]), 0.02) // brow
+      .add(roundCone([0, 1.548, 0.088], [0, 1.522, 0.116], 0.018, 0.022), 0.014) // the nose
+      .add(ellipsoid([0, 1.585, -0.065], [0.112, 0.1, 0.09]), 0.02); // hair
+    for (const s of [-1, 1]) {
+      duke
+        .add(ellipsoid([s * 0.107, 1.545, -0.03], [0.018, 0.03, 0.022]), 0.01) // ear
+        // Thigh down the flank to the knee, a riding boot with its wide top, and the foot in the stirrup.
+        .add(roundCone([s * 0.08, 1.07, -0.04], [s * 0.215, 0.93, 0.12], 0.075, 0.062), 0.04)
+        .add(ellipsoid([s * 0.215, 0.93, 0.12], [0.064, 0.064, 0.064]), 0.03)
+        .add(roundCone([s * 0.22, 0.92, 0.12], [s * 0.262, 0.68, 0.07], 0.058, 0.05), 0.02)
+        .add(ellipsoid([s * 0.222, 0.875, 0.11], [0.074, 0.045, 0.074]), 0.015)
+        .add(ellipsoid([s * 0.27, 0.64, 0.12], [0.05, 0.045, 0.1]), 0.03);
+    }
+    // Left hand (+x) on the reins over the withers, the right arm resting, its fist on his thigh;
+    // both in gauntlets with a flared cuff.
+    const arm = (pts: V[], fist: V) => {
+      duke
+        .add(strand(pts, [0.058, 0.05, 0.042]), 0.035)
+        .add(ellipsoid(add(pts[2], add(fist, pts[2], -1), -0.4), [0.05, 0.05, 0.05]), 0.015)
+        .add(ellipsoid(fist, [0.046, 0.044, 0.05]), 0.015);
+    };
+    arm([[0.14, 1.35, -0.06], [0.2, 1.2, -0.02], [0.115, 1.15, 0.14]], [0.095, 1.15, 0.18]);
+    arm([[-0.14, 1.35, -0.06], [-0.21, 1.19, -0.08], [-0.2, 1.07, 0.05]], [-0.19, 1.04, 0.1]);
+    horse.union(duke, 0.06);
+    const cast = horse.mesh();
+    // The top of his head, where the cone sits.
+    let top = 1.85;
+    while (top > 1.4 && horse.exact(0, top, -0.03) > 0) top -= 0.002;
+    // Small parts: the ears (pricked forward), the bridle (noseband, cheek straps, browband), the
+    // reins (bit to fist, clear of the neck) and the stirrups on their leathers.
+    const extras: T.BufferGeometry[] = [];
+    const ear = new T.LatheGeometry([[0, 0], [0.03, 0.022], [0.035, 0.055], [0.022, 0.095], [0.004, 0.124], [0, 0.126]].map(([r, y]) => new T.Vector2(r, y)), 8);
+    for (const s of [-1, 1]) {
+      const e = ear.clone().scale(1, 1, 0.6).applyMatrix4(new T.Matrix4().makeRotationFromEuler(new T.Euler(0.3, 0, -s * 0.25)));
+      const at = H(0.03, 0.04, s * 0.052);
+      extras.push(e.translate(at[0], at[1], at[2]));
+    }
+    /** Move a point along the field's gradient until it is gap from the casting (`out`: only ever outwards). */
+    const settle = (p: V, gap: number, out: boolean): V => {
+      let q = p;
+      for (let i = 0; i < 6; i++) {
+        const d = horse.exact(...q);
+        if (out ? d >= gap : Math.abs(d - gap) < 0.001) break;
+        const e = 0.01,
+          gx = horse.exact(q[0] + e, q[1], q[2]) - horse.exact(q[0] - e, q[1], q[2]),
+          gy = horse.exact(q[0], q[1] + e, q[2]) - horse.exact(q[0], q[1] - e, q[2]),
+          gz = horse.exact(q[0], q[1], q[2] + e) - horse.exact(q[0], q[1], q[2] - e),
+          l = Math.hypot(gx, gy, gz) || 1;
+        q = add(q, [gx / l, gy / l, gz / l], gap - d);
+      }
+      return q;
+    };
+    const away = (p: V, gap: number) => settle(p, gap, true),
+      onto = (p: V, gap: number) => settle(p, gap, false);
+    const tube = (pts: V[], r: number, closed = false, n = 16) =>
+      new T.TubeGeometry(new T.CatmullRomCurve3(pts.map((p) => new T.Vector3(...p)), closed, 'centripetal'), n, r, 5, closed);
+    /** A strap round the head at t along it, hugging the surface by gap. */
+    const band = (t: number, gap: number) =>
+      Array.from({ length: 10 }, (_, i): V => {
+        const a = (i / 10) * Math.PI * 2;
+        return onto(H(t, 0.11 * Math.cos(a), 0.11 * Math.sin(a)), gap);
+      });
+    extras.push(tube(band(0.62, 0.008), 0.011, true, 20)); // noseband
+    for (const s of [-1, 1]) {
+      extras.push(tube([onto(H(0.62, -0.02, s * 0.1), 0.008), onto(H(0.36, -0.03, s * 0.1), 0.008), onto(H(0.08, -0.02, s * 0.1), 0.008)], 0.011)); // cheek strap
+      // Each rein runs from the bit up the side of the neck to the left fist.
+      const bit = away(H(0.8, -0.06, s * 0.08), 0.004);
+      extras.push(new T.TorusGeometry(0.022, 0.007, 4, 10).rotateY(Math.PI / 2).translate(bit[0], bit[1], bit[2]));
+      extras.push(tube([bit, away(H(0.55, -0.1, s * 0.12), 0.03), away([s * 0.1, 1.17, 0.42], 0.03), [0.095 + s * 0.012, 1.15, 0.19]], 0.012, false, 20));
+      // The stirrup round the foot's ball, hung on its leather from the saddle's flap.
+      const foot: V = [s * 0.27, 0.6, 0.15];
+      extras.push(new T.TorusGeometry(0.06, 0.013, 5, 14).scale(1, 1, 0.8).translate(foot[0], foot[1] + 0.02, foot[2]));
+      extras.push(tube([away([s * 0.16, 0.95, -0.02], 0.004), away([s * 0.24, 0.78, 0.09], 0.012), [foot[0], foot[1] + 0.08, foot[2]]], 0.01, false, 10));
+    }
+    const rubbed: [V, number][] = [
+      [[0.1, 0.33, 0.39], 0.07], [[-0.1, 0.42, 0.54], 0.07], [H(0.92, 0), 0.07], // knees, the muzzle
+      [[0.27, 0.64, 0.21], 0.06], [[-0.27, 0.64, 0.21], 0.06], [[0.095, 1.15, 0.21], 0.05], // boot toes, the rein fist
+    ];
+    const geometry = mergeGeometries([cast, ...extras].map((p) => {
+      for (const n of Object.keys(p.attributes)) if (n !== 'position' && n !== 'normal') p.deleteAttribute(n);
+      patina(p, horse.sample, rubbed); // on the shared vertices, before they are split
+      return p.index ? p.toNonIndexed() : p;
+    }))!;
+    return { geometry, crown: [0, top, -0.03] as V };
+  }
+  /**
+   * The bronze's colour on its vertices: a dark warm patina, varied gently over the form; verdigris
+   * where rain sits (faces turned up) and in the hollows the field's own occlusion finds, run down
+   * the sides below in soft vertical streaks; the hollows darker still; and a worn bright bronze
+   * on the rubbed spots, fading out over their radius.
+   */
+  function patina(geometry: T.BufferGeometry, field: (x: number, y: number, z: number) => number, rubbed: [[number, number, number], number][]) {
+    const p = geometry.getAttribute('position'),
+      n = geometry.getAttribute('normal'),
+      out = new Float32Array(p.count * 3),
+      base = new T.Color(STATUE.patina),
+      green = new T.Color(STATUE.verdigris),
+      worn = new T.Color(STATUE.worn),
+      c = new T.Color(),
+      steps = [0.03, 0.07, 0.13, 0.22],
+      weights = [1, 0.75, 0.5, 0.35];
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i),
+        nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i);
+      let occ = 0, wsum = 0;
+      steps.forEach((d, k) => {
+        const f = Math.min(field(x + nx * d, y + ny * d, z + nz * d), d);
+        occ += weights[k] * T.MathUtils.clamp((d - f) / d, 0, 1);
+        wsum += weights[k];
+      });
+      // The plate's top occludes the hooves and the lowest tail.
+      const ao = (1 - occ / wsum) * T.MathUtils.lerp(0.6, 1, T.MathUtils.smoothstep(y, 0, 0.16) * 0.7 + 0.3 * (ny > 0 ? 1 : 0));
+      const up = T.MathUtils.smoothstep(ny, 0.3, 0.9),
+        side = 1 - T.MathUtils.smoothstep(Math.abs(ny), 0.35, 0.7),
+        // Streaks: narrow across, long down the form, only on the sides.
+        streak = T.MathUtils.smoothstep(noise3(x * 16 + z * 3, y * 1.3, z * 16 - x * 3), 0.55, 0.8) * side,
+        vg = T.MathUtils.clamp(0.9 * up * (0.45 + 0.55 * noise3(x * 6 + 3, y * 6, z * 6)) + 0.45 * Math.pow(1 - ao, 0.8) + 0.4 * streak, 0, 0.85);
+      c.copy(base).multiplyScalar(0.88 + 0.24 * noise3(x * 3.1, y * 3.1, z * 3.1)).lerp(green, vg);
+      c.multiplyScalar(T.MathUtils.lerp(0.5, 1, ao));
+      let rub = 0;
+      for (const [[cx, cy, cz], r] of rubbed) rub = Math.max(rub, T.MathUtils.smoothstep(r - Math.hypot(x - cx, y - cy, z - cz), 0, r * 0.8));
+      c.lerp(worn, rub * 0.6);
+      c.toArray(out, i * 3);
+    }
+    geometry.setAttribute('color', new T.BufferAttribute(out, 3));
   }
   return { bench, cycleHoop, lamp, trafficSignals, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington };
 }
