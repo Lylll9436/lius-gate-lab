@@ -1976,6 +1976,105 @@ for (const season of ['summer', 'winter'])
       }
     }
 }
+// The flora keeps its reading and its budget. From the opening bearing the round trees' fork
+// shows under the crown's rim (the crown leaves a gap toward the camera) and a birch's white trunk
+// shows under its crown, which hangs no lower than 1.15 x size; a rowan's berries and flower heads
+// sit on its sprays, not in the air; the ivy under the archive's cornice runs unbroken from the
+// middle pier of wall to the back one (its runner) instead of floating in tufts; and the 82 trees
+// together stay within 170k triangles in their fullest seasons.
+{
+  const nature = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    build = (season, spec) => {
+      const ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
+        g = new T.Group();
+      nature.createNature(ctx, createKit(ctx)).tree(g, spec, Number(spec.id.slice(5)));
+      g.updateMatrixWorld(true);
+      return g.children[0].children.filter((o) => o.isMesh);
+    },
+    /** World centroids of the triangles of `meshes`. */
+    centroids = (meshes) => {
+      const out = [],
+        a = new T.Vector3(),
+        b = new T.Vector3(),
+        c = new T.Vector3();
+      for (const o of meshes) {
+        const p = o.geometry.attributes.position,
+          index = o.geometry.index,
+          n = index ? index.count : p.count,
+          at = (i) => (index ? index.getX(i) : i);
+        for (let i = 0; i < n; i += 3) {
+          a.fromBufferAttribute(p, at(i)).applyMatrix4(o.matrixWorld);
+          b.fromBufferAttribute(p, at(i + 1)).applyMatrix4(o.matrixWorld);
+          c.fromBufferAttribute(p, at(i + 2)).applyMatrix4(o.matrixWorld);
+          out.push(a.clone().add(b).add(c).divideScalar(3));
+        }
+      }
+      return out;
+    },
+    of = (meshes, kind) => meshes.filter((o) => o.material.userData.surfaceKind === kind && !o.userData.fruit),
+    b0 = plan.chapterBearings.overview,
+    toward = new T.Vector3(Math.sin(b0) * 38, 35, Math.cos(b0) * 38).normalize(),
+    ray = new T.Raycaster(),
+    /** The share of `points` the opening camera sees past `crown`. */
+    seen = (points, crown) => {
+      let n = 0;
+      for (const p of points) {
+        ray.set(p, toward);
+        if (!ray.intersectObjects(crown, false).length) n++;
+      }
+      return n / points.length;
+    };
+  ray.near = 0.02;
+  for (const season of ['summer', 'autumn']) {
+    let n = 0;
+    for (const t of trees) for (const o of build(season, t)) n += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
+    assert(n <= 170000, `${season}: the trees cost ${n} triangles`);
+  }
+  for (const t of trees) {
+    if (t.kind === 'pine') continue;
+    const meshes = build('summer', t),
+      foot = plan.terrainHeight(t.x, t.z),
+      crown = of(meshes, 'foliage'),
+      wood = (lo, hi) => centroids(of(meshes, 'bark')).filter((p) => p.y - foot > lo * t.size && p.y - foot < hi * t.size);
+    if (t.kind === 'round' || t.kind === 'autumn') {
+      const fork = seen(wood(0.55, 1.0), crown);
+      assert(fork >= 0.6, `${t.id}: the opening camera sees only ${Math.round(fork * 100)}% of the fork under its crown`);
+    }
+    if (t.kind === 'birch') {
+      const low = Math.min(...centroids(crown).map((p) => p.y - foot)) / t.size,
+        trunk = seen(wood(0.3, 1.1), crown);
+      assert(low >= 1.15, `${t.id}: the birch's crown hangs down to ${low.toFixed(2)} x size`);
+      assert(trunk >= 0.8, `${t.id}: the opening camera sees only ${Math.round(trunk * 100)}% of the birch's trunk`);
+    }
+    if (t.kind === 'rowan')
+      for (const season of ['spring', 'summer', 'autumn']) {
+        const ms = build(season, t),
+          sprays = centroids(of(ms, 'foliage')),
+          fruit = centroids(ms.filter((o) => o.userData.fruit));
+        for (const p of fruit) {
+          const gap = Math.min(...sprays.map((q) => q.distanceTo(p)));
+          assert(gap < 0.25 * t.size, `${t.id}: ${season} fruit hangs ${gap.toFixed(2)} from its sprays at ${p.toArray().map((v) => v.toFixed(2)).join(', ')}`);
+        }
+      }
+  }
+  // The archive's south wall is its shell's +x face; along it, the face's x runs down the shell's -z.
+  const { shell } = models.get('city-archive'),
+    { w } = plan.sites['city-archive'];
+  shell.updateMatrixWorld(true);
+  const toShell = shell.matrixWorld.clone().invert(),
+    band = centroids(shell.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'foliage'))
+      .map((p) => p.applyMatrix4(toShell))
+      .filter((p) => p.x > w / 2 - 0.12 && p.y > 3.28 && p.y < 3.62 && p.z < -0.05 && p.z > -1.75)
+      .map((p) => p.z)
+      .sort((a, b) => a - b);
+  assert(band.length > 40, `Only ${band.length} ivy triangles under the archive's cornice`);
+  let widest = Math.max(band[0] + 1.75, -0.05 - band[band.length - 1]);
+  for (let i = 1; i < band.length; i++) widest = Math.max(widest, band[i] - band[i - 1]);
+  assert(widest <= 0.12, `The ivy under the archive's cornice breaks for ${widest.toFixed(2)}`);
+}
 // The key light stays high all day, comes down to about 40 degrees at dawn and golden hour, and
 // goes back up for the night light.
 const { sunOffsetFor, lowSun, warmSun } = await load('city-atmosphere');
