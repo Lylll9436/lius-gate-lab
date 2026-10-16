@@ -577,12 +577,12 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
         iron.push(
           { geometry: new T.CylinderGeometry(0.035, 0.035, 0.2, 8), at: [x, 3.42, 0.1], rotation: [Math.PI / 2, 0, 0] },
           { geometry: hopperGeometry, at: [x, 3.24, 0.095] },
-          { geometry: new T.BoxGeometry(0.23, 0.035, 0.21), at: [x, 3.36, 0.095] },
+          { geometry: new T.BoxGeometry(0.23, 0.05, 0.21), at: [x, 3.36, 0.095] },
           { geometry: new T.CylinderGeometry(0.045, 0.045, 2.45, 8), at: [x, 1.9, 0.065] },
           { geometry: new T.CylinderGeometry(0.045, 0.045, 0.21, 8), at: [x, 0.68, 0.125], rotation: [-0.7, 0, 0] },
         );
         for (const y of [1.25, 2.35])
-          iron.push({ geometry: new T.CylinderGeometry(0.06, 0.06, 0.05, 12), at: [x, y, 0.065] }, { geometry: new T.BoxGeometry(0.17, 0.04, 0.03), at: [x, y + 0.01, 0.018] });
+          iron.push({ geometry: new T.CylinderGeometry(0.06, 0.06, 0.07, 12), at: [x, y, 0.065] }, { geometry: new T.BoxGeometry(0.17, 0.07, 0.03), at: [x, y, 0.018] });
       }
       cluster(g, iron, palette.metal, 'iron', false);
     }
@@ -658,11 +658,11 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       box(shell, 0, 3.45, z + 0.45, 0.24, 0.24, 1.0, palette.woodDark, 'wood');
       box(shell, 0, 3.18, z + 0.85, 0.2, 0.3, 0.2, palette.metal, 'iron');
       iron.push(
-        ...[-1, 1].map((s): Piece => ({ geometry: new T.BoxGeometry(0.03, 0.3, 0.12), at: [s * 0.135, 3.45, z + 0.85] })),
-        { geometry: new T.BoxGeometry(0.3, 0.03, 0.12), at: [0, 3.585, z + 0.85] },
-        { geometry: new T.CylinderGeometry(0.03, 0.03, 0.32, 8), at: [0, 3.39, z + 0.85], rotation: [0, 0, Math.PI / 2] },
-        { geometry: new T.BoxGeometry(0.05, 0.1, 0.05), at: [0, 2.99, z + 0.85] },
-        { geometry: new T.TorusGeometry(0.06, 0.025, 6, 10, Math.PI * 1.4), at: [0, 2.88, z + 0.85], rotation: [0, Math.PI / 2, -Math.PI * 0.2] },
+        ...[-1, 1].map((s): Piece => ({ geometry: new T.BoxGeometry(0.05, 0.32, 0.12), at: [s * 0.145, 3.45, z + 0.85] })),
+        { geometry: new T.BoxGeometry(0.34, 0.05, 0.12), at: [0, 3.595, z + 0.85] },
+        { geometry: new T.CylinderGeometry(0.035, 0.035, 0.36, 8), at: [0, 3.39, z + 0.85], rotation: [0, 0, Math.PI / 2] },
+        { geometry: new T.BoxGeometry(0.07, 0.1, 0.07), at: [0, 2.99, z + 0.85] },
+        { geometry: new T.TorusGeometry(0.06, 0.035, 6, 10, Math.PI * 1.4), at: [0, 2.88, z + 0.85], rotation: [0, Math.PI / 2, -Math.PI * 0.2] },
         { geometry: new T.BoxGeometry(0.16, 0.12, 0.02), at: [0, 3.79, z + 0.25] },
       );
       cluster(shell, iron, palette.metal, 'iron', false);
@@ -713,7 +713,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       ridge.position.set(xg - 0.075, y0 + R + 0.03, 0);
       ridge.castShadow = ridge.receiveShadow = true;
       shell.add(ridge);
-      for (let k = 1; k < 9; k++) collars.push({ geometry: prism(capping(0.016), 0.05, 0.012, -0.025), at: [xg - 0.075, y0 + R + 0.03, -(Dr + 0.04) / 2 + (k * (Dr + 0.04)) / 9] });
+      for (let k = 1; k < 9; k++) collars.push({ geometry: prism(capping(0.016), 0.08, 0.012, -0.04), at: [xg - 0.075, y0 + R + 0.03, -(Dr + 0.04) / 2 + (k * (Dr + 0.04)) / 9] });
       for (const sz of [-1, 1]) {
         const v = block(shell, x0 + bw / 2 - 0.035 * Math.sin(slope), y0 + (f + R) / 2 + 0.035 * Math.cos(slope), sz * (Dr / 2 - 0.05), Math.hypot(bw, R - f) - 0.12, 0.09, 0.12, palette.slateLight, 'slate');
         v.rotation.z = slope;
