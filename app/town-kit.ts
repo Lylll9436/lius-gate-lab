@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { METAL_KINDS, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
-import { palette, type TownContext } from './town-shared';
+import { palette, noise2, type TownContext } from './town-shared';
 import type { Season } from './glasgow-sun';
 
 /* ------------------------------------------------------------------ */
@@ -30,15 +30,82 @@ export type IvySpec = {
   seed: number;
 };
 /**
- * The ivy's leaves by season: deep green, fresher in spring, darker in winter; in autumn the reds
- * and rusts of Boston ivy, each no more saturated than the brick and the hedge it is drawn from.
+ * The ivy's leaves by season: deep green, fresher in spring, a dark evergreen in winter; in autumn
+ * the reds, rust and orange of Boston ivy with a little green left (the last two tones), each no
+ * more saturated than the brick, the autumn canopy and the hedge it is drawn from.
  */
 export const IVY: Record<Season, { tones: string[]; top: string }> = {
   spring: { tones: ['#5a9040', '#66a046', '#528838'], top: '#9cc456' },
   summer: { tones: ['#4f8236', '#5a8e3c', '#467832'], top: '#8ab450' },
-  autumn: { tones: ['#a84c32', '#b25e36', '#984530', '#8e6638'], top: '#d08250' },
-  winter: { tones: ['#4a6a40', '#527446', '#43603a'], top: '#76925e' },
+  autumn: { tones: ['#9a3c2e', '#a84c32', '#984530', '#b25e36', '#b4703a', '#8e6638', '#64783a'], top: '#d08250' },
+  winter: { tones: ['#43603a', '#4a6a40', '#3f5a3a'], top: '#6e8a5a' },
 };
+/** The ivy's woody stems: a dark, greyed bark brown. */
+export const IVY_STEM = '#5a4636';
+/**
+ * One ivy leaf about 1 across and 1 long round its middle, its stalk end down: a heart-shaped base
+ * and three broad lobes (the middle one longest), domed along the midrib, as a fan of ten triangles
+ * round a raised centre. Smooth normals, so each leaf shades from its ridge to its rim; `shade`
+ * darkens the rim a little more.
+ */
+const LEAF = (() => {
+  const rim = [[0, 0.16], [0.26, 0.02], [0.5, 0.18], [0.53, 0.42], [0.27, 0.58], [0, 1], [-0.27, 0.58], [-0.53, 0.42], [-0.5, 0.18], [-0.26, 0.02]],
+    g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute([0, -0.03, 0.12, ...rim.flatMap(([x, y], k) => [x, y - 0.45, k === 5 ? 0.04 : 0])], 3));
+  g.setIndex(rim.flatMap((_, k) => [0, 1 + k, 1 + ((k + 1) % rim.length)]));
+  g.computeVertexNormals();
+  const out = {
+    position: Array.from(g.getAttribute('position').array),
+    normal: Array.from(g.getAttribute('normal').array),
+    index: Array.from(g.getIndex()!.array),
+    shade: [1.05, 0.93, 0.9, 0.92, 0.94, 0.96, 0.96, 0.96, 0.94, 0.92, 0.9],
+  };
+  g.dispose();
+  return out;
+})();
+/** How far a leaf reaches from its middle, in leaf sizes (the template's farthest point, rounded up). */
+const LEAF_REACH = 0.6;
+/** The under-mass's share of a clump's reach: the leaves overhang it at the rim, over bare wall. */
+const IVY_UNDER = 0.78;
+/** The wall's face (z) at height y: proud on a battered plinth, 0 above it. */
+const ivyWall = (spec: IvySpec, y: number) => {
+  const p = spec.plinth;
+  return p && y < p.h ? p.proud - (p.batter * Math.max(0, y)) / p.h : 0;
+};
+/**
+ * The ivy's woody stems, in the wall's plan: one rooted below the ground in each area that
+ * starts at the ground (two in a wide one, none closer than 0.3 to another), climbing with a
+ * gentle wander while it stays inside the areas, below their tops and 0.06 clear of every `keep`
+ * box, and stopping short of the top; each sends out one side shoot. Each stem is its points
+ * (x, y) from the root up; the shoots come after the stems.
+ */
+export function ivyStems(spec: IvySpec) {
+  const h = (n: number) => plan.hash(spec.seed * 53 + n),
+    ok = (x: number, y: number) =>
+      spec.areas.some(([a, b, c, d]) => x > a + 0.04 && x < c - 0.04 && y >= b - 0.1 && y < d - 0.12) &&
+      !spec.keep.some(([a, b, c, d]) => x > a - 0.06 && x < c + 0.06 && y > b - 0.06 && y < d + 0.06),
+    roots: number[] = [];
+  for (const [a, b, c] of spec.areas) {
+    if (b > 0.01) continue;
+    for (const x of c - a > 1.2 ? [a + 0.3 * (c - a), a + 0.75 * (c - a)] : [(a + c) / 2]) if (!roots.some((r) => Math.abs(r - x) < 0.3)) roots.push(x);
+  }
+  const climb = (x0: number, y0: number, lean: number, k: number, most: number) => {
+    const pts: [number, number][] = [];
+    for (let y = y0, x = x0, i = 0; i < most; i++, y += 0.09) {
+      const nx = x0 + lean * (y - y0) + 0.045 * Math.sin(y * 4.1 + h(k) * 6) + 0.02 * Math.sin(y * 9.3 + h(k + 1) * 6);
+      if (!ok(nx, y)) break;
+      x = nx;
+      pts.push([x, y]);
+    }
+    return pts;
+  };
+  const stems = roots.map((x, k) => climb(x, -0.04, 0, k * 7, 60)).filter((p) => p.length >= 3);
+  const shoots = stems.map((pts, k) => {
+    const from = pts[Math.floor(pts.length * (0.35 + 0.3 * h(k * 7 + 3)))];
+    return climb(from[0], from[1], (h(k * 7 + 4) < 0.5 ? -1 : 1) * 0.75, k * 7 + 5, 6);
+  });
+  return [...stems, ...shoots.filter((p) => p.length >= 3)];
+}
 /** Ivy clumps' spacing on the wall: one clump about every 0.24, each about 0.4 to 0.5 across, so they overlap into one lumpy mass. */
 const IVY_STEP = 0.24;
 /**
@@ -553,10 +620,18 @@ export function createKit(ctx: TownContext) {
   }
 
   /**
-   * Ivy on a face (local +z out of the wall): one mesh of soft leaf clumps (the fronts of smooth blobs,
-   * flattened against the wall) over ivyLumps(spec), in the season's IVY tones. Each clump is a
-   * shade of its own; clumps darken toward the ground, and their up- and out-facing
-   * sides take the lighter `top`, so the patch reads as layered leaves rather than a green slab.
+   * Ivy on a face (local +z out of the wall), in three parts:
+   * - an under-mass: the fronts of smooth blobs over ivyLumps(spec), smaller than the clumps'
+   *   reach and a dark shade of the leaves above, which casts the ivy's shadow;
+   * - the leaves: many small lobed leaves (LEAF, 0.075 to 0.11 across) on a staggered grid over
+   *   the clumps' union with a ragged rim, layered over the under-mass's mound and leaning out to
+   *   the light (a little turned, tips mostly down), so the wall shows between the outermost ones.
+   *   Each leaf's tone comes from a broad patch (in autumn whole patches turn red, rust, orange or
+   *   stay green) with a small jitter of its own, darker low on the wall and deeper in the mass;
+   *   they cast no shadow, so no speckle of leaf shadows sits on the wall or the mass;
+   * - a few woody stems (ivyStems) on the wall, showing at the foot, where the leaves thin out
+   *   beside them, and through the gaps.
+   * Leaves and stems keep `keep` clear by their whole reach.
    */
   function ivy(g: T.Object3D, spec: IvySpec) {
     const look = IVY[ctx.season],
@@ -564,29 +639,152 @@ export function createKit(ctx: TownContext) {
       c = new T.Color(),
       m4 = new T.Matrix4(),
       q = new T.Quaternion(),
-      h = (n: number) => plan.hash(spec.seed * 131 + n);
-    const parts = ivyLumps(spec).map(({ x, y, z, r }, k) => {
+      e = new T.Euler(0, 0, 0, 'YXZ'),
+      v = new T.Vector3(),
+      at = new T.Vector3(),
+      unit = new T.Vector3(),
+      h = (n: number) => plan.hash(spec.seed * 131 + n),
+      lumps = ivyLumps(spec);
+    if (!lumps.length) return undefined;
+    // A leaf's tone: a broad patch of the wall picks it, with a little jitter of its own.
+    const tone = (x: number, y: number, k: number) => {
+      const n = Math.min(0.999, Math.max(0, 1.5 * (noise2(x * 1.6 + spec.seed * 3.1, y * 1.6 - spec.seed) - 0.5) + 0.5 + 0.22 * (h(k) - 0.5)));
+      return c.set(look.tones[Math.floor(n * look.tones.length)]);
+    };
+    // The under-mass.
+    const under = lumps.map(({ x, y, z, r }, k) => {
       const geo = ivyBlob.clone();
       q.setFromEuler(new T.Euler(0, 0, h(k) * Math.PI));
-      geo.applyMatrix4(m4.compose(new T.Vector3(x, y, z), q, new T.Vector3(r, r * 0.85, r * 0.55)));
-      const base = new T.Color(look.tones[Math.floor(h(k + 0.5) * look.tones.length)]),
-        value = (0.84 + 0.18 * Math.min(1, y / 1.2)) * (0.9 + 0.14 * h(k + 0.25)),
-        n = geo.getAttribute('normal'),
-        colour = new Float32Array(n.count * 3);
+      geo.applyMatrix4(m4.compose(at.set(x, y, z), q, v.set(r * IVY_UNDER, r * IVY_UNDER * 0.85, r * 0.42)));
+      const n = geo.getAttribute('normal'),
+        colour = new Float32Array(n.count * 3),
+        value = 0.5 * (0.88 + 0.12 * Math.min(1, y / 1.2));
+      tone(x, y, k * 7 + 3);
+      const base = c.clone();
       for (let i = 0; i < n.count; i++) {
-        const lift = Math.max(0, n.getY(i) * 0.6 + n.getZ(i) * 0.4);
-        c.copy(base).lerp(top, 0.35 * lift * lift).multiplyScalar(value);
+        c.copy(base).lerp(top, 0.15 * Math.max(0, n.getY(i))).multiplyScalar(value);
         colour.set([c.r, c.g, c.b], i * 3);
       }
       geo.setAttribute('color', new T.BufferAttribute(colour, 3));
       return geo;
     });
-    if (!parts.length) return undefined;
-    const geometry = mergeGeometries(parts)!;
-    parts.forEach((p) => p.dispose());
-    const m = new T.Mesh(geometry, material('#ffffff', 'foliage'));
-    m.castShadow = m.receiveShadow = true;
+    const mass = new T.Mesh(mergeGeometries(under)!, material('#ffffff', 'foliage'));
+    under.forEach((p) => p.dispose());
+    mass.castShadow = mass.receiveShadow = true;
+    g.add(mass);
+    // The mound the leaves lie on: the under-mass's front where it is, the wall elsewhere.
+    const mound = (x: number, y: number) => {
+      let z = ivyWall(spec, y) + 0.03;
+      for (const l of lumps) {
+        const d = Math.hypot(x - l.x, (y - l.y) / 0.85) / (l.r * IVY_UNDER);
+        if (d < 1) z = Math.max(z, l.z + 0.42 * l.r * Math.sqrt(1 - d * d));
+      }
+      return z;
+    };
+    const stems = ivyStems(spec),
+      feet = stems.map((p) => p[0]).filter(([, y]) => y < 0),
+      x0 = Math.min(...spec.areas.map((a) => a[0])), x1 = Math.max(...spec.areas.map((a) => a[2])),
+      y0 = Math.min(...spec.areas.map((a) => a[1])), y1 = Math.max(...spec.areas.map((a) => a[3])),
+      STEP = 0.074,
+      ROW = 0.064,
+      position: number[] = [],
+      normal: number[] = [],
+      colour: number[] = [],
+      index: number[] = [];
+    let k = 0;
+    for (let row = 0, y = y0; y <= y1 + 0.05; row++, y = y0 + row * ROW)
+      for (let col = 0; ; col++, k++) {
+        const px = x0 - 0.1 + (col + (row % 2) * 0.5) * STEP + (h(k * 5) - 0.5) * 0.05,
+          py = y + (h(k * 5 + 1) - 0.5) * 0.04;
+        if (px > x1 + 0.1) break;
+        // Inside the clumps' reach, with a ragged rim.
+        const reach = 1 + 0.36 * (noise2(px * 5 + spec.seed, py * 5 - spec.seed) - 0.5);
+        if (!lumps.some((l) => Math.hypot(px - l.x, (py - l.y) / 0.85) < l.r * reach)) continue;
+        // A leaf that would reach a keep box comes smaller (down to 0.07) or not at all.
+        const clear = (r: number) => !spec.keep.some(([a, b, cc, d]) => px + r > a && px - r < cc && py + r > b && py - r < d);
+        let size = 0.075 + 0.035 * h(k * 5 + 2);
+        if (!clear(LEAF_REACH * size)) size = 0.07;
+        const rr = LEAF_REACH * size;
+        if (py - rr < -0.02 || !clear(rr)) continue;
+        // Thin at the foot beside the stems, so they show coming out of the ground.
+        if (py < 0.28 && feet.some(([x]) => Math.abs(x - px) < 0.1) && h(k * 5 + 3) < 0.7) continue;
+        const z = mound(px, py),
+          lift = z - ivyWall(spec, py), // how deep in the mass the leaf lies
+          tilt = 0.15 + 0.3 * h(k * 5 + 4),
+          turn = Math.PI + (h(k * 7 + 1) - 0.5) * 2.4,
+          yaw = (h(k * 7 + 2) - 0.5) * 0.4;
+        q.setFromEuler(e.set(-tilt, yaw, turn));
+        m4.compose(at.set(px, py, z + 0.02 + 0.025 * h(k * 7 + 3)), q, unit.setScalar(size));
+        // Leaves that tip up toward the sky take a little of the warm top.
+        tone(px, py, k * 7 + 4).lerp(top, 0.3 * Math.max(0, v.set(0, 0, 1).applyQuaternion(q).y));
+        const value = (0.88 + 0.14 * Math.min(1, py / 1.4)) * (0.94 + 0.1 * h(k * 7 + 5)) * (0.9 + 0.12 * Math.min(1, lift / 0.1)),
+          base = position.length / 3;
+        for (let i = 0; i < LEAF.shade.length; i++) {
+          v.fromArray(LEAF.position, i * 3).applyMatrix4(m4);
+          position.push(v.x, v.y, v.z);
+          v.fromArray(LEAF.normal, i * 3).applyQuaternion(q);
+          normal.push(v.x, v.y, v.z);
+          const f = value * LEAF.shade[i];
+          colour.push(c.r * f, c.g * f, c.b * f);
+        }
+        for (const i of LEAF.index) index.push(base + i);
+      }
+    const leaves = new T.BufferGeometry();
+    leaves.setAttribute('position', new T.Float32BufferAttribute(position, 3));
+    leaves.setAttribute('normal', new T.Float32BufferAttribute(normal, 3));
+    leaves.setAttribute('color', new T.Float32BufferAttribute(colour, 3));
+    leaves.setIndex(index);
+    const m = new T.Mesh(leaves, material('#ffffff', 'foliage'));
+    m.castShadow = false;
+    m.receiveShadow = true;
+    m.userData.noShadow = true;
     g.add(m);
+    // The stems: slim tubes on the wall, thinning upward, under the leaves.
+    const wood = stems.map((pts, s) => {
+      const path = new T.CatmullRomCurve3(pts.map(([x, y]) => new T.Vector3(x, y, 0))),
+        rows = Math.max(4, Math.round(pts.length * 1.5)),
+        radial = 5,
+        thick = s < feet.length ? 1 : 0.6, // the side shoots come after the stems
+        out: number[] = [],
+        tris: number[] = [];
+      for (let i = 0; i <= rows; i++) {
+        const t = i / rows,
+          p = path.getPoint(t),
+          tan = path.getTangent(t),
+          r = thick * T.MathUtils.lerp(0.022, 0.01, t),
+          // Over the plinth's top edge the stem keeps the plinth's face until it is clear of it.
+          wz = spec.plinth && p.y < spec.plinth.h + 0.05 ? ivyWall(spec, Math.min(p.y, spec.plinth.h - 0.001)) : 0;
+        for (let j = 0; j < radial; j++) {
+          const a = (j / radial) * Math.PI * 2,
+            side = new T.Vector3(-tan.y, tan.x, 0).normalize();
+          out.push(p.x + side.x * Math.cos(a) * r, p.y + side.y * Math.cos(a) * r, wz + r + 0.004 + Math.sin(a) * r);
+        }
+      }
+      for (let i = 0; i < rows; i++)
+        for (let j = 0; j < radial; j++) {
+          const a0 = i * radial + j, b0 = i * radial + ((j + 1) % radial);
+          tris.push(a0, b0, a0 + radial, b0, b0 + radial, a0 + radial);
+        }
+      const geo = new T.BufferGeometry();
+      geo.setAttribute('position', new T.Float32BufferAttribute(out, 3));
+      geo.setIndex(tris);
+      geo.computeVertexNormals();
+      const n = out.length / 3,
+        stem = new T.Color(IVY_STEM);
+      geo.setAttribute('color', new T.Float32BufferAttribute(Array.from({ length: n }, (_, i) => {
+        const f = 0.8 + 0.25 * (Math.floor(i / radial) / rows);
+        return [stem.r * f, stem.g * f, stem.b * f];
+      }).flat(), 3));
+      return geo;
+    });
+    if (wood.length) {
+      const sm = new T.Mesh(mergeGeometries(wood)!, material('#ffffff', 'bark'));
+      wood.forEach((w) => w.dispose());
+      sm.castShadow = false;
+      sm.receiveShadow = true;
+      sm.userData.noShadow = true;
+      g.add(sm);
+    }
     return m;
   }
 
