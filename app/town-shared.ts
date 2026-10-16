@@ -30,6 +30,8 @@ export const palette = {
   weed: '#5d6b3a', kelp: '#5c4a2c', driftwood: '#9d968a',
   // The zebras' buff blister slabs (no more saturated than the sand they sit beside).
   tactile: '#dbc38f',
+  // The archive's lead flashings: a soft blue-grey, less saturated than the slate it dresses.
+  lead: '#838d95',
 };
 export const hash = plan.hash;
 export function noise2(x: number, z: number) {
