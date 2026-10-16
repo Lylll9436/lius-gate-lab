@@ -27,7 +27,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       stone = palette.blonde,
       dress = palette.trim;
     // Plinth corners at (2.35, 0.9) stay inside the causeway sector (21.0 degrees, under 21.8).
-    for (const sx of [-1, 1]) box(shell, sx * 1.6, foot / 2, 0, 1.5, foot, D + 0.3, palette.plinth, 'stone', { taper: 0.05 });
+    for (const sx of [-1, 1]) box(shell, sx * 1.6, foot / 2, 0, 1.5, foot, D + 0.3, palette.plinth, 'ashlar', { taper: 0.05 });
     const body = new T.Shape();
     body.moveTo(-W, foot);
     body.lineTo(-r, foot);
@@ -40,7 +40,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     body.closePath();
     const mass = new T.Mesh(
       new T.ExtrudeGeometry(body, { depth: D - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 2, curveSegments: 16 }),
-      material(stone, 'stone'),
+      material(stone, 'ashlar'),
     );
     mass.position.z = -D / 2 + b;
     mass.castShadow = mass.receiveShadow = true;
@@ -71,10 +71,10 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       for (const sz of [-1, 1]) box(shell, sx * 1.6, 1.5, (sz * D) / 2, 0.7, 1.5, 0.12, dress, 'stone'); // pier panel, half set in
     }
     box(shell, 0, top + 0.1, 0, 2 * W + 0.3, 0.2, D + 0.3, dress, 'stone');
-    box(shell, 0, top + 0.6, 0, 2 * W - 0.3, 0.8, D - 0.1, stone, 'stone', { segments: 2 });
+    box(shell, 0, top + 0.6, 0, 2 * W - 0.3, 0.8, D - 0.1, stone, 'ashlar', { segments: 2 });
     for (const sz of [-1, 1]) box(shell, 0, top + 0.6, sz * ((D - 0.1) / 2 + 0.03), 2.4, 0.46, 0.06, palette.bronze, 'brass'); // blank bronze plaques
     box(shell, 0, top + 1.1, 0, 2 * W - 0.1, 0.2, D + 0.1, dress, 'stone');
-    box(shell, 0, top + 1.4, 0, 1.6, 0.4, 0.9, stone, 'stone');
+    box(shell, 0, top + 1.4, 0, 1.6, 0.4, 0.9, stone, 'ashlar');
     for (const sx of [-1, 1]) {
       cylinder(shell, sx * 1.75, top + 1.45, 0, 0.1, 0.13, 0.5, palette.bronze, 'brass');
       const glow = lampGlass();
@@ -96,7 +96,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       tz = d / 2 + 0.6 - tw / 2;
     plinth(shell, w, d, palette.plinth, { height: 0.5 });
     plinth(shell, tw, tw, palette.plinth, { z: tz, height: 0.52, blocks: true });
-    box(shell, 0, 2.4, 0, w, 3.8, d, palette.blonde, 'stone');
+    box(shell, 0, 2.4, 0, w, 3.8, d, palette.blonde, 'ashlar');
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) box(shell, sx * 3.6, 2.4, sz * 2.2, 0.45, 3.8, 0.45, palette.trim, 'stone'); // corner pilasters
       box(shell, sx * 1.475, 2.4, d / 2, 0.45, 3.8, 0.3, palette.trim, 'stone'); // tower-flank pilasters
@@ -122,7 +122,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       }
     }
     // The tower: buttresses with pyramid caps either side of the arched door, a mullioned window above.
-    box(shell, 0, 4.675, tz, tw, 8.35, tw, palette.blonde, 'stone', { segments: 2 });
+    box(shell, 0, 4.675, tz, tw, 8.35, tw, palette.blonde, 'ashlar', { segments: 2 });
     for (const sx of [-1, 1]) {
       box(shell, sx * 1.2, 3.05, tz + 1.2, 0.5, 5.1, 0.5, palette.trim, 'stone');
       cone(shell, sx * 1.2, 5.8, tz + 1.2, 0.4, 0.4, palette.trim, 'stone', 4);

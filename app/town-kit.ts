@@ -362,7 +362,7 @@ export function createKit(ctx: TownContext) {
       const sh = new T.Shape(); sh.moveTo(-inner, 0); sh.lineTo(inner, 0);
       if (k > 0.01) sh.lineTo(inner, k); sh.lineTo(0, rise - 0.02); if (k > 0.01) sh.lineTo(-inner, k); sh.closePath();
       const geo = new T.ExtrudeGeometry(sh, { depth: 0.16, bevelEnabled: false });
-      for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, 'stone')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
+      for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, 'ashlar')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
     }
     return top;
   }
@@ -534,13 +534,13 @@ export function createKit(ctx: TownContext) {
   /** A battered, grounded base (6 degree batter) w x d plus `proud` all round, with an optional rusticated block row. Returns its height. */
   function plinth(g: T.Object3D, w: number, d: number, color: string, opts: { x?: number; z?: number; height?: number; proud?: number; blocks?: boolean } = {}) {
     const ph=opts.height??0.42, p=opts.proud??0.25, x=opts.x??0, z=opts.z??0;
-    box(g,x,ph/2,z,w+2*p,ph,d+2*p,color,'stone',{taper:ph*0.105}); // 6 degree batter
+    box(g,x,ph/2,z,w+2*p,ph,d+2*p,color,'ashlar',{taper:ph*0.105}); // 6 degree batter
     if(opts.blocks){ const run=w+2*p-0.1, n=Math.max(2,Math.round(run/0.65)), len=run/n;
       for(const sz of [-1,1]) for(let i=0;i<n;i++) box(g,x-run/2+len*(i+0.5),ph*0.42,z+sz*(d/2+p-0.02),len-0.05,ph*0.72,0.12,i%2?color:'#b89c6c','stone'); }
     return ph;
   }
   /** A fat chimney stack from y0 to top with a cap and `pots` pantile pots. */
-  function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'stone'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'pantile',18); }
+  function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'ashlar'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'pantile',18); }
   /**
    * Glass for a lamp, which the frame loop lights at night. Lamps are never batched, so they miss
    * the glass spec patch; frosted, a globe shows one soft highlight instead of pinpoint specks.

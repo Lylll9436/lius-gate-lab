@@ -1168,6 +1168,7 @@ export async function createCity(
     followWindows(paneClock, paneGoal, night, dt, reduced);
     paneHours = skyHours;
     model.materialLibrary.setWindows(paneClock.out, paneClock.wake);
+    model.materialLibrary.setPixelRatio(renderer.getPixelRatio());
     lighting.update(night, !!inspect);
     sky.intensity = T.MathUtils.lerp(0.85, 0.3, night);
     sun.intensity = T.MathUtils.lerp(3.8, 0.45, night);
