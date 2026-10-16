@@ -305,18 +305,16 @@ export function createBatch(ctx: TownContext) {
     /**
      * The distance (0..1 units) from a point on a receiver's face to the nearest concave corner it
      * makes with another box (a rounded box has vertices only at its bevel rows, so this reads the
-     * steps a face meets at its edges: a wall on its plinth or a ledge, a ledge against a wall): from just off the face, along the face both ways and down (a wall standing on a
-     * ledge), or along a top face (a ledge meeting a wall). Boxes the probe starts inside are hidden
-     * overlaps and ignored. Linear across a face, like the other bake distances.
+     * steps a face meets at its edges: a wall on its plinth or a ledge, a ledge against a wall):
+     * from just off the face, along the face both ways and down (a wall standing on a ledge), or
+     * along a top face (a ledge meeting a wall), along the face's spans of CORNER_SPAN or more.
+     * Boxes the probe starts inside are hidden overlaps and ignored. Linear across a face, like the
+     * other bake distances.
      */
-    const cornerCache = new Map<string, number>();
     const probe = [0, 0, 0],
       dirs: number[][] = [];
     let stamp = 0;
     function cornerAt(id: number, px: number, py: number, pz: number, nx: number, ny: number, nz: number) {
-      const key = `${id}|${px.toFixed(4)}|${py.toFixed(4)}|${pz.toFixed(4)}|${nx.toFixed(2)}|${ny.toFixed(2)}|${nz.toFixed(2)}`;
-      const cached = cornerCache.get(key);
-      if (cached !== undefined) return cached;
       const hn = Math.hypot(nx, nz),
         span = receivers.get(id)!;
       dirs.length = 0;
@@ -347,7 +345,6 @@ export function createBatch(ctx: TownContext) {
               } else if (solid.inside) continue;
               best = Math.min(best, rayBox(probe, d, b, best));
             }
-      cornerCache.set(key, best);
       return best;
     }
     // The top-lit gradient's objects: a building's shell or a mover is one object, the land's and
