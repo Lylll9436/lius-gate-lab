@@ -58,7 +58,7 @@ const LEAF = (() => {
     position: Array.from(g.getAttribute('position').array),
     normal: Array.from(g.getAttribute('normal').array),
     index: Array.from(g.getIndex()!.array),
-    shade: [1.05, 0.93, 0.9, 0.92, 0.94, 0.96, 0.96, 0.96, 0.94, 0.92, 0.9],
+    shade: [1.04, 0.95, 0.93, 0.94, 0.95, 0.97, 0.97, 0.97, 0.95, 0.94, 0.93],
   };
   g.dispose();
   return out;
@@ -682,7 +682,7 @@ export function createKit(ctx: TownContext) {
       geo.applyMatrix4(m4.compose(at.set(x, y, z), q, v.set(r * IVY_UNDER, r * IVY_UNDER * 0.85, r * 0.42)));
       const n = geo.getAttribute('normal'),
         colour = new Float32Array(n.count * 3),
-        value = 0.5 * (0.88 + 0.12 * Math.min(1, y / 1.2));
+        value = 0.62 * (0.88 + 0.12 * Math.min(1, y / 1.2));
       tone(x, y, k * 7 + 3);
       const base = c.clone();
       for (let i = 0; i < n.count; i++) {
@@ -747,7 +747,7 @@ export function createKit(ctx: TownContext) {
         m4.compose(at.set(px, py, z + 0.02 + 0.025 * h(k * 7 + 3)), q, unit.setScalar(size));
         // Leaves that tip up toward the sky take a little of the warm top.
         tone(px, py, k * 7 + 4).lerp(top, 0.3 * Math.max(0, v.set(0, 0, 1).applyQuaternion(q).y));
-        const value = (0.88 + 0.14 * Math.min(1, py / 1.4)) * (0.94 + 0.1 * h(k * 7 + 5)) * (0.9 + 0.12 * Math.min(1, lift / 0.1)),
+        const value = (0.88 + 0.14 * Math.min(1, py / 1.4)) * (0.96 + 0.06 * h(k * 7 + 5)) * (0.9 + 0.12 * Math.min(1, lift / 0.1)),
           base = position.length / 3;
         for (let i = 0; i < LEAF.shade.length; i++) {
           v.fromArray(LEAF.position, i * 3).applyMatrix4(m4);

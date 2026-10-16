@@ -220,9 +220,9 @@ function cullHidden(built: BuiltClump[]) {
  * than the valleys between them. Up-facing tops lean to the look's warm `top`, the underside to
  * its cool `under`.
  */
-function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, core: T.Vector3, seed: number, opts: { floor?: number; valley?: number; lift?: number; gain?: number; crease?: number } = {}) {
+function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, core: T.Vector3, seed: number, opts: { floor?: number; valley?: number; lift?: number; gain?: number; crease?: number; inner?: number } = {}) {
   const top = new T.Color(look.top), under = new T.Color(look.under), a = new T.Color(look.tones[0]), b = new T.Color(look.tones[1] ?? look.tones[0]),
-    c = new T.Color(), base = new T.Color(), toCore = new T.Vector3(), floor = opts.floor ?? 0.5, valley = opts.valley ?? 0.8, lift = opts.lift ?? 0.38, crease = opts.crease ?? 0.26,
+    c = new T.Color(), base = new T.Color(), toCore = new T.Vector3(), floor = opts.floor ?? 0.5, valley = opts.valley ?? 0.8, lift = opts.lift ?? 0.38, crease = opts.crease ?? 0.26, inner = opts.inner ?? 0.3,
     heights = built.map(({ clump }) => clump.y), lo = Math.min(...heights), hi = Math.max(...heights),
     others = new Float64Array(built.flatMap(({ clump: o }) => [o.x, o.y, o.z, o.up ? 1 : 1 / (o.sy ?? 0.85), o.r]));
   built.forEach(({ geo, lump }, k) => {
@@ -235,7 +235,7 @@ function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, cor
       let f = own * mix(floor, 1.06, sstep(v, 0.08, 0.9)) * mix(valley, 1.04, sstep(lump[i], 0.25, 0.95));
       // Turned in toward the crown's middle: shaded by the clumps round it.
       toCore.set(core.x - x, (core.y - y) * 0.6, core.z - z).normalize();
-      f *= 1 - 0.3 * sstep(N[i * 3] * toCore.x + ny * toCore.y + N[i * 3 + 2] * toCore.z, 0.05, 0.75);
+      f *= 1 - inner * sstep(N[i * 3] * toCore.x + ny * toCore.y + N[i * 3 + 2] * toCore.z, 0.05, 0.75);
       for (let j = 0; j < others.length; j += 5) {
         if (j === k * 5) continue;
         const dx = x - others[j], dy = (y - others[j + 1]) * others[j + 3], dz = z - others[j + 2], r = others[j + 4],
@@ -580,14 +580,14 @@ function roundTree(t: T.Group, s: number, index: number, look: Look, add: AddPar
     clumps.push(at(facing + gap / 2 + ((k + 0.5) / lower) * (Math.PI * 2 - gap) + (h(22 + k) - 0.5) * 0.3, (0.6 + 0.07 * h(27 + k)) * s, (1.4 + 0.08 * h(32 + k)) * s, (0.4 + 0.05 * h(37 + k)) * s, 3, 11, index * 11 + 6 + k));
   const { built, top } = crown(clumps),
     dy = ROUND_TOP * s - top;
-  paintCrown(built, look, 1.0 * s, 2.4 * s, new T.Vector3(tx, 1.6 * s, tz), index);
-  softenNormals(built, new T.Vector3(tx, 1.7 * s, tz), 0.75, 0.25);
+  paintCrown(built, look, 1.0 * s, 2.4 * s, new T.Vector3(tx, 1.6 * s, tz), index, { valley: 0.88, crease: 0.15, inner: 0.25 });
+  softenNormals(built, new T.Vector3(tx, 1.7 * s, tz), 0.75, 0.4);
   add(mergeCrown(built, dy), 'foliage');
   // Three limbs from the fork: into the two lower clumps either side of the gap and the upper one
   // at the back, so a Y opens under the crown's rim.
   const fork = new T.Vector3(tx, F - 0.04 * s, tz),
     ends = [clumps[5], clumps[clumps.length - 1], clumps[3]];
-  add(mergeGeometries(ends.map((c) => limb(fork, new T.Vector3(mix(tx, c.x, 0.72), c.y + dy - 0.12 * s, mix(tz, c.z, 0.72)), 0.072 * s, 0.032 * s, 6, shade(TREE.trunk, trunkShade(F)), 0.7)))!, 'bark');
+  add(mergeGeometries(ends.map((c) => limb(fork, new T.Vector3(mix(tx, c.x, 0.72), c.y + dy - 0.12 * s, mix(tz, c.z, 0.72)), 0.085 * s, 0.045 * s, 6, shade(TREE.trunk, trunkShade(F)), 0.7)))!, 'bark');
   return t;
 }
 export const BLOOMS = palette.flowers;
