@@ -496,7 +496,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
     const TAIL: V[] = [[0, 0.93, -0.58], [0, 0.91, -0.68], [0, 0.8, -0.75], [0.01, 0.62, -0.765], [0.02, 0.45, -0.745], [0.03, 0.31, -0.71]];
     horse.add(strand(TAIL, [0.05, 0.055, 0.06, 0.062, 0.054, 0.036]), 0.05);
     for (const s of [-1, 1])
-      horse.add(strand(TAIL.slice(2).map((p, i): V => add(p, [s * (0.03 + 0.016 * i), 0.012 * i * (s + 2) - 0.01, -0.006 * i])), [0.05, 0.052, 0.044, 0.03]), 0.015);
+      horse.add(strand(TAIL.slice(2).map((p, i): V => add(p, [s * (0.03 + 0.016 * i), 0.012 * i * (s + 2) - 0.01, -0.006 * i])), [0.05, 0.052, 0.044, 0.03]), 0.025);
     // The Duke, chunky, with a big head: seat, coat and chest, square shoulders under a cloak that
     // hangs down his back and spreads over the croup, a high collar, and a round head
     // with a strong nose, a brow, ears and hair under the cone; his coat's skirts fall over the saddle.
@@ -508,18 +508,18 @@ export function createProps(ctx: TownContext, kit: Kit) {
     for (const s of [-1, 1])
       duke
         .add(ellipsoid([s * 0.122, 1.35, -0.06], [0.066, 0.055, 0.066]), 0.04) // shoulder
-        .add(roundBox([s * 0.15, 0.99, -0.1], [0.022, 0.09, 0.1], 0.02, [0.1, 0, s * 0.3]), 0.025); // coat skirt
+        .add(roundBox([s * 0.15, 0.99, -0.1], [0.03, 0.09, 0.1], 0.025, [0.1, 0, s * 0.3]), 0.035); // coat skirt
     // The cloak: a layer over his back and shoulders, its hem spread on the croup behind the saddle.
     duke
       .layer(roundBox([0, 1.22, -0.2], [0.24, 0.25, 0.15], 0.06), 0.028, 0.04)
       .add(ellipsoid([0, 1.0, -0.26], [0.19, 0.065, 0.13]), 0.07);
     duke
-      .add(torus([0, 1.405, -0.06], 0.06, 0.03), 0.015) // high collar
+      .add(torus([0, 1.405, -0.06], 0.06, 0.03), 0.03) // high collar
       .add(roundCone([0, 1.4, -0.05], [0, 1.46, -0.04], 0.05, 0.05), 0.02) // neck
       .add(ellipsoid([0, 1.565, -0.03], [0.11, 0.12, 0.11]), 0.03) // head
-      .add(ellipsoid([0, 1.49, 0.01], [0.08, 0.058, 0.08]), 0.04) // jaw and chin
+      .add(ellipsoid([0, 1.482, 0.01], [0.08, 0.06, 0.08]), 0.04) // jaw and chin, sunk in the collar
       .add(ellipsoid([0, 1.576, 0.068], [0.064, 0.014, 0.022]), 0.02) // brow
-      .add(roundCone([0, 1.548, 0.088], [0, 1.522, 0.116], 0.018, 0.022), 0.014) // the nose
+      .add(roundCone([0, 1.552, 0.08], [0, 1.53, 0.102], 0.026, 0.026), 0.035) // a broad, soft nose
       .add(ellipsoid([0, 1.585, -0.065], [0.112, 0.1, 0.09]), 0.02); // hair
     for (const s of [-1, 1]) {
       duke
@@ -535,12 +535,12 @@ export function createProps(ctx: TownContext, kit: Kit) {
     // both in gauntlets with a flared cuff.
     const arm = (pts: V[], fist: V) => {
       duke
-        .add(strand(pts, [0.058, 0.05, 0.042]), 0.035)
+        .add(strand(pts, [0.058, 0.05, 0.042]), 0.05)
         .add(ellipsoid(add(pts[2], add(fist, pts[2], -1), -0.4), [0.05, 0.05, 0.05]), 0.015)
         .add(ellipsoid(fist, [0.046, 0.044, 0.05]), 0.015);
     };
-    arm([[0.14, 1.35, -0.06], [0.2, 1.2, -0.02], [0.115, 1.15, 0.14]], [0.095, 1.15, 0.18]);
-    arm([[-0.14, 1.35, -0.06], [-0.21, 1.19, -0.08], [-0.2, 1.07, 0.05]], [-0.19, 1.04, 0.1]);
+    arm([[0.14, 1.35, -0.06], [0.235, 1.21, 0.0], [0.13, 1.15, 0.14]], [0.1, 1.15, 0.18]);
+    arm([[-0.14, 1.35, -0.06], [-0.24, 1.2, -0.07], [-0.215, 1.08, 0.05]], [-0.2, 1.045, 0.1]);
     horse.union(duke, 0.06);
     const cast = horse.mesh();
     // The top of his head, where the cone sits.
@@ -586,7 +586,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
       // Each rein runs from the bit up the side of the neck to the left fist.
       const bit = away(H(0.8, -0.06, s * 0.08), 0.004);
       extras.push(new T.TorusGeometry(0.022, 0.007, 4, 10).rotateY(Math.PI / 2).translate(bit[0], bit[1], bit[2]));
-      extras.push(tube([bit, away(H(0.55, -0.1, s * 0.12), 0.03), away([s * 0.1, 1.17, 0.42], 0.03), [0.095 + s * 0.012, 1.15, 0.19]], 0.012, false, 20));
+      extras.push(tube([bit, away(H(0.55, -0.1, s * 0.12), 0.03), away([s * 0.1, 1.17, 0.42], 0.03), [0.1 + s * 0.012, 1.15, 0.19]], 0.012, false, 20));
       // The stirrup round the foot's ball, hung on its leather from the saddle's flap.
       const foot: V = [s * 0.27, 0.6, 0.15];
       extras.push(new T.TorusGeometry(0.06, 0.013, 5, 14).scale(1, 1, 0.8).translate(foot[0], foot[1] + 0.02, foot[2]));
@@ -594,7 +594,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
     }
     const rubbed: [V, number][] = [
       [[0.1, 0.33, 0.39], 0.07], [[-0.1, 0.42, 0.54], 0.07], [H(0.92, 0), 0.07], // knees, the muzzle
-      [[0.27, 0.64, 0.21], 0.06], [[-0.27, 0.64, 0.21], 0.06], [[0.095, 1.15, 0.21], 0.05], // boot toes, the rein fist
+      [[0.27, 0.64, 0.21], 0.06], [[-0.27, 0.64, 0.21], 0.06], [[0.1, 1.15, 0.21], 0.05], // boot toes, the rein fist
     ];
     const geometry = mergeGeometries([cast, ...extras].map((p) => {
       for (const n of Object.keys(p.attributes)) if (n !== 'position' && n !== 'normal') p.deleteAttribute(n);
