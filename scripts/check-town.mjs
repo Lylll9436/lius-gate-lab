@@ -3070,7 +3070,9 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   });
   assert(posts > 0, 'The studio canopy lost its posts.');
   assert(
-    outline.min.x >= -3.045 && outline.max.x <= 3.045 && outline.min.z >= -2.845 && outline.max.z <= 4.705 && outline.min.y > -0.01 && outline.max.y <= 5.275,
+    // Front z: the bench and bike rack by the entrance count too; the street-furniture pass's bench
+    // reaches about 1 cm further out than the old one (its own footprint is checked with the props).
+    outline.min.x >= -3.045 && outline.max.x <= 3.045 && outline.min.z >= -2.845 && outline.max.z <= 4.72 && outline.min.y > -0.01 && outline.max.y <= 5.275,
     `The studio outgrew its outline: ${outline.min.toArray().map((n) => n.toFixed(2))} to ${outline.max.toArray().map((n) => n.toFixed(2))}.`,
   );
   assert(tris <= 13000 && meshes <= 14, `The studio has ${tris} triangles in ${meshes} meshes.`);
