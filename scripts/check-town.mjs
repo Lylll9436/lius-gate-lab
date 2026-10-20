@@ -2723,6 +2723,108 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     colour = new T.Color();
   for (let i = 0; i < c.count; i += 5) assert(hsv(colour.fromBufferAttribute(c, i).convertLinearToSRGB()) <= limit + 1e-3, 'The bronze is louder than palette.bronze.');
 }
+// The street and pier lamps (town-props' lamp), Glasgow cast-iron lamp standards, built alone: one
+// stands within the old 0.34 plinth square (every clearance in the plan assumes it), reaches no
+// further than 0.32 from its axis and stands under 2.5. Its one lantern glass, the lamps entry the
+// night loop lights, keeps its middle at the lantern height, 0.4 tall, at most 0.42 across and
+// wider at its head than its foot; everything else is unlit iron with at most two brass accents,
+// and it costs at most 1300 triangles (about +25k over the town's 23). Whatever overhangs the plinth
+// stands 0.2 above a walker's head. Its own spotlight (city-lighting) falls on its iron no harder
+// than 1.2 / d² (hung 0.17 out, it lit the bell collar at 31: a cream glow under the lantern). The
+// ladder bar runs square to the overview's line of sight, on the turned pier as on the streets, so
+// the opening views see both arms. No canopy (summer's, the fullest) comes within 0.25 of a lamp
+// head between 1 and 2.6 up.
+{
+  const { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    nature = await load('town-nature'),
+    library = createCityMaterials(),
+    context = () => ({ library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] }),
+    ctx = context(),
+    props = createProps(ctx, createKit(ctx)),
+    stage = new T.Scene(),
+    pierGroup = new T.Group();
+  pierGroup.rotation.y = Math.atan2(plan.pier.dir[0], plan.pier.dir[1]); // as pierAndHarbour turns the pier
+  stage.add(pierGroup);
+  const post = props.lamp(stage, 0, 0, 1.8, 0),
+    onPier = props.lamp(pierGroup, 0, 0, 1.8, 0);
+  stage.updateMatrixWorld(true);
+  assert.equal(ctx.lamps.length, 2, 'A lamp has more or fewer than one lantern glass.');
+  const glass = ctx.lamps[0],
+    parts = post.children.filter((o) => o.isMesh && o !== glass),
+    v = new T.Vector3(),
+    tris = (m) => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3,
+    points = (m, each) => {
+      const p = m.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) each(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld));
+    };
+  assert(post.children.includes(glass) && Math.abs(glass.getWorldPosition(new T.Vector3()).y - 1.8) < 1e-6, 'The lantern glass left the lantern height.');
+  const pane = new T.Box3().setFromObject(glass),
+    paneSize = pane.getSize(new T.Vector3());
+  assert(Math.abs(paneSize.y - 0.4) < 0.01 && paneSize.x <= 0.42 && paneSize.z <= 0.42, 'The lantern glass is no longer about the old lantern’s size.');
+  let foot = 0, head = 0;
+  points(glass, (p) => {
+    if (p.y < pane.min.y + 1e-4) foot = Math.max(foot, Math.abs(p.x));
+    if (p.y > pane.max.y - 1e-4) head = Math.max(head, Math.abs(p.x));
+  });
+  assert(head > foot + 0.02, 'The lantern is no wider at its head than its foot.');
+  assert(parts.every((m) => ['iron', 'brass'].includes(m.material.userData.surfaceKind) && m.material.emissive.getHex() === 0), 'A lamp part other than the glass is not unlit iron or brass.');
+  assert(parts.filter((m) => m.material.userData.surfaceKind === 'brass').length <= 2, 'A lamp has more than two brass accents.');
+  assert([...parts, glass].reduce((n, m) => n + tris(m), 0) <= 1300, 'A lamp costs more than 1300 triangles.');
+  const walkerTop = Math.max(...walkers.map((w) => new T.Box3().setFromObject(w.root).getSize(new T.Vector3()).y));
+  let reach = 0;
+  for (const m of parts)
+    points(m, (p) => {
+      const r = Math.hypot(p.x, p.z);
+      reach = Math.max(reach, r);
+      if (p.y < 0.6) assert(Math.abs(p.x) <= 0.170001 && Math.abs(p.z) <= 0.170001, 'The lamp base spreads beyond the old 0.34 plinth square.');
+      assert(r <= 0.32 && p.y <= 2.5, 'The lamp reaches beyond 0.32 of its axis or stands 2.5 or taller.');
+      if (r > 0.185) assert(p.y >= walkerTop + 0.2, `The lamp overhangs its plinth ${p.y.toFixed(2)} up, at a walker's head (${walkerTop.toFixed(2)}).`);
+    });
+  // The lamp's own light, as city-lighting hangs it.
+  const lighting = createStreetLighting(stage, [glass], { shadows: 0 }),
+    [spot] = lighting.lights,
+    axis = spot.target.position.clone().sub(spot.position).normalize(),
+    outer = Math.cos(spot.angle),
+    inner = Math.cos(spot.angle * (1 - spot.penumbra));
+  for (const m of parts)
+    points(m, (p) => {
+      const d = p.clone().sub(spot.position),
+        t = T.MathUtils.clamp((d.clone().normalize().dot(axis) - outer) / (inner - outer), 0, 1);
+      assert((t * t * (3 - 2 * t)) / d.lengthSq() <= 1.2, `The lamp's own light falls hard on its iron at ${p.toArray().map((n) => n.toFixed(2))}.`);
+    });
+  lighting.dispose();
+  // Both arms' balls end 0.29 out; the farthest point of the bar from the shaft is one of them.
+  for (const lamp of [post, onPier]) {
+    const bar = lamp.children.find((o) => o.name === 'ladder-bar'),
+      centre = lamp.getWorldPosition(new T.Vector3());
+    let tip = null;
+    points(bar, (p) => {
+      if (!tip || Math.hypot(p.x - centre.x, p.z - centre.z) > Math.hypot(tip.x - centre.x, tip.z - centre.z)) tip = p.clone();
+    });
+    const along = Math.abs((tip.x - centre.x) - (tip.z - centre.z)) / Math.SQRT2 / Math.hypot(tip.x - centre.x, tip.z - centre.z);
+    assert(along > 0.999, `A ladder bar${lamp === onPier ? ' on the pier' : ''} turned off the overview's line of sight.`);
+  }
+  const lampSpots = plan.lampPlan();
+  for (const t of plan.plantingPlan()) {
+    const near = lampSpots.filter((l) => Math.hypot(l.x - t.x, l.z - t.z) < 2 * t.size + 1);
+    if (!near.length) continue;
+    const c = context(),
+      g = new T.Group();
+    nature.createNature(c, createKit(c)).tree(g, t, Number(t.id.slice(5)));
+    g.updateMatrixWorld(true);
+    g.traverse((m) => {
+      if (!m.isMesh || m.material.userData.surfaceKind !== 'foliage') return;
+      points(m, (p) => {
+        for (const l of near) {
+          const up = p.y - plan.terrainHeight(l.x, l.z);
+          if (up > 1 && up < 2.6) assert(Math.hypot(p.x - l.x, p.z - l.z) - reach >= 0.25, `${t.id}'s canopy reaches into ${l.id}'s head.`);
+        }
+      });
+    });
+  }
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
