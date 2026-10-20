@@ -2952,7 +2952,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       assert(pilasters.some((m) => doorBox(m).expandByScalar(1e-3).containsPoint(end)), `The base course's end at ${r} shows beside the door case.`);
     }
   const clear = ([y0, y1]) => L.bands.every(([b0, b1]) => y1 <= b0 + 0.05 || y0 >= b1 - 0.05);
-  assert(clear([L.floor, L.lintel + 0.19]), 'The door case runs into a red band.');
+  assert(clear([L.floor, L.lintel + 0.26]), 'The door case runs into a red band.');
   for (const [, y] of L.windows) assert(clear([y - 0.3, y + 0.32]), `A stair window at ${y} runs into a red band.`);
   assert.equal(L.windows.filter((w) => w[2]).length, 1, 'One beacon window.');
   let gallery = 0;
@@ -3000,7 +3000,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   const braces = meshes.filter((m) => m.userData.brace);
   assert(braces.length >= 2 * 2 * (D.piles.length - 1) + 2 * D.piles.length, `The pier lost its cross-bracing (${braces.length} braces).`);
   const braceBoxes = braces.map(local);
-  for (const b of braceBoxes) assert(Math.max(-b.min.x, b.max.x) <= 1.02 && b.max.y <= D.deck - 0.2 && b.min.y >= -0.3, 'A brace leaves the space under the deck.');
+  for (const b of braceBoxes) assert(Math.max(-b.min.x, b.max.x) <= 1.02 && b.max.y <= D.deck - 0.1 && b.min.y >= -0.3, 'A brace leaves the space under the deck.');
   // Each part against each brace in their own frames: no vertex of a part inside a brace, and no
   // brace vertex inside a solid box or drum (a crate, the barrel); a rope's or a lathe's box is
   // no solid, so the second test skips them.

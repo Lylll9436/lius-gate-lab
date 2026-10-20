@@ -1366,7 +1366,7 @@ export const LIGHTHOUSE = {
   wallTop: 1.0,
   gate: 0.6,
   lintel: 1.6,
-  bands: [[1.8, 2.2], [2.84, 3.24]] as XZ[],
+  bands: [[1.86, 2.22], [2.84, 3.24]] as XZ[],
   windows: [[0.8, 2.52, true], [2.1, 1.42, false], [-0.5, 2.52, false], [3.4, 1.42, false]] as [number, number, boolean][],
   gallery: 3.8,
   deck: 4.0,

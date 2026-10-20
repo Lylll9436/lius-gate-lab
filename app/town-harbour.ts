@@ -103,21 +103,29 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
       }
       Object.assign(box(p, 0, deck - 0.31, z, 2 * D.pileX + 0.36, 0.14, 0.16, dark, 'wood').userData, { band: true, pierFrame: true }); // headstock, its ends 0.04 past the piles
     }
-    // X-bracing: 0.08 x 0.1 timbers, the second of each pair 0.07 further out (or back), so the two
+    // X-bracing: 0.08 x 0.1 timbers, the second of each pair 0.07 further in (or back), so the two
     // never share a face where they cross. Along the sides they cross between neighbouring piles
     // (turned about x); across, under each headstock, between the pair (turned about z).
-    const high = deck - 0.36,
-      low = -0.14,
+    // The braces run from just under the stringers (so each X hangs off the deck) to the waterline.
+    const high = deck - 0.2,
+      low = -0.06,
       span = D.piles[1] - D.piles[0] - 0.16,
       along = Math.hypot(span, high - low),
       tilt = Math.atan2(high - low, span),
       across = 2 * D.pileX - 0.2,
       athwart = Math.hypot(across, high - low),
       lean = Math.atan2(high - low, across);
+    // A pile a mooring line is made fast to keeps the brace that rises to it inboard, so the line
+    // drops past the bracing's outer face instead of through it.
+    const tied = (x: number, z: number) => plan.harbour.lines.some(({ pile: [px, pz] }) => Math.abs(px - x) < 0.01 && Math.abs(pz - z) < 0.01);
     for (let k = 0; k + 1 < D.piles.length; k++)
       for (const side of [-1, 1])
-        for (const [n, s] of [[0, 1], [1, -1]])
-          Object.assign(box(p, side * (D.pileX + 0.18 + 0.07 * n), (high + low) / 2, (D.piles[k] + D.piles[k + 1]) / 2, 0.08, 0.1, along, plank[1], 'wood', { rx: -s * tilt }).userData, { band: true, pierFrame: true, brace: true });
+        for (const s of [1, -1]) {
+          // s 1 rises toward the bay's far pile, -1 toward its near one; one is inboard (n 1), never both.
+          const risingIn = tied(side * D.pileX, D.piles[k + 1]) && !tied(side * D.pileX, D.piles[k]),
+            n = (s > 0) === risingIn ? 1 : 0;
+          Object.assign(box(p, side * (D.pileX + 0.18 - 0.07 * n), (high + low) / 2, (D.piles[k] + D.piles[k + 1]) / 2, 0.08, 0.1, along, plank[1], 'wood', { rx: -s * tilt }).userData, { band: true, pierFrame: true, brace: true });
+        }
     for (const z of D.piles)
       for (const [n, s] of [[0, 1], [1, -1]])
         Object.assign(box(p, 0, (high + low) / 2, z - 0.12 - 0.09 * n, athwart, 0.1, 0.08, plank[1], 'wood', { rz: s * lean }).userData, { band: true, pierFrame: true, brace: true });
@@ -746,7 +754,7 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     cylinder(rock, 0, (floor + L.gallery) / 2, 0, shaftR(L.gallery), shaftR(floor), L.gallery - floor, white, 'paint', 32); // painted masonry, so matte
     turn(rock, [[1.1, floor], [1.1, floor + 0.14, true], [1.06, floor + 0.18, true], [1.08, floor + 0.22], [1.06, floor + 0.27], [1.0, floor + 0.29, true], [0.95, floor + 0.32], [0.91, floor + 0.37], [shaftR(floor + 0.44) - 0.01, floor + 0.44]], buff, 'stone', 40, [face + 0.31, Math.PI * 2 - 0.62]);
     for (const [y0, y1] of L.bands) cylinder(rock, 0, (y0 + y1) / 2, 0, shaftR(y1) + 0.03, shaftR(y0) + 0.03, y1 - y0, red, 'enamel', 32); // 0.03 proud
-    // The door case: a buff architrave (pilasters and a lintel with a keystone) 0.2 proud of the
+    // The door case: a buff architrave (pilasters, a lintel and a pediment over it) 0.2 proud of the
     // base course, the green leaf in its reveal with a raised rim, and two steps up from the yard.
     const doorCase = new T.Group();
     doorCase.name = 'lighthouse-door';
@@ -760,8 +768,16 @@ export function createHarbour(ctx: TownContext, kit: Kit, props: Props) {
     for (const y of [sill + 0.035, (sill + L.lintel) / 2, L.lintel - 0.035]) box(doorCase, 0, y, 0.94, 0.26, 0.07, 0.04, palette.greenDoor, 'enamel'); // rails
     sphere(doorCase, 0.12, (sill + L.lintel) / 2 - 0.06, 0.98, 0.04, palette.brass, 'brass');
     for (const s of [-1, 1]) box(doorCase, s * 0.29, (floor + L.lintel) / 2, 0.92, 0.14, L.lintel - floor, 0.4, buff, 'stone');
-    box(doorCase, 0, L.lintel + 0.08, 0.94, 0.86, 0.16, 0.44, buff, 'stone').userData.band = true;
-    box(doorCase, 0, L.lintel + 0.08, 0.97, 0.14, 0.22, 0.44, buff, 'stone'); // keystone
+    box(doorCase, 0, L.lintel + 0.05, 0.94, 0.86, 0.1, 0.44, buff, 'stone').userData.band = true;
+    {
+      // The pediment: a low gable 0.16 high over the lintel, bevelled like a roof, its back in the shaft.
+      const gable = new T.Shape([new T.Vector2(-0.45, 0), new T.Vector2(0.45, 0), new T.Vector2(0, 0.16)]),
+        geo = new T.ExtrudeGeometry(gable, { depth: 0.46, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelOffset: -0.02, bevelSegments: 1 }),
+        m = new T.Mesh(geo, material(buff, 'stone'));
+      m.position.set(0, L.lintel + 0.1, 0.7);
+      m.castShadow = m.receiveShadow = true;
+      doorCase.add(m);
+    }
     // Small windows up the stair, each in a buff surround with a sill and a head: the one over the
     // door is the beacon window, lit all night; the others light like the cottages' rooms.
     for (const [a, y, lit] of L.windows) {
