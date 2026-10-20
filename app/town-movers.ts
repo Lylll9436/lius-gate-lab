@@ -252,38 +252,100 @@ export function followDrift(object: T.Object3D, target: T.Vector3, drift: number
  */
 export const BALLOON_NIGHT_DIM = 0.5;
 
+/**
+ * The balloon envelope's profile (radius, height over its base): the mouth, the cone's gentle
+ * S, the full shoulder (1.56 across at 2.75, so with its gores it stays within 1.6) and the dome
+ * to the crown ring.
+ */
+const BALLOON_PROFILE = [[0.36, 0.06], [0.52, 0.35], [0.85, 0.95], [1.26, 1.62], [1.5, 2.25], [1.56, 2.75], [1.47, 3.25], [1.2, 3.65], [0.8, 3.93], [0.42, 4.04]];
+/** The skirt round the burner: a deep red, quieter than the gores. */
+const BALLOON_SKIRT = '#8e3b2e';
+/** The basket's wicker, a pale cane in the wood family, and the darker cane of its woven bands. */
+const BALLOON_WICKER = '#c49c68',
+  BALLOON_WEAVE = '#98744c';
+/**
+ * The envelope as `gores` panels round the y axis along `profile` (radius x at height y), each
+ * `cols` columns wide and a little full (by `full` of the radius at the equator, nothing at the
+ * mouth and crown) between its seams, so the seams crease as a real envelope's load tapes do.
+ * Each panel is shaded on its own; alternate panels go to `red` and `cream`. `tapes` is a ribbon
+ * 0.08 wide, 0.012 proud, along every seam.
+ */
+function balloonEnvelope(profile: T.Vector2[], gores: number, cols: number, full: number) {
+  const red: T.BufferGeometry[] = [], cream: T.BufferGeometry[] = [], rows = profile.length;
+  const grid = (at: (i: number, c: number) => number[], width: number) => {
+    const pos: number[] = [], idx: number[] = [];
+    for (let i = 0; i < rows; i++) for (let c = 0; c <= width; c++) pos.push(...at(i, c));
+    for (let i = 0; i < rows - 1; i++)
+      for (let c = 0; c < width; c++) {
+        const a = i * (width + 1) + c, d = a + width + 1;
+        idx.push(a, a + 1, d, a + 1, d + 1, d);
+      }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    geometry.setIndex(idx);
+    geometry.computeVertexNormals();
+    return geometry;
+  };
+  const tapes: T.BufferGeometry[] = [];
+  for (let gore = 0; gore < gores; gore++) {
+    const panel = grid((i, c) => {
+      const { x: r, y } = profile[i], f = c / cols, a = ((gore + f) / gores) * Math.PI * 2,
+        rr = r * (1 + full * Math.pow(Math.sin(Math.PI * f), 0.7) * Math.sin((Math.PI * i) / (rows - 1)));
+      return [rr * Math.sin(a), y, rr * Math.cos(a)];
+    }, cols);
+    (gore % 2 ? cream : red).push(panel);
+    tapes.push(grid((i, c) => {
+      const { x: r, y } = profile[i], a = (gore / gores) * Math.PI * 2 + ((c - 0.5) * 0.08) / r, rr = r + 0.012;
+      return [rr * Math.sin(a), y, rr * Math.cos(a)];
+    }, 1));
+  }
+  return { red, cream, tapes: mergeParts(tapes) };
+}
+
 export function createMovers(ctx: TownContext, kit: Kit) {
   const { material, lamps, animated } = ctx;
   const { box, cylinder, strut, lampGlass } = kit;
   function hotAirBalloon(g: T.Object3D) {
     const b = new T.Group();
     g.add(b);
-    // A teardrop envelope lathed from the mouth (y 0) to the crown (y 4.1), with 12 crisp gores.
-    const prof = [[0, 0], [0.3, 0.02], [0.42, 0.3], [0.75, 0.9], [1.25, 1.6], [1.55, 2.3], [1.6, 2.75], [1.48, 3.25], [1.15, 3.7], [0.62, 4.0], [0, 4.1]].map(
-      ([r, y]) => new T.Vector2(r, y),
-    );
-    const lathe = new T.LatheGeometry(prof, 24).toNonIndexed(),
-      pos = lathe.getAttribute('position'),
-      col = new Float32Array(pos.count * 3),
-      stripe = [new T.Color(palette.balloon), new T.Color(palette.balloonBand)];
-    for (let i = 0; i < pos.count; i += 3) {
-      const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3,
-        cz = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
-      const c = stripe[Math.floor(((Math.atan2(cx, cz) + Math.PI) / (Math.PI * 2)) * 12) % 2];
-      for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
-    }
-    lathe.setAttribute('color', new T.BufferAttribute(col, 3));
-    const envelope = new T.Mesh(lathe, material('#ffffff', 'fabric'));
-    envelope.position.y = 0.95;
-    envelope.receiveShadow = true;
-    b.add(envelope);
-    cylinder(b, 0, 5.0, 0, 0.5, 0.62, 0.12, palette.gold, 'fabric', 18); // crown cap
-    box(b, 0, 0.2, 0, 0.7, 0.5, 0.7, palette.wood, 'wood'); // basket
-    box(b, 0, 0.47, 0, 0.8, 0.1, 0.8, palette.woodDark, 'wood'); // rim
-    // Rope tops end inside the mouth (r 0.32 there).
-    for (const sx of [-1, 1])
-      for (const sz of [-1, 1])
-        strut(b, new T.Vector3(sx * 0.32, 0.5, sz * 0.32), new T.Vector3(sx * 0.17, 1.02, sz * 0.17), 0.035, palette.woodDark, 'wood');
+    // The envelope: twelve gores in red and cream, a little full between their load tapes, from the
+    // mouth (y 0.06 over its base at 0.95) up a smooth teardrop to the crown ring (y 4.04).
+    const base = 0.95,
+      profile = new T.SplineCurve(BALLOON_PROFILE.map(([r, y]) => new T.Vector2(r, y))).getSpacedPoints(25),
+      { red, cream, tapes } = balloonEnvelope(profile, 12, 6, 0.025);
+    part(b, mergeParts(red).translate(0, base, 0), palette.balloon, 'fabric', true);
+    part(b, mergeParts(cream).translate(0, base, 0), palette.balloonBand, 'fabric', true);
+    part(b, tapes.translate(0, base, 0), palette.rope, 'fabric', true);
+    // The crown: a dark ring round the parachute vent's domed cap; the mouth: a dark ring and the skirt below it.
+    const top = profile[profile.length - 1], mouth = profile[0],
+      lathe = (pts: number[][], n = 24) => new T.LatheGeometry(pts.map(([r, y]) => new T.Vector2(r, y)), n).translate(0, base, 0);
+    part(b, mergeParts([
+      new T.TorusGeometry(top.x, 0.05, 6, 24).rotateX(Math.PI / 2).translate(0, base + top.y, 0),
+      new T.TorusGeometry(mouth.x, 0.045, 6, 24).rotateX(Math.PI / 2).translate(0, base + mouth.y, 0),
+    ]), palette.woodDark, 'fabric', true);
+    part(b, lathe([[top.x, top.y - 0.02], [top.x - 0.07, top.y + 0.035], [top.x * 0.5, top.y + 0.062], [0, top.y + 0.07]]), palette.gold, 'fabric', true);
+    part(b, lathe([[mouth.x + 0.06, mouth.y - 0.18], [mouth.x + 0.03, mouth.y - 0.06], [mouth.x + 0.01, mouth.y + 0.02]]), BALLOON_SKIRT, 'fabric', true);
+    // The burner under the mouth on its square frame, the frame on four rods from the basket's
+    // corners, and four flying wires from the corners up inside the skirt to the mouth ring.
+    const steel = '#7d8288',
+      rod = (a: T.Vector3, c: T.Vector3) => new T.TubeGeometry(new T.LineCurve3(a, c), 1, 0.035, 6, false);
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    part(b, mergeParts([
+      new T.CylinderGeometry(0.1, 0.1, 0.12, 12).translate(0, 0.8, 0), // burner
+      new T.TorusGeometry(0.1, 0.035, 5, 12).rotateX(Math.PI / 2).translate(0, 0.86, 0), // coil
+      ...[0, 1, 2, 3].map((k) => new T.BoxGeometry(0.51, 0.07, 0.07).translate(0, 0.7, 0.22).rotateY((k * Math.PI) / 2)), // frame
+      ...corners.map(([sx, sz]) => rod(new T.Vector3(sx * 0.27, 0.5, sz * 0.27), new T.Vector3(sx * 0.22, 0.7, sz * 0.22))),
+      ...corners.map(([sx, sz]) => rod(new T.Vector3(sx * 0.3, 0.5, sz * 0.3), new T.Vector3(sx * mouth.x * Math.SQRT1_2, base + mouth.y, sz * mouth.x * Math.SQRT1_2))),
+    ]), steel, 'fabric', true);
+    // The wicker basket, a little narrower at its foot, with a woven band round it, a dark skid at
+    // its foot, a padded leather rim and its dark inside.
+    part(b, mouldedBlock(0.35, 0.35, [{ s: 0.035, y: -0.05 }, { s: 0, y: 0.06 }, { s: 0, y: 0.42 }], 0.07, 3), BALLOON_WICKER, 'fabric', true);
+    part(b, mergeParts([
+      mouldedBlock(0.35, 0.35, [{ s: -0.012, y: 0.2 }, { s: -0.016, y: 0.235 }, { s: -0.012, y: 0.27 }], 0.07, 3),
+      mouldedBlock(0.35, 0.35, [{ s: 0.03, y: -0.05 }, { s: -0.005, y: -0.015 }, { s: -0.005, y: 0.03 }, { s: 0.01, y: 0.05 }], 0.07, 3),
+    ]), BALLOON_WEAVE, 'fabric', true);
+    part(b, mergeParts([0, 1, 2, 3].map((k) => new RoundedBoxGeometry(0.8, 0.1, 0.1, 1, 0.045).translate(0, 0.465, 0.35).rotateY((k * Math.PI) / 2))), palette.woodDark, 'fabric', true);
+    part(b, new T.BoxGeometry(0.62, 0.02, 0.62).translate(0, 0.43, 0), '#4f3a2a', 'fabric', true);
     // No shadow: from its beat off the west shore the sun lays it on the beach behind the
     // terrace, where it reads as a dark blot in the People chapter rather than as a balloon.
     b.traverse((o) => {
