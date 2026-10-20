@@ -101,39 +101,157 @@ function flutedDrum(rows: { r: number; y: number; cut: number }[], flutes: numbe
   return geometry;
 }
 
+/*
+ * The street furniture's detail kit. Small parts are merged into one geometry per material as
+ * they are made (`mergePieces`), so a bandstand's dozens of brackets and rails batch as a few
+ * meshes. An extruded outline (`extrude`) is a plate with one 45-degree chamfer round both faces:
+ * cheap, and every edge still catches a soft line of light. Thin members are plain unit boxes
+ * (12 triangles); nothing is under 0.07 thick, so nothing crawls at the overview.
+ */
+type V3 = [number, number, number];
+/** A part of a merged prop: a geometry placed at `at`, turned by `rotation` (XYZ) and scaled, or placed by `matrix`. */
+type Piece = { geometry: T.BufferGeometry; at?: V3; rotation?: V3; scale?: V3; matrix?: T.Matrix4 };
+/** Pieces as one geometry, position and normal only (batching writes the surface coordinates). */
+function mergePieces(pieces: Piece[]) {
+  const m4 = new T.Matrix4(),
+    q = new T.Quaternion();
+  const parts = pieces.map(({ geometry, at = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], matrix }) => {
+    const g = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+    for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    return g.applyMatrix4(matrix ?? m4.compose(new T.Vector3(...at), q.setFromEuler(new T.Euler(...rotation)), new T.Vector3(...scale)));
+  });
+  const out = mergeGeometries(parts)!;
+  parts.forEach((p) => p.dispose());
+  return out;
+}
+/** An outline extruded `depth` along z about z = 0, its edges chamfered by c. */
+function extrude(shape: T.Shape, depth: number, c = 0.012, curve = 8) {
+  return new T.ExtrudeGeometry(shape, {
+    depth: depth - 2 * c,
+    bevelEnabled: c > 0,
+    bevelThickness: c,
+    bevelSize: c,
+    bevelOffset: -c,
+    bevelSegments: 1,
+    curveSegments: curve,
+  }).translate(0, 0, -depth / 2 + c);
+}
+/** A rectangle's outline from (x0, y0) to (x1, y1). */
+function rectShape(x0: number, y0: number, x1: number, y1: number) {
+  return new T.Shape([new T.Vector2(x0, y0), new T.Vector2(x1, y0), new T.Vector2(x1, y1), new T.Vector2(x0, y1)]);
+}
+/**
+ * A rounded rectangle from (x0, y0) to (x1, y1) as a hole's outline, its corners of radius r
+ * sampled in n steps each (a round-ended slot when r is half its width).
+ */
+function slotPath(x0: number, y0: number, x1: number, y1: number, r: number, n = 2) {
+  const pts: T.Vector2[] = [];
+  for (const [cx, cy, a0] of [[x1 - r, y0 + r, -Math.PI / 2], [x1 - r, y1 - r, 0], [x0 + r, y1 - r, Math.PI / 2], [x0 + r, y0 + r, Math.PI]])
+    for (let k = 0; k <= n; k++) {
+      const a = a0 + (k / n) * (Math.PI / 2),
+        q = new T.Vector2(cx + r * Math.cos(a), cy + r * Math.sin(a));
+      if (!pts.length || q.distanceTo(pts[pts.length - 1]) > 1e-6) pts.push(q);
+    }
+  if (pts[0].distanceTo(pts[pts.length - 1]) < 1e-6) pts.pop();
+  return new T.Path(pts);
+}
+/** A round hole's outline, n points round. */
+const circlePath = (x: number, y: number, r: number, n = 10) =>
+  new T.Path(Array.from({ length: n }, (_, k) => new T.Vector2(x + r * Math.cos((k / n) * Math.PI * 2), y + r * Math.sin((k / n) * Math.PI * 2))));
+const chamferBoxes = new Map<string, T.BufferGeometry>();
+/** A w x h x d block about its middle, chamfered by a quarter of its thinnest side (at most 0.02); shared per size. */
+function chamferBox(w: number, h: number, d: number) {
+  const key = [w, h, d].map((n) => n.toFixed(4)).join('|');
+  let g = chamferBoxes.get(key);
+  if (!g) chamferBoxes.set(key, (g = extrude(rectShape(-w / 2, -h / 2, w / 2, h / 2), d, Math.min(0.02, 0.25 * Math.min(w, h, d)), 1)));
+  return g;
+}
+const UNIT_BOX = new T.BoxGeometry(1, 1, 1);
+/** A straight member w x d in section from a to b (a lattice bar, a strut, a stay). */
+function member(a: V3, b: V3, w: number, d = w): Piece {
+  const A = new T.Vector3(...a),
+    B = new T.Vector3(...b),
+    along = B.clone().sub(A),
+    length = along.length();
+  return {
+    geometry: UNIT_BOX,
+    matrix: new T.Matrix4().compose(A.add(B).multiplyScalar(0.5), new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), along.normalize()), new T.Vector3(w, length, d)),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Furniture, planting, small things                                   */
 /* ------------------------------------------------------------------ */
 export function createProps(ctx: TownContext, kit: Kit) {
   const { material, lamps, animated } = ctx;
-  const { box, cylinder, cone, lampGlass } = kit;
-  /** A chunky bench: two leg slabs with back posts, one seat slab and one back board. */
+  const { box, lampGlass } = kit;
+  /** Pieces as one mesh in g, in one material; `shadow: false` keeps thin parts out of the shadow maps. */
+  function part(g: T.Object3D, pieces: Piece[] | T.BufferGeometry, colour: string, kind: SurfaceKind, shadow = true) {
+    const m = new T.Mesh(Array.isArray(pieces) ? mergePieces(pieces) : pieces, material(colour, kind));
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    if (!shadow) m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * A park bench's cast-iron end in its own plane (u forward, v up), 0.07 thick, in one casting:
+   * the front leg, the arched rail under the seat, the back leg raked up into the back post, and the
+   * arm over an open loop, its front end curled down into the leg.
+   */
+  const benchEnd = (() => {
+    const v = (pts: number[][]) => pts.map(([a, b]) => new T.Vector2(a, b)),
+      // A smooth run from `from` through pts, about one sample per point.
+      run = (from: number[], pts: number[][]) => new T.SplineCurve(v([from, ...pts])).getPoints(pts.length).slice(1);
+    const outline = [
+      ...v([[0.255, 0], [0.16, 0]]),
+      ...run([0.16, 0], [[0.15, 0.12], [0.135, 0.22], [0.08, 0.29], [0, 0.31], [-0.09, 0.29], [-0.14, 0.22], [-0.16, 0.12], [-0.17, 0]]),
+      ...v([[-0.27, 0]]),
+      ...run([-0.27, 0], [[-0.245, 0.14], [-0.225, 0.32], [-0.225, 0.48], [-0.25, 0.66], [-0.285, 0.8], [-0.315, 0.9]]),
+      ...v([[-0.245, 0.915]]),
+      ...run([-0.245, 0.915], [[-0.22, 0.8], [-0.19, 0.69], [-0.1, 0.655], [0.1, 0.655], [0.2, 0.66], [0.262, 0.62], [0.26, 0.56], [0.225, 0.535]]),
+      ...run([0.225, 0.535], [[0.235, 0.45], [0.255, 0.3], [0.26, 0.15]]),
+    ];
+    const s = new T.Shape(outline);
+    s.holes.push(slotPath(-0.15, 0.455, 0.17, 0.57, 0.055));
+    return extrude(s, 0.07, 0.012, 1).rotateY(-Math.PI / 2);
+  })();
+  /**
+   * A Victorian park bench, 1.24 long and 0.92 tall over its ends: two cast-iron ends (benchEnd)
+   * and timber slats, three on the seat and two on the back leaning with the back posts, the gaps
+   * between them 0.035 or more so they stay calm at the overview.
+   */
   function bench(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
     const b = new T.Group(); b.position.set(x, y, z); b.rotation.y = ry; g.add(b);
-    for (const sx of [-0.52, 0.52]) {
-      box(b, sx, 0.19, 0.02, 0.1, 0.38, 0.4, palette.metal, 'iron');   // leg slab, 108
-      box(b, sx, 0.62, -0.17, 0.1, 0.5, 0.08, palette.metal, 'iron');  // back post, 12
-    }
-    box(b, 0, 0.42, 0.02, 1.3, 0.1, 0.46, palette.wood, 'wood');      // seat slab, 108
-    box(b, 0, 0.7, -0.19, 1.3, 0.26, 0.1, palette.wood, 'wood');      // back board, 108
+    part(b, [-0.56, 0.56].map((sx): Piece => ({ geometry: benchEnd, at: [sx, 0, 0] })), palette.metal, 'iron');
+    part(b, [
+      ...[0.15, -0.015, -0.18].map((u): Piece => ({ geometry: chamferBox(1.24, 0.07, 0.13), at: [0, 0.405, u] })),
+      ...[[-0.21, 0.57], [-0.245, 0.76]].map(([u, h]): Piece => ({ geometry: chamferBox(1.24, 0.13, 0.07), at: [0, h, u], rotation: [-0.245, 0, 0] })),
+    ], palette.wood, 'wood');
     return b;
   }
   /**
    * A Sheffield cycle hoop (0.57 wide, 0.49 tall: below a parked bike's bar, which passes over it)
-   * along the local x axis; thin, so it casts no shadow.
+   * along the local x axis: one bent tube, its legs turning into the flat top through round
+   * shoulders, on a round foot plate each; thin, so it casts no shadow.
    */
+  const hoopTube = (() => {
+    const X = 0.25, R = 0.12, top = 0.455, pts: T.Vector3[] = [];
+    pts.push(new T.Vector3(-X, -0.02, 0), new T.Vector3(-X, 0.16, 0));
+    for (let i = 0; i <= 4; i++) pts.push(new T.Vector3(-X + R - R * Math.cos((i / 4) * (Math.PI / 2)), top - R + R * Math.sin((i / 4) * (Math.PI / 2)), 0));
+    pts.push(new T.Vector3(0, top, 0));
+    for (let i = 4; i >= 0; i--) pts.push(new T.Vector3(X - R + R * Math.cos((i / 4) * (Math.PI / 2)), top - R + R * Math.sin((i / 4) * (Math.PI / 2)), 0));
+    pts.push(new T.Vector3(X, 0.16, 0), new T.Vector3(X, -0.02, 0));
+    return new T.TubeGeometry(new T.CatmullRomCurve3(pts, false, 'centripetal'), 30, 0.035, 6, false);
+  })();
   function cycleHoop(g: T.Object3D, x: number, y: number, z: number) {
     const h = new T.Group(); h.position.set(x, y, z); g.add(h);
     const steel = '#7d8288'; // galvanised, paler than the street iron, so the hoops part from the tyres
-    const parts = [-0.25, 0.25].map((sx) => cylinder(h, sx, 0.1, 0, 0.035, 0.035, 0.2, steel, 'iron'));
-    const bow = new T.Mesh(new T.TorusGeometry(0.25, 0.035, 6, 12, Math.PI), material(steel, 'iron'));
-    bow.position.y = 0.2;
-    h.add(bow);
-    for (const m of [...parts, bow]) {
-      m.castShadow = false;
-      m.receiveShadow = true;
-      m.userData.noShadow = true;
-    }
+    part(h, [
+      { geometry: hoopTube },
+      ...[-0.25, 0.25].map((sx): Piece => ({ geometry: new T.CylinderGeometry(0.065, 0.07, 0.02, 10), at: [sx, 0.01, 0] })),
+    ], steel, 'iron', false);
     return h;
   }
   // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
@@ -335,118 +453,563 @@ export function createProps(ctx: TownContext, kit: Kit) {
     animated.push({ object: root, update });
     return root;
   }
-  /** A red enamel phone box: a stone plinth, a fat body with one big pane per face, a blank cream band, a crown and a pyramid hat. */
+  /**
+   * The K6 roof over a square of half-width h from y0: each face's top edge is a segmental arch
+   * rising s at its middle, and the roof between them a shallow dome, the sum of the two arches
+   * (s twice over at the middle, nothing at the corners). Smooth on top, crisp at the arched edges,
+   * with a flat tympanum under each arch down to `foot`.
+   */
+  function k6Roof(h: number, y0: number, s: number, foot: number) {
+    const n = 12,
+      arch = (u: number) => s * (1 - (u / h) ** 2),
+      top = new T.BufferGeometry(),
+      pos: number[] = [],
+      index: number[] = [];
+    for (let j = 0; j <= n; j++)
+      for (let i = 0; i <= n; i++) {
+        const x = -h + (2 * h * i) / n,
+          z = -h + (2 * h * j) / n;
+        pos.push(x, y0 + arch(x) + arch(z), z);
+      }
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) {
+        const a = j * (n + 1) + i;
+        index.push(a, a + n + 1, a + 1, a + 1, a + n + 1, a + n + 2);
+      }
+    top.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    top.setIndex(index);
+    top.computeVertexNormals();
+    const sides: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const u0 = -h + (2 * h * i) / n,
+        u1 = u0 + (2 * h) / n;
+      sides.push(u0, foot, h, u1, foot, h, u1, y0 + arch(u1), h, u0, foot, h, u1, y0 + arch(u1), h, u0, y0 + arch(u0), h);
+    }
+    const face = new T.BufferGeometry();
+    face.setAttribute('position', new T.Float32BufferAttribute(sides, 3));
+    face.computeVertexNormals();
+    return mergePieces([{ geometry: top }, ...[0, 1, 2, 3].map((k): Piece => ({ geometry: face, rotation: [0, (k * Math.PI) / 2, 0] }))]);
+  }
+  /** The abstract crown on a K6 tympanum: a band under three round lobes, 0.15 x 0.06, never a cipher. */
+  const k6Crown = (() => {
+    const s = new T.Shape();
+    s.moveTo(-0.075, 0);
+    s.lineTo(0.075, 0);
+    s.lineTo(0.075, 0.03);
+    for (const cx of [0.05, 0, -0.05]) s.absarc(cx, 0.03, 0.025, 0, Math.PI, false);
+    s.lineTo(-0.075, 0);
+    return extrude(s, 0.03, 0, 3);
+  })();
+  /**
+   * A red K6 kiosk, 0.84 square on its plinth and 2.06 tall: a stone plinth, a moulded red skirt,
+   * a body framed by four corner posts, on each face a glazed door or window divided into three
+   * columns and six rows by glazing bars (one pane each, a cool light all night), a blank cream
+   * sign band under a moulded cornice, and the K6's domed roof: an arched head on every face (a
+   * rolled rim over a tympanum with an abstract crown in relief) and a shallow dome between them.
+   */
   function phoneBox(g: T.Object3D, x: number, y: number, z: number, ry = 0) {
     const p = new T.Group(); p.position.set(x, y, z); p.rotation.y = ry; g.add(p);
     const red = palette.boat; // the palette's accent red
-    box(p, 0, 0.1, 0, 0.84, 0.2, 0.84, palette.stoneDark, 'stone'); // plinth
-    box(p, 0, 1.0, 0, 0.72, 1.6, 0.72, red, 'enamel'); // body
-    for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-      const f = new T.Group(); f.rotation.y = side; p.add(f);
-      box(f, 0, 0.98, 0.35, 0.48, 1.04, 0.04, palette.glass, 'glass').userData.window = 'kiosk'; // pane, a cool light all night
-      box(f, 0, 0.98, 0.37, 0.07, 1.04, 0.03, red, 'enamel'); // mullion
-      box(f, 0, 1.15, 0.37, 0.48, 0.07, 0.03, red, 'enamel'); // transom
-      box(f, 0, 1.64, 0.37, 0.5, 0.13, 0.03, palette.white, 'enamel'); // sign band, blank
+    part(p, mouldedBlock(0.42, 0.42, [{ s: 0, y: 0 }, { s: 0, y: 0.165, sharp: true }, { s: 0.035, y: 0.2, sharp: true }], 0.03, 1), palette.stoneDark, 'stone');
+    const body: Piece[] = [
+      { geometry: mouldedBlock(0.385, 0.385, [{ s: 0, y: 0.2 }, { s: 0, y: 0.32, sharp: true }, { s: 0.015, y: 0.34 }, { s: 0.03, y: 0.36, sharp: true }], 0.03, 2) },
+      { geometry: chamferBox(0.66, 1.4, 0.66), at: [0, 1.06, 0] },
+      { geometry: mouldedBlock(0.39, 0.39, [{ s: 0.03, y: 1.715 }, { s: 0, y: 1.74 }, { s: 0, y: 1.765, sharp: true }, { s: 0.012, y: 1.78, sharp: true }], 0.04, 2) },
+      { geometry: k6Roof(0.375, 1.78, 0.14, 1.76) },
+      ...[-1, 1].flatMap((sx) => [-1, 1].map((sz): Piece => ({ geometry: chamferBox(0.11, 1.36, 0.11), at: [sx * 0.315, 1.04, sz * 0.315] }))),
+    ];
+    const bars: Piece[] = [];
+    // Each arched head's rolled rim, along the arch just proud of the tympanum.
+    const rim = new T.TubeGeometry(
+      new T.CatmullRomCurve3(Array.from({ length: 9 }, (_, i) => {
+        const u = -0.375 + (0.75 * i) / 8;
+        return new T.Vector3(u, 1.78 + 0.14 * (1 - (u / 0.375) ** 2) - 0.012, 0.378);
+      })),
+      10, 0.035, 5, false,
+    );
+    for (let k = 0; k < 4; k++) {
+      const turn = (k * Math.PI) / 2,
+        on = (at: V3): V3 => [at[0] * Math.cos(turn) + at[2] * Math.sin(turn), at[1], -at[0] * Math.sin(turn) + at[2] * Math.cos(turn)];
+      const pane = box(p, ...on([0, 1.0, 0.336]), 0.46, 1.0, 0.02, palette.glass, 'glass', { ry: turn });
+      pane.userData.window = 'kiosk'; // a cool light all night
+      body.push(
+        { geometry: rim, rotation: [0, turn, 0] },
+        { geometry: k6Crown, at: on([0, 1.795, 0.384]), rotation: [0, turn, 0] },
+        // The door or window frame: head and sill rails and two stiles over the glass's edges.
+        ...[0.47, 1.53].map((h): Piece => ({ geometry: chamferBox(0.52, 0.06, 0.05), at: on([0, h, 0.35]), rotation: [0, turn, 0] })),
+        ...[-1, 1].map((s): Piece => ({ geometry: chamferBox(0.05, 1.12, 0.05), at: on([s * 0.245, 1.0, 0.35]), rotation: [0, turn, 0] })),
+        { geometry: chamferBox(0.52, 0.05, 0.05), at: on([0, 1.69, 0.35]), rotation: [0, turn, 0] },
+      );
+      // The glazing bars: three columns and six rows of small panes.
+      for (const u of [-0.077, 0.077]) bars.push({ geometry: UNIT_BOX, at: on([u, 1.0, 0.348]), rotation: [0, turn, 0], scale: [0.045, 1.0, 0.03] });
+      for (let r = 1; r < 6; r++) bars.push({ geometry: UNIT_BOX, at: on([0, 0.5 + r / 6, 0.348]), rotation: [0, turn, 0], scale: [0.46, 0.045, 0.03] });
+      // The sign band, blank, between the window's head and the frieze rail.
+      box(p, ...on([0, 1.612, 0.338]), 0.48, 0.1, 0.03, palette.white, 'enamel', { ry: turn });
     }
-    box(p, 0, 1.86, 0, 0.84, 0.12, 0.84, red, 'enamel'); // crown
-    cone(p, 0, 2.02, 0, 0.58, 0.2, red, 'enamel', 4); // hat
+    part(p, body, red, 'enamel');
+    part(p, bars, red, 'enamel');
     return p;
   }
-  /** A fat green enamel litter bin with a brass band and an iron lid. */
+  /**
+   * A cast-iron litter bin, 0.48 across and 0.87 tall: a moulded foot, a fluted body painted deep
+   * green, a brass band, the dark opening under the lid, and a domed iron lid with a knob.
+   */
   function bin(g: T.Object3D, x: number, y: number, z: number) {
-    cylinder(g, x, y + 0.33, z, 0.24, 0.2, 0.66, palette.greenDoor, 'enamel', 12); // body
-    cylinder(g, x, y + 0.5, z, 0.245, 0.245, 0.07, palette.brass, 'brass', 12); // band
-    cylinder(g, x, y + 0.7, z, 0.27, 0.27, 0.1, palette.metal, 'iron', 12); // lid
+    const b = new T.Group(); b.position.set(x, y, z); g.add(b);
+    const green = palette.greenDoor;
+    part(b, [
+      { geometry: turned([{ r: 0.215, y: 0 }, { r: 0.222, y: 0.03, sharp: true }, { r: 0.234, y: 0.05 }, { r: 0.224, y: 0.072 }, { r: 0.206, y: 0.088 }, { r: 0.2, y: 0.1 }], 14) },
+      { geometry: flutedDrum([{ r: 0.2, y: 0.095, cut: 0 }, { r: 0.205, y: 0.135, cut: 1 }, { r: 0.215, y: 0.5, cut: 1 }, { r: 0.215, y: 0.53, cut: 0 }], 12, 0.02) },
+    ], green, 'enamel');
+    part(b, turned([{ r: 0.21, y: 0.515 }, { r: 0.232, y: 0.53 }, { r: 0.238, y: 0.555 }, { r: 0.232, y: 0.58 }, { r: 0.21, y: 0.595 }], 16), palette.brass, 'brass');
+    part(b, turned([{ r: 0.2, y: 0.59 }, { r: 0.19, y: 0.6, sharp: true }, { r: 0.19, y: 0.675 }], 14), palette.ink, 'iron');
+    part(b, turned([
+      { r: 0.19, y: 0.67 }, { r: 0.25, y: 0.67, sharp: true }, { r: 0.256, y: 0.69 }, { r: 0.25, y: 0.71, sharp: true }, { r: 0.238, y: 0.72 },
+      { r: 0.2, y: 0.758 }, { r: 0.13, y: 0.788 }, { r: 0.06, y: 0.804 }, { r: 0.034, y: 0.81, sharp: true }, { r: 0.045, y: 0.83 }, { r: 0.04, y: 0.856 }, { r: 0, y: 0.868 },
+    ], 14), palette.metal, 'iron');
   }
-  /** The park bandstand: a fat octagon on a stepped plinth, chunky columns, low panels and a big verdigris hat. */
+  /**
+   * The park bandstand, a Victorian cast-iron bandstand on an octagonal plan (its faces square to
+   * the axes, the entrance to +z), 3.72 across its plinth and 4.7 to the finial's tip:
+   * - a stone plinth (ashlar) with a moulded foot and an overhanging moulded coping, three steps up
+   *   to the entrance and a timber floor;
+   * - eight slender cream-painted iron columns on square pedestals, each with a moulded base, a
+   *   band where the railing meets it, a necking bead, a bell capital and an abacus;
+   * - between them (but for the entrance) a cast railing panel pierced with a roundel and four
+   *   round-ended slots, under a handrail;
+   * - an arched, pierced bracket under the frieze in every bay, and over it the frieze: plates
+   *   pierced with three roundels between a bottom and a middle rail, with a console over each
+   *   column, and a moulded cornice under the eaves;
+   * - an ogee roof of verdigris copper (convex at the eaves, sweeping up concave to a neck), a
+   *   rolled rib on every hip, and a brass ball finial and spike on a copper collar.
+   * The eaves overhang the frieze by 0.4 only: at the overview's 42-degree elevation they hide
+   * what is in the frieze's plane above about 0.37 under them, so the roundels and the brackets
+   * sit in the frieze's lower half. Thin parts are merged per material, so they all cast.
+   */
   function pavilion(g: T.Object3D, x: number, y: number, z: number) {
     const p = new T.Group(); p.position.set(x, y, z); g.add(p);
-    /** Flat-faced 8-sided pieces (non-indexed, face normals) so they shade as octagons, not cylinders. */
-    const facets = (geo: T.BufferGeometry) => { const flat = geo.toNonIndexed(); geo.dispose(); flat.computeVertexNormals(); return flat; };
-    const oct = (rt: number, rb: number, h: number, yc: number, colour: string, kind: SurfaceKind) => {
-      const m = new T.Mesh(facets(new T.CylinderGeometry(rt, rb, h, 8)), material(colour, kind));
-      m.rotation.y = Math.PI / 8; m.position.y = yc; m.castShadow = m.receiveShadow = true; p.add(m); return m; };
-    oct(1.9, 2.0, 0.4, 0.2, palette.stoneDark, 'stone');          // plinth (flat face to +z)
-    oct(1.78, 1.78, 0.08, 0.44, palette.plaza, 'paving');         // floor
-    box(p, 0, 0.13, 2.02, 1.1, 0.26, 0.34, palette.stoneDark, 'stone'); // steps land on the park's gravel strip
-    box(p, 0, 0.065, 2.34, 1.1, 0.13, 0.3, palette.stoneDark, 'stone');
+    const CREAM = palette.frame, // painted cast iron
+      FLOOR = 0.47,
+      FRIEZE = 2.32, // the frieze's foot, on the capitals' abaci
+      EAVE = 2.86, // the soffit
+      R = 1.55, // the columns' circle
+      A = R * Math.cos(Math.PI / 8), // the columns' face line, 1.432
+      span = 2 * R * Math.sin(Math.PI / 8), // between column centres, 1.186
+      corner = (i: number) => Math.PI / 8 + (i * Math.PI) / 4, // from +z: x = sin, z = cos
+      face = (i: number) => ((i + 1) * Math.PI) / 4, // the bay between corners i and i + 1 (7 is the entrance)
+      atAngle = (th: number, r: number, h: number): V3 => [r * Math.sin(th), h, r * Math.cos(th)];
+    // The plinth: a moulded foot, the die (one course of ashlar) and a coping with a rounded edge.
+    part(p, turned([
+      { r: 1.86, y: 0 }, { r: 1.86, y: 0.06, sharp: true }, { r: 1.82, y: 0.09, sharp: true }, { r: 1.8, y: 0.1, sharp: true },
+      { r: 1.8, y: 0.3, sharp: true }, { r: 1.83, y: 0.315 }, { r: 1.86, y: 0.34 }, { r: 1.87, y: 0.37, sharp: true }, { r: 1.87, y: 0.41, sharp: true }, { r: 1.84, y: 0.44, sharp: true },
+    ], 8, { facets: true, cap: true }), palette.stoneDark, 'ashlar');
+    // Three steps up to the entrance, each running back under the one above.
+    part(p, [0.33, 0.22, 0.11].map((h, k): Piece => ({ geometry: chamferBox(1.02, h, 0.32 + 0.21 * k), at: [0, h / 2, 1.75 + (0.32 + 0.21 * k) / 2] })), palette.stoneDark, 'ashlar');
+    part(p, turned([{ r: 1.68, y: 0.43 }, { r: 1.68, y: FLOOR, sharp: true }], 8, { facets: true, cap: true }), '#b08a62', 'wood');
+    // The columns.
+    const shaft = (h: number) => T.MathUtils.lerp(0.07, 0.058, (h - 0.75) / (2.1 - 0.75)),
+      bead = (h: number, proud: number): Turn[] => [{ r: shaft(h - 0.025), y: h - 0.025 }, { r: shaft(h) + proud, y: h }, { r: shaft(h + 0.025), y: h + 0.025 }];
+    const column = turned([
+      { r: 0.096, y: 0.62 }, { r: 0.104, y: 0.645 }, { r: 0.096, y: 0.67 }, { r: 0.08, y: 0.69, sharp: true }, { r: 0.074, y: 0.71, sharp: true },
+      { r: shaft(0.75), y: 0.75 }, ...bead(0.93, 0.024), ...bead(2.06, 0.022),
+      { r: 0.064, y: 2.11 }, { r: 0.078, y: 2.16 }, { r: 0.1, y: 2.21 }, { r: 0.128, y: 2.255, sharp: true }, { r: 0.128, y: 2.27, sharp: true },
+    ], 8);
+    const iron: Piece[] = [];
     for (let i = 0; i < 8; i++) {
-      const th = Math.PI / 8 + (i * Math.PI) / 4;               // octagon corners (x = r sin, z = r cos)
-      const col = new T.Mesh(new T.CylinderGeometry(0.09, 0.11, 2.1, 10, 1, true), material(palette.frame, 'enamel')); // painted cast iron
-      col.position.set(1.55 * Math.sin(th), 1.45, 1.55 * Math.cos(th)); col.castShadow = col.receiveShadow = true; p.add(col);
-      const mid = th + Math.PI / 8; if (i === 7) continue;     // entrance between corners 7 and 0 faces +z
-      box(p, 1.432 * Math.sin(mid), 0.6, 1.432 * Math.cos(mid), 0.95, 0.4, 0.12, palette.frame, 'enamel', { ry: mid });
+      const th = corner(i);
+      iron.push(
+        { geometry: column, at: atAngle(th, R, 0) },
+        { geometry: chamferBox(0.2, 0.15, 0.2), at: atAngle(th, R, FLOOR + 0.075), rotation: [0, th, 0] }, // pedestal
+        { geometry: chamferBox(0.27, 0.05, 0.27), at: atAngle(th, R, FRIEZE - 0.025), rotation: [0, th, 0] }, // abacus
+      );
     }
-    oct(1.7, 1.7, 0.32, 2.66, palette.frame, 'enamel');          // closed frieze; columns stop under it
-    const roof = new T.Mesh(facets(new T.ConeGeometry(2.3, 1.2, 8)), material(palette.copper, 'copper'));
-    roof.rotation.y = Math.PI / 8; roof.position.y = 3.42; roof.castShadow = roof.receiveShadow = true; p.add(roof);
-    const fin = new T.Mesh(new T.IcosahedronGeometry(0.16, 1), material(palette.brass, 'brass')); fin.position.y = 4.1; p.add(fin);
+    // The railing panels, the arched brackets and the frieze, bay by bay.
+    const hw = span / 2 - 0.065;
+    const railing = (() => {
+      const s = rectShape(-hw, 0, hw, 0.42);
+      s.holes.push(circlePath(0, 0.21, 0.1));
+      for (const c of [-0.37, -0.22, 0.22, 0.37]) s.holes.push(slotPath(c - 0.04, 0.08, c + 0.04, 0.34, 0.04));
+      return extrude(s, 0.07, 0, 1);
+    })();
+    const bracket = (() => {
+      const w = span / 2 - 0.05,
+        s = new T.Shape();
+      s.moveTo(-w, 0);
+      s.lineTo(w, 0);
+      s.lineTo(w, -0.42);
+      s.absellipse(0, -0.42, w, 0.31, 0, Math.PI, false);
+      s.lineTo(-w, 0);
+      for (const c of [-1, 1]) s.holes.push(circlePath(c * 0.42, -0.12, 0.05, 8));
+      return extrude(s, 0.07, 0, 5);
+    })();
+    const frieze = (() => {
+      const s = rectShape(-0.61, 0, 0.61, EAVE - FRIEZE);
+      for (const c of [-0.3, 0, 0.3]) s.holes.push(circlePath(c, 0.14, 0.065));
+      return extrude(s, 0.07, 0, 1);
+    })();
+    for (let i = 0; i < 8; i++) {
+      const th = face(i),
+        turn: V3 = [0, th, 0];
+      if (i !== 7)
+        iron.push(
+          { geometry: railing, at: atAngle(th, A, FLOOR), rotation: turn },
+          { geometry: chamferBox(2 * hw + 0.03, 0.06, 0.11), at: atAngle(th, A, FLOOR + 0.45), rotation: turn }, // handrail
+        );
+      iron.push(
+        { geometry: bracket, at: atAngle(th, A, FRIEZE), rotation: turn },
+        { geometry: frieze, at: atAngle(th, A + 0.02, FRIEZE), rotation: turn },
+        ...[0.03, 0.27].map((h): Piece => ({ geometry: chamferBox(1.24, 0.06, 0.12), at: atAngle(th, A + 0.02, FRIEZE + h), rotation: turn })), // its rails
+        { geometry: chamferBox(0.17, EAVE - FRIEZE - 0.02, 0.17), at: atAngle(corner(i), R + 0.02, (FRIEZE + EAVE) / 2), rotation: [0, corner(i), 0] }, // console over the column
+      );
+    }
+    // The cornice under the eaves, and the ceiling.
+    iron.push({ geometry: turned([{ r: 0, y: EAVE - 0.06 }, { r: A + 0.03, y: EAVE - 0.06, sharp: true }, { r: A + 0.09, y: EAVE - 0.03 }, { r: A + 0.16, y: EAVE, sharp: true }], 8, { facets: true }) });
+    part(p, iron, CREAM, 'enamel');
+    // The roof: the soffit, a fascia and the ogee, faceted on the plan, smooth up its profile.
+    const ogee: Turn[] = [
+      { r: 1.86, y: 2.94, sharp: true }, { r: 1.8, y: 3.06 }, { r: 1.68, y: 3.18 }, { r: 1.5, y: 3.29 }, { r: 1.28, y: 3.37 }, { r: 1.04, y: 3.44 },
+      { r: 0.8, y: 3.51 }, { r: 0.58, y: 3.6 }, { r: 0.4, y: 3.72 }, { r: 0.28, y: 3.87 }, { r: 0.2, y: 4.04 }, { r: 0.15, y: 4.2, sharp: true },
+    ];
+    part(p, turned([{ r: A + 0.1, y: EAVE }, { r: 1.82, y: EAVE + 0.02, sharp: true }, { r: 1.86, y: EAVE + 0.03, sharp: true }, ...ogee], 8, { facets: true }), palette.copper, 'copper');
+    // A rolled rib up every hip, sitting on the roof's corner line.
+    const grow = 1 / Math.cos(Math.PI / 8),
+      ribs: Piece[] = [];
+    const hip = new T.TubeGeometry(new T.CatmullRomCurve3(ogee.map((q) => new T.Vector3(0, q.y + 0.02, q.r * grow + 0.01))), 14, 0.04, 5, false);
+    for (let i = 0; i < 8; i++) ribs.push({ geometry: hip, rotation: [0, corner(i), 0] });
+    ribs.push({ geometry: turned([{ r: 0.2, y: 4.15 }, { r: 0.21, y: 4.19 }, { r: 0.2, y: 4.24 }, { r: 0.13, y: 4.26, sharp: true }], 10, { cap: true }) }); // collar
+    part(p, ribs, palette.copperLight, 'copper');
+    part(p, turned([
+      { r: 0.05, y: 4.25 }, { r: 0.075, y: 4.29 }, { r: 0.118, y: 4.35 }, { r: 0.12, y: 4.4 }, { r: 0.1, y: 4.45 }, { r: 0.055, y: 4.48, sharp: true },
+      { r: 0.04, y: 4.52 }, { r: 0.03, y: 4.62 }, { r: 0, y: 4.72 },
+    ], 10), palette.brass, 'brass');
     return p;
   }
-  /** The park's notice board: two posts, a wooden board with a paper sheet and a slate roof. */
+  /**
+   * The park's memory board: two timber posts on stone shoes, a dark backboard in a moulded
+   * frame, a cork face with five blank cards pinned at slight angles (pale tints, never any
+   * writing), and a little gabled slate roof on two braces, with bargeboards and a ridge.
+   */
   function memoryBoard(g: T.Object3D, x: number, y: number, z: number, ry: number) {
     const b = new T.Group(); b.position.set(x, y, z); b.rotation.y = ry; g.add(b);
-    for (const dx of [-0.6, 0.6]) box(b, dx, 0.8, 0, 0.12, 1.6, 0.12, palette.woodDark, 'wood'); // posts
-    box(b, 0, 1.15, 0, 1.35, 0.85, 0.1, palette.wood, 'wood'); // board
-    box(b, 0, 1.15, 0.06, 1.15, 0.65, 0.02, palette.white, 'paint'); // paper
-    box(b, 0, 1.66, 0, 1.6, 0.12, 0.42, palette.slate, 'slate'); // roof
+    part(b, [-0.62, 0.62].map((dx): Piece => ({ geometry: chamferBox(0.22, 0.14, 0.22), at: [dx, 0.07, 0] })), palette.stoneDark, 'stone');
+    const dark: Piece[] = [
+      ...[-0.62, 0.62].map((dx): Piece => ({ geometry: chamferBox(0.13, 1.62, 0.13), at: [dx, 0.87, 0] })), // posts
+      { geometry: chamferBox(1.14, 0.8, 0.07), at: [0, 1.17, -0.01] }, // backboard
+      // Braces from each post up to the eaves, front and back.
+      ...[-1, 1].flatMap((s) => [-1, 1].map((sz): Piece => member([s * 0.62, 1.42, 0], [s * 0.62, 1.66, sz * 0.2], 0.07))),
+    ];
+    part(b, dark, palette.woodDark, 'wood');
+    part(b, [
+      ...[0.775, 1.565].map((h): Piece => ({ geometry: chamferBox(1.16, 0.08, 0.1), at: [0, h, 0.02] })), // frame rails
+      ...[-1, 1].map((s): Piece => ({ geometry: chamferBox(0.08, 0.86, 0.1), at: [s * 0.54, 1.17, 0.02] })), // and stiles
+      // Bargeboards up both verges of each gable end.
+      ...[-1, 1].flatMap((s) => [-1, 1].map((sz) => member([s * 0.875, 1.68, sz * 0.31], [s * 0.875, 1.87, 0], 0.07, 0.1))),
+    ], palette.wood, 'wood');
+    part(b, [{ geometry: chamferBox(1.0, 0.71, 0.02), at: [0, 1.17, 0.035] }], '#b58e64', 'paint'); // the cork face
+    // Five blank cards, each a tint of its own (vertex colour over a white card).
+    const cards: [number, number, number, number, number, string][] = [
+      [-0.3, 1.33, 0.26, 0.2, 0.06, palette.white], [0.02, 1.34, 0.22, 0.27, -0.04, '#dfe5e2'], [0.3, 1.3, 0.26, 0.2, 0.05, '#ece2bc'],
+      [-0.2, 1.02, 0.3, 0.2, -0.03, '#ecdccf'], [0.24, 1.0, 0.2, 0.22, 0.02, palette.white],
+    ];
+    const sheet = mergePieces(cards.map(([cx, cy, w, h, rz]): Piece => ({ geometry: UNIT_BOX, at: [cx, cy, 0.052], rotation: [0, 0, rz], scale: [w, h, 0.016] })));
+    const tint = new Float32Array(sheet.getAttribute('position').count * 3),
+      c = new T.Color();
+    cards.forEach((card, k) => {
+      c.set(card[5]);
+      for (let i = k * 36; i < (k + 1) * 36; i++) c.toArray(tint, i * 3);
+    });
+    sheet.setAttribute('color', new T.BufferAttribute(tint, 3));
+    part(b, sheet, '#ffffff', 'paint');
+    // The roof: a gabled slate cap along the board, with a ridge.
+    const gable = new T.Shape([new T.Vector2(-0.3, 0), new T.Vector2(0.3, 0), new T.Vector2(0.3, 0.04), new T.Vector2(0, 0.215), new T.Vector2(-0.3, 0.04)]);
+    part(b, [
+      { geometry: extrude(gable, 1.72, 0.015, 1), at: [0, 1.66, 0], rotation: [0, Math.PI / 2, 0] },
+      { geometry: chamferBox(1.78, 0.06, 0.08), at: [0, 1.875, 0] },
+    ], palette.slate, 'slate');
     return b;
   }
-  /** The tower crane on the reserved plot, built from a few thick painted members, with a swinging jib and a hook load. */
+  /**
+   * The tower crane on the reserved plot and its building site.
+   * The crane: a lattice mast of four chords braced on every face by horizontals and diagonals
+   * (zigzag, the opposite faces' parallel, so the near and far faces read as one lattice rather
+   * than a net of crosses), on base plates on its concrete footing. On it the slewing part turns
+   * (keepSeparate, animated): the turntable, the slewing platform, an A-frame tower head with a
+   * sheave block, the triangular lattice jib (a Warren truss each side, rungs underneath) with its
+   * tip frame, the counter-jib with a walkway and rails, the winch and three concrete
+   * counterweight slabs, the pendants from the head to the jib and the counter-jib, the trolley
+   * on the bottom chords, two hoist ropes to a red hook block, and a bundle of boards on slings.
+   * The operator cab hangs beside the jib's root: cream, with a roof cap, a front and a side
+   * window in dark frames; its panes are unlit at night (window 'unlit', one light shared with the
+   * site cabin's).
+   * The site (built into g, inside the hoarding): blank hoarding panels on a grey kick strip
+   * under a blue capping rail, posts outside them at every panel joint and a gate of two braced
+   * leaves on the road side (west), timber rails and raking props with concrete feet inside;
+   * a gravel floor, a site cabin on sleepers, a cement mixer, a ground slab with the formwork for
+   * a wall (shutters, soldiers, walers, props and rebar), a stack of boards and a pallet of bricks.
+   */
   function crane(g: T.Object3D, x: number, z: number) {
-    const Y = palette.gold; // crane yellow, enamelled
+    const Y = palette.gold, // crane yellow, enamelled
+      IRON = palette.metal,
+      CONCRETE = '#a8a59c';
     const base = new T.Group();
     base.position.set(x, 0, z);
     g.add(base);
     box(base, 0, 0.18, 0, CRANE_BASE, 0.36, CRANE_BASE, '#bdb6a4', 'stone'); // footing
-    for (const sx of [-0.3, 0.3])
-      for (const sz of [-0.3, 0.3]) box(base, sx, 0.36 + 3.6, sz, 0.16, 7.2, 0.16, Y, 'enamel'); // mast chords
-    for (let i = 0; i < 5; i++) {
-      const y = 1.26 + i * 1.2;
-      for (const s of [-0.3, 0.3]) {
-        box(base, 0, y, s, 0.6, 0.09, 0.09, Y, 'enamel'); // ring bars
-        box(base, s, y, 0, 0.09, 0.09, 0.6, Y, 'enamel');
+    // The mast: four chords from the footing to 7.56, braced every 1.2.
+    const H0 = 0.36,
+      SEC = 1.2,
+      N = 6,
+      M = 0.3,
+      TOP = H0 + N * SEC;
+    const chords: Piece[] = [],
+      plates: Piece[] = [];
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        chords.push({ geometry: chamferBox(0.15, TOP - H0, 0.15), at: [sx * M, (H0 + TOP) / 2, sz * M] });
+        plates.push({ geometry: chamferBox(0.3, 0.05, 0.3), at: [sx * M, H0 + 0.025, sz * M] });
+        for (const d of [-1, 1]) plates.push({ geometry: chamferBox(0.07, 0.06, 0.07), at: [sx * M + d * 0.1, H0 + 0.07, sz * M - d * 0.1] }); // anchor nuts
       }
-      // One diagonal on each camera-facing face.
-      box(base, 0, y + 0.6, 0.3, 0.09, 1.34, 0.09, Y, 'enamel', { rz: 0.4636 });
-      box(base, 0.3, y + 0.6, 0, 0.09, 1.34, 0.09, Y, 'enamel', { rx: 0.4636 });
+    for (let k = 0; k <= N; k++) {
+      const h = H0 + k * SEC + (k === 0 ? 0.12 : k === N ? -0.06 : 0);
+      for (const s of [-1, 1]) chords.push(member([-M, h, s * M], [M, h, s * M], 0.08), member([s * M, h, -M], [s * M, h, M], 0.08));
+      if (k === N) break;
+      const h1 = H0 + (k + 1) * SEC - (k + 1 === N ? 0.06 : 0),
+        f = k % 2 ? 1 : -1;
+      for (const s of [-1, 1]) chords.push(member([-f * M, h, s * M], [f * M, h1, s * M], 0.08), member([s * M, h, -f * M], [s * M, h1, f * M], 0.08));
     }
+    part(base, chords, Y, 'enamel');
+    part(base, plates, IRON, 'iron');
+    // The slewing part.
     const jib = new T.Group();
     jib.position.set(0, 7.86, 0);
     jib.userData.keepSeparate = true;
     base.add(jib);
-    box(jib, 0, 0, 0, 1.1, 0.6, 1.1, Y, 'enamel'); // slewing unit
-    box(jib, 0.35, 0.65, 0.1, 0.9, 0.7, 0.8, Y, 'enamel'); // cab
-    box(jib, 0.35, 0.7, 0.51, 0.62, 0.38, 0.06, palette.glass, 'glass').userData.window = 'unlit'; // cab window, dark at night
-    cone(jib, 0, 1.8, 0, 0.42, 1.6, Y, 'enamel', 4); // apex
-    box(jib, 3.3, 0.35, 0, 6.2, 0.22, 0.22, Y, 'enamel'); // top chord
-    for (const s of [-0.22, 0.22]) box(jib, 3.3, -0.05, s, 6.2, 0.12, 0.12, Y, 'enamel'); // bottom chords
-    for (let i = 0; i < 8; i++) box(jib, 0.75 + i * 0.75, 0.15, 0, 0.09, 0.5, 0.09, Y, 'enamel', { rz: i % 2 ? 0.75 : -0.75 }); // web
-    box(jib, -1.5, 0.15, 0, 2.4, 0.18, 0.5, Y, 'enamel'); // counter-jib
-    box(jib, -2.3, -0.05, 0, 0.9, 0.8, 0.9, '#9a978c', 'stone'); // counterweight
-    box(jib, 1.7, 1.15, 0, 3.9, 0.07, 0.07, palette.metal, 'iron', { rz: -0.34 }); // ties
-    box(jib, -1.1, 1.15, 0, 2.5, 0.07, 0.07, palette.metal, 'iron', { rz: 0.55 });
-    box(jib, 4.6, -0.2, 0, 0.42, 0.2, 0.5, palette.metal, 'iron'); // trolley
-    box(jib, 4.6, -1.7, 0, 0.06, 2.9, 0.06, palette.metal, 'iron'); // line
-    box(jib, 4.6, -3.25, 0, 0.36, 0.32, 0.24, palette.boat, 'enamel'); // hook block
-    box(jib, 4.6, -3.8, 0, 1.2, 0.18, 0.5, palette.wood, 'wood'); // plank load
+    const yellow: Piece[] = [],
+      iron: Piece[] = [],
+      cream: Piece[] = [],
+      weights: Piece[] = [],
+      boards: Piece[] = [];
+    iron.push({ geometry: new T.CylinderGeometry(0.5, 0.5, 0.12, 16), at: [0, -0.24, 0] }); // turntable
+    yellow.push({ geometry: chamferBox(1.0, 0.4, 1.0), at: [0, 0.02, 0] }); // slewing platform
+    // The tower head: four legs to a sheave block, two rings of ties.
+    const head = 2.2,
+      leg = (sx: number, sz: number, t: number): V3 => [sx * T.MathUtils.lerp(0.34, 0.07, t), T.MathUtils.lerp(0.22, head, t), sz * T.MathUtils.lerp(0.34, 0.07, t)];
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        yellow.push(member(leg(sx, sz, 0), leg(sx, sz, 1), 0.12));
+        for (const t of [0.4, 0.75]) yellow.push(member(leg(sx, sz, t), leg(sx, -sz, t), 0.07), member(leg(sx, sz, t), leg(-sx, sz, t), 0.07));
+      }
+    iron.push({ geometry: chamferBox(0.28, 0.2, 0.28), at: [0, head + 0.08, 0] }, { geometry: new T.CylinderGeometry(0.1, 0.1, 0.3, 12), at: [0, head + 0.12, 0], rotation: [Math.PI / 2, 0, 0] });
+    // The jib: a triangular lattice from the platform to 6.4.
+    const J0 = 0.5,
+      J1 = 6.4,
+      W = 0.27,
+      JH = 0.62,
+      panels = 9,
+      P = (J1 - J0) / panels,
+      low = (u: number, s: number): V3 => [u, 0, s * W],
+      high = (u: number): V3 => [u, JH, 0];
+    for (const s of [-1, 1]) yellow.push({ geometry: chamferBox(J1 - J0, 0.12, 0.12), at: [(J0 + J1) / 2, 0, s * W] });
+    yellow.push({ geometry: chamferBox(J1 - J0, 0.13, 0.13), at: [(J0 + J1) / 2, JH, 0] }, { geometry: chamferBox(0.12, 0.7, 0.66), at: [J1, JH / 2, 0] });
+    for (let j = 0; j <= panels; j++) {
+      const u = J0 + j * P;
+      yellow.push(member(low(u, -1), low(u, 1), 0.08));
+      if (j === panels) break;
+      for (const s of [-1, 1]) yellow.push(member(low(u, s), high(u + P / 2), 0.08), member(high(u + P / 2), low(u + P, s), 0.08));
+    }
+    // The counter-jib: two beams, rungs, a walkway between rails, the winch and three counterweights.
+    const C0 = -0.5,
+      C1 = -3.05;
+    for (const s of [-1, 1]) {
+      yellow.push({ geometry: chamferBox(C0 - C1, 0.16, 0.12), at: [(C0 + C1) / 2, 0, s * 0.3] });
+      for (const u of [-0.9, -1.7, -2.5]) iron.push(member([u, 0.08, s * 0.3], [u, 0.48, s * 0.3], 0.07));
+      iron.push(member([-0.6, 0.48, s * 0.3], [-2.95, 0.48, s * 0.3], 0.07));
+    }
+    for (const u of [-1.1, -1.9, -2.7]) yellow.push(member([u, 0, -0.3], [u, 0, 0.3], 0.08));
+    iron.push({ geometry: chamferBox(2.3, 0.04, 0.48), at: [-1.75, 0.1, 0] }); // walkway
+    iron.push({ geometry: new T.CylinderGeometry(0.17, 0.17, 0.46, 14), at: [-1.15, 0.3, 0], rotation: [Math.PI / 2, 0, 0] }); // winch drum
+    cream.push({ geometry: chamferBox(0.34, 0.3, 0.3), at: [-1.6, 0.27, 0] }); // its motor
+    for (const u of [-2.38, -2.62, -2.86]) weights.push({ geometry: chamferBox(0.22, 0.95, 0.8), at: [u, -0.4, 0] });
+    // Pendants from the head: to the jib's top chord, and to the counter-jib's end.
+    iron.push(member([0.05, head + 0.1, 0], [4.2, JH, 0], 0.07));
+    for (const s of [-1, 1]) iron.push(member([-0.05, head + 0.1, s * 0.04], [C1 + 0.1, 0.08, s * 0.3], 0.07));
+    // The cab beside the jib's root, facing along it.
+    cream.push({ geometry: chamferBox(0.66, 0.66, 0.56), at: [0.62, 0, 0.66] }, { geometry: chamferBox(0.74, 0.07, 0.64), at: [0.62, 0.365, 0.66] });
+    const frame = (at: V3, w: number, h: number, alongX: boolean) => {
+      const o = (u: number, v: number): V3 => (alongX ? [at[0] + u, at[1] + v, at[2]] : [at[0], at[1] + v, at[2] + u]),
+        sx = (a: number) => (alongX ? [a, 0.05, 0.03] : [0.03, 0.05, a]) as V3,
+        sy = (a: number) => (alongX ? [0.05, a, 0.03] : [0.03, a, 0.05]) as V3;
+      for (const v of [-h / 2, h / 2]) iron.push({ geometry: UNIT_BOX, at: o(0, v), scale: sx(w + 0.05) });
+      for (const u of [-w / 2, w / 2]) iron.push({ geometry: UNIT_BOX, at: o(u, 0), scale: sy(h) });
+    };
+    const cab = (at: V3, w: number, h: number, alongX: boolean) => {
+      const pane = box(jib, at[0], at[1], at[2], alongX ? w : 0.02, h, alongX ? 0.02 : w, palette.glass, 'glass');
+      pane.userData.window = 'unlit'; // the crane's cab stays dark at night
+      pane.userData.windowGroup = 'building-site';
+      frame([at[0] + (alongX ? 0 : 0.008), at[1], at[2] + (alongX ? 0.008 : 0)], w, h, alongX);
+    };
+    cab([0.955, 0.03, 0.66], 0.44, 0.4, false); // front
+    cab([0.6, 0.06, 0.945], 0.46, 0.36, true); // side
+    // The trolley, the ropes, the hook block and the load.
+    const TX = 4.6;
+    yellow.push({ geometry: chamferBox(0.5, 0.12, 0.66), at: [TX, -0.13, 0] });
+    for (const s of [-1, 1]) for (const d of [-0.16, 0.16]) iron.push({ geometry: new T.CylinderGeometry(0.06, 0.06, 0.05, 10), at: [TX + d, -0.02, s * (W + 0.09)], rotation: [Math.PI / 2, 0, 0] });
+    for (const d of [-0.08, 0.08]) iron.push(member([TX + d, -0.19, 0], [TX + d, -2.86, 0], 0.07));
+    const hook: Piece[] = [
+      { geometry: chamferBox(0.34, 0.3, 0.2), at: [TX, -3.0, 0] },
+      { geometry: new T.CylinderGeometry(0.15, 0.15, 0.22, 14), at: [TX, -2.86, 0], rotation: [Math.PI / 2, 0, 0] },
+    ];
+    iron.push(
+      member([TX, -3.15, 0], [TX, -3.3, 0], 0.07),
+      { geometry: new T.TorusGeometry(0.08, 0.035, 6, 10, Math.PI * 1.3), at: [TX, -3.38, 0], rotation: [0, 0, -Math.PI * 0.55] },
+      ...[-1, 1].flatMap((s) => [-1, 1].map((sz) => member([TX, -3.42, 0], [TX + s * 0.45, -3.76, sz * 0.18], 0.07))),
+    );
+    for (let k = 0; k < 3; k++) boards.push({ geometry: chamferBox(1.2, 0.07, 0.5), at: [TX, -3.95 + k * 0.075, 0] });
+    for (const s of [-1, 1]) boards.push({ geometry: chamferBox(0.1, 0.07, 0.56), at: [TX + s * 0.4, -4.02, 0] });
+    part(jib, yellow, Y, 'enamel');
+    part(jib, hook, palette.boat, 'enamel');
+    part(jib, cream, palette.tramCream, 'enamel');
+    part(jib, iron, IRON, 'iron');
+    part(jib, weights, CONCRETE, 'stone');
+    part(jib, boards, palette.wood, 'wood');
     animated.push({
       object: jib,
       update(time) {
         jib.rotation.y = Math.sin(time * 0.07) * 0.9;
       },
     });
-    // Hoarding round the plot (lengthened by its thickness so the corners close), with a blue band
-    // standing just proud of the top, and building materials inside.
-    const plot = plan.reservedPlot;
-    for (const [dx, dz, l, ry] of hoardingWalls(plot)) {
-      box(g, plot.x + dx, 0.5, plot.z + dz, l + HOARDING_THICKNESS, 1.0, HOARDING_THICKNESS, '#efe2c2', 'paint', { ry });
-      box(g, plot.x + dx, 0.93, plot.z + dz, l + 0.14, 0.18, 0.14, palette.blueDoor, 'paint', { ry });
-    }
-    box(g, plot.x - 1.4, 0.35, plot.z + 1.3, 0.7, 0.7, 0.7, palette.wood, 'wood'); // crates
-    box(g, plot.x - 1.4, 1.0, plot.z + 1.3, 0.6, 0.6, 0.6, palette.wood, 'wood', { ry: 0.4 });
-    box(g, plot.x + 1.2, 0.225, plot.z + 1.4, 0.9, 0.45, 0.6, palette.brick, 'stone'); // brick pallet
+    buildingSite(g);
     return base;
+  }
+  /** The reserved plot's hoarding and the building site inside it (see crane). */
+  function buildingSite(g: T.Object3D) {
+    const plot = plan.reservedPlot,
+      site = new T.Group();
+    site.position.set(plot.x, plan.terrainHeight(plot.x, plot.z), plot.z);
+    g.add(site);
+    const PANEL = '#efe2c2',
+      KICK = '#9aa1a3',
+      BAND = palette.blueDoor,
+      HT = HOARDING_THICKNESS;
+    const panels: Piece[] = [],
+      kick: Piece[] = [],
+      blue: Piece[] = [],
+      timber: Piece[] = [],
+      stone: Piece[] = [];
+    /** Things on the site floor (x0, z0, x1, z1 in the plot's frame): props keep off them. */
+    const taken: [number, number, number, number][] = [
+      [-CRANE_BASE / 2, -CRANE_BASE / 2, CRANE_BASE / 2, CRANE_BASE / 2],
+      [-0.05, -2.3, 1.55, -1.4], // cabin
+      [-1.15, -2.3, -0.15, -1.3], // mixer
+      [-2.35, -1.1, -1.05, 1.3], // slab
+      [1.25, -1.45, 2.05, 0.05], // boards
+      [1.25, 0.2, 2.15, 0.9], // bricks
+    ];
+    const free = (x0: number, z0: number, x1: number, z1: number) => !taken.some(([a, b, c, d]) => x1 > a && x0 < c && z1 > b && z0 < d);
+    for (const [dx, dz, l, ry] of hoardingWalls(plot)) {
+      const inward = dx < 0 || dz < 0 ? 1 : -1,
+        west = dx < 0,
+        frameOf = new T.Matrix4().compose(new T.Vector3(dx, 0, dz), new T.Quaternion().setFromEuler(new T.Euler(0, ry, 0)), new T.Vector3(1, 1, 1)),
+        put = (list: Piece[], geometry: T.BufferGeometry, at: V3, rotation: V3 = [0, 0, 0]) =>
+          list.push({ geometry, matrix: frameOf.clone().multiply(new T.Matrix4().compose(new T.Vector3(...at), new T.Quaternion().setFromEuler(new T.Euler(...rotation)), new T.Vector3(1, 1, 1))) }),
+        toPlot = (u: number, w: number) => new T.Vector3(u, 0, w).applyMatrix4(frameOf);
+      put(panels, chamferBox(l + HT, 0.84, HT), [0, 0.12 + 0.42, 0]);
+      put(kick, chamferBox(l + HT + 0.02, 0.14, HT + 0.04), [0, 0.07, 0]);
+      put(blue, chamferBox(l + HT + 0.06, 0.1, HT + 0.08), [0, 1.0, 0]); // capping rail
+      const out = -inward * (HT / 2 + 0.035);
+      const posts = west ? [-1.75, -0.95, 0.95, 1.75] : [-1.25, 0, 1.25];
+      for (const u of posts) {
+        const gate = west && Math.abs(u) < 1;
+        put(blue, chamferBox(0.12, gate ? 1.2 : 1.1, 0.07), [u, gate ? 0.6 : 0.55, out]);
+        if (gate) put(blue, chamferBox(0.16, 0.05, 0.11), [u, 1.225, out]);
+        // Inside: a raking prop from the inner rail at the post to a concrete foot, where the floor is free.
+        const foot = toPlot(u, inward * 0.62);
+        if (!gate && free(foot.x - 0.15, foot.z - 0.15, foot.x + 0.15, foot.z + 0.15)) {
+          const a = toPlot(u, inward * (HT / 2 + 0.06)),
+            b = toPlot(u, inward * 0.6);
+          timber.push(member([a.x, 0.82, a.z], [b.x, 0.12, b.z], 0.07));
+          stone.push({ geometry: chamferBox(0.2, 0.12, 0.2), at: [b.x, 0.06, b.z], rotation: [0, ry, 0] });
+        }
+      }
+      // Two timber rails along the inside.
+      for (const h of [0.3, 0.8]) put(timber, chamferBox(l - 0.1, 0.08, 0.07), [0, h, inward * (HT / 2 + 0.035)]);
+      if (west)
+        // The gate's two leaves, framed and braced on the road side.
+        for (const s of [-1, 1]) {
+          const c = s * 0.45;
+          for (const h of [0.25, 0.85]) put(blue, chamferBox(0.84, 0.08, 0.05), [c, h, out + inward * 0.01]);
+          const a = new T.Vector3(c - s * 0.36, 0.28, out + inward * 0.01).applyMatrix4(frameOf),
+            b = new T.Vector3(c + s * 0.36, 0.82, out + inward * 0.01).applyMatrix4(frameOf);
+          blue.push(member([a.x, a.y, a.z], [b.x, b.y, b.z], 0.07));
+        }
+    }
+    // The corner posts outside the hoarding's corners.
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) blue.push({ geometry: chamferBox(0.18, 1.12, 0.18), at: [sx * (plot.w / 2 + 0.02), 0.56, sz * (plot.d / 2 + 0.02)] });
+    // The floor: grey-brown compacted gravel inside the hoarding.
+    const floor = box(site, 0, 0.015, 0, plot.w - HT - 0.02, 0.03, plot.d - HT - 0.02, '#b3a487', 'gravel');
+    floor.userData.noShadow = true;
+    // The site cabin on two sleepers: a steel frame, a roof cap, two windows and a door.
+    const CABIN = '#7f949f',
+      STEEL = '#5f6b72',
+      cabin = { x: 0.75, z: -1.85 },
+      cabinPaint: Piece[] = [{ geometry: chamferBox(1.48, 0.76, 0.78), at: [cabin.x, 0.49, cabin.z] }],
+      steel: Piece[] = [{ geometry: chamferBox(1.6, 0.07, 0.9), at: [cabin.x, 0.905, cabin.z] }];
+    for (const s of [-1, 1]) timber.push({ geometry: chamferBox(0.12, 0.1, 0.86), at: [cabin.x + s * 0.55, 0.08, cabin.z] });
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) steel.push({ geometry: chamferBox(0.08, 0.78, 0.08), at: [cabin.x + sx * 0.74, 0.5, cabin.z + sz * 0.39] });
+    for (const sz of [-1, 1]) for (const h of [0.15, 0.85]) steel.push({ geometry: chamferBox(1.48, 0.07, 0.07), at: [cabin.x, h, cabin.z + sz * 0.39] });
+    for (const u of [-0.36, 0.3]) {
+      const pane = box(site, cabin.x + u, 0.56, cabin.z + 0.4, 0.36, 0.26, 0.02, palette.glass, 'glass');
+      pane.userData.window = 'unlit';
+      pane.userData.windowGroup = 'building-site';
+      for (const h of [-0.15, 0.15]) panels.push({ geometry: UNIT_BOX, at: [cabin.x + u, 0.56 + h, cabin.z + 0.405], scale: [0.42, 0.05, 0.03] });
+      for (const w of [-0.2, 0.2]) panels.push({ geometry: UNIT_BOX, at: [cabin.x + u + w, 0.56, cabin.z + 0.405], scale: [0.05, 0.3, 0.03] });
+    }
+    steel.push({ geometry: chamferBox(0.04, 0.62, 0.36), at: [cabin.x + 0.755, 0.46, cabin.z + 0.02] }); // door
+    stone.push({ geometry: chamferBox(0.24, 0.1, 0.44), at: [cabin.x + 0.9, 0.05, cabin.z + 0.02] }); // its step
+    part(site, cabinPaint, CABIN, 'paint');
+    part(site, steel, STEEL, 'paint');
+    // The cement mixer: a tilted drum on a yoke over two wheels, a motor box and a tow bar.
+    const mixer = { x: -0.6, z: -1.8 },
+      drum = turned([
+        { r: 0, y: 0 }, { r: 0.08, y: 0.01 }, { r: 0.17, y: 0.06 }, { r: 0.23, y: 0.16 }, { r: 0.24, y: 0.27 }, { r: 0.2, y: 0.39 }, { r: 0.13, y: 0.49 },
+        { r: 0.11, y: 0.54, sharp: true }, { r: 0.09, y: 0.52, sharp: true }, { r: 0, y: 0.48 },
+      ], 12);
+    part(site, [{ geometry: drum, at: [mixer.x + 0.12, 0.38, mixer.z], rotation: [0, 0, 0.6] }, { geometry: turned([{ r: 0.235, y: 0.25 }, { r: 0.252, y: 0.27 }, { r: 0.235, y: 0.29 }], 12), at: [mixer.x + 0.12, 0.38, mixer.z], rotation: [0, 0, 0.6] }], '#c9783a', 'enamel');
+    const mixerIron: Piece[] = [
+      member([mixer.x, 0.15, mixer.z - 0.32], [mixer.x, 0.15, mixer.z + 0.32], 0.07), // axle
+      ...[-1, 1].map((s) => member([mixer.x, 0.15, mixer.z + s * 0.29], [mixer.x + 0.05, 0.48, mixer.z + s * 0.29], 0.07)), // the yoke
+      member([mixer.x, 0.15, mixer.z], [mixer.x - 0.45, 0.06, mixer.z], 0.07), // tow bar
+      { geometry: chamferBox(0.1, 0.08, 0.1), at: [mixer.x - 0.45, 0.04, mixer.z] },
+    ];
+    part(site, mixerIron, palette.metal, 'iron');
+    part(site, [-1, 1].map((s): Piece => ({ geometry: new T.CylinderGeometry(0.15, 0.15, 0.07, 14), at: [mixer.x, 0.15, mixer.z + s * 0.37], rotation: [Math.PI / 2, 0, 0] })), palette.ink, 'iron');
+    part(site, [{ geometry: chamferBox(0.22, 0.2, 0.24), at: [mixer.x - 0.22, 0.3, mixer.z] }], palette.tramCream, 'enamel');
+    // The ground slab and the formwork for a wall on it: two plywood shutters, soldiers and walers
+    // either side, raking props, and rebar standing out of the top.
+    const slab = { x: -1.7, z: 0.1 };
+    stone.push({ geometry: chamferBox(1.25, 0.1, 2.35), at: [slab.x, 0.05, slab.z] });
+    for (const s of [-1, 1]) {
+      timber.push({ geometry: chamferBox(0.07, 0.5, 1.8), at: [slab.x + s * 0.15, 0.35, slab.z] });
+      for (const w of [-0.65, 0, 0.65]) {
+        timber.push({ geometry: chamferBox(0.07, 0.58, 0.08), at: [slab.x + s * 0.225, 0.39, slab.z + w] });
+        timber.push(member([slab.x + s * 0.26, 0.6, slab.z + w], [slab.x + s * 0.52, 0.1, slab.z + w], 0.07));
+      }
+      for (const h of [0.24, 0.52]) timber.push({ geometry: chamferBox(0.07, 0.07, 1.95), at: [slab.x + s * 0.295, h, slab.z] });
+    }
+    part(site, Array.from({ length: 5 }, (_, k): Piece => member([slab.x, 0.4, slab.z - 0.7 + k * 0.35], [slab.x + (k % 2 ? 0.02 : -0.02), 0.86, slab.z - 0.7 + k * 0.35], 0.07)), '#6e5546', 'iron');
+    // A stack of boards on bearers, and a pallet of bricks.
+    for (const v of [-1.25, -0.25]) timber.push({ geometry: chamferBox(0.66, 0.08, 0.1), at: [1.65, 0.08, v] });
+    for (let layer = 0; layer < 2; layer++) for (const u of [1.45, 1.65, 1.85]) timber.push({ geometry: chamferBox(0.16, 0.07, 1.4), at: [u + layer * 0.02, 0.155 + layer * 0.075, -0.7] });
+    timber.push({ geometry: chamferBox(0.86, 0.1, 0.66), at: [1.7, 0.08, 0.55] });
+    part(site, [{ geometry: chamferBox(0.76, 0.4, 0.58), at: [1.7, 0.33, 0.55] }], palette.brick, 'stone');
+    part(site, panels, PANEL, 'paint');
+    part(site, kick, KICK, 'paint');
+    part(site, blue, BAND, 'paint');
+    part(site, timber, palette.wood, 'wood');
+    part(site, stone, '#c8c2b4', 'stone'); // concrete
+    return site;
   }
   /**
    * A tartan picnic blanket and a hamper on the park turf, front-left of the bandstand under the
