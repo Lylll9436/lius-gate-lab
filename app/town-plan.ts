@@ -1373,3 +1373,18 @@ export const LIGHTHOUSE = {
   glazing: [4.26, 5.0] as XZ,
   domeRise: 0.36,
 };
+/**
+ * The pier's timber deck and its stone quay head, pier-local (x across, + towards the hut; z out
+ * to sea; y up). The deck's planks stand `deck` high on piles (the pile rows `piles` along z, at
+ * x ±`pileX`), 0.45 higher than the first deck so the piles and their cross-bracing show above
+ * the water. The quay head the deck lands on spans x `quay.x` and z `quay.z` to 0, with `quay.steps`
+ * steps of `quay.tread` down its landward face to the grass, `quay.width` wide. The ladder hangs
+ * on the pier head's end, its stiles at x `ladder.x` ± `ladder.half`.
+ */
+export const PIER_DECK = {
+  deck: 0.65,
+  piles: [0.9, 2.2, 3.5, 4.8, 6.1],
+  pileX: 0.72,
+  quay: { x: [-0.95, 0.9] as XZ, z: -1.0, steps: 3, tread: 0.26, width: 0.9 },
+  ladder: { x: -0.25, half: 0.21 },
+};

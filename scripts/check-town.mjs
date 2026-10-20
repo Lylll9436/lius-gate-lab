@@ -2966,6 +2966,94 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   });
   assert(gallery > 0.9 + 0.15, `The gallery (${gallery.toFixed(2)}) is not wider than the shaft's foot.`);
 }
+// The raised timber pier (town-harbour's pierAndHarbour, plan.PIER_DECK), built alone: its planks
+// stand at the deck height; nothing but the pier's own frame (planks, stringers, headstocks,
+// piles and the other braces) or weed reaches into a brace's box, so the crates, the barrel, the
+// lamps and the ladder stand clear of the cross-bracing; the bracing keeps within 1.02 of the
+// pier's axis and under the deck; the quay head and its steps stay 0.03 clear of the hut, on the
+// island, off the streets and 0.6 from every tree's trunk; the ladder hangs on the head's end and
+// the boat's middle keeps 1.1 from it.
+{
+  const { createHarbour } = await load('town-harbour'),
+    { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    stage = new T.Group(),
+    D = plan.PIER_DECK;
+  createHarbour(ctx, kit, createProps(ctx, kit)).pierAndHarbour(stage);
+  stage.updateMatrixWorld(true);
+  const pier = stage.getObjectByName('pier'),
+    toPier = pier.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    local = (m) => {
+      const box = new T.Box3(),
+        p = m.geometry.attributes.position,
+        to = toPier.clone().multiply(m.matrixWorld);
+      for (let i = 0; i < p.count; i++) box.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(to));
+      return box;
+    },
+    meshes = [];
+  pier.traverse((m) => m.isMesh && meshes.push(m));
+  const braces = meshes.filter((m) => m.userData.brace);
+  assert(braces.length >= 2 * 2 * (D.piles.length - 1) + 2 * D.piles.length, `The pier lost its cross-bracing (${braces.length} braces).`);
+  const braceBoxes = braces.map(local);
+  for (const b of braceBoxes) assert(Math.max(-b.min.x, b.max.x) <= 1.02 && b.max.y <= D.deck - 0.2 && b.min.y >= -0.3, 'A brace leaves the space under the deck.');
+  // Each part against each brace in their own frames: no vertex of a part inside a brace, and no
+  // brace vertex inside a solid box or drum (a crate, the barrel); a rope's or a lathe's box is
+  // no solid, so the second test skips them.
+  const own = (m) => {
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      return m.geometry.boundingBox.clone().expandByScalar(-0.01);
+    },
+    pokes = (a, b) => {
+      const to = b.matrixWorld.clone().invert().multiply(a.matrixWorld),
+        box = own(b),
+        p = a.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) if (box.containsPoint(v.fromBufferAttribute(p, i).applyMatrix4(to))) return true;
+      return false;
+    };
+  for (const m of meshes) {
+    if (m.userData.pierFrame || m.material.userData.surfaceKind === 'foliage') continue;
+    const solid = ['BoxGeometry', 'RoundedBoxGeometry', 'CylinderGeometry'].includes(m.geometry.type);
+    for (const b of braces) assert(!pokes(m, b) && !(solid && pokes(b, m)), `Something on the pier runs into its bracing at ${local(m).getCenter(v).toArray().map((n) => n.toFixed(2))}.`);
+  }
+  for (const m of meshes.filter((m) => m.userData.pierFrame && !m.userData.brace && m.material.userData.surfaceKind === 'wood' && local(m).getSize(v).y < 0.12))
+    assert(Math.abs(local(m).max.y - D.deck) <= 0.015, 'A plank left the deck height.');
+  // The quay head and its steps keep 0.03 clear of the hut below its eaves.
+  const quay = new T.Box3();
+  stage.getObjectByName('harbour-quay').traverse((m) => m.isMesh && quay.union(local(m)));
+  quay.expandByScalar(0.03);
+  stage.getObjectByName('harbour-hut').traverse((m) => {
+    if (!m.isMesh) return;
+    const p = m.geometry.attributes.position,
+      to = toPier.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(to);
+      assert(v.y > 1.6 || !quay.containsPoint(v), 'The quay head runs into the harbour hut.');
+    }
+  });
+  const corners = [[quay.min.x, quay.min.z], [quay.max.x, quay.min.z], [quay.min.x, 0], [quay.max.x, 0]].map(([x, z]) => plan.pierPoint(x, z));
+  for (const [x, z] of corners) assert(plan.onIsland(x, z, 0) && plan.distanceToStreets(x, z) > plan.PAVEMENT_WIDTH + 0.3, 'The quay head leaves the grass for the street or the sand.');
+  for (const t of plan.plantingPlan()) {
+    const lx = (t.x - plan.pier.start[0]) * plan.pier.dir[1] - (t.z - plan.pier.start[1]) * plan.pier.dir[0],
+      lz = (t.x - plan.pier.start[0]) * plan.pier.dir[0] + (t.z - plan.pier.start[1]) * plan.pier.dir[1];
+    const gap = Math.hypot(Math.max(0, quay.min.x - lx, lx - quay.max.x), Math.max(0, quay.min.z - lz, lz - quay.max.z));
+    assert(gap >= 0.6, `The quay head comes within ${gap.toFixed(2)} of ${t.id}'s trunk.`);
+  }
+  // The ladder: on the head's end, from under the water to over the boards, and clear of the boat.
+  const ladder = meshes.filter((m) => m.material.userData.surfaceKind === 'iron' && Math.abs(local(m).getCenter(v).z - (plan.pier.length + 0.25)) < 0.05);
+  assert(ladder.length >= 5, 'The pier head lost its ladder.');
+  const rungs = ladder.map(local).reduce((a, b) => a.union(b), new T.Box3());
+  assert(rungs.min.y < model.waterLevel - 0.1 && rungs.max.y > D.deck + 0.2, 'The ladder no longer reaches from the water to over the boards.');
+  const [lx0, lz0] = plan.pierPoint(D.ladder.x, plan.pier.length + 0.25);
+  for (let i = 0; i < 2000; i++) {
+    const pose = plan.boatPose(i * 0.05);
+    assert(Math.hypot(pose.x - lx0, pose.z - lz0) >= 1.1, `The boat runs into the pier ladder at t=${(i * 0.05).toFixed(2)}.`);
+  }
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
