@@ -1349,3 +1349,27 @@ export const roadPatches = (
     box: [Math.min(corners[0].x, corners[1].x), Math.min(corners[0].z, corners[1].z), Math.max(corners[0].x, corners[1].x), Math.max(corners[0].z, corners[1].z)],
   };
 });
+/**
+ * The lighthouse on its rock, local to plan.lighthouseRock (y up). Bearings a point along
+ * (sin a, cos a): the door faces the overview, the yard's gate and landing stair face the beach.
+ * Heights: the yard floor, the parapet's top (under its cope), the door's head, the red bands,
+ * the gallery's underside and floor, the glazing and the dome's rise. Each window is a bearing,
+ * a height and whether it is the beacon window (lit all night). Radii: the platform's top and
+ * foot, the parapet's inner and outer faces.
+ */
+export const LIGHTHOUSE = {
+  door: 0.8,
+  landward: Math.PI,
+  floor: 0.7,
+  platform: [1.6, 1.72] as XZ,
+  wall: [1.4, 1.6] as XZ,
+  wallTop: 1.0,
+  gate: 0.6,
+  lintel: 1.6,
+  bands: [[1.8, 2.2], [2.84, 3.24]] as XZ[],
+  windows: [[0.8, 2.52, true], [2.1, 1.42, false], [-0.5, 2.52, false], [3.4, 1.42, false]] as [number, number, boolean][],
+  gallery: 3.8,
+  deck: 4.0,
+  glazing: [4.26, 5.0] as XZ,
+  domeRise: 0.36,
+};

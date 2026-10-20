@@ -2875,6 +2875,97 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     });
   }
 }
+// The lighthouse (town-harbour's lighthouse), a Stevenson tower in a walled yard, built alone: it
+// stands on its rock no taller than 6.1 (the overview frames the rock to 5.5) and within 2.95 of
+// the rock's axis; its yard's landing stair comes down on the beach above the waterline and the
+// platform's foot never reaches the grass; the door case stays inside the yard's parapet (its
+// lower step 0.04 clear) and covers the base course's open ends; the door's head and the stair
+// windows keep off the red bands; the gallery is wider than the shaft's foot; the lantern glass
+// (the lamps entry the night loop lights) is the beam's pivot height, in the glazing; and the
+// whole costs at most 15k triangles.
+{
+  const { createHarbour } = await load('town-harbour'),
+    { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    harbour = createHarbour(ctx, kit, createProps(ctx, kit)),
+    stage = new T.Group(),
+    L = plan.LIGHTHOUSE,
+    [rx, rz] = plan.lighthouseRock;
+  harbour.lighthouse(stage);
+  stage.updateMatrixWorld(true);
+  const tower = stage.getObjectByName('lighthouse'),
+    pivot = ctx.animated.find((e) => e.object.children[0]?.material?.uniforms?.strength).object,
+    glass = ctx.lamps.at(-1),
+    v = new T.Vector3();
+  let tris = 0,
+    top = 0,
+    reach = 0;
+  tower.traverse((m) => {
+    if (!m.isMesh) return;
+    tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      top = Math.max(top, v.y);
+      reach = Math.max(reach, Math.hypot(v.x - rx, v.z - rz));
+    }
+  });
+  assert(top <= 6.1 && top > 5.6, `The lighthouse stands ${top.toFixed(2)} tall.`);
+  assert(reach <= 2.95, `The lighthouse reaches ${reach.toFixed(2)} from its rock's axis.`);
+  assert(tris <= 15000, `The lighthouse costs ${Math.round(tris)} triangles.`);
+  const glassY = glass.getWorldPosition(v).y;
+  assert(glassY > L.glazing[0] && glassY < L.glazing[1] && Math.abs(pivot.position.y - glassY) < 1e-6, 'The beam no longer leaves from the lantern glass.');
+  // Out from the outline at a bearing and radius about the rock (bearings point along sin, cos).
+  const out = (a, r) => {
+    const px = rx + Math.sin(a) * r,
+      pz = rz + Math.cos(a) * r;
+    return plan.distanceToPolyline([px, pz], plan.islandOutline, true) * (plan.onIsland(px, pz, 0) ? -1 : 1);
+  };
+  const stairBox = new T.Box3().setFromObject(stage.getObjectByName('lighthouse-stair')),
+    stairFoot = Math.max(...[stairBox.min, stairBox.max].flatMap((c) => [c.x, c.z].map((n, k) => Math.abs(n - (k ? rz : rx))))) - 0.1;
+  for (const da of [-0.12, 0, 0.12]) {
+    const w = out(L.landward + da, stairFoot);
+    assert(w >= 0.32 && w <= 2.8, `The landing stair comes down ${w.toFixed(2)} out from the outline, off the beach.`);
+  }
+  for (let a = 0; a < Math.PI * 2; a += 0.05) assert(out(a, L.platform[1]) >= 0.32, 'The lighthouse platform runs onto the grass.');
+  const door = stage.getObjectByName('lighthouse-door');
+  door.traverse((m) => {
+    if (!m.isMesh) return;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      const r = Math.hypot(v.x - rx, v.z - rz);
+      assert(r <= L.wall[0] - 0.04, `The door case runs into the yard's parapet (${r.toFixed(2)}).`);
+    }
+  });
+  // The base course's ends (at its outer radius, 1.1, and where it meets the shaft) lie inside a pilaster.
+  const doorBox = (m) => new T.Box3().setFromBufferAttribute(m.geometry.attributes.position).applyMatrix4(m.matrix);
+  const pilasters = door.children.filter((m) => m.isMesh && doorBox(m).getSize(v).y > L.lintel - L.floor - 0.01 && doorBox(m).getSize(v).x < 0.2);
+  assert.equal(pilasters.length, 2, 'The door case lost its pilasters.');
+  for (const s of [-1, 1])
+    for (const r of [0.88, 1.1]) {
+      const end = new T.Vector3(Math.sin(s * 0.31) * r, L.floor + 0.1, Math.cos(s * 0.31) * r);
+      assert(pilasters.some((m) => doorBox(m).expandByScalar(1e-3).containsPoint(end)), `The base course's end at ${r} shows beside the door case.`);
+    }
+  const clear = ([y0, y1]) => L.bands.every(([b0, b1]) => y1 <= b0 + 0.05 || y0 >= b1 - 0.05);
+  assert(clear([L.floor, L.lintel + 0.19]), 'The door case runs into a red band.');
+  for (const [, y] of L.windows) assert(clear([y - 0.3, y + 0.32]), `A stair window at ${y} runs into a red band.`);
+  assert.equal(L.windows.filter((w) => w[2]).length, 1, 'One beacon window.');
+  let gallery = 0;
+  tower.traverse((m) => {
+    if (!m.isMesh || m.material.userData.surfaceKind !== 'stone') return;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      if (v.y > L.gallery - 0.01 && v.y < L.deck + 0.01) gallery = Math.max(gallery, Math.hypot(v.x - rx, v.z - rz));
+    }
+  });
+  assert(gallery > 0.9 + 0.15, `The gallery (${gallery.toFixed(2)}) is not wider than the shaft's foot.`);
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
