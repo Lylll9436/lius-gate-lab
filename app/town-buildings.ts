@@ -13,7 +13,7 @@ import { muted } from './town-homes';
 /* ------------------------------------------------------------------ */
 export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, props: Props) {
   const { material, lamps, clocks, animated } = ctx;
-  const { box, cylinder, cone, sphere, strut, slabRoof, frameRing, windowAt, door, plinth, lampGlass, ivy } = kit;
+  const { box, cylinder, cone, sphere, strut, slabRoof, frameRing, door, plinth, lampGlass, ivy } = kit;
   const { topiary } = nature;
   const { bench } = props;
   /**
@@ -482,7 +482,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       ch = (G1 - G0) / NC,
       SQ = Math.SQRT1_2;
     const dressings: Part[] = [], // trim sandstone, each piece a shade of its own
-      rustic: Part[] = [], // blonde courses
+      rustic: Part[] = [], // the rusticated courses, a shade deeper than the walls, so the base reads heavier
+      parapetDies: Part[] = [], // the parapets' blonde dies
       bars: Part[] = [], // glazing bars: cast nothing
       copper: Part[] = [],
       rolls: Part[] = [], // copper-light rolls, cresting and balls
@@ -515,7 +516,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       west = faceAt(-E, 0, -Math.PI / 2),
       towerFront = faceAt(0, TF, 0),
       towerEast = faceAt(TX, 0, Math.PI / 2),
-      towerWest = faceAt(-TX, 0, -Math.PI / 2);
+      towerWest = faceAt(-TX, 0, -Math.PI / 2),
+      rear = faceAt(0, -F, Math.PI);
 
     /**
      * An arched window on a face (local +z out of it): a painted frame, the pane where windowAt put
@@ -584,8 +586,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       return glass;
     }
 
-    // Rustication: six courses on the front, both sides and the tower's base (the rear has masses
-    // only), between the quoins, round the windows and the door. The quoins' arms alternate long
+    // Rustication: six courses on every face and the tower's base, between the quoins, round the
+    // windows and the door. The quoins' arms alternate long
     // and short from course to course; the courses stop at them.
     const lower = (cx: number): Opening => ({ cx, floor: 0.685, s: 2.075, R: 0.73, kw: 0.15 }),
       doorway: Opening = { cx: 0, floor: 0.52, s: 2.02, R: 0.75, kw: 0.14 };
@@ -599,6 +601,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       rusticCourse(rustic, front, TX, E - fa, y0, y1, [lower(2.54)]);
       rusticCourse(rustic, front, -(E - fa), -TX, y0, y1, [lower(-2.54)]);
       for (const g of [east, west]) rusticCourse(rustic, g, -(F - sa), F - sa, y0, y1, [lower(-0.95), lower(0.95)]);
+      rusticCourse(rustic, rear, -(E - fa), E - fa, y0, y1, []);
       rusticCourse(rustic, towerFront, -(TX + 0.06), TX + 0.06, y0, y1, [doorway]);
       rusticCourse(rustic, towerEast, -(TF + 0.06), -F, y0, y1, []);
       rusticCourse(rustic, towerWest, F, TF + 0.06, y0, y1, []);
@@ -659,7 +662,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
         cx = (x0 + x1) / 2,
         z = sz * (F + 0.13);
       dressings.push({ geometry: ledgeAt(L, 0.08, 0.3, 0.025), matrix: placed(cx, 5.0, z) }, { geometry: ledgeAt(L + 0.04, 0.1, 0.3, 0.03), matrix: placed(cx, 5.35, z) });
-      rustic.push({ geometry: ledgeAt(L - 0.04, 0.26, 0.2, 0.02), matrix: placed(cx, 5.17, z) });
+      parapetDies.push({ geometry: ledgeAt(L - 0.04, 0.26, 0.2, 0.02), matrix: placed(cx, 5.17, z) });
       for (const x of dies) {
         dressings.push({ geometry: ledgeAt(0.52, 0.52, 0.38, 0.03), matrix: placed(x, 5.22, z) }, { geometry: ledgeAt(0.6, 0.08, 0.46, 0.025), matrix: placed(x, 5.52, z) });
         if (Math.abs(x) > 3)
@@ -881,7 +884,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       topiary(shell, sx * 1.85, 0.85, d / 2 + 1.15, 0.38, 2);
     }
     parts(shell, dressings, dress, 'stone', { tone: 0.05 });
-    parts(shell, rustic, blonde, 'stone', { tone: 0.05 });
+    parts(shell, rustic, '#d3b683', 'stone', { tone: 0.05 });
+    parts(shell, parapetDies, blonde, 'stone', { tone: 0.05 });
     parts(shell, bars, dress, 'paint', { shadow: false });
     parts(shell, copper, palette.copper, 'copper');
     parts(shell, rolls, palette.copperLight, 'copper');
@@ -902,8 +906,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       d = site.d,
       white = '#eef0ea';
     // A low kerb-stone plinth under two volumes. A: a glass box in a chunky white frame (corner
-    // posts, two bands, sharp mullions) under a green roof slab. B: a rendered block 0.3 behind A's
-    // front with metal-framed ribbon windows on its front and on the +x face seen at overview.
+    // posts, two bands, sharp mullions) under a green roof garden. B: a rendered block 0.3 behind
+    // A's front with punched windows on its front and on the +x face seen at overview.
     plinth(shell, w, d, palette.kerb, { height: 0.35 });
     const aw = 3.4,
       ah = 4.0,
@@ -965,42 +969,142 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
           }),
         );
     }
+    // B, the rendered block (0.35-3.35), in Clash's secondary and tertiary structure: a stone base
+    // course; render panels parted by V joints (proud 0.05, a shade apart) round its punched
+    // windows, each a slim metal frame with mullions in a crisp white reveal (0.16 proud) on a
+    // projecting metal sill; a moulded coping (a set-back band under a projecting slab) and a
+    // parapet with a metal cap. The panes stay where windowAt put them (0.06 out; their centres
+    // seed their night lights), narrower now, so the render reads between them.
+    const metalCap = '#8a949b', // aluminium caps, sills and frames: a muted neutral grey
+      timber = palette.wood,
+      render: Part[] = [], // the render panels, each a shade of its own
+      trims: Part[] = [], // white: reveals' copings, parapets, the canopy's fascia
+      metal: Part[] = [], // caps, sills, frames (cast)
+      mullions: Part[] = [], // the windows' mullions: cast nothing
+      fine: Part[] = [], // the rooflight's and the panels' bars: cast nothing
+      wood: Part[] = [],
+      faceAt = (x: number, z: number, ry: number) => {
+        const g = new T.Group();
+        g.position.set(x, 0, z);
+        g.rotation.y = ry;
+        g.updateMatrix();
+        shell.add(g);
+        return g;
+      },
+      on = (g: T.Object3D, m: T.Matrix4) => g.matrix.clone().multiply(m);
     box(shell, 1.6, 1.85, 0, 2.4, 3.0, d - 0.6, palette.render, 'paint');
-    const side = new T.Group();
-    side.position.x = 2.8;
-    side.rotation.y = Math.PI / 2;
-    shell.add(side);
+    const bFront = faceAt(0, (d - 0.6) / 2, 0),
+      side = faceAt(2.8, 0, Math.PI / 2),
+      bBack = faceAt(0, -(d - 0.6) / 2, Math.PI);
+    parts(shell, [{ geometry: upright([[0.6, -2.36], [2.86, -2.36], [2.86, 2.36], [0.6, 2.36]], 0.27, 0.025, 0.35), matrix: IDENTITY }], '#b7ab93', 'stone');
+    /** A punched window on a face (local +z out of it): the pane, a slim metal frame, mullions into `lights`, a white reveal and a metal sill. */
+    const punched = (g: T.Group, x: number, y: number, ww: number, h: number, lights: number) => {
+      const ring = frameRing(g, x, y, 0, ww, h, 0.07, 0.09, palette.metal, 'iron'),
+        glass = new T.Mesh(new T.ShapeGeometry(ring(0.01), 8), material(palette.glass, 'glass'));
+      glass.position.set(x, y, 0.06);
+      g.add(glass);
+      frameRing(g, x, y, 0, ww + 0.14, h + 0.14, 0.12, 0.16, white, 'paint');
+      for (let k = 1; k < lights; k++) mullions.push({ geometry: new T.BoxGeometry(0.07, h, 0.04), matrix: on(g, placed(x - ww / 2 + (k * ww) / lights, y, 0.08)) });
+      metal.push({ geometry: chamfered(ww + 0.42, 0.07, 0.22), matrix: on(g, placed(x, y - h / 2 - 0.19 - 0.035, 0.11)) });
+    };
     for (const y of [1.25, 2.5]) {
-      windowAt(shell, 1.6, y, (d - 0.6) / 2, 1.9, 0.72, { frame: palette.metal, lintel: false });
-      windowAt(side, 0, y, 0, 3.6, 0.72, { frame: palette.metal, lintel: false });
+      punched(bFront, 1.6, y, 1.5, 0.72, 2);
+      punched(side, 0, y, 3.2, 0.72, 4);
     }
-    // The green roof slab: a white coping, a lawn 0.17 proud, three shrub lumps and two tilted panels.
-    // The coping is an eave for the glass box. At exactly 0.3 thick its float bounds miss the bake's
-    // flat-slab test (<= 0.3), so it says where its underside is.
-    const coping = box(shell, ax, 4.5, 0, aw + 0.3, 0.3, d + 0.3, white, 'paint');
+    /** Render panels on a face between x0 and x1, row by row (y0, y1, the reveals' spans to skip), none wider than 1.25. */
+    const panels = (g: T.Group, x0: number, x1: number, rows: [number, number, [number, number][]][]) => {
+      for (const [y0, y1, holes] of rows)
+        for (const [a, b] of spans(x0, x1, holes)) {
+          if (b - a < 0.1) continue;
+          const n = Math.ceil((b - a) / 1.25),
+            pw = (b - a) / n;
+          for (let k = 0; k < n; k++) render.push({ geometry: chamfered(pw - 0.03, y1 - y0 - 0.03, 0.09), matrix: on(g, placed(a + pw * (k + 0.5), (y0 + y1) / 2, 0.005)) });
+        }
+    };
+    const rows = (hole: [number, number][]): [number, number, [number, number][]][] => [
+      [0.62, 1.8, hole],
+      [1.8, 1.95, []],
+      [1.95, 3.05, hole],
+      [3.05, 3.35, []],
+    ];
+    panels(bFront, 0.6, 2.85, rows([[0.66, 2.54]]));
+    panels(side, -2.3, 2.3, rows([[-1.79, 1.79]]));
+    panels(bBack, -2.85, -0.6, rows([]));
+    // The coping: a band set back under a slab (an eave over the head panels), and a parapet with a metal cap.
+    box(shell, 1.6, 3.41, 0, 2.5, 0.12, d - 0.5, white, 'paint');
+    box(shell, 1.62, 3.53, 0, 2.66, 0.12, d - 0.34, white, 'paint');
+    trims.push(
+      { geometry: ledgeAt(2.35, 0.22, 0.12, 0.02), matrix: placed(1.775, 3.7, 2.37) },
+      { geometry: ledgeAt(2.35, 0.22, 0.12, 0.02), matrix: placed(1.775, 3.7, -2.37) },
+      { geometry: ledgeAt(0.12, 0.22, 4.86, 0.02), matrix: placed(2.89, 3.7, 0) },
+    );
+    metal.push(
+      { geometry: ledgeAt(2.39, 0.05, 0.18, 0.015), matrix: placed(1.775, 3.835, 2.37) },
+      { geometry: ledgeAt(2.39, 0.05, 0.18, 0.015), matrix: placed(1.775, 3.835, -2.37) },
+      { geometry: ledgeAt(0.18, 0.05, 4.92, 0.015), matrix: placed(2.89, 3.835, 0) },
+    );
+    // B's roof: two timber planters of clipped topiary, a small plant room with a louvred grille and
+    // a metal cap, and a vent stack under a cowl.
+    for (const dz of [-1.3, 1.3]) {
+      wood.push({ geometry: ledgeAt(0.8, 0.34, 0.5, 0.03), matrix: placed(2.2, 3.76, dz) }, { geometry: ledgeAt(0.88, 0.06, 0.58, 0.02), matrix: placed(2.2, 3.96, dz) });
+      topiary(shell, 2.2, 4.07, dz, 0.34, 1, 1.15, 0.75, 0.85);
+    }
+    box(shell, 1.15, 3.9, -0.15, 0.8, 0.62, 0.7, white, 'paint');
+    metal.push({ geometry: ledgeAt(0.9, 0.05, 0.8, 0.015), matrix: placed(1.15, 4.235, -0.15) });
+    for (let k = 0; k < 4; k++) metal.push({ geometry: chamfered(0.08, 0.07, 0.5), matrix: placed(1.57, 3.73 + k * 0.11, -0.15, 0, 0, 0.5) });
+    cylinder(shell, 1.2, 3.84, 1.0, 0.09, 0.09, 0.5, metalCap, 'iron');
+    cylinder(shell, 1.2, 4.12, 1.0, 0.15, 0.15, 0.06, metalCap, 'iron');
+    cone(shell, 1.2, 4.2, 1.0, 0.16, 0.1, metalCap, 'iron', 12);
+    // A's roof slab: a coping moulded as a band set back under a projecting slab (the glass box's
+    // eave, which says where its underside is), a parapet with a metal cap round the lawn, and on
+    // the lawn a roof garden: two timber planters of low hedge, a timber deck, a rooflight (a white
+    // kerb under tilted glass in an aluminium frame, lit late like the glass box below), two
+    // framed solar panels on their rails and two clipped shrubs.
+    box(shell, ax, 4.41, 0, aw + 0.16, 0.12, d + 0.16, white, 'paint');
+    const coping = box(shell, ax, 4.56, 0, aw + 0.3, 0.18, d + 0.3, white, 'paint');
     coping.userData.roof = true;
-    coping.userData.eaveY = 4.35;
+    coping.userData.eaveY = 4.47;
     box(shell, ax, 4.71, 0, aw - 0.2, 0.22, d - 0.2, palette.canopy[1], 'grass');
-    for (const [x, y, z] of [[ax - 0.9, 4.95, -1.3], [ax - 1.0, 4.95, 0.6], [ax + 0.8, 4.92, 1.7]]) {
-      const lump = new T.Mesh(new T.IcosahedronGeometry(0.32, 1), material(palette.hedge, 'foliage'));
-      lump.position.set(x, y, z);
-      lump.castShadow = lump.receiveShadow = true;
-      shell.add(lump);
+    for (const sz of [-1, 1]) {
+      trims.push({ geometry: ledgeAt(aw + 0.3, 0.24, 0.14, 0.02), matrix: placed(ax, 4.77, sz * ((d + 0.3) / 2 - 0.07)) });
+      metal.push({ geometry: ledgeAt(aw + 0.34, 0.06, 0.2, 0.015), matrix: placed(ax, 4.92, sz * ((d + 0.3) / 2 - 0.07)) });
+      trims.push({ geometry: ledgeAt(0.14, 0.24, d + 0.02, 0.02), matrix: placed(ax + sz * ((aw + 0.3) / 2 - 0.07), 4.77, 0) });
+      metal.push({ geometry: ledgeAt(0.2, 0.06, d + 0.06, 0.015), matrix: placed(ax + sz * ((aw + 0.3) / 2 - 0.07), 4.92, 0) });
     }
+    for (const x of [ax - 1.05, ax + 0.35]) {
+      wood.push({ geometry: ledgeAt(1.0, 0.26, 0.42, 0.03), matrix: placed(x, 4.95, 1.55) }, { geometry: ledgeAt(1.08, 0.05, 0.5, 0.015), matrix: placed(x, 5.105, 1.55) });
+      for (const u of [-0.24, 0.24]) topiary(shell, x + u, 5.07, 1.55, 0.22, 1, 1, 0.85, 0.9);
+    }
+    wood.push({ geometry: ledgeAt(1.3, 0.05, 1.0, 0.012), matrix: placed(ax - 0.25, 4.84, 0.35) });
+    for (const [x, z] of [[ax - 1.25, 0.35], [ax + 1.25, 0.75]]) topiary(shell, x, 5.0, z, 0.2, 1);
+    box(shell, ax - 0.9, 4.91, -1.2, 1.0, 0.18, 0.8, white, 'paint');
+    metal.push({ geometry: ledgeAt(1.04, 0.05, 0.84, 0.015), matrix: placed(ax - 0.9, 5.03, -1.2, -0.2) });
+    const rooflight = box(shell, ax - 0.9, 5.07, -1.2, 0.9, 0.04, 0.72, palette.studioGlass, 'glass', { rx: -0.2 });
+    rooflight.userData.windowLit = 0.8;
+    fine.push({ geometry: new T.BoxGeometry(0.07, 0.03, 0.72), matrix: placed(ax - 0.9, 5.1, -1.2, -0.2) });
     for (let i = 0; i < 2; i++) {
-      box(shell, ax + 0.85, 4.89, -1.4 + i * 1.3, 0.9, 0.14, 0.2, palette.metal, 'iron');
-      box(shell, ax + 0.85, 4.98, -1.4 + i * 1.3, 1.1, 0.08, 0.8, '#2f4e66', 'enamel', { rx: 0.35 }); // glossy panel, no night glow
+      const z = -1.4 + i * 1.3,
+        tilt = 0.35,
+        n = new T.Vector3(0, Math.cos(tilt), Math.sin(tilt));
+      box(shell, ax + 0.85, 4.89, z, 0.9, 0.14, 0.2, palette.metal, 'iron');
+      box(shell, ax + 0.85, 4.98, z, 1.1, 0.08, 0.8, '#2f4e66', 'enamel', { rx: tilt }); // glossy panel, no night glow
+      metal.push({ geometry: ledgeAt(1.2, 0.05, 0.9, 0.012), matrix: placed(ax + 0.85 - n.x * 0.06, 4.98 - n.y * 0.06, z - n.z * 0.06, tilt) });
+      for (const u of [-0.183, 0.183]) fine.push({ geometry: new T.BoxGeometry(0.07, 0.02, 0.8), matrix: placed(ax + 0.85 + u, 4.98 + n.y * 0.045, z + n.z * 0.045, tilt) });
     }
-    // B's coping (top 3.59) with two planters of clipped topiary.
-    box(shell, 1.6, 3.47, 0, 2.6, 0.24, d - 0.4, white, 'paint');
-    for (const dz of [-1.2, 1.2]) {
-      box(shell, 2.0, 3.77, dz, 0.8, 0.36, 0.5, '#b7ab93', 'stone');
-      topiary(shell, 2.0, 4.05, dz, 0.34, 1, 1.15, 0.75, 0.85);
+    // The entrance: a deep white canopy (1.5) with a fascia round its edge on two slender iron posts
+    // (base plates and caps) standing on the apron, clear of the bench and the bike rack; a blue door
+    // with steps down from the plinth, and a grounded apron with a bench.
+    box(shell, ax, 2.79, d / 2 + 0.75, 2.8, 0.14, 1.5, white, 'paint');
+    trims.push(
+      { geometry: ledgeAt(2.8, 0.3, 0.1, 0.02), matrix: placed(ax, 2.74, d / 2 + 1.45) },
+      ...[-1, 1].map((sx): Part => ({ geometry: ledgeAt(0.1, 0.3, 1.4, 0.02), matrix: placed(ax + sx * 1.35, 2.74, d / 2 + 0.75) })),
+    );
+    for (const sx of [-1, 1]) {
+      const x = ax + sx * 1.25,
+        z = d / 2 + 1.25;
+      cylinder(shell, x, 1.39, z, 0.055, 0.055, 2.66, palette.metal, 'iron');
+      metal.push({ geometry: ledgeAt(0.2, 0.04, 0.2, 0.01), matrix: placed(x, 0.08, z) }, { geometry: ledgeAt(0.18, 0.05, 0.18, 0.012), matrix: placed(x, 2.695, z) });
     }
-    // The entrance: a white canopy on posts from the ground, a blue door with steps down from the
-    // plinth, and a grounded apron with a bench.
-    box(shell, ax, 2.7, d / 2 + 0.6, 2.6, 0.22, 1.2, white, 'paint');
-    for (const sx of [-1, 1]) cylinder(shell, ax + sx * 1.1, 1.3, d / 2 + 1.05, 0.08, 0.08, 2.6, palette.metal, 'iron');
     door(shell, ax, 0.35, d / 2 - 0.12, 1.3, 2.1, '#3f6f8f', { surround: palette.metal, landing: 0.37, width: 2.0 });
     // A stylised Mackintosh rose in relief on the door's panel, below the canopy's shade where the
     // chapter sees it: an upright oval ring round an inner rose-pink ring and heart, set a little
@@ -1027,6 +1131,12 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     }
     box(shell, ax, 0.03, d / 2 + 1.2, 3.2, 0.06, 1.8, palette.pavement, 'paving'); // from the plinth foot, like the path
     bench(shell, ax - 0.85, 0.06, d / 2 + 1.85);
+    parts(shell, render, palette.render, 'paint', { tone: 0.03 });
+    parts(shell, trims, white, 'paint');
+    parts(shell, metal, metalCap, 'iron');
+    parts(shell, wood, timber, 'wood');
+    parts(shell, mullions, palette.metal, 'iron', { shadow: false });
+    parts(shell, fine, metalCap, 'iron', { shadow: false });
   }
 
   /*

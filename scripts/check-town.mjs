@@ -2922,6 +2922,54 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   const late = panes.filter((p) => Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128);
   assert(late.length === 2 && late.every((p) => Math.abs(p.local.x) < 0.01 && Math.abs(p.local.z - (TF + 0.06)) < 0.01), 'The hall’s late lights left the tower’s front.');
 }
+// The Research Studio's dressings (buildStudio): inside its old outline and budget; the roof
+// garden and B's roof plant stay inside their parapets; the canopy's two slender posts stand on
+// the apron clear of the bike rack and the bench; the rooflight is lit late like the glass box.
+{
+  const { shell } = models.get('research-studio'),
+    { d } = plan.sites['research-studio'],
+    toShell = shell.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    w = new T.Vector3(),
+    outline = new T.Box3(),
+    { x0, x1, z0, z1 } = rackFootprint,
+    rect = (p, a, b, c, e) => Math.hypot(Math.max(0, a - p.x, p.x - b), Math.max(0, c - p.z, p.z - e));
+  let tris = 0,
+    meshes = 0,
+    posts = 0;
+  shell.traverse((o) => {
+    if (!o.isMesh) return;
+    meshes++;
+    tris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
+    const p = o.geometry.attributes.position,
+      m = toShell.clone().multiply(o.matrixWorld),
+      kind = o.material.userData.surfaceKind;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m);
+      outline.expandByPoint(v);
+      if ((kind === 'foliage' || kind === 'wood') && v.y > 4.83)
+        assert(v.x >= -2.81 && v.x <= 0.61 && Math.abs(v.z) <= 2.61, `The studio's roof garden spills over its parapet at ${v.toArray().map((n) => n.toFixed(2))}.`);
+      // On B's roof (over its parapet's caps at 3.86, or planted): inside the parapet's inner faces.
+      if (v.x > 0.75 && v.y < 4.45 && (((kind === 'foliage' || kind === 'wood') && v.y > 3.6) || v.y > 3.9))
+        assert(v.x <= 2.83 && Math.abs(v.z) <= 2.31, `B's roof plant spills over its parapet at ${v.toArray().map((n) => n.toFixed(2))}.`);
+      // The posts' heads and caps under the canopy (a post's shaft has vertices only at its ends).
+      if (kind === 'iron' && v.y > 2.3 && v.y < 2.75 && v.z > d / 2 + 0.8) {
+        posts++;
+        w.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+        assert(rect(w, x0, x1, z0, z1) >= 0.3, `A canopy post crowds the bike rack at ${w.toArray().map((n) => n.toFixed(2))}.`);
+        assert(rect(v, -2.6, -1.3, d / 2 + 1.62, d / 2 + 2.08) >= 0.25, `A canopy post crowds the bench at ${v.toArray().map((n) => n.toFixed(2))}.`);
+      }
+    }
+  });
+  assert(posts > 0, 'The studio canopy lost its posts.');
+  assert(
+    outline.min.x >= -3.045 && outline.max.x <= 3.045 && outline.min.z >= -2.845 && outline.max.z <= 4.705 && outline.min.y > -0.01 && outline.max.y <= 5.275,
+    `The studio outgrew its outline: ${outline.min.toArray().map((n) => n.toFixed(2))} to ${outline.max.toArray().map((n) => n.toFixed(2))}.`,
+  );
+  assert(tris <= 13000 && meshes <= 14, `The studio has ${tris} triangles in ${meshes} meshes.`);
+  const roof = model.windows.filter((p) => p.place === 'research-studio' && p.at.clone().applyMatrix4(toShell).y > 4.9);
+  assert(roof.length === 1 && Math.round(roof[0].light[0] * 255) === 204, 'The studio’s rooflight is not lit late.');
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
