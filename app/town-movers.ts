@@ -464,7 +464,7 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     for (const sx of [-1, 1])
       for (const ez of [-1, 1]) {
         const z = ez * 1.03, ry = (sx * Math.PI) / 2, at = (x: number) => sx * x;
-        frames.push(placed(frameGeometry(0.4, 1.08, 0.06, 0.3, 0.99, 0.035, 0.025, 0.01, 2), at(0.555), 0.81, z, ry));
+        frames.push(placed(frameGeometry(0.4, 1.1, 0.06, 0.3, 0.99, 0.035, 0.025, 0.01, 2), at(0.555), 0.81, z, ry));
         leaves.push(
           placed(new RoundedBoxGeometry(0.3, 0.6, 0.045, 1, 0.015), at(0.552), 0.6, z, ry), // the lower panel
           placed(frameGeometry(0.3, 0.46, 0.02, 0.16, 0.32, 0.03, 0.035, 0, 2), at(0.535), 1.08, z, ry), // stiles and rails round the light
@@ -589,23 +589,23 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     part(boat, deck, wood, 'wood');
     // The wheelhouse, aft: walls on a dark skirting, a red roof with a deep rounded eave.
     const wz = -0.78, wx = 0.4, wd = 0.34, face = wz + wd;
-    part(boat, mouldedBlock(wx, wd, [{ s: 0, y: 0.5 }, { s: 0, y: 1.12 }, { s: -0.012, y: 1.14 }], 0.06, 3).translate(0, 0, wz), cream, 'enamel');
-    part(boat, mouldedBlock(wx, wd, [{ s: -0.025, y: BOAT.deck }, { s: -0.025, y: 0.51, sharp: true }, { s: 0, y: 0.53 }], 0.07, 3).translate(0, 0, wz), dark, 'wood');
+    part(boat, mouldedBlock(wx, wd, [{ s: 0, y: 0.5 }, { s: 0, y: 1.12 }, { s: -0.012, y: 1.14 }], 0.04, 3).translate(0, 0, wz), cream, 'enamel');
+    part(boat, mouldedBlock(wx, wd, [{ s: -0.025, y: BOAT.deck }, { s: -0.025, y: 0.51, sharp: true }, { s: 0, y: 0.53 }], 0.05, 3).translate(0, 0, wz), dark, 'wood');
     part(boat, mouldedBlock(wx + 0.08, wd + 0.08, [{ s: 0.06, y: 1.12 }, { s: 0.01, y: 1.15 }, { s: 0, y: 1.17 }, { s: 0, y: 1.2, sharp: true }, { s: 0.035, y: 1.235 }, { s: 0.09, y: 1.25 }], 0.12, 3).translate(0, 0, wz), red, 'enamel');
     // Windows (a red frame round a glass pane set into the wall) and the doors.
     const frames: T.BufferGeometry[] = [], panes: T.BufferGeometry[] = [], leaves: T.BufferGeometry[] = [];
     const glazed = (x: number, y: number, z: number, ry: number, w: number, h: number) => {
-      frames.push(placed(frameGeometry(w + 0.08, h + 0.08, 0.05, w, h, 0.03, 0.025, 0.008, 2), x, y, z, ry));
+      frames.push(placed(frameGeometry(w + 0.12, h + 0.12, 0.06, w, h, 0.03, 0.025, 0.008, 2), x, y, z, ry)); // members 0.06 (0.076 with the bevel)
       panes.push(placed(new T.BoxGeometry(w + 0.02, h + 0.02, 0.03), x - 0.005 * Math.sin(ry), y, z - 0.005 * Math.cos(ry), ry));
     };
-    for (const x of [-0.25, 0, 0.25]) glazed(x, 0.95, face, 0, 0.15, 0.22);
+    for (const x of [-0.235, 0, 0.235]) glazed(x, 0.93, face, 0, 0.13, 0.2);
     for (const sx of [-1, 1]) {
       const ry = (sx * Math.PI) / 2;
-      glazed(sx * wx, 0.96, wz + 0.18, ry, 0.17, 0.2);
+      glazed(sx * wx, 0.95, wz + 0.17, ry, 0.14, 0.2);
       // The door, aft: a teak leaf with a small light, in a red frame.
-      frames.push(placed(frameGeometry(0.3, 0.62, 0.05, 0.22, 0.55, 0.03, 0.025, 0.008, 2), sx * wx, 0.8, wz - 0.15, ry));
-      leaves.push(placed(new RoundedBoxGeometry(0.22, 0.56, 0.04, 1, 0.015), sx * (wx - 0.005), 0.79, wz - 0.15, ry));
-      panes.push(placed(new T.BoxGeometry(0.11, 0.14, 0.03), sx * (wx + 0.012), 0.92, wz - 0.15, ry));
+      frames.push(placed(frameGeometry(0.32, 0.66, 0.06, 0.2, 0.54, 0.03, 0.025, 0.008, 2), sx * wx, 0.8, wz - 0.14, ry));
+      leaves.push(placed(new RoundedBoxGeometry(0.2, 0.55, 0.04, 1, 0.015), sx * (wx - 0.005), 0.8, wz - 0.14, ry));
+      panes.push(placed(new T.BoxGeometry(0.1, 0.13, 0.03), sx * (wx + 0.012), 0.93, wz - 0.14, ry));
     }
     part(boat, mergeParts(frames), red, 'enamel');
     part(boat, mergeParts(panes), palette.glass, 'glass');
@@ -614,7 +614,7 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     const buoys: T.BufferGeometry[][] = [[], []];
     for (const sx of [-1, 1])
       for (let k = 0; k < 4; k++)
-        buoys[k % 2].push(new T.TorusGeometry(0.105, 0.042, 5, 4, Math.PI / 2).rotateZ((k * Math.PI) / 2 + Math.PI / 4).rotateY(Math.PI / 2).translate(sx * (wx + 0.045), 0.665, wz + 0.18));
+        buoys[k % 2].push(new T.TorusGeometry(0.105, 0.042, 5, 4, Math.PI / 2).rotateZ((k * Math.PI) / 2 + Math.PI / 4).rotateY(Math.PI / 2).translate(sx * (wx + 0.07), 0.64, wz + 0.17));
     part(boat, mergeParts(buoys[0]), palette.flowers[0], 'enamel');
     part(boat, mergeParts(buoys[1]), cream, 'enamel');
     // The engine casing and the funnel on it: cream, a red band, a dark top with a flared rim.
@@ -645,7 +645,7 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     // The winch at the mast's foot: a drum of rope between two frames on a bedplate, warping ends outboard.
     const mz = 1.3, kz = 1.06;
     part(boat, mergeParts([
-      new RoundedBoxGeometry(0.44, 0.05, 0.22, 1, 0.015).translate(0, BOAT.deck + 0.025, kz),
+      new RoundedBoxGeometry(0.44, 0.07, 0.22, 1, 0.02).translate(0, BOAT.deck + 0.025, kz),
       ...[-1, 1].flatMap((sx) => [
         new RoundedBoxGeometry(0.07, 0.22, 0.2, 1, 0.02).translate(sx * 0.15, 0.57, kz),
         new T.CylinderGeometry(0.05, 0.065, 0.09, 10).rotateZ((sx * Math.PI) / 2).translate(sx * 0.235, 0.6, kz),
