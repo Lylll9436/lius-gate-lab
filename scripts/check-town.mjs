@@ -3049,6 +3049,185 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
         }
   });
 }
+// The lighthouse (town-harbour's lighthouse), a Stevenson tower in a walled yard, built alone: it
+// stands on its rock no taller than 6.1 (the overview frames the rock to 5.5) and within 2.95 of
+// the rock's axis; its yard's landing stair comes down on the beach above the waterline and the
+// platform's foot never reaches the grass; the door case stays inside the yard's parapet (its
+// lower step 0.04 clear) and covers the base course's open ends; the door's head and the stair
+// windows keep off the red bands; the gallery is wider than the shaft's foot; the lantern glass
+// (the lamps entry the night loop lights) is the beam's pivot height, in the glazing; and the
+// whole costs at most 15k triangles.
+{
+  const { createHarbour } = await load('town-harbour'),
+    { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    harbour = createHarbour(ctx, kit, createProps(ctx, kit)),
+    stage = new T.Group(),
+    L = plan.LIGHTHOUSE,
+    [rx, rz] = plan.lighthouseRock;
+  harbour.lighthouse(stage);
+  stage.updateMatrixWorld(true);
+  const tower = stage.getObjectByName('lighthouse'),
+    pivot = ctx.animated.find((e) => e.object.children[0]?.material?.uniforms?.strength).object,
+    glass = ctx.lamps.at(-1),
+    v = new T.Vector3();
+  let tris = 0,
+    top = 0,
+    reach = 0;
+  tower.traverse((m) => {
+    if (!m.isMesh) return;
+    tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      top = Math.max(top, v.y);
+      reach = Math.max(reach, Math.hypot(v.x - rx, v.z - rz));
+    }
+  });
+  assert(top <= 6.1 && top > 5.6, `The lighthouse stands ${top.toFixed(2)} tall.`);
+  assert(reach <= 2.95, `The lighthouse reaches ${reach.toFixed(2)} from its rock's axis.`);
+  assert(tris <= 15000, `The lighthouse costs ${Math.round(tris)} triangles.`);
+  const glassY = glass.getWorldPosition(v).y;
+  assert(glassY > L.glazing[0] && glassY < L.glazing[1] && Math.abs(pivot.position.y - glassY) < 1e-6, 'The beam no longer leaves from the lantern glass.');
+  // Out from the outline at a bearing and radius about the rock (bearings point along sin, cos).
+  const out = (a, r) => {
+    const px = rx + Math.sin(a) * r,
+      pz = rz + Math.cos(a) * r;
+    return plan.distanceToPolyline([px, pz], plan.islandOutline, true) * (plan.onIsland(px, pz, 0) ? -1 : 1);
+  };
+  const stairBox = new T.Box3().setFromObject(stage.getObjectByName('lighthouse-stair')),
+    stairFoot = Math.max(...[stairBox.min, stairBox.max].flatMap((c) => [c.x, c.z].map((n, k) => Math.abs(n - (k ? rz : rx))))) - 0.1;
+  for (const da of [-0.12, 0, 0.12]) {
+    const w = out(L.landward + da, stairFoot);
+    assert(w >= 0.32 && w <= 2.8, `The landing stair comes down ${w.toFixed(2)} out from the outline, off the beach.`);
+  }
+  for (let a = 0; a < Math.PI * 2; a += 0.05) assert(out(a, L.platform[1]) >= 0.32, 'The lighthouse platform runs onto the grass.');
+  const door = stage.getObjectByName('lighthouse-door');
+  door.traverse((m) => {
+    if (!m.isMesh) return;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      const r = Math.hypot(v.x - rx, v.z - rz);
+      assert(r <= L.wall[0] - 0.04, `The door case runs into the yard's parapet (${r.toFixed(2)}).`);
+    }
+  });
+  // The base course's ends (at its outer radius, 1.1, and where it meets the shaft) lie inside a pilaster.
+  const doorBox = (m) => new T.Box3().setFromBufferAttribute(m.geometry.attributes.position).applyMatrix4(m.matrix);
+  const pilasters = door.children.filter((m) => m.isMesh && doorBox(m).getSize(v).y > L.lintel - L.floor - 0.01 && doorBox(m).getSize(v).x < 0.2);
+  assert.equal(pilasters.length, 2, 'The door case lost its pilasters.');
+  for (const s of [-1, 1])
+    for (const r of [0.88, 1.1]) {
+      const end = new T.Vector3(Math.sin(s * 0.31) * r, L.floor + 0.1, Math.cos(s * 0.31) * r);
+      assert(pilasters.some((m) => doorBox(m).expandByScalar(1e-3).containsPoint(end)), `The base course's end at ${r} shows beside the door case.`);
+    }
+  const clear = ([y0, y1]) => L.bands.every(([b0, b1]) => y1 <= b0 + 0.05 || y0 >= b1 - 0.05);
+  assert(clear([L.floor, L.lintel + 0.26]), 'The door case runs into a red band.');
+  for (const [, y] of L.windows) assert(clear([y - 0.3, y + 0.32]), `A stair window at ${y} runs into a red band.`);
+  assert.equal(L.windows.filter((w) => w[2]).length, 1, 'One beacon window.');
+  let gallery = 0;
+  tower.traverse((m) => {
+    if (!m.isMesh || m.material.userData.surfaceKind !== 'stone') return;
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      if (v.y > L.gallery - 0.01 && v.y < L.deck + 0.01) gallery = Math.max(gallery, Math.hypot(v.x - rx, v.z - rz));
+    }
+  });
+  assert(gallery > 0.9 + 0.15, `The gallery (${gallery.toFixed(2)}) is not wider than the shaft's foot.`);
+}
+// The raised timber pier (town-harbour's pierAndHarbour, plan.PIER_DECK), built alone: its planks
+// stand at the deck height; nothing but the pier's own frame (planks, stringers, headstocks,
+// piles and the other braces) or weed reaches into a brace's box, so the crates, the barrel, the
+// lamps and the ladder stand clear of the cross-bracing; the bracing keeps within 1.02 of the
+// pier's axis and under the deck; the quay head and its steps stay 0.03 clear of the hut, on the
+// island, off the streets and 0.6 from every tree's trunk; the ladder hangs on the head's end and
+// the boat's middle keeps 1.1 from it.
+{
+  const { createHarbour } = await load('town-harbour'),
+    { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    stage = new T.Group(),
+    D = plan.PIER_DECK;
+  createHarbour(ctx, kit, createProps(ctx, kit)).pierAndHarbour(stage);
+  stage.updateMatrixWorld(true);
+  const pier = stage.getObjectByName('pier'),
+    toPier = pier.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    local = (m) => {
+      const box = new T.Box3(),
+        p = m.geometry.attributes.position,
+        to = toPier.clone().multiply(m.matrixWorld);
+      for (let i = 0; i < p.count; i++) box.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(to));
+      return box;
+    },
+    meshes = [];
+  pier.traverse((m) => m.isMesh && meshes.push(m));
+  const braces = meshes.filter((m) => m.userData.brace);
+  assert(braces.length >= 2 * 2 * (D.piles.length - 1) + 2 * D.piles.length, `The pier lost its cross-bracing (${braces.length} braces).`);
+  const braceBoxes = braces.map(local);
+  for (const b of braceBoxes) assert(Math.max(-b.min.x, b.max.x) <= 1.02 && b.max.y <= D.deck - 0.1 && b.min.y >= -0.3, 'A brace leaves the space under the deck.');
+  // Each part against each brace in their own frames: no vertex of a part inside a brace, and no
+  // brace vertex inside a solid box or drum (a crate, the barrel); a rope's or a lathe's box is
+  // no solid, so the second test skips them.
+  const own = (m) => {
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      return m.geometry.boundingBox.clone().expandByScalar(-0.01);
+    },
+    pokes = (a, b) => {
+      const to = b.matrixWorld.clone().invert().multiply(a.matrixWorld),
+        box = own(b),
+        p = a.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) if (box.containsPoint(v.fromBufferAttribute(p, i).applyMatrix4(to))) return true;
+      return false;
+    };
+  for (const m of meshes) {
+    if (m.userData.pierFrame || m.material.userData.surfaceKind === 'foliage') continue;
+    const solid = ['BoxGeometry', 'RoundedBoxGeometry', 'CylinderGeometry'].includes(m.geometry.type);
+    for (const b of braces) assert(!pokes(m, b) && !(solid && pokes(b, m)), `Something on the pier runs into its bracing at ${local(m).getCenter(v).toArray().map((n) => n.toFixed(2))}.`);
+  }
+  for (const m of meshes.filter((m) => m.userData.pierFrame && !m.userData.brace && m.material.userData.surfaceKind === 'wood' && local(m).getSize(v).y < 0.12))
+    assert(Math.abs(local(m).max.y - D.deck) <= 0.015, 'A plank left the deck height.');
+  // The quay head and its steps keep 0.03 clear of the hut below its eaves.
+  const quay = new T.Box3();
+  stage.getObjectByName('harbour-quay').traverse((m) => m.isMesh && quay.union(local(m)));
+  quay.expandByScalar(0.03);
+  stage.getObjectByName('harbour-hut').traverse((m) => {
+    if (!m.isMesh) return;
+    const p = m.geometry.attributes.position,
+      to = toPier.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(to);
+      assert(v.y > 1.6 || !quay.containsPoint(v), 'The quay head runs into the harbour hut.');
+    }
+  });
+  const corners = [[quay.min.x, quay.min.z], [quay.max.x, quay.min.z], [quay.min.x, 0], [quay.max.x, 0]].map(([x, z]) => plan.pierPoint(x, z));
+  for (const [x, z] of corners) assert(plan.onIsland(x, z, 0) && plan.distanceToStreets(x, z) > plan.PAVEMENT_WIDTH + 0.3, 'The quay head leaves the grass for the street or the sand.');
+  for (const t of plan.plantingPlan()) {
+    const lx = (t.x - plan.pier.start[0]) * plan.pier.dir[1] - (t.z - plan.pier.start[1]) * plan.pier.dir[0],
+      lz = (t.x - plan.pier.start[0]) * plan.pier.dir[0] + (t.z - plan.pier.start[1]) * plan.pier.dir[1];
+    const gap = Math.hypot(Math.max(0, quay.min.x - lx, lx - quay.max.x), Math.max(0, quay.min.z - lz, lz - quay.max.z));
+    assert(gap >= 0.6, `The quay head comes within ${gap.toFixed(2)} of ${t.id}'s trunk.`);
+  }
+  // The ladder: on the head's end, from under the water to over the boards, and clear of the boat.
+  const ladder = meshes.filter((m) => m.material.userData.surfaceKind === 'iron' && Math.abs(local(m).getCenter(v).z - (plan.pier.length + 0.25)) < 0.05);
+  assert(ladder.length >= 5, 'The pier head lost its ladder.');
+  const rungs = ladder.map(local).reduce((a, b) => a.union(b), new T.Box3());
+  assert(rungs.min.y < model.waterLevel - 0.1 && rungs.max.y > D.deck + 0.2, 'The ladder no longer reaches from the water to over the boards.');
+  const [lx0, lz0] = plan.pierPoint(D.ladder.x, plan.pier.length + 0.25);
+  for (let i = 0; i < 2000; i++) {
+    const pose = plan.boatPose(i * 0.05);
+    assert(Math.hypot(pose.x - lx0, pose.z - lz0) >= 1.1, `The boat runs into the pier ladder at t=${(i * 0.05).toFixed(2)}.`);
+  }
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
