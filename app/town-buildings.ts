@@ -13,7 +13,7 @@ import { muted } from './town-homes';
 /* ------------------------------------------------------------------ */
 export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, props: Props) {
   const { material, lamps, clocks, animated } = ctx;
-  const { box, cylinder, cone, sphere, strut, slabRoof, frameRing, windowAt, door, plinth, lampGlass, ivy } = kit;
+  const { box, cylinder, cone, sphere, strut, slabRoof, frameRing, door, plinth, lampGlass, ivy } = kit;
   const { topiary } = nature;
   const { bench } = props;
   /**
@@ -295,61 +295,459 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     shell.userData.openingWidth = r * 2;
   }
 
+  /*
+   * The civic kit (the Town Hall and the Research Studio), on the archive's `prism`. `upright`
+   * extrudes a plan upward, every edge round its top and bottom chamfered, so stacked courses part
+   * in V joints seen from any side; `ledgeAt` is such a block about its middle. `parts` merges many
+   * dressings into one mesh in g's space, and `tone` gives each part a shade of its own (within
+   * +-tone/2, through vertex colours the bake multiplies in), as separate dressed stones get, for
+   * no extra mesh. None of these are axis-aligned boxes, so the bake's concave-corner pass ignores
+   * them and the walls behind keep their own corner shading.
+   */
+  type Part = { geometry: T.BufferGeometry; matrix: T.Matrix4 };
+  const uprights = new Map<string, T.BufferGeometry>();
+  function upright(points: [number, number][], h: number, c: number, y0 = 0) {
+    const key = [...points.flat(), h, c, y0].map((n) => n.toFixed(4)).join('|');
+    let g = uprights.get(key);
+    if (!g) {
+      g = prism(points.map(([x, z]): [number, number] => [x, -z]), h, c, y0).clone().rotateX(-Math.PI / 2);
+      uprights.set(key, g);
+    }
+    return g;
+  }
+  /** A w x d plan about the origin, its upright corners cut by `cut` (square at 0). */
+  const footprint = (w: number, d: number, cut = 0): [number, number][] => {
+    const x = w / 2,
+      z = d / 2;
+    return cut > 0
+      ? [[-x + cut, -z], [x - cut, -z], [x, -z + cut], [x, z - cut], [x - cut, z], [-x + cut, z], [-x, z - cut], [-x, -z + cut]]
+      : [[-x, -z], [x, -z], [x, z], [-x, z]];
+  };
+  /** A w x h x d block about its middle, chamfered by c round its top and bottom and cut by c at its upright corners. */
+  const ledgeAt = (w: number, h: number, d: number, c: number) => upright(footprint(w, d, c), h, c, -h / 2);
+  const placed = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) =>
+    new T.Matrix4().compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(rx, ry, rz)), new T.Vector3(1, 1, 1));
+  const IDENTITY = new T.Matrix4();
+  /** An annulus R0..R1 extruded from z 0 to `depth`, its edges chamfered by c. */
+  const annuli = new Map<string, T.BufferGeometry>();
+  function annulus(R0: number, R1: number, depth: number, c: number, segments = 24) {
+    const key = [R0, R1, depth, c, segments].join('|');
+    let g = annuli.get(key);
+    if (!g) {
+      const s = new T.Shape(),
+        hole = new T.Path();
+      s.absarc(0, 0, R1, 0, Math.PI * 2, false);
+      hole.absarc(0, 0, R0, 0, Math.PI * 2, true);
+      s.holes.push(hole);
+      g = new T.ExtrudeGeometry(s, { depth: depth - 2 * c, bevelEnabled: true, bevelThickness: c, bevelSize: c, bevelOffset: -c, bevelSegments: 1, curveSegments: segments }).translate(0, 0, c);
+      annuli.set(key, g);
+    }
+    return g;
+  }
+  function parts(g: T.Object3D, list: Part[], colour: string, kind: SurfaceKind, opts: { shadow?: boolean; tone?: number } = {}) {
+    if (!list.length) return undefined;
+    const tone = opts.tone ?? 0,
+      mid = new T.Vector3();
+    const geometries = list.map(({ geometry, matrix }) => {
+      const p = (geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(matrix);
+      for (const name of Object.keys(p.attributes)) if (name !== 'position' && name !== 'normal') p.deleteAttribute(name);
+      if (tone) {
+        p.computeBoundingBox();
+        p.boundingBox!.getCenter(mid);
+        const k = 1 + tone * (plan.hash(mid.x * 12.9898 + mid.y * 78.233 + mid.z * 37.719) - 0.5);
+        p.setAttribute('color', new T.Float32BufferAttribute(new Float32Array(p.getAttribute('position').count * 3).fill(k), 3));
+      }
+      return p;
+    });
+    const m = new T.Mesh(mergeGeometries(geometries)!, material(colour, kind));
+    geometries.forEach((p) => p.dispose());
+    const shadow = opts.shadow ?? true;
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    if (!shadow) m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /** An arch's band between radii R0 and R1 over its springing's middle (n steps). */
+  const archBand = (R0: number, R1: number, n: number): [number, number][] => [
+    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [Math.cos((k * Math.PI) / n) * R1, Math.sin((k * Math.PI) / n) * R1]),
+    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [Math.cos(((n - k) * Math.PI) / n) * R0, Math.sin(((n - k) * Math.PI) / n) * R0]),
+  ];
+  /** Evenly spaced stations from `from` to `to`, about `step` apart. */
+  const stations = (from: number, to: number, step: number) => {
+    const n = Math.max(1, Math.round((to - from) / step));
+    return Array.from({ length: n + 1 }, (_, k) => from + ((to - from) * k) / n);
+  };
+  /**
+   * An opening a course of rustication stops at: its centre cx, the height `floor` it starts from
+   * (its sill's bed), its springing s, and the outer radius R of its voussoirs (its jambs' outer
+   * edge below the springing); over the crown the keystone (kw half-wide) keeps a slot open.
+   */
+  type Opening = { cx: number; floor: number; s: number; R: number; kw: number };
+  const cutAt = (o: Opening, y: number) => (y <= o.s ? o.R : Math.max(o.kw, Math.sqrt(Math.max(0, o.R * o.R - (y - o.s) ** 2))));
+  /** Heights up an opening's side between y0 and y1: its ends, and more over the arch. */
+  function sideHeights(o: Opening, y0: number, y1: number) {
+    const kink = o.s + Math.sqrt(Math.max(0, o.R * o.R - o.kw * o.kw)),
+      ys = [y0, y1, o.s, kink, ...Array.from({ length: 9 }, (_, k) => o.s + ((k + 1) / 10) * (kink - o.s))];
+    return [...new Set(ys.filter((y) => y >= y0 && y <= y1).map((y) => +y.toFixed(5)))].sort((a, b) => a - b);
+  }
+  /**
+   * One course of banded rustication on a face (local +z out of it, x along it) from a to b and
+   * y0 to y1: `proud` out of the wall, its edges chamfered by c so that the courses part in V
+   * joints, cut round the openings (a course under their floor runs on, notched for them; the
+   * others stop at their jambs and voussoirs, so the joints meet the stone round the arch).
+   */
+  function rusticCourse(out: Part[], g: T.Object3D, a: number, b: number, y0: number, y1: number, openings: Opening[], proud = 0.06, c = 0.045) {
+    const inside = openings.filter((o) => o.cx > a && o.cx < b && o.floor < y1).sort((p, q) => p.cx - q.cx);
+    const add = (pts: [number, number][]) => out.push({ geometry: prism(pts, proud + 0.04, c, -0.04), matrix: g.matrix.clone() });
+    if (!inside.length) return add([[a, y0], [b, y0], [b, y1], [a, y1]]);
+    if (inside.every((o) => o.floor > y0)) {
+      const pts: [number, number][] = [[a, y0], [b, y0], [b, y1]];
+      for (const o of [...inside].reverse()) {
+        const ys = sideHeights(o, o.floor, y1);
+        for (const y of [...ys].reverse()) pts.push([o.cx + cutAt(o, y), y]);
+        for (const y of ys) pts.push([o.cx - cutAt(o, y), y]);
+      }
+      pts.push([a, y1]);
+      return add(pts);
+    }
+    const ends: (Opening | number)[] = [a, ...inside, b];
+    for (let i = 0; i + 1 < ends.length; i++) {
+      const L = ends[i],
+        R = ends[i + 1],
+        ysL = typeof L === 'number' ? [y0, y1] : sideHeights(L, y0, y1),
+        ysR = typeof R === 'number' ? [y0, y1] : sideHeights(R, y0, y1),
+        xL = (y: number) => (typeof L === 'number' ? L : L.cx + cutAt(L, y)),
+        xR = (y: number) => (typeof R === 'number' ? R : R.cx - cutAt(R, y));
+      if (Math.min(...ysR.map(xR)) - Math.max(...ysL.map(xL)) < 0.1) continue;
+      add([...ysR.map((y): [number, number] => [xR(y), y]), ...[...ysL].reverse().map((y): [number, number] => [xL(y), y])]);
+    }
+  }
+  /** An L-shaped quoin round the corner (cx, cz) (sx, sz its outward signs): arms ax along x and az along z, q proud of both faces, 0.04 into the wall. */
+  const quoin = (cx: number, cz: number, sx: number, sz: number, ax: number, az: number, q: number, y0: number, h: number, c: number) =>
+    upright(
+      [
+        [cx - sx * ax, cz - sz * 0.04],
+        [cx - sx * ax, cz + sz * q],
+        [cx + sx * q, cz + sz * q],
+        [cx + sx * q, cz - sz * az],
+        [cx - sx * 0.04, cz - sz * az],
+        [cx - sx * 0.04, cz - sz * 0.04],
+      ],
+      h,
+      c,
+      y0,
+    );
+  /** A triangular pediment's raking cornice: a chevron band `thick` deep (vertical) under a slope that rises `rise` over the half-span `half`. */
+  const chevron = (half: number, rise: number, thick: number, depth: number, c = 0.02) => {
+    const k = rise / half,
+      inner = rise - thick;
+    return prism([[-half, 0], [-inner / k, 0], [0, inner], [inner / k, 0], [half, 0], [0, rise]], depth, c);
+  };
+
+  /**
+   * The Town Hall (the 'About' chapter's subject and the tallest building): a Glasgow burgh hall
+   * in blonde sandstone under a copper roof, built in Clash's secondary and tertiary structure (the
+   * ashlar is the shader's). The block (walls 0.5-4.8): a moulded plinth course; a ground storey of
+   * banded rustication (six V-jointed courses, 0.64-2.78) between L-shaped quoins, its arched
+   * windows in jambs, voussoirs and keystones that rise into the string course (2.78-3.0, the upper
+   * windows' sill band); an upper storey of pilasters with bases and capitals, its windows in
+   * eared architraves under pediments; a modillion cornice (4.6-4.96) whose corona shades the
+   * frieze; a parapet with dies and ball finials hiding the copper roof's eaves (front and rear),
+   * the gables with oculi under the verges, two stone dormers with bull's-eye lights, copper
+   * cresting and ball finials on the ridge. The tower (0.4-2.9 in z, 0.6 proud of the front): its
+   * rusticated base framing the arched door in an aedicule (engaged Tuscan columns, an entablature
+   * and a pediment); quoins up to the window stage, the arched window in a stone surround; a
+   * moulded cornice (6.0-6.22); the clock stage between quoined corner piers, each clock in a
+   * moulded ring with keystones; a modillion cornice and a parapet with corner pinnacles; a
+   * louvred belfry; a copper spire with hip rolls and four lucarnes, the finial and the vane. The
+   * clocks' hands, the vane, the windows' panes (their centres seed their night lights) and the
+   * bounds (x 4.03, z -2.88 to 4.05, y 13.3) stay as they were, so the hit box and the chapter's
+   * framing do not move (check-town).
+   */
   function buildHall(shell: T.Group, site: plan.Site) {
-    // A squat two-bay block (walls 0.5 to 4.3) under a copper roof, and a fat clock tower that
-    // stands 0.6 proud of the front over the arched entrance (tower z 0.4 to 2.9).
     const w = site.w,
       d = site.d,
+      E = w / 2, // the side walls
+      F = d / 2, // the front wall
       tw = 2.5,
-      tz = d / 2 + 0.6 - tw / 2;
+      TX = tw / 2,
+      tz = F + 0.6 - TX, // the tower stands 0.6 proud of the front (z 0.4 to 2.9)
+      TF = tz + TX, // its front face
+      blonde = palette.blonde,
+      dress = palette.trim,
+      G0 = 0.64, // the ground storey's rustication, from the plinth course ...
+      G1 = 2.78, // ... to the string course's bed
+      NC = 6,
+      ch = (G1 - G0) / NC,
+      SQ = Math.SQRT1_2;
+    const dressings: Part[] = [], // trim sandstone, each piece a shade of its own
+      rustic: Part[] = [], // the rusticated courses, a shade deeper than the walls, so the base reads heavier
+      parapetDies: Part[] = [], // the parapets' blonde dies
+      bars: Part[] = [], // glazing bars: cast nothing
+      copper: Part[] = [],
+      rolls: Part[] = [], // copper-light rolls, cresting and balls
+      dark: Part[] = []; // the belfry's and lucarnes' dark openings
+    const faceAt = (x: number, z: number, ry: number) => {
+      const g = new T.Group();
+      g.position.set(x, 0, z);
+      g.rotation.y = ry;
+      g.updateMatrix();
+      shell.add(g);
+      return g;
+    };
+    const on = (g: T.Object3D, m: T.Matrix4) => g.matrix.clone().multiply(m);
+    const glassOf = (o: T.Object3D) => o instanceof T.Mesh && (o.material as T.Material).userData?.surfaceKind === 'glass';
+
     plinth(shell, w, d, palette.plinth, { height: 0.5 });
     plinth(shell, tw, tw, palette.plinth, { z: tz, height: 0.52, blocks: true });
-    box(shell, 0, 2.4, 0, w, 3.8, d, palette.blonde, 'ashlar');
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) box(shell, sx * 3.6, 2.4, sz * 2.2, 0.45, 3.8, 0.45, palette.trim, 'stone'); // corner pilasters
-      box(shell, sx * 1.475, 2.4, d / 2, 0.45, 3.8, 0.3, palette.trim, 'stone'); // tower-flank pilasters
+    box(shell, 0, 2.65, 0, w, 4.3, d, blonde, 'ashlar');
+    // The moulded plinth course (0.12 proud, its weathered top a chamfer) round the block, and
+    // round the tower's projection up to the door.
+    dressings.push({ geometry: upright(footprint(w + 0.24, d + 0.24, 0.05), 0.14, 0.04, 0.5), matrix: IDENTITY });
+    for (const s of [-1, 1])
+      dressings.push({
+        geometry: upright([[s * 0.76, TF - 0.04], [s * 0.76, TF + 0.1], [s * (TX + 0.1), TF + 0.1], [s * (TX + 0.1), F], [s * (TX - 0.04), F], [s * (TX - 0.04), TF - 0.04]], 0.12, 0.035, 0.52),
+        matrix: IDENTITY,
+      });
+
+    const front = faceAt(0, F, 0),
+      east = faceAt(E, 0, Math.PI / 2),
+      west = faceAt(-E, 0, -Math.PI / 2),
+      towerFront = faceAt(0, TF, 0),
+      towerEast = faceAt(TX, 0, Math.PI / 2),
+      towerWest = faceAt(-TX, 0, -Math.PI / 2),
+      rear = faceAt(0, -F, Math.PI);
+
+    /**
+     * An arched window on a face (local +z out of it): a painted frame, the pane where windowAt put
+     * it (0.06 out; its centre seeds its night light), glazing bars (a mullion, a transom at the
+     * springing and two head bars), and a dressed surround: jambs, imposts, voussoirs, a keystone
+     * rising `key` over them, and a sill on a drip bed. Returns the pane.
+     */
+    function archedWindow(g: T.Group, x: number, y: number, ww: number, h: number, jamb: number, key: number, brackets = false) {
+      const r = ww / 2,
+        f = 0.08,
+        s = y + h / 2,
+        R0 = r + f,
+        R1 = R0 + jamb,
+        foot = y - h / 2 - f,
+        deep = 0.16,
+        ring = frameRing(g, x, y, 0.02, ww, h, f, 0.1, dress, 'paint', true),
+        glass = new T.Mesh(new T.ShapeGeometry(ring(0.01), 8), material(palette.glass, 'glass'));
+      glass.position.set(x, y, 0.06);
+      g.add(glass);
+      const bar = (bw: number, bh: number) => new T.BoxGeometry(bw, bh, 0.04);
+      bars.push(
+        { geometry: bar(0.07, h + r), matrix: on(g, placed(x, y + r / 2, 0.09)) },
+        { geometry: bar(ww, 0.07), matrix: on(g, placed(x, s, 0.09)) },
+        ...[-1, 1].map((k): Part => ({ geometry: bar(0.07, r), matrix: on(g, placed(x + (k * r * SQ) / 2, s + (r * SQ) / 2, 0.09, 0, 0, (-k * Math.PI) / 4)) })),
+      );
+      for (const v of voussoirs(R0, R1, deep, [0, 0, 0])) dressings.push({ geometry: v.geometry, matrix: on(g, placed(x, s, 0)) });
+      dressings.push({ geometry: keystone(R0 - 0.03, R1 + key, 0.18, 0.3, deep + 0.04), matrix: on(g, placed(x, s, 0)) });
+      for (const k of [-1, 1]) {
+        dressings.push(
+          { geometry: chamfered(jamb, s - 0.12 - foot, deep), matrix: on(g, placed(x + k * (R0 + jamb / 2), (foot + s - 0.12) / 2, deep / 2)) },
+          { geometry: chamfered(jamb + 0.06, 0.12, deep + 0.04), matrix: on(g, placed(x + k * (R0 + jamb / 2), s - 0.06, (deep + 0.04) / 2)) },
+        );
+        if (brackets) dressings.push({ geometry: chamfered(0.13, 0.15, 0.18), matrix: on(g, placed(x + k * (R1 - 0.1), foot - 0.235, 0.09)) });
+      }
+      dressings.push(
+        { geometry: chamfered(2 * (R1 + 0.03), 0.09, 0.26), matrix: on(g, placed(x, foot - 0.045, 0.13)) },
+        { geometry: chamfered(2 * R1 - 0.06, 0.07, 0.18), matrix: on(g, placed(x, foot - 0.125, 0.09)) },
+      );
+      return glass;
     }
-    box(shell, 0, 2.9, 0, w + 0.3, 0.2, d + 0.3, palette.trim, 'stone'); // string course
-    box(shell, 0, 4.4, 0, w + 0.3, 0.2, d + 0.3, palette.trim, 'stone'); // cornice
-    // Eave 0.3, not 0.35: a longer front slab's upper corner pokes 0.03 through the tower face
-    // (z 2.9) as a thin copper line under the tower window.
-    slabRoof(shell, 0, 4.5, 0, w, d + 0.3, 2.2, palette.copper, { eave: 0.3, verge: 0.3, thick: 0.22, ridge: palette.copperLight, gable: palette.blonde });
-    // Two bays a side: arched windows below the string course, plain ones above. The rear has masses only.
+    /**
+     * An upper-storey window (piano nobile) on a face: a painted frame with a meeting rail and a
+     * middle bar, the pane where windowAt put it, an architrave standing on the string course with
+     * lugs at its head, and a triangular pediment whose apex stays under the cornice's bed (4.6).
+     */
+    function nobileWindow(g: T.Group, x: number) {
+      const y = 3.55,
+        ww = 0.85,
+        h = 0.95,
+        f = 0.09,
+        ring = frameRing(g, x, y, 0.02, ww, h, f, 0.1, dress, 'paint'),
+        glass = new T.Mesh(new T.ShapeGeometry(ring(0.01), 8), material(palette.glass, 'glass'));
+      glass.position.set(x, y, 0.06);
+      g.add(glass);
+      bars.push({ geometry: new T.BoxGeometry(ww, 0.07, 0.04), matrix: on(g, placed(x, y, 0.09)) }, { geometry: new T.BoxGeometry(0.07, h, 0.04), matrix: on(g, placed(x, y, 0.09)) });
+      const head = y + h / 2 + f, // the frame's head, 4.115
+        aw = ww + 2 * f;
+      frameRing(g, x, (3.0 + head) / 2, 0, aw, head - 3.0, 0.12, 0.15, dress, 'stone', false, true);
+      const top = head + 0.12;
+      for (const k of [-1, 1]) dressings.push({ geometry: chamfered(0.09, 0.2, 0.15), matrix: on(g, placed(x + k * (aw / 2 + 0.165), top - 0.1, 0.075)) });
+      dressings.push(
+        { geometry: chamfered(1.5, 0.08, 0.24), matrix: on(g, placed(x, top + 0.04, 0.12)) },
+        { geometry: prism([[-0.66, 0], [0.66, 0], [0, 0.24]], 0.14, 0.02), matrix: on(g, placed(x, top + 0.08, 0)) },
+        { geometry: chevron(0.72, 0.262, 0.091, 0.22), matrix: on(g, placed(x, top + 0.08, 0)) },
+      );
+      return glass;
+    }
+
+    // Rustication: six courses on every face and the tower's base, between the quoins, round the
+    // windows and the door. The quoins' arms alternate long
+    // and short from course to course; the courses stop at them.
+    const lower = (cx: number): Opening => ({ cx, floor: 0.685, s: 2.075, R: 0.73, kw: 0.15 }),
+      doorway: Opening = { cx: 0, floor: 0.52, s: 2.02, R: 0.75, kw: 0.14 };
+    for (let i = 0; i < NC; i++) {
+      const y0 = G0 + i * ch,
+        y1 = y0 + ch,
+        fa = i % 2 ? 0.36 : 0.62,
+        sa = i % 2 ? 0.62 : 0.36;
+      for (const sx of [-1, 1])
+        for (const sz of [-1, 1]) dressings.push({ geometry: quoin(sx * E, sz * F, sx, sz, fa, sa, 0.12, y0, ch, 0.05), matrix: IDENTITY });
+      rusticCourse(rustic, front, TX, E - fa, y0, y1, [lower(2.54)]);
+      rusticCourse(rustic, front, -(E - fa), -TX, y0, y1, [lower(-2.54)]);
+      for (const g of [east, west]) rusticCourse(rustic, g, -(F - sa), F - sa, y0, y1, [lower(-0.95), lower(0.95)]);
+      rusticCourse(rustic, rear, -(E - fa), E - fa, y0, y1, []);
+      rusticCourse(rustic, towerFront, -(TX + 0.06), TX + 0.06, y0, y1, [doorway]);
+      rusticCourse(rustic, towerEast, -(TF + 0.06), -F, y0, y1, []);
+      rusticCourse(rustic, towerWest, F, TF + 0.06, y0, y1, []);
+    }
+    // Two bays a side and on each gable end: arched windows below the string course, pedimented
+    // ones above. The east side's front arch (seen from the overview and the chapter) keeps a dim
+    // lamp all night.
     for (const sx of [-1, 1]) {
-      windowAt(shell, sx * 2.54, 1.5, d / 2, 0.85, 1.15, { arched: true });
-      windowAt(shell, sx * 2.54, 3.55, d / 2, 0.85, 0.95, { sill: false, lintel: false });
-      const face = new T.Group();
-      face.position.x = (sx * w) / 2;
-      face.rotation.y = (sx * Math.PI) / 2;
-      shell.add(face);
+      archedWindow(front, sx * 2.54, 1.5, 0.85, 1.15, 0.225, 0.13);
+      nobileWindow(front, sx * 2.54);
       for (const z of [-0.95, 0.95]) {
-        const pane = windowAt(face, z, 1.5, 0, 0.85, 1.15, { arched: true });
-        // The east side's front arch (seen from the overview and the chapter) keeps a dim lamp all night.
+        const pane = archedWindow(sx > 0 ? east : west, z, 1.5, 0.85, 1.15, 0.225, 0.13);
         if (sx === 1 && z === -0.95) pane.userData.nightLight = true;
-        windowAt(face, z, 3.55, 0, 0.85, 0.95, { sill: false, lintel: false });
+        nobileWindow(sx > 0 ? east : west, z);
       }
     }
-    // The tower: buttresses with pyramid caps either side of the arched door, a mullioned window above.
-    box(shell, 0, 4.675, tz, tw, 8.35, tw, palette.blonde, 'ashlar', { segments: 2 });
+    // The string course (the upper windows' sill band): a bed and a weathered course, round the
+    // block and round the tower.
+    const around = (hx: number, zf: number, c: number): [number, number][] => [[-hx, tz - TX], [hx, tz - TX], [hx, zf - c], [hx - c, zf], [-hx + c, zf], [-hx, zf - c]];
+    parts(
+      shell,
+      [
+        { geometry: upright(footprint(w + 0.16, d + 0.16, 0.03), 0.08, 0.025, G1), matrix: IDENTITY },
+        { geometry: upright(footprint(w + 0.32, d + 0.32, 0.05), 0.14, 0.045, G1 + 0.08), matrix: IDENTITY },
+        { geometry: upright(around(TX + 0.08, TF + 0.08, 0.03), 0.08, 0.025, G1), matrix: IDENTITY },
+        { geometry: upright(around(TX + 0.16, TF + 0.16, 0.05), 0.14, 0.045, G1 + 0.08), matrix: IDENTITY },
+      ],
+      dress,
+      'stone',
+    );
+    // Pilasters on the upper storey, standing on the string course: at the corners and either side
+    // of the tower, each a base, a shaft, a necking and a capital under the cornice's bed.
+    const pilaster = (x: number, z: number, pw: number, pd: number) =>
+      dressings.push(
+        { geometry: ledgeAt(pw + 0.1, 0.12, pd + 0.1, 0.03), matrix: placed(x, 3.06, z) },
+        { geometry: ledgeAt(pw, 1.26, pd, 0.03), matrix: placed(x, 3.75, z) },
+        { geometry: ledgeAt(pw + 0.05, 0.06, pd + 0.05, 0.02), matrix: placed(x, 4.41, z) },
+        { geometry: ledgeAt(pw + 0.13, 0.16, pd + 0.13, 0.035), matrix: placed(x, 4.52, z) },
+      );
     for (const sx of [-1, 1]) {
-      box(shell, sx * 1.2, 3.05, tz + 1.2, 0.5, 5.1, 0.5, palette.trim, 'stone');
-      cone(shell, sx * 1.2, 5.8, tz + 1.2, 0.4, 0.4, palette.trim, 'stone', 4);
+      for (const sz of [-1, 1]) pilaster(sx * 3.6, sz * 2.2, 0.45, 0.45);
+      pilaster(sx * 1.475, F, 0.45, 0.3);
     }
-    // The fanlight and the tower window are lit late (at today's colour, 0.8), so the hall's front
-    // shows a lit entrance and tower all evening in its chapter, not three panes on a dark block.
-    const beforeDoor = shell.children.length,
-      glassOf = (o: T.Object3D) => o instanceof T.Mesh && (o.material as T.Material).userData?.surfaceKind === 'glass';
-    door(shell, 0, 0.52, tz + tw / 2, 1.3, 2.2, palette.greenDoor, { arched: true, landing: 0.25, width: 2.0 });
+    // The cornice: a bed (4.6-4.68), modillions under the corona (0.11 wide, about 0.38 apart) and
+    // the corona (4.78-4.96, 0.32 proud), a mesh of its own so that its eave shades the frieze.
+    const modillion = chamfered(0.11, 0.1, 0.22);
+    dressings.push({ geometry: upright(footprint(w + 0.16, d + 0.16, 0.03), 0.08, 0.025, 4.6), matrix: IDENTITY });
+    for (const x of stations(-E + 0.2, E - 0.2, 0.38)) {
+      if (Math.abs(x) > TX + 0.12) dressings.push({ geometry: modillion, matrix: placed(x, 4.73, F + 0.15) });
+      dressings.push({ geometry: modillion, matrix: placed(x, 4.73, -F - 0.15) });
+    }
+    for (const z of stations(-F + 0.2, F - 0.2, 0.38)) for (const sx of [-1, 1]) dressings.push({ geometry: modillion, matrix: placed(sx * (E + 0.15), 4.73, z, 0, Math.PI / 2) });
+    parts(shell, [{ geometry: upright(footprint(w + 0.64, d + 0.64, 0.08), 0.18, 0.045, 4.78), matrix: IDENTITY }], dress, 'stone');
+    // The parapet over the front and rear cornice (behind it the roof's eaves): a base, a blonde
+    // die and a coping, with dies over the pilasters and balls on the corner dies.
+    const parapet = (x0: number, x1: number, sz: number, dies: number[]) => {
+      const L = x1 - x0,
+        cx = (x0 + x1) / 2,
+        z = sz * (F + 0.13);
+      dressings.push({ geometry: ledgeAt(L, 0.08, 0.3, 0.025), matrix: placed(cx, 5.0, z) }, { geometry: ledgeAt(L + 0.04, 0.1, 0.3, 0.03), matrix: placed(cx, 5.35, z) });
+      parapetDies.push({ geometry: ledgeAt(L - 0.04, 0.26, 0.2, 0.02), matrix: placed(cx, 5.17, z) });
+      for (const x of dies) {
+        dressings.push({ geometry: ledgeAt(0.52, 0.52, 0.38, 0.03), matrix: placed(x, 5.22, z) }, { geometry: ledgeAt(0.6, 0.08, 0.46, 0.025), matrix: placed(x, 5.52, z) });
+        if (Math.abs(x) > 3)
+          dressings.push(
+            { geometry: new T.CylinderGeometry(0.08, 0.1, 0.1, 10), matrix: placed(x, 5.61, z) },
+            { geometry: new T.IcosahedronGeometry(0.14, 2), matrix: placed(x, 5.79, z) },
+          );
+      }
+    };
+    for (const sx of [-1, 1]) parapet(sx > 0 ? TX : -E - 0.12, sx > 0 ? E + 0.12 : -TX, 1, [sx * 1.49, sx * 3.6]);
+    parapet(-E - 0.12, E + 0.12, -1, [-3.6, 0, 3.6]);
+    // The copper roof: its eaves (0.05) hide behind the parapets; the verges (0.3) overhang the gables.
+    slabRoof(shell, 0, 4.8, 0, w, d, 2.2, palette.copper, { eave: 0.05, verge: 0.3, thick: 0.22, ridge: palette.copperLight, gable: blonde });
+    // Ridge cresting (copper-light diamonds) and ball finials over the gables.
+    for (const x of stations(-3.4, 3.4, 0.4)) rolls.push({ geometry: prism([[0, 0], [0.075, 0.09], [0, 0.18], [-0.075, 0.09]], 0.07, 0.015, -0.035), matrix: placed(x, 7.33, 0) });
+    for (const sx of [-1, 1])
+      rolls.push(
+        { geometry: new T.CylinderGeometry(0.07, 0.09, 0.14, 10), matrix: placed(sx * 3.82, 7.4, 0) },
+        { geometry: new T.IcosahedronGeometry(0.13, 2), matrix: placed(sx * 3.82, 7.58, 0) },
+      );
+    // An oculus in each gable, under the verge: a moulded ring and four keystones round a round light.
+    for (const g of [east, west]) {
+      dressings.push({ geometry: annulus(0.31, 0.43, 0.14, 0.03), matrix: on(g, placed(0, 5.85, -0.02)) });
+      for (let k = 0; k < 4; k++) dressings.push({ geometry: keystone(0.4, 0.55, 0.14, 0.2, 0.18), matrix: on(g, placed(0, 5.85, -0.02, 0, 0, (k * Math.PI) / 2)) });
+    }
+    // The tower: an ashlar shaft (0.5-8.85).
+    box(shell, 0, 4.675, tz, tw, 8.35, tw, blonde, 'ashlar', { segments: 2 });
+    // The door, smaller now, in its own arched surround on the rusticated base; its fanlight is lit
+    // late (at today's colour, 0.8), as the tower window is, so the hall's front shows a lit
+    // entrance and tower all evening in its chapter, not three panes on a dark block.
+    const beforeDoor = shell.children.length;
+    door(shell, 0, 0.52, TF, 1.1, 1.5, palette.greenDoor, { arched: true, landing: 0.25, width: 2.0 });
     for (const o of shell.children.slice(beforeDoor)) if (glassOf(o)) o.userData.windowLit = 0.8;
-    windowAt(shell, 0, 4.65, tz + tw / 2, 0.8, 1.2, { arched: true, mullion: true }).userData.windowLit = 0.8;
-    box(shell, 0, 6.1, tz, tw + 0.3, 0.2, tw + 0.3, palette.trim, 'stone');
+    // The aedicule: engaged Tuscan columns on the rustication (a plinth, a torus, a tapering shaft,
+    // an astragal, the echinus and a square abacus), an entablature breaking forward over them
+    // (architrave, frieze, cornice) and a pediment under the tower window's sill.
+    const COLUMN = new T.LatheGeometry(
+      (
+        [
+          [0, 0.52], [0.19, 0.52], [0.19, 0.6], [0.165, 0.625], [0.14, 0.66], [0.135, 1.7], [0.118, 2.56],
+          [0.138, 2.58], [0.124, 2.605], [0.124, 2.62], [0.17, 2.68], [0.178, 2.72], [0, 2.72],
+        ] as [number, number][]
+      ).map(([x, y]) => new T.Vector2(x, y)),
+      12,
+      -Math.PI / 2,
+      Math.PI,
+    );
+    for (const sx of [-1, 1])
+      dressings.push(
+        { geometry: COLUMN, matrix: placed(sx * 0.97, 0, TF + 0.06) },
+        { geometry: ledgeAt(0.44, 0.08, 0.33, 0.02), matrix: placed(sx * 0.97, 0.56, TF + 0.085) },
+        { geometry: ledgeAt(0.42, 0.06, 0.32, 0.02), matrix: placed(sx * 0.97, 2.75, TF + 0.1) },
+      );
+    dressings.push(
+      { geometry: ledgeAt(2.4, 0.12, 0.3, 0.025), matrix: placed(0, G1 + 0.06, TF + 0.13) },
+      { geometry: ledgeAt(2.34, 0.08, 0.26, 0.02), matrix: placed(0, G1 + 0.16, TF + 0.11) },
+      { geometry: ledgeAt(2.6, 0.12, 0.4, 0.035), matrix: placed(0, G1 + 0.26, TF + 0.18) },
+      { geometry: prism([[-1.15, 0], [1.15, 0], [0, 0.35]], 0.2, 0.02), matrix: placed(0, G1 + 0.32, TF + 0.06) },
+      { geometry: chevron(1.3, 0.395, 0.14, 0.38, 0.025), matrix: placed(0, G1 + 0.32, TF - 0.02) },
+    );
+    // Quoins up the tower's front corners to its cornice, and the window stage's arched window
+    // (lit late) in its surround, the sill on two brackets, the keystone rising into the cornice.
+    for (let i = 0; i < 6; i++)
+      for (const sx of [-1, 1]) dressings.push({ geometry: quoin(sx * TX, TF, sx, 1, i % 2 ? 0.3 : 0.5, i % 2 ? 0.44 : 0.3, 0.08, 3.0 + i * 0.5, 0.5, 0.045), matrix: IDENTITY });
+    archedWindow(towerFront, 0, 4.65, 0.8, 1.2, 0.22, 0.13, true).userData.windowLit = 0.8;
+    // The tower's cornice: a bed and a corona (a mesh of its own: an eave).
+    dressings.push({ geometry: ledgeAt(tw + 0.16, 0.08, tw + 0.16, 0.025), matrix: placed(0, 6.04, tz) });
+    parts(shell, [{ geometry: ledgeAt(tw + 0.44, 0.14, tw + 0.44, 0.04), matrix: placed(0, 6.15, tz) }], dress, 'stone');
+    // The clock stage between quoined piers clasping the corners (blocks alternately 0.36 and 0.3
+    // square, V-jointed), under the crown.
+    const pier = (8.85 - 6.22) / 6;
+    for (let i = 0; i < 6; i++)
+      for (const sx of [-1, 1])
+        for (const sz of [-1, 1]) dressings.push({ geometry: ledgeAt(i % 2 ? 0.3 : 0.36, pier, i % 2 ? 0.3 : 0.36, 0.04), matrix: placed(sx * TX, 6.22 + pier * (i + 0.5), tz + sz * TX) });
     // Four clocks at 70% of the face: an iron rim, a cream dial that glows after dusk like the
-    // windows, four iron markers, a fixed brass hub and iron hands that keep Glasgow time.
+    // windows, four iron markers, a fixed brass hub and iron hands that keep Glasgow time; each in a
+    // moulded stone ring with a keystone above and below.
     for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       const face = new T.Group();
       face.position.set(0, 0, tz);
       face.rotation.y = side;
+      face.updateMatrix();
       shell.add(face);
+      dressings.push({ geometry: annulus(0.95, 1.07, 0.14, 0.03, 32), matrix: on(face, placed(0, 7.75, TX - 0.02)) });
+      for (const k of [0, 1]) dressings.push({ geometry: keystone(0.97, 1.2, 0.16, 0.24, 0.18), matrix: on(face, placed(0, 7.75, TX - 0.02, 0, 0, k * Math.PI)) });
       // The dial is a flat glass face 0.004 proud of the rim: a dial with sides showed a strip of
       // its upward side above the rim, and that caught the glass glint as a pale ring on the shaded clocks.
       const rim = new T.Mesh(new T.CylinderGeometry(0.95, 0.95, 0.096, 24), material(palette.metal, 'iron'));
@@ -380,16 +778,71 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       box(hour, 0, 0.2, 0, 0.09, 0.45, 0.02, palette.ink, 'iron');
       box(minute, 0, 0.3, 0, 0.07, 0.65, 0.02, palette.ink, 'iron');
       clocks.push({ hour, minute });
+      // The belfry's louvred opening on this face: a dark arched recess, four copper louvres, a
+      // stone arch, jambs and a sill.
+      const louvreAt = (m: T.Matrix4) => on(face, m);
+      dressings.push(
+        { geometry: prism(archBand(0.28, 0.4, 10), 0.12, 0.02), matrix: louvreAt(placed(0, 9.95, 0.78)) },
+        { geometry: keystone(0.3, 0.46, 0.12, 0.18, 0.15), matrix: louvreAt(placed(0, 9.95, 0.78)) },
+        { geometry: chamfered(0.8, 0.08, 0.22), matrix: louvreAt(placed(0, 9.31, 0.85)) },
+        ...[-1, 1].map((k): Part => ({ geometry: chamfered(0.12, 0.6, 0.12), matrix: louvreAt(placed(k * 0.34, 9.65, 0.84)) })),
+      );
+      dark.push({ geometry: prism([[-0.28, 0], [0.28, 0], ...Array.from({ length: 9 }, (_, k): [number, number] => [Math.cos((k * Math.PI) / 8) * 0.28, 0.6 + Math.sin((k * Math.PI) / 8) * 0.28])], 0.03, 0.005), matrix: louvreAt(placed(0, 9.35, 0.8)) });
+      for (const y of [9.48, 9.64, 9.8, 9.96]) copper.push({ geometry: chamfered(0.56, 0.07, 0.14), matrix: louvreAt(placed(0, y, 0.86, 0.55)) });
+      // A lucarne on this face of the spire: a copper body, a gabled copper roof and a dark light.
+      copper.push(
+        { geometry: chamfered(0.34, 0.34, 0.47), matrix: louvreAt(placed(0, 11.03, 0.685)) },
+        { geometry: prism([[-0.24, 0], [0.24, 0], [0, 0.2]], 0.53, 0.015), matrix: louvreAt(placed(0, 11.2, 0.42)) },
+      );
+      dark.push({ geometry: chamfered(0.18, 0.2, 0.03), matrix: louvreAt(placed(0, 11.02, 0.92)) });
     }
-    // The crown: a cornice, four pinnacles, a copper spire (9.05 to 12.05), a finial and a flag.
-    box(shell, 0, 8.95, tz, tw + 0.36, 0.2, tw + 0.36, palette.trim, 'stone');
+    // The crown: a bed, modillions and a corona (an eave), a parapet between pedestals at the
+    // corners, each carrying a pinnacle (a turned stone shaft under a copper cap and a ball).
+    dressings.push({ geometry: ledgeAt(tw + 0.46, 0.08, tw + 0.46, 0.025), matrix: placed(0, 8.89, tz) });
+    for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2])
+      for (const u of stations(-1.0, 1.0, 0.33)) dressings.push({ geometry: chamfered(0.1, 0.1, 0.2), matrix: placed(0, 0, tz, 0, side).multiply(placed(u, 8.98, 1.5)) });
+    parts(shell, [{ geometry: ledgeAt(tw + 0.78, 0.16, tw + 0.78, 0.045), matrix: placed(0, 9.11, tz) }], dress, 'stone');
+    for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2])
+      dressings.push(
+        { geometry: chamfered(2.12, 0.26, 0.14), matrix: placed(0, 0, tz, 0, side).multiply(placed(0, 9.32, 1.43)) },
+        { geometry: chamfered(2.16, 0.08, 0.22), matrix: placed(0, 0, tz, 0, side).multiply(placed(0, 9.49, 1.43)) },
+      );
+    const PINNACLE = new T.LatheGeometry(
+      ([[0, 9.68], [0.16, 9.68], [0.16, 9.72], [0.115, 9.76], [0.105, 10.04], [0.145, 10.07], [0.145, 10.12], [0, 10.12]] as [number, number][]).map(([x, y]) => new T.Vector2(x, y)),
+      12,
+    );
     for (const sx of [-1, 1])
       for (const sz of [-1, 1]) {
-        cylinder(shell, sx * 1.25, 9.35, tz + sz * 1.25, 0.16, 0.18, 0.6, palette.trim, 'stone');
-        cone(shell, sx * 1.25, 9.9, tz + sz * 1.25, 0.26, 0.5, palette.copper, 'copper', 4);
+        const x = sx * 1.28,
+          z = tz + sz * 1.28;
+        dressings.push(
+          { geometry: ledgeAt(0.44, 0.43, 0.44, 0.03), matrix: placed(x, 9.405, z) },
+          { geometry: ledgeAt(0.5, 0.06, 0.5, 0.02), matrix: placed(x, 9.65, z) },
+          { geometry: PINNACLE, matrix: placed(x, 0, z) },
+        );
+        cone(shell, x, 10.37, z, 0.21, 0.5, palette.copper, 'copper', 4);
+        rolls.push({ geometry: new T.IcosahedronGeometry(0.06, 1), matrix: placed(x, 10.66, z) });
       }
-    cone(shell, 0, 10.55, tz, 1.41, 3.0, palette.copper, 'copper', 4);
-    cylinder(shell, 0, 12.55, tz, 0.035, 0.05, 1.2, palette.bronze, 'brass'); // starts 0.1 inside the apex
+    // The belfry (9.19-10.39) with corner pilasters, its cornice and blocking course; the spire
+    // (10.62-12.57) with copper-light rolls up its hips; the finial and the vane.
+    box(shell, 0, 9.79, tz, 1.6, 1.2, 1.6, blonde, 'ashlar');
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) dressings.push({ geometry: ledgeAt(0.24, 1.2, 0.24, 0.03), matrix: placed(sx * 0.8, 9.79, tz + sz * 0.8) });
+    dressings.push({ geometry: ledgeAt(1.86, 0.07, 1.86, 0.02), matrix: placed(0, 10.585, tz) });
+    parts(shell, [{ geometry: ledgeAt(2.0, 0.16, 2.0, 0.04), matrix: placed(0, 10.47, tz) }], dress, 'stone');
+    cone(shell, 0, 10.62 + 0.975, tz, 1.3, 1.95, palette.copper, 'copper', 4);
+    {
+      const apex = new T.Vector3(0, 12.57, tz),
+        up = new T.Vector3(0, 1, 0);
+      for (const sx of [-1, 1])
+        for (const sz of [-1, 1]) {
+          const foot = new T.Vector3(sx * 0.919, 10.62, tz + sz * 0.919),
+            run = apex.clone().sub(foot),
+            q = new T.Quaternion().setFromUnitVectors(up, run.clone().normalize());
+          rolls.push({ geometry: new T.CylinderGeometry(0.05, 0.05, run.length() - 0.05, 8), matrix: new T.Matrix4().compose(foot.clone().addScaledVector(run, 0.5), q, new T.Vector3(1, 1, 1)) });
+        }
+    }
+    sphere(shell, 0, 12.55, tz, 0.09, palette.brass, 'brass');
+    cylinder(shell, 0, 12.55, tz, 0.035, 0.05, 1.2, palette.bronze, 'brass'); // starts inside the spire
     sphere(shell, 0, 13.2, tz, 0.1, palette.brass, 'brass');
     const vane = new T.Group();
     vane.position.set(0, 12.85, tz);
@@ -402,11 +855,50 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
         vane.rotation.y = Math.sin(time * 0.3) * 0.8 + Math.sin(time * 0.07) * 1.5;
       },
     });
+    // Two stone dormers on the front slope over the bays: a dressed front with a bull's-eye light in
+    // a moulded ring under a pediment, copper cheeks and a copper roof running back into the slope.
+    const dormers: T.Mesh[] = [];
+    for (const sx of [-1, 1]) {
+      const x = sx * 2.54,
+        z = 1.8;
+      dressings.push(
+        { geometry: chamfered(0.92, 0.88, 0.14), matrix: placed(x, 5.89, z - 0.07) },
+        { geometry: annulus(0.2, 0.28, 0.1, 0.02), matrix: placed(x, 5.89, z - 0.02) },
+        { geometry: chamfered(1.04, 0.07, 0.22), matrix: placed(x, 6.365, z - 0.06) },
+        { geometry: prism([[-0.46, 0], [0.46, 0], [0, 0.2]], 0.12, 0.015), matrix: placed(x, 6.4, z - 0.14) },
+        { geometry: chevron(0.54, 0.235, 0.09, 0.2), matrix: placed(x, 6.4, z - 0.16) },
+      );
+      copper.push(
+        { geometry: chamfered(0.82, 0.8, 1.0), matrix: placed(x, 5.93, z - 0.64) },
+        { geometry: prism([[-0.5, 0], [0.5, 0], [0, 0.27]], 1.0, 0.02), matrix: placed(x, 6.36, z - 1.16) },
+      );
+      const disc = new T.Shape();
+      disc.absarc(0, 0, 0.205, 0, Math.PI * 2, false);
+      const pane = new T.Mesh(new T.ShapeGeometry(disc, 12), material(palette.glass, 'glass'));
+      pane.position.set(x, 5.89, z + 0.01);
+      dormers.push(pane);
+    }
     // Forecourt planters, grounded, each with a clipped topiary ball.
     for (const sx of [-1, 1]) {
       box(shell, sx * 1.85, 0.25, d / 2 + 1.15, 0.7, 0.5, 0.7, palette.plinth, 'stone', { taper: 0.04 });
       topiary(shell, sx * 1.85, 0.85, d / 2 + 1.15, 0.38, 2);
     }
+    parts(shell, dressings, dress, 'stone', { tone: 0.05 });
+    parts(shell, rustic, '#d3b683', 'stone', { tone: 0.05 });
+    parts(shell, parapetDies, blonde, 'stone', { tone: 0.05 });
+    parts(shell, bars, dress, 'paint', { shadow: false });
+    parts(shell, copper, palette.copper, 'copper');
+    parts(shell, rolls, palette.copperLight, 'copper');
+    parts(shell, dark, palette.ink, 'paint', { shadow: false });
+    // The gable oculi's and the dormers' lights come last, so the older panes keep their night lights.
+    for (const g of [east, west]) {
+      const disc = new T.Shape();
+      disc.absarc(0, 0, 0.32, 0, Math.PI * 2, false);
+      const pane = new T.Mesh(new T.ShapeGeometry(disc, 16), material(palette.glass, 'glass'));
+      pane.position.set(0, 5.85, 0.02);
+      g.add(pane);
+    }
+    for (const pane of dormers) shell.add(pane);
   }
 
   function buildStudio(shell: T.Group, site: plan.Site) {
@@ -414,8 +906,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       d = site.d,
       white = '#eef0ea';
     // A low kerb-stone plinth under two volumes. A: a glass box in a chunky white frame (corner
-    // posts, two bands, sharp mullions) under a green roof slab. B: a rendered block 0.3 behind A's
-    // front with metal-framed ribbon windows on its front and on the +x face seen at overview.
+    // posts, two bands, sharp mullions) under a green roof garden. B: a rendered block 0.3 behind
+    // A's front with punched windows on its front and on the +x face seen at overview.
     plinth(shell, w, d, palette.kerb, { height: 0.35 });
     const aw = 3.4,
       ah = 4.0,
@@ -477,42 +969,142 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
           }),
         );
     }
+    // B, the rendered block (0.35-3.35), in Clash's secondary and tertiary structure: a stone base
+    // course; render panels parted by V joints (proud 0.05, a shade apart) round its punched
+    // windows, each a slim metal frame with mullions in a crisp white reveal (0.16 proud) on a
+    // projecting metal sill; a moulded coping (a set-back band under a projecting slab) and a
+    // parapet with a metal cap. The panes stay where windowAt put them (0.06 out; their centres
+    // seed their night lights), narrower now, so the render reads between them.
+    const metalCap = '#8a949b', // aluminium caps, sills and frames: a muted neutral grey
+      timber = palette.wood,
+      render: Part[] = [], // the render panels, each a shade of its own
+      trims: Part[] = [], // white: reveals' copings, parapets, the canopy's fascia
+      metal: Part[] = [], // caps, sills, frames (cast)
+      mullions: Part[] = [], // the windows' mullions: cast nothing
+      fine: Part[] = [], // the rooflight's and the panels' bars: cast nothing
+      wood: Part[] = [],
+      faceAt = (x: number, z: number, ry: number) => {
+        const g = new T.Group();
+        g.position.set(x, 0, z);
+        g.rotation.y = ry;
+        g.updateMatrix();
+        shell.add(g);
+        return g;
+      },
+      on = (g: T.Object3D, m: T.Matrix4) => g.matrix.clone().multiply(m);
     box(shell, 1.6, 1.85, 0, 2.4, 3.0, d - 0.6, palette.render, 'paint');
-    const side = new T.Group();
-    side.position.x = 2.8;
-    side.rotation.y = Math.PI / 2;
-    shell.add(side);
+    const bFront = faceAt(0, (d - 0.6) / 2, 0),
+      side = faceAt(2.8, 0, Math.PI / 2),
+      bBack = faceAt(0, -(d - 0.6) / 2, Math.PI);
+    parts(shell, [{ geometry: upright([[0.6, -2.36], [2.86, -2.36], [2.86, 2.36], [0.6, 2.36]], 0.27, 0.025, 0.35), matrix: IDENTITY }], '#b7ab93', 'stone');
+    /** A punched window on a face (local +z out of it): the pane, a slim metal frame, mullions into `lights`, a white reveal and a metal sill. */
+    const punched = (g: T.Group, x: number, y: number, ww: number, h: number, lights: number) => {
+      const ring = frameRing(g, x, y, 0, ww, h, 0.07, 0.09, palette.metal, 'iron'),
+        glass = new T.Mesh(new T.ShapeGeometry(ring(0.01), 8), material(palette.glass, 'glass'));
+      glass.position.set(x, y, 0.06);
+      g.add(glass);
+      frameRing(g, x, y, 0, ww + 0.14, h + 0.14, 0.12, 0.16, white, 'paint');
+      for (let k = 1; k < lights; k++) mullions.push({ geometry: new T.BoxGeometry(0.07, h, 0.04), matrix: on(g, placed(x - ww / 2 + (k * ww) / lights, y, 0.08)) });
+      metal.push({ geometry: chamfered(ww + 0.42, 0.07, 0.22), matrix: on(g, placed(x, y - h / 2 - 0.19 - 0.035, 0.11)) });
+    };
     for (const y of [1.25, 2.5]) {
-      windowAt(shell, 1.6, y, (d - 0.6) / 2, 1.9, 0.72, { frame: palette.metal, lintel: false });
-      windowAt(side, 0, y, 0, 3.6, 0.72, { frame: palette.metal, lintel: false });
+      punched(bFront, 1.6, y, 1.5, 0.72, 2);
+      punched(side, 0, y, 3.2, 0.72, 4);
     }
-    // The green roof slab: a white coping, a lawn 0.17 proud, three shrub lumps and two tilted panels.
-    // The coping is an eave for the glass box. At exactly 0.3 thick its float bounds miss the bake's
-    // flat-slab test (<= 0.3), so it says where its underside is.
-    const coping = box(shell, ax, 4.5, 0, aw + 0.3, 0.3, d + 0.3, white, 'paint');
+    /** Render panels on a face between x0 and x1, row by row (y0, y1, the reveals' spans to skip), none wider than 1.25. */
+    const panels = (g: T.Group, x0: number, x1: number, rows: [number, number, [number, number][]][]) => {
+      for (const [y0, y1, holes] of rows)
+        for (const [a, b] of spans(x0, x1, holes)) {
+          if (b - a < 0.1) continue;
+          const n = Math.ceil((b - a) / 1.25),
+            pw = (b - a) / n;
+          for (let k = 0; k < n; k++) render.push({ geometry: chamfered(pw - 0.03, y1 - y0 - 0.03, 0.09), matrix: on(g, placed(a + pw * (k + 0.5), (y0 + y1) / 2, 0.005)) });
+        }
+    };
+    const rows = (hole: [number, number][]): [number, number, [number, number][]][] => [
+      [0.62, 1.8, hole],
+      [1.8, 1.95, []],
+      [1.95, 3.05, hole],
+      [3.05, 3.35, []],
+    ];
+    panels(bFront, 0.6, 2.85, rows([[0.66, 2.54]]));
+    panels(side, -2.3, 2.3, rows([[-1.79, 1.79]]));
+    panels(bBack, -2.85, -0.6, rows([]));
+    // The coping: a band set back under a slab (an eave over the head panels), and a parapet with a metal cap.
+    box(shell, 1.6, 3.41, 0, 2.5, 0.12, d - 0.5, white, 'paint');
+    box(shell, 1.62, 3.53, 0, 2.66, 0.12, d - 0.34, white, 'paint');
+    trims.push(
+      { geometry: ledgeAt(2.35, 0.22, 0.12, 0.02), matrix: placed(1.775, 3.7, 2.37) },
+      { geometry: ledgeAt(2.35, 0.22, 0.12, 0.02), matrix: placed(1.775, 3.7, -2.37) },
+      { geometry: ledgeAt(0.12, 0.22, 4.86, 0.02), matrix: placed(2.89, 3.7, 0) },
+    );
+    metal.push(
+      { geometry: ledgeAt(2.39, 0.05, 0.18, 0.015), matrix: placed(1.775, 3.835, 2.37) },
+      { geometry: ledgeAt(2.39, 0.05, 0.18, 0.015), matrix: placed(1.775, 3.835, -2.37) },
+      { geometry: ledgeAt(0.18, 0.05, 4.92, 0.015), matrix: placed(2.89, 3.835, 0) },
+    );
+    // B's roof: two timber planters of clipped topiary, a small plant room with a louvred grille and
+    // a metal cap, and a vent stack under a cowl.
+    for (const dz of [-1.3, 1.3]) {
+      wood.push({ geometry: ledgeAt(0.8, 0.34, 0.5, 0.03), matrix: placed(2.2, 3.76, dz) }, { geometry: ledgeAt(0.88, 0.06, 0.58, 0.02), matrix: placed(2.2, 3.96, dz) });
+      topiary(shell, 2.2, 4.07, dz, 0.34, 1, 1.15, 0.75, 0.85);
+    }
+    box(shell, 1.15, 3.9, -0.15, 0.8, 0.62, 0.7, white, 'paint');
+    metal.push({ geometry: ledgeAt(0.9, 0.05, 0.8, 0.015), matrix: placed(1.15, 4.235, -0.15) });
+    for (let k = 0; k < 4; k++) metal.push({ geometry: chamfered(0.08, 0.07, 0.5), matrix: placed(1.57, 3.73 + k * 0.11, -0.15, 0, 0, 0.5) });
+    cylinder(shell, 1.2, 3.84, 1.0, 0.09, 0.09, 0.5, metalCap, 'iron');
+    cylinder(shell, 1.2, 4.12, 1.0, 0.15, 0.15, 0.06, metalCap, 'iron');
+    cone(shell, 1.2, 4.2, 1.0, 0.16, 0.1, metalCap, 'iron', 12);
+    // A's roof slab: a coping moulded as a band set back under a projecting slab (the glass box's
+    // eave, which says where its underside is), a parapet with a metal cap round the lawn, and on
+    // the lawn a roof garden: two timber planters of low hedge, a timber deck, a rooflight (a white
+    // kerb under tilted glass in an aluminium frame, lit late like the glass box below), two
+    // framed solar panels on their rails and two clipped shrubs.
+    box(shell, ax, 4.41, 0, aw + 0.16, 0.12, d + 0.16, white, 'paint');
+    const coping = box(shell, ax, 4.56, 0, aw + 0.3, 0.18, d + 0.3, white, 'paint');
     coping.userData.roof = true;
-    coping.userData.eaveY = 4.35;
+    coping.userData.eaveY = 4.47;
     box(shell, ax, 4.71, 0, aw - 0.2, 0.22, d - 0.2, palette.canopy[1], 'grass');
-    for (const [x, y, z] of [[ax - 0.9, 4.95, -1.3], [ax - 1.0, 4.95, 0.6], [ax + 0.8, 4.92, 1.7]]) {
-      const lump = new T.Mesh(new T.IcosahedronGeometry(0.32, 1), material(palette.hedge, 'foliage'));
-      lump.position.set(x, y, z);
-      lump.castShadow = lump.receiveShadow = true;
-      shell.add(lump);
+    for (const sz of [-1, 1]) {
+      trims.push({ geometry: ledgeAt(aw + 0.3, 0.24, 0.14, 0.02), matrix: placed(ax, 4.77, sz * ((d + 0.3) / 2 - 0.07)) });
+      metal.push({ geometry: ledgeAt(aw + 0.34, 0.06, 0.2, 0.015), matrix: placed(ax, 4.92, sz * ((d + 0.3) / 2 - 0.07)) });
+      trims.push({ geometry: ledgeAt(0.14, 0.24, d + 0.02, 0.02), matrix: placed(ax + sz * ((aw + 0.3) / 2 - 0.07), 4.77, 0) });
+      metal.push({ geometry: ledgeAt(0.2, 0.06, d + 0.06, 0.015), matrix: placed(ax + sz * ((aw + 0.3) / 2 - 0.07), 4.92, 0) });
     }
+    for (const x of [ax - 1.05, ax + 0.35]) {
+      wood.push({ geometry: ledgeAt(1.0, 0.26, 0.42, 0.03), matrix: placed(x, 4.95, 1.55) }, { geometry: ledgeAt(1.08, 0.05, 0.5, 0.015), matrix: placed(x, 5.105, 1.55) });
+      for (const u of [-0.24, 0.24]) topiary(shell, x + u, 5.07, 1.55, 0.22, 1, 1, 0.85, 0.9);
+    }
+    wood.push({ geometry: ledgeAt(1.3, 0.05, 1.0, 0.012), matrix: placed(ax - 0.25, 4.84, 0.35) });
+    for (const [x, z] of [[ax - 1.25, 0.35], [ax + 1.25, 0.75]]) topiary(shell, x, 5.0, z, 0.2, 1);
+    box(shell, ax - 0.9, 4.91, -1.2, 1.0, 0.18, 0.8, white, 'paint');
+    metal.push({ geometry: ledgeAt(1.04, 0.05, 0.84, 0.015), matrix: placed(ax - 0.9, 5.03, -1.2, -0.2) });
+    const rooflight = box(shell, ax - 0.9, 5.07, -1.2, 0.9, 0.04, 0.72, palette.studioGlass, 'glass', { rx: -0.2 });
+    rooflight.userData.windowLit = 0.8;
+    fine.push({ geometry: new T.BoxGeometry(0.07, 0.03, 0.72), matrix: placed(ax - 0.9, 5.1, -1.2, -0.2) });
     for (let i = 0; i < 2; i++) {
-      box(shell, ax + 0.85, 4.89, -1.4 + i * 1.3, 0.9, 0.14, 0.2, palette.metal, 'iron');
-      box(shell, ax + 0.85, 4.98, -1.4 + i * 1.3, 1.1, 0.08, 0.8, '#2f4e66', 'enamel', { rx: 0.35 }); // glossy panel, no night glow
+      const z = -1.4 + i * 1.3,
+        tilt = 0.35,
+        n = new T.Vector3(0, Math.cos(tilt), Math.sin(tilt));
+      box(shell, ax + 0.85, 4.89, z, 0.9, 0.14, 0.2, palette.metal, 'iron');
+      box(shell, ax + 0.85, 4.98, z, 1.1, 0.08, 0.8, '#2f4e66', 'enamel', { rx: tilt }); // glossy panel, no night glow
+      metal.push({ geometry: ledgeAt(1.2, 0.05, 0.9, 0.012), matrix: placed(ax + 0.85 - n.x * 0.06, 4.98 - n.y * 0.06, z - n.z * 0.06, tilt) });
+      for (const u of [-0.183, 0.183]) fine.push({ geometry: new T.BoxGeometry(0.07, 0.02, 0.8), matrix: placed(ax + 0.85 + u, 4.98 + n.y * 0.045, z + n.z * 0.045, tilt) });
     }
-    // B's coping (top 3.59) with two planters of clipped topiary.
-    box(shell, 1.6, 3.47, 0, 2.6, 0.24, d - 0.4, white, 'paint');
-    for (const dz of [-1.2, 1.2]) {
-      box(shell, 2.0, 3.77, dz, 0.8, 0.36, 0.5, '#b7ab93', 'stone');
-      topiary(shell, 2.0, 4.05, dz, 0.34, 1, 1.15, 0.75, 0.85);
+    // The entrance: a deep white canopy (1.5) with a fascia round its edge on two slender iron posts
+    // (base plates and caps) standing on the apron, clear of the bench and the bike rack; a blue door
+    // with steps down from the plinth, and a grounded apron with a bench.
+    box(shell, ax, 2.79, d / 2 + 0.75, 2.8, 0.14, 1.5, white, 'paint');
+    trims.push(
+      { geometry: ledgeAt(2.8, 0.3, 0.1, 0.02), matrix: placed(ax, 2.74, d / 2 + 1.45) },
+      ...[-1, 1].map((sx): Part => ({ geometry: ledgeAt(0.1, 0.3, 1.4, 0.02), matrix: placed(ax + sx * 1.35, 2.74, d / 2 + 0.75) })),
+    );
+    for (const sx of [-1, 1]) {
+      const x = ax + sx * 1.25,
+        z = d / 2 + 1.25;
+      cylinder(shell, x, 1.39, z, 0.055, 0.055, 2.66, palette.metal, 'iron');
+      metal.push({ geometry: ledgeAt(0.2, 0.04, 0.2, 0.01), matrix: placed(x, 0.08, z) }, { geometry: ledgeAt(0.18, 0.05, 0.18, 0.012), matrix: placed(x, 2.695, z) });
     }
-    // The entrance: a white canopy on posts from the ground, a blue door with steps down from the
-    // plinth, and a grounded apron with a bench.
-    box(shell, ax, 2.7, d / 2 + 0.6, 2.6, 0.22, 1.2, white, 'paint');
-    for (const sx of [-1, 1]) cylinder(shell, ax + sx * 1.1, 1.3, d / 2 + 1.05, 0.08, 0.08, 2.6, palette.metal, 'iron');
     door(shell, ax, 0.35, d / 2 - 0.12, 1.3, 2.1, '#3f6f8f', { surround: palette.metal, landing: 0.37, width: 2.0 });
     // A stylised Mackintosh rose in relief on the door's panel, below the canopy's shade where the
     // chapter sees it: an upright oval ring round an inner rose-pink ring and heart, set a little
@@ -539,6 +1131,12 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     }
     box(shell, ax, 0.03, d / 2 + 1.2, 3.2, 0.06, 1.8, palette.pavement, 'paving'); // from the plinth foot, like the path
     bench(shell, ax - 0.85, 0.06, d / 2 + 1.85);
+    parts(shell, render, palette.render, 'paint', { tone: 0.03 });
+    parts(shell, trims, white, 'paint');
+    parts(shell, metal, metalCap, 'iron');
+    parts(shell, wood, timber, 'wood');
+    parts(shell, mullions, palette.metal, 'iron', { shadow: false });
+    parts(shell, fine, metalCap, 'iron', { shadow: false });
   }
 
   /*
