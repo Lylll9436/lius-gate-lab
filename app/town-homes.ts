@@ -338,10 +338,18 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
       p1 = o.to + o.putt,
       top = o.apex - p1 * o.pitch + o.thick * hyp + 0.05,
       foot = o.apex - p1 * o.pitch - 0.05;
+    // A coping lies with its length on the prism's outline (chamfered there; the extrusion's own edges are
+    // square), its thickness along the slope's normal and its width across the gable.
+    const turn = (s: number) => {
+      const e = new T.Euler().setFromRotationMatrix(
+        new T.Matrix4().makeBasis(new T.Vector3(0, -Math.sin(a), s * Math.cos(a)), new T.Vector3(0, Math.cos(a), s * Math.sin(a)), new T.Vector3(-s, 0, 0)),
+      );
+      return [e.x, e.y, e.z] as V3;
+    };
     for (const gx of [-1, 1])
       for (const s of [-1, 1])
         stone.push(
-          { geometry: chamfered(o.width, o.thick, len), at: [gx * cx, o.apex - m * o.pitch + (o.thick / 2) * Math.cos(a), s * (m + (o.thick / 2) * Math.sin(a))], rotation: [s * a, 0, 0] },
+          { geometry: chamfered(len, o.thick, o.width), at: [gx * cx, o.apex - m * o.pitch + (o.thick / 2) * Math.cos(a), s * (m + (o.thick / 2) * Math.sin(a))], rotation: turn(s) },
           { geometry: chamfered(o.width + 0.06, top - foot, p1 - p0), at: [gx * cx, (top + foot) / 2, (s * (p0 + p1)) / 2] },
         );
     for (const gx of o.apexAt) stone.push({ geometry: chamfered(o.width + 0.04, 0.26, 0.36), at: [gx * cx, o.apex + 0.08, 0] });
@@ -365,6 +373,8 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     f.add(pane);
   }
 
+  /** The homes' gutters and downpipes: cast iron painted a mid grey, between the railings' iron and the lead. */
+  const RAIN = '#737c83';
   /** Each home's chimney cans (heights, of a 0.33 can) by its seed: tenement stacks carry a row. */
   const CANS = [[1, 1.14, 0.94], [1.08, 0.92, 1.02], [0.96, 1.12]];
   function buildTerrace(shell: T.Group, site: plan.Site, variant: 'villa' | 'red-tenement' | 'gabled-house', seed: number) {
@@ -447,16 +457,19 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     for (const o of shell.children.slice(first)) o.traverse((m) => { m.userData.bay = true; }); // batch()'s bay-cap rule
     /*
      * The dressings (Glasgow sandstone detail in chunky proportions; see MAINTENANCE). Stone in the
-     * shell's plan goes into `trim`, the plinth course into `course`, all cast iron (gutters,
-     * downpipes, the railings) into `iron`: one mesh each, the iron casting nothing.
+     * shell's plan goes into `trim`, the plinth course into `course`, the railings into `iron` and the
+     * gutters and downpipes into `rain`: all the cast iron batches as one mesh, casting nothing. The
+     * rainwater goods are painted a softer grey than the railings: in the railings' near-black a gutter
+     * under every eave drew a dark line round each roof at the overview, like an ink outline.
      */
     const trim: Piece[] = [],
       course: Piece[] = [],
-      iron: Piece[] = [];
+      iron: Piece[] = [],
+      rain: Piece[] = [];
     // A moulded plinth course: a chamfered band 0.1 deep capping the plinth (0.24 proud of the wall,
     // 0.03 past the plinth's battered top), round the bay and across the door as its threshold.
     cantedPrism(shell, bay, P - 0.07, P + 0.03, base, 'stone', 0.12).userData.band = true;
-    for (const s of [-1, 1]) course.push({ geometry: chamfered(0.3, 0.1, d + 0.48), at: [s * (w / 2 + 0.09), P - 0.02, 0] });
+    for (const s of [-1, 1]) course.push({ geometry: chamfered(d + 0.48, 0.1, 0.3), at: [s * (w / 2 + 0.09), P - 0.02, 0], rotation: [0, Math.PI / 2, 0] });
     course.push({ geometry: chamfered(w + 0.48, 0.1, 0.3), at: [0, P - 0.02, -(d / 2 + 0.09)] });
     for (const [x0, x1] of [[-(w / 2 + 0.24), -1.29], [-0.07, w / 2 + 0.24]]) course.push({ geometry: chamfered(x1 - x0, 0.1, 0.3), at: [(x0 + x1) / 2, P - 0.02, d / 2 + 0.09] });
     cluster(shell, course, base, 'stone');
@@ -513,9 +526,9 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
       const gx = half + 0.2 + 0.11,
         gy = roofY - 0.2 * pitch + 0.13;
       for (const s of [-1, 1]) {
-        iron.push({ geometry: chamfered(0.13, 0.11, d + 0.64), at: [s * gx, gy, 0] });
-        downpipe(iron, [s * gx, gy - 0.055, 1.98], [s * 1.415, 1.98], [s * 0.09, 0], [-s * 0.05, 0]);
-        downpipe(iron, [s * gx, gy - 0.055, -1.9], [s * 1.345, -1.9], [s * 0.09, 0], [-s * 0.04, 0]);
+        rain.push({ geometry: chamfered(d + 0.64, 0.11, 0.13), at: [s * gx, gy, 0], rotation: [0, Math.PI / 2, 0] });
+        downpipe(rain, [s * gx, gy - 0.055, 1.98], [s * 1.415, 1.98], [s * 0.09, 0], [-s * 0.05, 0]);
+        downpipe(rain, [s * gx, gy - 0.055, -1.9], [s * 1.345, -1.9], [s * 0.09, 0], [-s * 0.04, 0]);
       }
     } else {
       const pitch = 1.8 / ((d + 0.3) / 2),
@@ -533,12 +546,13 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
       // quoins, clear of the doorpiece, and one at each back corner.
       const gz = (d + 0.3) / 2 + 0.4 + 0.11,
         gy = roofY - 0.4 * pitch + 0.13;
-      for (const s of [-1, 1]) iron.push({ geometry: chamfered(w + 0.34, 0.11, 0.13), at: [0, gy, s * gz] });
-      downpipe(iron, [1.24, gy - 0.055, gz], [1.24, d / 2 + 0.11], [0, 0.09], [0, -0.05]);
-      for (const s of [-1, 1]) downpipe(iron, [s * 1.2, gy - 0.055, -gz], [s * 1.2, -(d / 2 + 0.055)], [0, -0.09], [0, 0.04]);
+      for (const s of [-1, 1]) rain.push({ geometry: chamfered(w + 0.34, 0.11, 0.13), at: [0, gy, s * gz] });
+      downpipe(rain, [1.24, gy - 0.055, gz], [1.24, d / 2 + 0.11], [0, 0.09], [0, -0.05]);
+      for (const s of [-1, 1]) downpipe(rain, [s * 1.2, gy - 0.055, -gz], [s * 1.2, -(d / 2 + 0.055)], [0, -0.09], [0, 0.04]);
     }
     cluster(shell, trim, dress, 'stone');
     cluster(shell, iron, palette.metal, 'iron', { shadow: false });
+    cluster(shell, rain, RAIN, 'iron', { shadow: false });
     // Front garden, sized to the room in front of the pavement (about 1.9 for every house in the row):
     // a flower mound before the bay, a hedge with a gap at the door, and a path from the steps.
     const fx = site.x + (Math.sin(site.rotation) * d) / 2,
