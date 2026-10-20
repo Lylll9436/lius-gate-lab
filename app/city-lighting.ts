@@ -15,10 +15,12 @@ export function createStreetLighting(
   const lights = lamps.map((lamp, i) => {
     const light = new T.SpotLight('#ffcc86', 0, 5.2, 1.0, 0.7, 2);
     lamp.getWorldPosition(light.position);
-    // Inside the 0.36 lantern, just below its middle and 0.1 clear of the shaft, so the post
-    // casts an ordinary shadow instead of blacking out half of the cone.
+    // Just below the lantern's middle and 0.6 out in front of it: clear of the shaft, so the post
+    // casts an ordinary shadow instead of blacking out half of the cone, and far enough off the
+    // ironwork under the lantern (its tray, bell collar, ladder bar and scrolls) that the iron
+    // falls in the cone's soft edge or outside it. Lit from 0.3 away, it shone cream.
     light.position.y -= 0.12;
-    light.position.z += 0.17;
+    light.position.z += 0.6;
     light.target.position.copy(light.position);
     light.target.position.y = 0.12;
     light.castShadow = i < shadows;

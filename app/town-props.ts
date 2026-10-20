@@ -22,6 +22,85 @@ const STATUE = {
   plate: '#575645', patina: '#735f46', verdigris: '#7fae9c', worn: '#a8865a',
 };
 
+/** One step of a turned or cast profile: radius r (a polygon's apothem) at height y; `sharp` breaks the shading there (an arris). */
+type Turn = { r: number; y: number; sharp?: boolean };
+/**
+ * A profile swept round the y axis as a lathe does, with mouldedBlock's normals: smooth up the
+ * profile except at a `sharp` step. Round, it shades smoothly all the way round; with `facets`,
+ * it is a regular polygon of `sides` flat faces, one square to +x (a cast plinth's octagon), each
+ * catching the light on its own. Open at both ends unless `cap` closes the top.
+ */
+function turned(profile: Turn[], sides: number, opts: { facets?: boolean; cap?: boolean } = {}) {
+  // The profile's outward normals (out, up) on each segment, then each step's below and above.
+  const seg = profile.slice(1).map((q, i) => {
+    const dr = q.r - profile[i].r,
+      dy = q.y - profile[i].y,
+      l = Math.hypot(dr, dy) || 1;
+    return [dy / l, -dr / l];
+  });
+  const rings = profile.map((p, i) => {
+    const lo = seg[i - 1], hi = seg[i];
+    if (!lo || !hi || p.sharp) return { below: lo ?? hi, above: hi ?? lo };
+    const n = [lo[0] + hi[0], lo[1] + hi[1]], l = Math.hypot(n[0], n[1]) || 1, r = [n[0] / l, n[1] / l];
+    return { below: r, above: r };
+  });
+  const half = Math.PI / sides,
+    grow = opts.facets ? 1 / Math.cos(half) : 1,
+    pos: number[] = [],
+    nor: number[] = [];
+  // Angle a runs anticlockwise seen from above (x = cos a, z = -sin a); a face's normal turns with
+  // its own middle (facets) or with each vertex (round).
+  const vert = (p: Turn, a: number, face: number, n: number[]) => {
+    const h = opts.facets ? face : a;
+    pos.push(p.r * grow * Math.cos(a), p.y, -p.r * grow * Math.sin(a));
+    nor.push(Math.cos(h) * n[0], n[1], -Math.sin(h) * n[0]);
+  };
+  for (let k = 0; k < sides; k++) {
+    const face = 2 * k * half,
+      a0 = opts.facets ? face - half : face,
+      a1 = opts.facets ? face + half : face + 2 * half;
+    for (let i = 0; i < profile.length - 1; i++) {
+      const p = profile[i], q = profile[i + 1], np = rings[i].above, nq = rings[i + 1].below;
+      vert(p, a0, face, np); vert(p, a1, face, np); vert(q, a1, face, nq);
+      vert(p, a0, face, np); vert(q, a1, face, nq); vert(q, a0, face, nq);
+    }
+    if (opts.cap) {
+      const top = profile[profile.length - 1];
+      pos.push(0, top.y, 0);
+      nor.push(0, 1, 0);
+      vert(top, a0, face, [0, 1]);
+      vert(top, a1, face, [0, 1]);
+    }
+  }
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  return geometry;
+}
+/**
+ * A cast drum through `rows` (radius r at height y) cut into `flutes` flat-bottomed channels:
+ * three flat facets round each, a fillet on the full radius and the channel's floor `depth` in,
+ * whose walls turn from the light and catch it in turn. The channels run out where a row's `cut`
+ * is 0 (the lamp's drum: at its head, in a short slope; at its foot they die into the plinth).
+ * Open at both ends.
+ */
+function flutedDrum(rows: { r: number; y: number; cut: number }[], flutes: number, depth: number) {
+  const n = flutes * 3,
+    at = (j: number, i: number) => {
+      const row = rows[j],
+        a = ((i % n) / n) * Math.PI * 2,
+        r = row.r - (i % 3 ? depth * row.cut : 0);
+      return [r * Math.cos(a), row.y, -r * Math.sin(a)];
+    },
+    pos: number[] = [];
+  for (let j = 0; j < rows.length - 1; j++)
+    for (let i = 0; i < n; i++) pos.push(...at(j, i), ...at(j, i + 1), ...at(j + 1, i + 1), ...at(j, i), ...at(j + 1, i + 1), ...at(j + 1, i));
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 /* ------------------------------------------------------------------ */
 /* Furniture, planting, small things                                   */
 /* ------------------------------------------------------------------ */
@@ -60,23 +139,120 @@ export function createProps(ctx: TownContext, kit: Kit) {
   // Every street and pier lantern shares one glass; the frame loop sets the same glow on all of them.
   const lanternGlass = lampGlass();
   lanternGlass.emissiveIntensity = 0;
-  /** A chunky lamp: iron plinth, a round brass collar, thick shaft, a fat lantern (height ± 0.2) and a hat. */
+  /**
+   * A lamp standard's parts for a lantern whose middle is at H, made once per height and shared by
+   * every lamp (batching copies them into the merged meshes). Everything from the shaft up moves
+   * with H. The thin parts (`cast: false`: the lantern's corner bars and the scrolls) stay out of
+   * the shadow maps, where thin casters ghost. `name` marks the parts the town checks measure.
+   */
+  type LampPart = { geometry: T.BufferGeometry; colour: string; kind: SurfaceKind; cast: boolean; name: string };
+  const lampSets = new Map<number, { parts: LampPart[]; glass: T.BufferGeometry }>();
+  function lampSet(H: number) {
+    const known = lampSets.get(H);
+    if (known) return known;
+    const up = H - 1.8,
+      iron = palette.metal,
+      parts: LampPart[] = [],
+      add = (geometry: T.BufferGeometry, colour = iron, kind: SurfaceKind = 'iron', cast = true, name = '') => parts.push({ geometry, colour, kind, cast, name });
+    // The base: an octagonal plinth of two chamfered steps (0.34 across its flats), a fluted drum
+    // and the brass collar on its head.
+    add(turned([
+      { r: 0.17, y: 0 }, { r: 0.17, y: 0.08, sharp: true }, { r: 0.154, y: 0.096, sharp: true }, { r: 0.138, y: 0.096, sharp: true },
+      { r: 0.138, y: 0.17, sharp: true }, { r: 0.124, y: 0.186, sharp: true },
+    ], 8, { facets: true, cap: true }));
+    add(flutedDrum([{ r: 0.126, y: 0.184, cut: 1 }, { r: 0.118, y: 0.46, cut: 1 }, { r: 0.112, y: 0.495, cut: 0 }], 8, 0.024));
+    add(turned([{ r: 0.108, y: 0.49 }, { r: 0.13, y: 0.503 }, { r: 0.137, y: 0.53 }, { r: 0.13, y: 0.557 }, { r: 0.108, y: 0.57 }], 10), palette.brass, 'brass');
+    // The shaft tapers from 0.092 to 0.07 between its foot (a cavetto off the collar) and the boss,
+    // with a bead a third of the way up and a fatter ring the scrolls spring from.
+    const top = 1.315 + up,
+      bar = 1.36 + up,
+      rs = (y: number) => T.MathUtils.lerp(0.092, 0.07, (y - 0.65) / (top - 0.65)),
+      bead = (y: number, proud: number): Turn[] =>
+        [-0.03, -0.017, 0, 0.017, 0.03].map((d, k) => ({ r: rs(y + d) + proud * [0, 0.75, 1, 0.75, 0][k], y: y + d }));
+    add(turned([
+      { r: 0.11, y: 0.565 }, { r: 0.1, y: 0.6 }, { r: rs(0.65), y: 0.65 },
+      ...bead(0.86 + up * 0.5, 0.026), ...bead(bar - 0.25, 0.03),
+      // The boss the ladder bar passes through, a neck, and the bell collar carrying the tray.
+      { r: rs(top), y: top }, { r: 0.088, y: bar - 0.035 }, { r: 0.088, y: bar + 0.035 }, { r: 0.064, y: bar + 0.062 },
+      { r: 0.098, y: bar + 0.105 }, { r: 0.112, y: bar + 0.132 }, { r: 0.104, y: bar + 0.155 },
+    ], 8));
+    // The ladder bar: a round arm with a ball at each end, 0.58 long, through the boss. It and its
+    // scrolls run square to the overview's line of sight (a diagonal of the town's grid), so the
+    // opening views see both arms and both scrolls rather than one arm in front of the shaft.
+    const across = Math.PI / 4;
+    add(turned([
+      { r: 0, y: -0.29 }, { r: 0.046, y: -0.278 }, { r: 0.054, y: -0.25 }, { r: 0.036, y: -0.22 },
+      { r: 0.036, y: 0.22 }, { r: 0.054, y: 0.25 }, { r: 0.046, y: 0.278 }, { r: 0, y: 0.29 },
+    ], 8).rotateZ(-Math.PI / 2).rotateY(across).translate(0, bar, 0), iron, 'iron', true, 'ladder-bar');
+    // A scroll under each arm: from the shaft below the boss, out and up into the arm by its ball.
+    const scroll = new T.TubeGeometry(
+      new T.CatmullRomCurve3([[0.03, -0.25], [0.085, -0.244], [0.14, -0.215], [0.18, -0.162], [0.203, -0.098], [0.213, -0.035], [0.215, 0.005]].map(([px, py]) => new T.Vector3(px, bar + py, 0)), false, 'centripetal'),
+      8, 0.036, 5, false,
+    );
+    add(scroll.clone().rotateY(across), iron, 'iron', false, 'scroll');
+    add(scroll.rotateY(across + Math.PI), iron, 'iron', false, 'scroll');
+    // The lantern: a tray under it, four panes between corner bars, 0.32 across at the foot and
+    // 0.4 at the head, a cornice and a bell-cast roof, then the vent cap and the brass finial.
+    const foot = H - 0.2, head = H + 0.2, low = 0.16, high = 0.2;
+    add(mouldedBlock(0.19, 0.19, [
+      { s: 0.075, y: foot - 0.1 }, { s: 0.05, y: foot - 0.072 }, { s: 0.018, y: foot - 0.034 }, { s: 0, y: foot - 0.014, sharp: true }, { s: 0, y: foot + 0.02, sharp: true },
+    ], 0.03, 1));
+    // Each bar stands 0.0175 proud of its corner and covers 0.0575 of either pane beside it.
+    const corners = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([sx, sz]) => {
+      const a = new T.Vector3(sx * (low - 0.02), foot - 0.01, sz * (low - 0.02)),
+        b = new T.Vector3(sx * (high - 0.02), head - 0.01, sz * (high - 0.02)),
+        along = b.clone().sub(a);
+      return new T.BoxGeometry(0.075, along.length(), 0.075)
+        .applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), along.normalize()))
+        .translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    });
+    add(mergeGeometries(corners, false)!, iron, 'iron', false, 'corner-bars');
+    corners.forEach((c) => c.dispose());
+    add(mouldedBlock(0.235, 0.235, [
+      { s: 0.03, y: head - 0.025 }, { s: 0, y: head + 0.016, sharp: true }, { s: 0, y: head + 0.05, sharp: true },
+      { s: 0.02, y: head + 0.066, sharp: true }, { s: 0.075, y: head + 0.092 }, { s: 0.122, y: head + 0.13 }, { s: 0.153, y: head + 0.18 },
+      { s: 0.167, y: head + 0.24, sharp: true },
+    ], 0.035, 1));
+    add(turned([
+      { r: 0.066, y: head + 0.23 }, { r: 0.066, y: head + 0.275, sharp: true }, { r: 0.053, y: head + 0.283, sharp: true }, { r: 0.053, y: head + 0.295, sharp: true },
+      { r: 0.09, y: head + 0.303, sharp: true }, { r: 0.093, y: head + 0.32 }, { r: 0.064, y: head + 0.35 }, { r: 0.032, y: head + 0.37 }, { r: 0.028, y: head + 0.385 },
+    ], 8));
+    add(turned([
+      { r: 0.026, y: head + 0.377 }, { r: 0.045, y: head + 0.395 }, { r: 0.05, y: head + 0.422 }, { r: 0.036, y: head + 0.449 }, { r: 0, y: head + 0.48 },
+    ], 8), palette.brass, 'brass');
+    // The glass, about its middle: a four-sided frustum with flat panes, wider at the top.
+    const glass = new T.CylinderGeometry(high * Math.SQRT2, low * Math.SQRT2, head - foot, 4).rotateY(Math.PI / 4).toNonIndexed();
+    glass.computeVertexNormals();
+    const set = { parts, glass };
+    lampSets.set(H, set);
+    return set;
+  }
+  /**
+   * A Glasgow cast-iron lamp standard, 2.48 tall on a 0.34 octagonal plinth (see lampSet), in
+   * muted iron with two brass accents (the collar on the base, round so it sweeps a highlight,
+   * and the finial). The lantern glass (its middle at `height`) is the lamps entry the night loop
+   * lights; the frame round it stays iron, so the panes glow and the frame stays dark.
+   */
   function lamp(g: T.Object3D, x: number, z: number, height = 1.8, y = plan.terrainHeight(x, z)) {
     const post = new T.Group();
     post.position.set(x, y, z);
+    // Square to the world whatever g's turn (the pier's), so every ladder bar crosses the
+    // overview's line of sight the same way.
+    post.rotation.y = -new T.Euler().setFromQuaternion(g.getWorldQuaternion(new T.Quaternion()), 'YXZ').y;
     g.add(post);
-    const iron = palette.metal;
-    box(post, 0, 0.15, 0, 0.34, 0.3, 0.34, iron, 'iron'); // plinth
-    cylinder(post, 0, 0.33, 0, 0.14, 0.14, 0.06, palette.brass, 'brass', 12); // brass collar: round, so it sweeps a highlight
-    const shaft = new T.Mesh(new T.CylinderGeometry(0.07, 0.085, height - 0.5, 10, 1, true), material(iron, 'iron'));
-    shaft.position.y = 0.3 + (height - 0.5) / 2;
-    shaft.castShadow = shaft.receiveShadow = true;
-    post.add(shaft);
-    const lantern = new T.Mesh(new T.BoxGeometry(0.36, 0.4, 0.36), lanternGlass);
+    const { parts, glass } = lampSet(height);
+    for (const part of parts) {
+      const m = new T.Mesh(part.geometry, material(part.colour, part.kind));
+      m.name = part.name;
+      m.castShadow = part.cast;
+      m.receiveShadow = true;
+      if (!part.cast) m.userData.noShadow = true;
+      post.add(m);
+    }
+    const lantern = new T.Mesh(glass, lanternGlass);
     lantern.position.y = height;
     lantern.castShadow = false;
     post.add(lantern);
-    cone(post, 0, height + 0.31, 0, 0.32, 0.22, iron, 'iron', 4); // hat
     lamps.push(lantern);
     return post;
   }
