@@ -1314,12 +1314,15 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
     count = 0;
   shell.traverse((o) => {
     if (!o.isMesh) return;
-    count++;
     const p = o.geometry.attributes.position,
       m = toShell.clone().multiply(o.matrixWorld),
       kind = o.material.userData.surfaceKind;
+    // The ivy (its leaves are foliage, its stems bark) is not the archive's dressing: it has its own
+    // budget and checks, and its runners may follow the cornice a little past the wall's end.
+    if (kind === 'foliage' || kind === 'bark') return;
+    count++;
     tris += (o.geometry.index?.count ?? p.count) / 3;
-    if (kind !== 'foliage') for (let i = 0; i < p.count; i++) bounds.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m));
+    for (let i = 0; i < p.count; i++) bounds.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m));
     // Batched meshes are unindexed: every three positions are a triangle.
     if (kind === 'iron') for (let i = 0; i < p.count; i += 3) iron.push([0, 1, 2].map((j) => new T.Vector3().fromBufferAttribute(p, i + j).applyMatrix4(m)));
   });
