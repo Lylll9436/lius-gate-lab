@@ -1297,6 +1297,68 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
   // The archive's three north lights light one roof hall: one light, never three bands of different lamps.
   assert.equal(rooms.filter((p) => p.place === 'city-archive' && p.at.y > 4).length, 1, 'The archive\'s north lights are not one light.');
 }
+// The archive's dressings (stone courses, window surrounds, rainwater goods, ridge cappings, the
+// chimney's crown): its masonry, iron and roof stay inside the old bounds (the ivy, which reaches
+// furthest out, is the planting's), so its hit box, framing and chapter camera do not move; it
+// stays within its detail budget; each pane keeps the centre its night light is drawn
+// from (0.06 out of its wall); and the downpipes run down the rear and north walls only, clear of
+// the windows' stone surrounds and the piers, never on the ivy's south wall or the front.
+{
+  const { shell } = models.get('city-archive'),
+    { w, d } = plan.sites['city-archive'],
+    toShell = shell.matrixWorld.clone().invert(),
+    bounds = new T.Box3(),
+    v = new T.Vector3(),
+    iron = [];
+  let tris = 0,
+    count = 0;
+  shell.traverse((o) => {
+    if (!o.isMesh) return;
+    count++;
+    const p = o.geometry.attributes.position,
+      m = toShell.clone().multiply(o.matrixWorld),
+      kind = o.material.userData.surfaceKind;
+    tris += (o.geometry.index?.count ?? p.count) / 3;
+    if (kind !== 'foliage') for (let i = 0; i < p.count; i++) bounds.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m));
+    // Batched meshes are unindexed: every three positions are a triangle.
+    if (kind === 'iron') for (let i = 0; i < p.count; i += 3) iron.push([0, 1, 2].map((j) => new T.Vector3().fromBufferAttribute(p, i + j).applyMatrix4(m)));
+  });
+  const show = (b) => [b.min, b.max].map((c) => c.toArray().map((n) => n.toFixed(3)).join(' ')).join(' to ');
+  // The old bounds: the cornice at -x, the last north light's bars at +x, the gables' overhang
+  // behind, the dock in front and the chimney's top.
+  assert(bounds.max.x < 3.371 && bounds.min.x > -3.342 && bounds.min.z > -2.821 && bounds.max.z < 3.451 && bounds.max.y < 8.101, `The archive outgrew its old bounds: ${show(bounds)}`);
+  assert(tris < 23000 && count <= 10, `The archive costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  const own = panes.filter((p) => p.place === 'city-archive').map((p) => p.at.clone().applyMatrix4(toShell));
+  assert.equal(own.length, 11, 'The archive has nine windows, a fanlight and one roof light.');
+  for (const p of own.filter((q) => q.y < 4)) {
+    const out = Math.max(Math.abs(p.x) - w / 2, Math.abs(p.z) - d / 2);
+    assert(Math.abs(out - 0.06) < 0.005 && (Math.abs(p.y - 1.75) < 0.005 || (Math.abs(p.y - 2.45) < 0.005 && Math.abs(p.x) < 0.005)), `An archive pane moved (its night light would change) to ${p.toArray().map((n) => n.toFixed(2))}`);
+  }
+  // The walls in their own frames: u along the wall, `out` from its face, the window middles and the piers' spans.
+  const walls = [
+    { name: 'front', u: (q) => q.x, out: (q) => q.z - d / 2, windows: [-2.01, 2.01], piers: [[-3.25, -2.75], [-1.275, -0.825], [0.825, 1.275], [2.75, 3.25]], door: 0.9 },
+    { name: 'rear', u: (q) => -q.x, out: (q) => -q.z - d / 2, windows: [-2.01, 0, 2.01], piers: [[-3.25, -2.75], [-1.275, -0.825], [0.825, 1.275], [2.75, 3.25]] },
+    { name: 'south', u: (q) => -q.z, out: (q) => q.x - w / 2, windows: [-0.95, 0.95], piers: [[-2.55, -2.05], [2.05, 2.55]] },
+    { name: 'north', u: (q) => q.z, out: (q) => -q.x - w / 2, windows: [-0.95, 0.95], piers: [[-2.55, -2.05], [2.05, 2.55]] },
+  ];
+  for (const wall of walls) {
+    // Through mid-storey (clear of the pipes' ears and collars) the only iron on a wall is the
+    // windows' frames and bars (within 0.53 of a window's middle), the door's hinges and the downpipes.
+    const pipe = iron.filter(
+      (t) =>
+        Math.min(...t.map((q) => q.y)) < 2.2 &&
+        Math.max(...t.map((q) => q.y)) > 1.4 &&
+        t.every((q) => wall.out(q) > -0.01 && wall.out(q) < 0.25 && !(wall.door && Math.abs(wall.u(q)) < wall.door) && wall.windows.every((c) => Math.abs(wall.u(q) - c) > 0.53)),
+    );
+    if (wall.name === 'front' || wall.name === 'south') assert.equal(pipe.length, 0, `A downpipe on the archive's ${wall.name} wall.`);
+    else assert(pipe.length >= 16, `The archive's ${wall.name} wall has no downpipes.`);
+    for (const q of pipe.flat()) {
+      const u = wall.u(q);
+      assert(wall.windows.every((c) => Math.abs(u - c) >= 0.7), `A ${wall.name} downpipe touches a window surround at u ${u.toFixed(2)}.`);
+      assert(wall.piers.every(([a, b]) => u <= a || u >= b), `A ${wall.name} downpipe runs into a pier at u ${u.toFixed(2)}.`);
+    }
+  }
+}
 // Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
 {
   const role = (r) => panes.filter((p) => p.role === r);

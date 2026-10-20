@@ -1,4 +1,6 @@
 import * as T from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import type { SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, type TownContext } from './town-shared';
 import type { Kit } from './town-kit';
@@ -11,7 +13,7 @@ import { muted } from './town-homes';
 /* ------------------------------------------------------------------ */
 export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, props: Props) {
   const { material, lamps, clocks, animated } = ctx;
-  const { box, cylinder, cone, sphere, slabRoof, windowAt, door, plinth, lampGlass, ivy } = kit;
+  const { box, cylinder, cone, sphere, strut, slabRoof, frameRing, windowAt, door, plinth, lampGlass, ivy } = kit;
   const { topiary } = nature;
   const { bench } = props;
   function buildGate(shell: T.Group) {
@@ -333,63 +335,360 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     bench(shell, ax - 0.85, 0.06, d / 2 + 1.85);
   }
 
+  /*
+   * The archive's detail kit. A chamfered block is an extruded outline with one 45-degree bevel (a
+   * box is 28 triangles this way, a rounded box 108), so the many small dressings stay cheap and
+   * still catch a soft line of light on every edge. `cluster` merges repeated small parts (glazing
+   * bars, dentils, pipe ears) into one mesh, so they batch with their family rather than adding a
+   * batch of their own.
+   */
+  const prisms = new Map<string, T.BufferGeometry>();
+  /** An extruded outline (x, y points) from z0 to z0 + depth, its edges chamfered by c (shared per shape). */
+  function prism(points: [number, number][], depth: number, c = 0.02, z0 = 0) {
+    const key = [...points.flat(), depth, c, z0].map((n) => n.toFixed(4)).join('|');
+    let geometry = prisms.get(key);
+    if (!geometry) {
+      geometry = new T.ExtrudeGeometry(new T.Shape(points.map(([x, y]) => new T.Vector2(x, y))), {
+        depth: depth - 2 * c,
+        bevelEnabled: true,
+        bevelThickness: c,
+        bevelSize: c,
+        bevelOffset: -c,
+        bevelSegments: 1,
+      }).translate(0, 0, z0 + c);
+      prisms.set(key, geometry);
+    }
+    return geometry;
+  }
+  /** A w x h x d block about its middle, chamfered by a quarter of its thinnest side (at most 0.025). */
+  const chamfered = (w: number, h: number, d: number) =>
+    prism([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]], d, Math.min(0.025, 0.25 * Math.min(w, h, d)), -d / 2);
+  function block(g: T.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, colour: string, kind: SurfaceKind) {
+    const m = new T.Mesh(chamfered(w, h, d), material(colour, kind));
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  }
+  type V3 = [number, number, number];
+  type Piece = { geometry: T.BufferGeometry; at: V3; rotation?: V3 };
+  /** Parts as one mesh in g's space; thin ones cast nothing (a thin caster ghosts in the shadow map). */
+  function cluster(g: T.Object3D, pieces: Piece[], colour: string, kind: SurfaceKind, shadow = true) {
+    if (!pieces.length) return undefined;
+    const m4 = new T.Matrix4(),
+      q = new T.Quaternion(),
+      one = new T.Vector3(1, 1, 1);
+    const parts = pieces.map(({ geometry, at, rotation = [0, 0, 0] }) =>
+      (geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(m4.compose(new T.Vector3(...at), q.setFromEuler(new T.Euler(...rotation)), one)),
+    );
+    const m = new T.Mesh(mergeGeometries(parts)!, material(colour, kind));
+    parts.forEach((p) => p.dispose());
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    if (!shadow) m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * An arch's voussoirs between radii R0 and R1, `deep` out of the wall, about the springing's
+   * middle; the crown is left for a keystone. They butt, so each joint is the V of two chamfers:
+   * an open gap between them read as a crack.
+   */
+  function voussoirs(R0: number, R1: number, deep: number, at: V3, n = 7): Piece[] {
+    const out: Piece[] = [];
+    for (let i = 0; i < n; i++) {
+      if (i === (n - 1) / 2) continue;
+      const a0 = (i * Math.PI) / n,
+        a1 = ((i + 1) * Math.PI) / n,
+        p = (a: number, r: number): [number, number] => [Math.cos(a) * r, Math.sin(a) * r];
+      out.push({ geometry: prism([p(a0, R0), p(a0, R1), p(a1, R1), p(a1, R0)], deep, 0.018), at });
+    }
+    return out;
+  }
+  /** A tapered keystone from radius r0 up to r1 above the springing's middle, `deep` out of the wall. */
+  const keystone = (r0: number, r1: number, foot: number, head: number, deep: number) =>
+    prism([[-foot / 2, r0], [foot / 2, r0], [head / 2, r1], [-head / 2, r1]], deep, 0.022);
+  /** A tapered hopper head, wide at the top, with a rim. */
+  const hopperGeometry = (() => {
+    const g = new T.BoxGeometry(0.2, 0.24, 0.19),
+      p = g.getAttribute('position');
+    for (let i = 0; i < p.count; i++) if (p.getY(i) < 0) p.setXYZ(i, p.getX(i) * 0.55, p.getY(i), p.getZ(i) * 0.55);
+    g.computeVertexNormals();
+    return g;
+  })();
+  /**
+   * An archive window on a wall face at z (local +z out of the wall): the glass set back near the
+   * wall in a slim iron frame, cast-iron glazing bars (a mullion, a transom at the springing and
+   * two head bars, so the arch is a fan of four lights), and a deep sandstone surround (0.2 proud,
+   * so the reveal reads): plain jambs, imposts on the string course's line, six voussoirs and a
+   * tapered keystone, and a sill whose front overhangs a narrower bed, a drip line under its lip.
+   * Everything stays within 0.70 of the middle and between 0.88 and 3.2 high for a 0.9 x 1.3
+   * window at 1.75 (the ivy's keep boxes), and at most 0.24 out of the wall (the keystone, the
+   * sill and the imposts): on the side walls that is the cornice's reach, so the building's
+   * bounds, hit box and framing stay as they were. Returns the pane (night lights).
+   */
+  function archWindow(g: T.Object3D, x: number, y: number, z: number, w: number, h: number) {
+    const r = w / 2,
+      f = 0.07,
+      spring = y + h / 2,
+      R0 = r + f,
+      R1 = R0 + 0.17,
+      jamb = 0.15,
+      deep = 0.2,
+      foot = y - h / 2 - f;
+    const ring = frameRing(g, x, y, z + 0.02, w, h, f, 0.1, palette.metal, 'iron', true);
+    // The pane stays where windowAt put it (0.06 out): its centre seeds its night light.
+    const glass = new T.Mesh(new T.ShapeGeometry(ring(0.01), 8), material(palette.glass, 'glass'));
+    glass.position.set(x, y, z + 0.06);
+    g.add(glass);
+    const bar = (bw: number, bh: number) => new T.BoxGeometry(bw, bh, 0.04);
+    cluster(
+      g,
+      [
+        { geometry: bar(0.07, h + r), at: [x, y + r / 2, z + 0.09] },
+        { geometry: bar(w, 0.07), at: [x, spring, z + 0.09] },
+        ...[-1, 1].map((s): Piece => ({ geometry: bar(0.07, r), at: [x + (s * r * Math.SQRT1_2) / 2, spring + (r * Math.SQRT1_2) / 2, z + 0.09], rotation: [0, 0, (-s * Math.PI) / 4] })),
+      ],
+      palette.metal,
+      'iron',
+      false,
+    );
+    const stone: Piece[] = [
+      ...voussoirs(R0, R1, deep, [x, spring, z]),
+      { geometry: keystone(R0 - 0.03, R1 + 0.1, 0.18, 0.28, deep + 0.04), at: [x, spring, z] },
+      { geometry: chamfered(2 * (R0 + jamb + 0.02), 0.09, 0.24), at: [x, foot - 0.045, z + 0.12] }, // sill
+      { geometry: chamfered(2 * (R0 + jamb) - 0.06, 0.06, 0.17), at: [x, foot - 0.12, z + 0.085] }, // its bed, under the drip
+    ];
+    for (const s of [-1, 1]) {
+      stone.push({ geometry: chamfered(jamb, spring - 0.12 - foot, deep), at: [x + s * (R0 + jamb / 2), (foot + spring - 0.12) / 2, z + deep / 2] });
+      stone.push({ geometry: chamfered(jamb + 0.06, 0.12, deep + 0.04), at: [x + s * (R0 + jamb / 2), spring - 0.06, z + (deep + 0.04) / 2] });
+    }
+    cluster(g, stone, palette.brickLight, 'stone');
+    return glass;
+  }
+  /** [a, b] less the cuts, as the pieces longer than 0.05. */
+  function spans(a: number, b: number, cuts: [number, number][]) {
+    let out: [number, number][] = [[a, b]];
+    for (const [c0, c1] of cuts)
+      out = out.flatMap(([s0, s1]): [number, number][] => (c1 <= s0 || c0 >= s1 ? [[s0, s1]] : [[s0, c0], [c1, s1]].filter(([u, v]) => v - u > 0.05) as [number, number][]));
+    return out;
+  }
+
   function buildArchive(shell: T.Group, site: plan.Site) {
     const w = site.w,
       d = site.d;
-    // Red brick walls (0.45-3.65) on a rusticated, battered plinth (the rear is seen at overview) under a pale cornice.
+    // Red brick walls (0.45-3.65) on a rusticated, battered plinth (the rear is seen at overview),
+    // a chamfered plinth course (0.43-0.57, its weathered top 0.1 proud) and a two-member cornice:
+    // a corona 0.22 proud over the pier capitals and a cymatium 0.24 proud (inside the plinth's 0.25,
+    // so the building's bounds, hit box and framing stay as they were).
     plinth(shell, w, d, palette.plinth, { height: 0.45, blocks: true });
     box(shell, 0, 2.05, 0, w, 3.2, d, palette.brick, 'stone');
-    box(shell, 0, 3.75, 0, w + 0.3, 0.2, d + 0.3, palette.trim, 'stone');
-    // Blonde piers: fat corners, and two intermediates on the front and rear framing the hoist bay.
+    box(shell, 0, 0.5, 0, w + 0.42, 0.14, d + 0.42, palette.blonde, 'stone', { taper: 0.11 }).userData.band = true;
+    box(shell, 0, 3.71, 0, w + 0.44, 0.12, d + 0.44, palette.trim, 'stone');
+    block(shell, 0, 3.81, 0, w + 0.48, 0.08, d + 0.48, palette.trim, 'stone').userData.band = true; // the corona's eave shades the wall, not this
+    // Blonde piers: fat corners, and two intermediates on the front and rear framing the hoist bay;
+    // each stands on a base block, is belted by the string course (2.28-2.40) and carries a capital
+    // (a necking ring, then the block) under the cornice.
     for (const sx of [-1, 1])
       for (const sz of [-1, 1]) {
         box(shell, sx * 3.0, 2.05, sz * 2.3, 0.5, 3.2, 0.5, palette.brickLight, 'stone');
         box(shell, sx * 1.05, 2.05, sz * (d / 2 + 0.05), 0.45, 3.2, 0.2, palette.brickLight, 'stone');
+        block(shell, sx * 3.0, 0.66, sz * 2.3, 0.58, 0.32, 0.58, palette.brickLight, 'stone');
+        block(shell, sx * 3.0, 2.34, sz * 2.3, 0.56, 0.12, 0.56, palette.brickLight, 'stone');
+        block(shell, sx * 3.0, 3.37, sz * 2.3, 0.55, 0.06, 0.55, palette.trim, 'stone');
+        block(shell, sx * 3.0, 3.54, sz * 2.3, 0.6, 0.22, 0.6, palette.trim, 'stone');
+        block(shell, sx * 1.05, 0.66, sz * (d / 2 + 0.06), 0.53, 0.32, 0.26, palette.brickLight, 'stone');
+        block(shell, sx * 1.05, 2.34, sz * (d / 2 + 0.06), 0.51, 0.12, 0.24, palette.brickLight, 'stone');
+        block(shell, sx * 1.05, 3.37, sz * (d / 2 + 0.05), 0.5, 0.06, 0.24, palette.trim, 'stone');
+        block(shell, sx * 1.05, 3.54, sz * (d / 2 + 0.06), 0.55, 0.22, 0.28, palette.trim, 'stone');
       }
-    // Arched, metal-framed windows. The rear is seen at overview, so it is a secondary front.
-    const arched = { arched: true, frame: palette.metal, dress: palette.brickLight, mullion: true };
-    // One front window is lit late (today's colour, 0.8), so the chapter's subject shows a lit front
-    // all evening; the rear's middle window (the face the overview sees) keeps a dim lamp all night.
+    // The four faces (local +z out of the wall, x along it): the front (+z), the rear (seen at
+    // overview, a secondary front), the south wall (+x, the ivy wall) and the north wall.
+    const face = (x: number, z: number, ry: number) => {
+      const g = new T.Group();
+      g.position.set(x, 0, z);
+      g.rotation.y = ry;
+      shell.add(g);
+      return g;
+    };
+    const front = face(0, d / 2, 0),
+      rear = face(0, -d / 2, Math.PI),
+      south = face(w / 2, 0, Math.PI / 2),
+      north = face(-w / 2, 0, -Math.PI / 2);
+    // Arched, iron-framed windows. One front window is lit late (today's colour, 0.8), so the
+    // chapter's subject shows a lit front all evening; the rear's middle window (the face the
+    // overview sees) keeps a dim lamp all night.
     for (const x of [-2.01, 2.01]) {
-      const pane = windowAt(shell, x, 1.75, d / 2, 0.9, 1.3, arched);
+      const pane = archWindow(front, x, 1.75, 0, 0.9, 1.3);
       if (x > 0) pane.userData.windowLit = 0.8;
     }
-    const rear = new T.Group();
-    rear.position.z = -d / 2;
-    rear.rotation.y = Math.PI;
-    shell.add(rear);
     for (const x of [-2.01, 0, 2.01]) {
-      const pane = windowAt(rear, x, 1.75, 0, 0.9, 1.3, arched);
+      const pane = archWindow(rear, x, 1.75, 0, 0.9, 1.3);
       if (x === 0) pane.userData.nightLight = true;
     }
-    for (const side of [-1, 1]) {
-      const face = new T.Group();
-      face.position.x = (side * w) / 2;
-      face.rotation.y = (side * Math.PI) / 2;
-      shell.add(face);
-      for (const z of [-0.95, 0.95]) windowAt(face, z, 1.75, 0, 0.9, 1.3, arched);
-      // Ivy on the south wall (seen from the overview and in the archive's chapter), over its back
-      // half (this face's +x; the front is -x): it climbs from the plinth between the two arched
-      // windows and round the back one, runs along the plinth under them and along under the
-      // cornice, and never reaches a window (frame, sill or keystone, plus 0.06), a corner pier or
-      // the cornice. Its front edge is ragged, so the front half stays bare brick.
-      if (side === 1)
-        ivy(face, {
-          areas: [[-0.5, 0, 2.03, 0.8], [-0.3, 0, 0.3, 3.6], [1.6, 0, 2.03, 3.2], [-0.7, 3.2, 2.03, 3.6]],
-          keep: [[0.25, 0.87, 1.65, 3.26], [-1.65, 0.87, -0.25, 3.26], [2.03, 0, 3, 5], [-3, 0, -2.03, 5], [-3, 3.62, 3, 5]],
-          plinth: { h: 0.45, proud: 0.25, batter: 0.047 },
-          seed: 7,
-        });
+    for (const side of [south, north]) for (const z of [-0.95, 0.95]) archWindow(side, z, 1.75, 0, 0.9, 1.3);
+    // Ivy on the south wall (seen from the overview and in the archive's chapter), over its back
+    // half (this face's +x; the front is -x): it climbs from the plinth between the two arched
+    // windows and round the back one, runs along the plinth under them and along under the
+    // cornice, and never reaches a window (frame, sill or keystone, plus 0.06), a corner pier or
+    // the cornice. Its front edge is ragged, so the front half stays bare brick.
+    ivy(south, {
+      areas: [[-0.5, 0, 2.03, 0.8], [-0.3, 0, 0.3, 3.6], [1.6, 0, 2.03, 3.2], [-0.7, 3.2, 2.03, 3.6]],
+      keep: [[0.25, 0.87, 1.65, 3.26], [-1.65, 0.87, -0.25, 3.26], [2.03, 0, 3, 5], [-3, 0, -2.03, 5], [-3, 3.62, 3, 5]],
+      plinth: { h: 0.45, proud: 0.25, batter: 0.047 },
+      seed: 7,
+    });
+    // On every face: the string course on the window imposts' line (2.28-2.40, 0.07 proud) between
+    // the openings and the piers' belts, and under the cornice a bed band (0.05 proud) and a dentil
+    // course (0.12 blocks every 0.27 or so, 0.1 proud) between the capitals; over the door they
+    // stop for the keystone and the hoist beam. Each face's courses are one mesh.
+    for (const [g, L, piers, openings] of [
+      [front, w, [-1.05, 1.05], [[-2.01, 0.7], [2.01, 0.7], [0, 0.82]]],
+      [rear, w, [-1.05, 1.05], [[-2.01, 0.7], [0, 0.7], [2.01, 0.7]]],
+      [south, d, [], [[-0.95, 0.7], [0.95, 0.7]]],
+      [north, d, [], [[-0.95, 0.7], [0.95, 0.7]]],
+    ] as [T.Group, number, number[], [number, number][]][]) {
+      const corner = L / 2 - 0.1,
+        pierCuts: [number, number][] = [[-corner - 0.22, -corner + 0.22], [corner - 0.22, corner + 0.22], ...piers.map((p): [number, number] => [p - 0.19, p + 0.19])],
+        capitalCuts: [number, number][] = [[-corner - 0.3, -corner + 0.3], [corner - 0.3, corner + 0.3], ...piers.map((p): [number, number] => [p - 0.275, p + 0.275])];
+      const course: Piece[] = spans(-L / 2, L / 2, [...pierCuts, ...openings.map(([c, half]): [number, number] => [c - half, c + half])]).map(([a, b]) => ({
+          geometry: chamfered(b - a, 0.12, 0.09),
+          at: [(a + b) / 2, 2.34, 0.025],
+        })),
+        cornice: Piece[] = [];
+      for (const [a, b] of spans(-L / 2, L / 2, [...capitalCuts, ...(g === front ? [[-0.2, 0.2] as [number, number]] : [])])) {
+        cornice.push({ geometry: chamfered(b - a, 0.08, 0.07), at: [(a + b) / 2, 3.42, 0.015] });
+        const n = Math.max(1, Math.floor((b - a - 0.24) / 0.27) + 1),
+          step = n > 1 ? (b - a - 0.24) / (n - 1) : 0;
+        for (let i = 0; i < n; i++) cornice.push({ geometry: chamfered(0.12, 0.19, 0.12), at: [n > 1 ? a + 0.12 + i * step : (a + b) / 2, 3.555, 0.04] });
+      }
+      cluster(g, course, palette.brickLight, 'stone');
+      cluster(g, cornice, palette.trim, 'stone');
     }
-    // The centre hoist bay: an arched door at dock height, a grounded dock, the hoist beam and block, crates.
-    door(shell, 0, 0.45, d / 2, 1.3, 2.0, palette.greenDoor, { arched: true, surround: palette.brickLight, steps: false });
-    box(shell, 0, 0.225, d / 2 + 0.6, 2.2, 0.45, 0.9, palette.plinth, 'stone');
-    box(shell, 0, 3.45, d / 2 + 0.45, 0.24, 0.24, 1.0, palette.woodDark, 'wood');
-    box(shell, 0, 3.18, d / 2 + 0.85, 0.2, 0.3, 0.2, palette.metal, 'iron');
-    box(shell, 1.55, 0.3, d / 2 + 0.55, 0.6, 0.6, 0.6, palette.wood, 'wood');
-    box(shell, 1.5, 0.84, d / 2 + 0.5, 0.48, 0.48, 0.48, '#b47a48', 'wood', { ry: 0.35 });
+    // Cast-iron rainwater goods, clear of the windows and the ivy: an eaves gutter on the cornice
+    // along the north wall (tooth 0's low edge), and on the north and rear walls outlet spouts under
+    // the cornice into hopper heads, with downpipes held by ears and kicked out in a shoe over the
+    // plinth course. The rear pipes stand in the corners of the intermediate piers, beside the
+    // middle window's sill; the north ones between the windows and the corner piers.
+    box(shell, -(w / 2 + 0.18), 3.91, 0, 0.12, 0.12, d + 0.64, palette.metal, 'iron');
+    for (const [g, xs] of [[rear, [-0.755, 0.755]], [north, [-1.85, 1.85]]] as [T.Group, number[]][]) {
+      const iron: Piece[] = [];
+      for (const x of xs) {
+        iron.push(
+          { geometry: new T.CylinderGeometry(0.035, 0.035, 0.2, 8), at: [x, 3.42, 0.1], rotation: [Math.PI / 2, 0, 0] },
+          { geometry: hopperGeometry, at: [x, 3.24, 0.095] },
+          { geometry: new T.BoxGeometry(0.23, 0.05, 0.21), at: [x, 3.36, 0.095] },
+          { geometry: new T.CylinderGeometry(0.045, 0.045, 2.45, 8), at: [x, 1.9, 0.065] },
+          { geometry: new T.CylinderGeometry(0.045, 0.045, 0.21, 8), at: [x, 0.68, 0.125], rotation: [-0.7, 0, 0] },
+        );
+        for (const y of [1.25, 2.35])
+          iron.push({ geometry: new T.CylinderGeometry(0.06, 0.06, 0.07, 12), at: [x, y, 0.065] }, { geometry: new T.BoxGeometry(0.17, 0.07, 0.03), at: [x, y, 0.018] });
+      }
+      cluster(g, iron, palette.metal, 'iron', false);
+    }
+    // The centre hoist bay: a double door at dock height under a fanlight, a dock with side steps,
+    // the hoist beam and block, crates.
+    {
+      const z = d / 2,
+        y0 = 0.45,
+        dw = 1.3,
+        spring = y0 + 1.95, // the string course's line
+        leaf = dw / 2,
+        green = palette.greenDoor;
+      // Two leaves, each a slab under a raised frame (stiles and three rails, 0.04 proud) round two
+      // fielded panels, a meeting bead between them and a transom at the springing.
+      const enamel: Piece[] = [{ geometry: new T.BoxGeometry(0.07, spring - y0, 0.06), at: [0, (y0 + spring) / 2, z + 0.13] }];
+      for (const s of [-1, 1]) {
+        const lx = (s * leaf) / 2,
+          inner = leaf - 0.22;
+        enamel.push({ geometry: chamfered(leaf - 0.01, spring - y0, 0.1), at: [lx, (y0 + spring) / 2, z + 0.05] });
+        for (const e of [-1, 1]) enamel.push({ geometry: new T.BoxGeometry(0.11, spring - y0, 0.04), at: [lx + e * (leaf / 2 - 0.055), (y0 + spring) / 2, z + 0.12] });
+        for (const [y, h] of [[y0 + 0.08, 0.16], [y0 + 0.85, 0.12], [spring - 0.06, 0.12]]) enamel.push({ geometry: new T.BoxGeometry(inner, h, 0.04), at: [lx, y, z + 0.12] });
+        for (const [y1, y2] of [[y0 + 0.16, y0 + 0.79], [y0 + 0.91, spring - 0.12]]) enamel.push({ geometry: chamfered(inner - 0.08, y2 - y1 - 0.08, 0.03), at: [lx, (y1 + y2) / 2, z + 0.115] });
+      }
+      enamel.push({ geometry: chamfered(dw, 0.1, 0.12), at: [0, spring, z + 0.07] });
+      cluster(shell, enamel, green, 'enamel');
+      sphere(shell, -0.09, y0 + 0.95, z + 0.17, 0.045, palette.brass, 'brass');
+      sphere(shell, 0.09, y0 + 0.95, z + 0.17, 0.045, palette.brass, 'brass');
+      // The fanlight: a half-round light in an iron frame with four radial bars round a hub.
+      const fan = new T.Shape();
+      fan.absarc(0, 0, 0.6, 0, Math.PI, false);
+      fan.closePath();
+      // Its mesh stays where the old door's fanlight was (0.05 higher, 0.06 out), as its centre
+      // seeds its night light; the light itself is drawn down to the springing.
+      const fanlight = new T.Mesh(new T.ShapeGeometry(fan, 10).translate(0, -0.05, 0), material(palette.glass, 'glass'));
+      fanlight.position.set(0, spring + 0.05, z + 0.06);
+      shell.add(fanlight);
+      const arc = (r0: number, r1: number, n = 12): [number, number][] => [
+        ...Array.from({ length: n + 1 }, (_, i): [number, number] => [Math.cos((i * Math.PI) / n) * r1, Math.sin((i * Math.PI) / n) * r1]),
+        ...Array.from({ length: n + 1 }, (_, i): [number, number] => [Math.cos(((n - i) * Math.PI) / n) * r0, Math.sin(((n - i) * Math.PI) / n) * r0]),
+      ];
+      const iron: Piece[] = [
+        { geometry: prism(arc(0.57, 0.66), 0.1, 0.015), at: [0, spring, z + 0.02] },
+        { geometry: prism(arc(0, 0.15, 6).slice(0, 7).concat([[0, 0]]), 0.05, 0.012), at: [0, spring, z + 0.07] },
+        ...[1, 2, 3, 4].map((k): Piece => {
+          const a = (k * Math.PI) / 5;
+          return { geometry: new T.BoxGeometry(0.07, 0.44, 0.04), at: [Math.cos(a) * 0.37, spring + Math.sin(a) * 0.37, z + 0.09], rotation: [0, 0, a - Math.PI / 2] };
+        }),
+        // strap hinges on the leaves' outer stiles
+        ...[-1, 1].flatMap((s) => [y0 + 0.4, spring - 0.45].map((y): Piece => ({ geometry: new T.BoxGeometry(0.34, 0.07, 0.02), at: [s * (leaf - 0.2), y, z + 0.15] }))),
+      ];
+      // The surround: jambs, imposts, seven voussoirs with a keystone on which the hoist beam rests.
+      cluster(
+        shell,
+        [
+          ...voussoirs(leaf, leaf + 0.17, 0.28, [0, spring, z]),
+          { geometry: keystone(leaf - 0.03, 0.93, 0.2, 0.32, 0.34), at: [0, spring, z] },
+          ...[-1, 1].flatMap((s): Piece[] => [
+            { geometry: chamfered(0.17, spring - 0.12 - y0, 0.28), at: [s * (leaf + 0.085), (y0 + spring - 0.12) / 2, z + 0.14] },
+            { geometry: chamfered(0.25, 0.12, 0.32), at: [s * (leaf + 0.085), spring - 0.06, z + 0.16] },
+          ]),
+        ],
+        palette.brickLight,
+        'stone',
+      );
+      // The dock: a plinth-stone body under a pale coping with a timber fender, two side steps down
+      // to the lawn (inside the old dock's footprint and bounds); then the hoist beam and block, hung
+      // in an iron stirrup and stayed back to the cornice by a rod, with a hook below.
+      box(shell, 0, 0.185, z + 0.54, 2.2, 0.37, 0.78, palette.plinth, 'stone');
+      block(shell, 0, 0.41, z + 0.57, 2.28, 0.08, 0.86, palette.blonde, 'stone');
+      box(shell, 0, 0.2, z + 0.99, 1.9, 0.16, 0.12, palette.woodDark, 'wood');
+      box(shell, -1.24, 0.15, z + 0.62, 0.28, 0.3, 0.66, palette.plinth, 'stone');
+      box(shell, -1.52, 0.075, z + 0.62, 0.28, 0.15, 0.66, palette.plinth, 'stone');
+      box(shell, 0, 3.45, z + 0.45, 0.24, 0.24, 1.0, palette.woodDark, 'wood');
+      box(shell, 0, 3.18, z + 0.85, 0.2, 0.3, 0.2, palette.metal, 'iron');
+      iron.push(
+        ...[-1, 1].map((s): Piece => ({ geometry: new T.BoxGeometry(0.05, 0.32, 0.12), at: [s * 0.145, 3.45, z + 0.85] })),
+        { geometry: new T.BoxGeometry(0.34, 0.05, 0.12), at: [0, 3.595, z + 0.85] },
+        { geometry: new T.CylinderGeometry(0.035, 0.035, 0.36, 8), at: [0, 3.39, z + 0.85], rotation: [0, 0, Math.PI / 2] },
+        { geometry: new T.BoxGeometry(0.07, 0.1, 0.07), at: [0, 2.99, z + 0.85] },
+        { geometry: new T.TorusGeometry(0.06, 0.035, 6, 10, Math.PI * 1.4), at: [0, 2.88, z + 0.85], rotation: [0, Math.PI / 2, -Math.PI * 0.2] },
+        { geometry: new T.BoxGeometry(0.16, 0.12, 0.02), at: [0, 3.79, z + 0.25] },
+      );
+      cluster(shell, iron, palette.metal, 'iron', false);
+      const rod = strut(shell, new T.Vector3(0, 3.55, z + 0.82), new T.Vector3(0, 3.8, z + 0.25), 0.035, palette.metal, 'iron');
+      rod.castShadow = false;
+      rod.userData.noShadow = true;
+      box(shell, 1.55, 0.3, z + 0.55, 0.6, 0.6, 0.6, palette.wood, 'wood');
+      box(shell, 1.5, 0.84, z + 0.5, 0.48, 0.48, 0.48, '#b47a48', 'wood', { ry: 0.35 });
+    }
     // A real sawtooth: three teeth across x with their ridges along z, each glazed on its tall face.
     const Wr=w+0.3, bw=Wr/3, R=1.35, f=0.15, Dr=d+0.8, rb=0.04, y0=3.85;
+    // The glazing's foot and head, its run along z, and the slope.
+    const yg0 = y0 + (f + R) / 2 + 0.05 - (R - f - 0.25) / 2,
+      yg1 = yg0 + R - f - 0.25,
+      run = Dr - 0.6,
+      slope = Math.atan2(R - f, bw),
+      glazing: Piece[] = [],
+      lead: Piece[] = [],
+      collars: Piece[] = [],
+      // The ridge capping's profile (0.31 wide, its foot 0.08 under its middle, a half-ellipse 0.12
+      // high on its shoulders), grown by g for a collar.
+      capping = (g: number): [number, number][] => [
+        [-0.155 - g, -0.08],
+        [0.155 + g, -0.08],
+        ...Array.from({ length: 9 }, (_, k): [number, number] => [Math.cos((k * Math.PI) / 8) * (0.155 + g), 0.03 + Math.sin((k * Math.PI) / 8) * (0.12 + g)]),
+      ];
     for(let i=0;i<3;i++){ const x0=-Wr/2+i*bw, s=new T.Shape(); s.moveTo(x0,0); s.lineTo(x0+bw,0); s.lineTo(x0+bw,R); s.lineTo(x0,f); s.closePath();
       const t=new T.Mesh(new T.ExtrudeGeometry(s,{depth:Dr-2*rb,bevelEnabled:true,bevelThickness:rb,bevelSize:rb,bevelOffset:-rb,bevelSegments:1}),material(palette.slate,'slate'));
       t.position.set(0,y0,-Dr/2+rb); t.castShadow=t.receiveShadow=true; shell.add(t);
@@ -397,12 +696,50 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       // North light faces local +x (world +z, seen at overview). The three light one roof hall, so at night they are one
       // light (windowGroup), never three bands of different lamps side by side.
       box(shell,x0+bw+0.035,y0+(f+R)/2+0.05,0,0.07,R-f-0.25,Dr-0.6,palette.glass,'glass').userData.windowGroup = 'city-archive-north-lights';
-      for(const mz of [-1,1]) box(shell,x0+bw+0.08,y0+(f+R)/2+0.05,mz*(Dr-0.6)/6,0.08,R-f-0.25,0.12,palette.metal,'iron');
-      box(shell,x0+bw-0.09,y0+R+0.03,0,0.28,0.16,Dr+0.04,palette.slateLight,'slate'); }
-    // A fat stack rising through the first tooth (roof at 4.41 there), with a blonde band and a metal cap.
-    cylinder(shell, -2.5, 5.9, -1.8, 0.4, 0.48, 4.1, palette.brick, 'stone');
-    cylinder(shell, -2.5, 7.4, -1.8, 0.47, 0.47, 0.26, palette.brickLight, 'stone');
-    cylinder(shell, -2.5, 8.0, -1.8, 0.5, 0.44, 0.2, palette.metal, 'iron');
+      // Patent glazing: six lights between seven bars (0.07 wide, 0.03 proud), a sill and a head
+      // rail, all in lead grey: dark iron bars on the bright glass shimmered at overview. Under the
+      // sill a lead upstand, dressed over the next tooth's slates (or the cornice).
+      const xg = x0 + bw;
+      for (let k = 0; k <= 6; k++) glazing.push({ geometry: new T.BoxGeometry(0.03, yg1 - yg0 + 0.04, 0.07), at: [xg + 0.085, (yg0 + yg1) / 2, -run / 2 + (k * run) / 6] });
+      for (const y of [yg0, yg1]) glazing.push({ geometry: new T.BoxGeometry(0.1, 0.08, run + 0.07), at: [xg + 0.05, y, 0] });
+      const low = i < 2 ? y0 + f - 0.02 : y0;
+      lead.push({ geometry: new T.BoxGeometry(0.05, yg0 - low, run + 0.1), at: [xg + 0.025, (low + yg0) / 2, 0] });
+      if (i < 2) lead.push({ geometry: new T.BoxGeometry(0.34, 0.03, run + 0.1), at: [xg + 0.17 * Math.cos(slope) - 0.012 * Math.sin(slope), y0 + f + 0.17 * Math.sin(slope) + 0.012 * Math.cos(slope), 0], rotation: [0, 0, slope] });
+      else lead.push({ geometry: new T.BoxGeometry(0.09, 0.025, run + 0.1), at: [xg + 0.045, y0 + 0.0125, 0] });
+      // The ridge: a round-topped capping over the glazing's head (one profile, so one soft
+      // silhouette: a roll on a flat capping drew two edges a pixel apart that shimmered at
+      // overview) with joint collars; slate-light verges along both gable slopes.
+      const ridge = new T.Mesh(prism(capping(0), Dr + 0.04, 0.02, -(Dr + 0.04) / 2), material(palette.slateLight, 'slate'));
+      ridge.position.set(xg - 0.075, y0 + R + 0.03, 0);
+      ridge.castShadow = ridge.receiveShadow = true;
+      shell.add(ridge);
+      for (let k = 1; k < 9; k++) collars.push({ geometry: prism(capping(0.016), 0.08, 0.012, -0.04), at: [xg - 0.075, y0 + R + 0.03, -(Dr + 0.04) / 2 + (k * (Dr + 0.04)) / 9] });
+      for (const sz of [-1, 1]) {
+        const v = block(shell, x0 + bw / 2 - 0.035 * Math.sin(slope), y0 + (f + R) / 2 + 0.035 * Math.cos(slope), sz * (Dr / 2 - 0.05), Math.hypot(bw, R - f) - 0.12, 0.09, 0.12, palette.slateLight, 'slate');
+        v.rotation.z = slope;
+      } }
+    cluster(shell, glazing, palette.lead, 'iron', false);
+    cluster(shell, lead, palette.lead, 'iron');
+    cluster(shell, collars, palette.slateLight, 'slate');
+    // A fat stack rising through the first tooth in a lead collar dressed to the slope: a blonde
+    // band, a crown corbelled out in two chunky brick courses (0.07 each, so each top catches a
+    // line of light), a weathered sandstone cap with a drip and two chimney pots (the taller one's
+    // rim at 8.1, the old cap's height, so the bounds stay put).
+    cylinder(shell, -2.5, 5.5, -1.8, 0.41, 0.48, 3.3, palette.brick, 'stone');
+    // (The collar is matte: in iron's finish its sunlit top read as a pale washer.)
+    cylinder(shell, -2.5, y0 + f + ((R - f) * (-2.5 + Wr / 2)) / bw + 0.02, -1.8, 0.6, 0.6, 0.05, palette.lead, 'slate').rotation.z = slope;
+    cylinder(shell, -2.5, 6.4, -1.8, 0.47, 0.47, 0.18, palette.brickLight, 'stone');
+    for (const [y, r, h] of [[7.22, 0.48, 0.14], [7.37, 0.55, 0.16]]) cylinder(shell, -2.5, y, -1.8, r, r, h, palette.brick, 'stone');
+    cylinder(shell, -2.5, 7.52, -1.8, 0.5, 0.61, 0.14, palette.plinth, 'stone');
+    cluster(
+      shell,
+      [[-0.21, 0.45], [0.21, 0.35]].flatMap(([dx, h]): Piece[] => [
+        { geometry: new T.CylinderGeometry(0.12, 0.16, h, 14), at: [-2.5 + dx, 7.59 + h / 2, -1.8] },
+        { geometry: new T.CylinderGeometry(0.145, 0.145, 0.06, 14), at: [-2.5 + dx, 7.62 + h, -1.8] },
+      ]),
+      palette.pantile,
+      'pantile',
+    );
   }
   return { buildGate, buildHall, buildStudio, buildArchive };
 }
