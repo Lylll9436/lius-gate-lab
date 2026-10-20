@@ -19,16 +19,17 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
   /**
    * LIU'S GATE: a Glasgow triumphal arch in blonde and red sandstone with bronze accents, built in
    * Clash's secondary and tertiary structure (the ashlar is the shader's). Front +z, the opening
-   * along z. Heights: plinth 0-0.45, base course to 0.57, banded rustication (five chamfered
+   * along z. Heights: plinth 0-0.45, base course to 0.57, banded rustication (four chamfered
    * courses) on the piers to the impost belt (2.31-2.45, the springing); an engaged Tuscan column
-   * on each pier and face, on a pedestal (to 1.33), its capital under the architrave (3.95); the
+   * on each pier and face, on a pedestal (to 1.41), its capital under the architrave (3.95); the
    * archivolt (alternate red and cream voussoirs inside a cream moulding, 0.95-1.48) and a scroll
    * keystone rising into the entablature; bronze wreaths in the spandrels and on the side faces;
-   * a coffered soffit; the entablature (two-fascia architrave, red frieze, dentils, a corona 1.0
-   * out from the middle at 4.44-4.55); the attic (4.61-5.43) framing a blank bronze tablet between
-   * red end blocks over the columns; a stepped crowning pedestal (to 5.95) between two cast-bronze
-   * lamp standards whose globes are the night lamps. Everything stays inside x 2.38, z 1.0 and
-   * y 6.45 (check-town), so the hit box and the chapter's framing barely move.
+   * a coffered soffit; the entablature (architrave, red frieze, dentils, a corona 1.0 out from the
+   * middle at 4.44-4.61); the attic (4.61-5.41) framing a blank bronze tablet between cream end
+   * blocks over the columns; a stepped crowning pedestal (to 6.03) between two cast-bronze lamp
+   * standards whose globes are the night lamps. Every member is at least 0.07 thick (most 0.12 or
+   * more). Everything stays inside x 2.38, z 1.0 and y 6.47 (check-town), so the hit box and the
+   * chapter's framing barely move.
    */
   function buildGate(shell: T.Group) {
     const W = 2.2,
@@ -109,16 +110,15 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     mass.position.z = -F + b;
     mass.castShadow = mass.receiveShadow = true;
     shell.add(mass);
-    // The piers: a moulded base course, five courses of banded rustication (each chamfered 0.055,
-    // so a V channel parts them; 0.35 tall, like the ashlar's courses, so nothing shimmers) wrapping
-    // the faces, the outer sides and the reveals, and a two-step impost belt at the springing.
+    // The piers: a moulded base course, four courses of banded rustication (0.435 tall, each
+    // chamfered 0.055 all round, so a V channel parts them) wrapping the faces, the outer sides and
+    // the reveals, and an impost belt at the springing.
     for (const sx of [-1, 1]) {
       stoneAt(sx * pierX, 0.51, 0, pierW + 0.04, 0.12, D + 0.12, 0.03);
       const c0 = 0.57,
-        ch = (2.31 - c0) / 5;
-      for (let i = 0; i < 5; i++) stoneAt(sx * pierX, c0 + ch * (i + 0.5), 0, pierW, ch, D + 0.08, 0.055, blonde);
-      stoneAt(sx * pierX, 2.345, 0, pierW + 0.06, 0.07, D + 0.14, 0.02).userData.band = true;
-      stoneAt(sx * pierX, 2.415, 0, pierW + 0.12, 0.07, D + 0.2, 0.025).userData.band = true;
+        ch = (2.31 - c0) / 4;
+      for (let i = 0; i < 4; i++) stoneAt(sx * pierX, c0 + ch * (i + 0.5), 0, pierW, ch, D + 0.08, 0.055, blonde);
+      stoneAt(sx * pierX, 2.38, 0, pierW + 0.1, 0.14, D + 0.18, 0.035).userData.band = true;
     }
     // Engaged Tuscan columns, one on each pier and face: a pedestal (base, die and cap, standing on
     // the plinth's break), a square plinth, the torus, a shaft tapering over its upper two thirds,
@@ -199,7 +199,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
           u = Math.atan2(y, x),
           cx = Math.cos(u) * 0.14,
           cy = Math.sin(u) * 0.14,
-          k = 1 + 0.1 * Math.sin(u * 14);
+          k = 1 + 0.06 * Math.sin(u * 14);
         p.setXYZ(i, cx + (x - cx) * k, cy + (y - cy) * k, p.getZ(i) * k * 0.75);
       }
       g.computeVertexNormals();
@@ -220,23 +220,20 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     }
     cluster(shell, roundels, dress, 'stone');
     cluster(shell, wreaths, bronze, 'brass');
-    // The entablature: a two-fascia architrave over the capitals, a red sandstone frieze, a bed
-    // moulding, a dentil course on its band (0.12 blocks about every 0.3, as on the archive), the
-    // corona (1.0 out from the middle, 2.38 at the ends) and a cyma on top.
-    stoneAt(0, 3.98, 0, 4.56, 0.06, 1.7, 0.02).userData.band = true;
-    stoneAt(0, 4.04, 0, 4.6, 0.06, 1.74, 0.02).userData.band = true;
+    // The entablature: an architrave over the capitals, a red sandstone frieze, a dentil course on
+    // its band (0.12 blocks about every 0.3, as on the archive) and the corona (1.0 out from the
+    // middle, 2.38 at the ends), whose eave shades the frieze; thinner steps only added lines.
+    stoneAt(0, 4.01, 0, 4.58, 0.12, 1.76, 0.03).userData.band = true;
     stoneAt(0, 4.17, 0, 4.52, 0.2, 1.68, 0.03, red);
-    stoneAt(0, 4.295, 0, 4.62, 0.05, 1.78, 0.015).userData.band = true;
-    stoneAt(0, 4.38, 0, 4.46, 0.12, 1.66, 0.02).userData.band = true;
+    stoneAt(0, 4.355, 0, 4.5, 0.17, 1.72, 0.03).userData.band = true;
     const dentils: Piece[] = [],
       dentil = slab(0.12, 0.12, 0.12, 0.02);
     for (let i = 0; i < 16; i++) for (const sz of faces) dentils.push({ geometry: dentil, at: [-2.25 + i * 0.3, 4.38, sz * 0.885] });
     for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) dentils.push({ geometry: dentil, at: [sx * 2.25, 4.38, -0.6 + i * 0.3] });
     cluster(shell, dentils, dress, 'stone')!.userData.band = true;
-    stoneAt(0, 4.495, 0, 4.76, 0.11, 2.0, 0.03);
-    stoneAt(0, 4.58, 0, 4.68, 0.06, 1.92, 0.02).userData.band = true;
-    // The attic: a base moulding, the die (ashlar), red end blocks over the columns, and in a cream
-    // frame on each face a blank bronze tablet (no lettering); a cap moulding and the attic cornice.
+    stoneAt(0, 4.525, 0, 4.76, 0.17, 2.0, 0.045);
+    // The attic: a base moulding, the die (ashlar), cream end blocks over the columns, and in a cream
+    // frame on each face a blank bronze tablet (no lettering); the attic cornice.
     stoneAt(0, 4.655, 0, 4.24, 0.09, 1.64, 0.025).userData.band = true;
     box(shell, 0, 4.97, 0, 4.08, 0.54, 1.52, blonde, 'ashlar', { segments: 2 });
     for (const sx of [-1, 1]) stoneAt(sx * colX, 4.97, 0, 0.48, 0.54, 1.6, 0.035);
@@ -257,8 +254,7 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       shell.add(tablet);
     }
     cluster(shell, frames, dress, 'stone');
-    stoneAt(0, 5.275, 0, 4.24, 0.07, 1.64, 0.02).userData.band = true;
-    stoneAt(0, 5.36, 0, 4.36, 0.1, 1.72, 0.03).userData.band = true; // 0.1 proud: no deep eave over the tablet
+    stoneAt(0, 5.325, 0, 4.32, 0.17, 1.7, 0.04).userData.band = true; // 0.09 proud: no deep eave over the tablet
     // The stepped crowning pedestal: a step, an ashlar die, a cap and a blocking course.
     stoneAt(0, 5.455, 0, 2.0, 0.09, 1.12, 0.025);
     box(shell, 0, 5.68, 0, 1.6, 0.36, 0.84, blonde, 'ashlar');
@@ -281,17 +277,6 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
       ([[0, 6.35], [0.1, 6.35], [0.1, 6.37], [0.068, 6.4], [0.035, 6.415], [0.046, 6.435], [0.028, 6.455], [0, 6.462]] as [number, number][]).map(([x, y]) => new T.Vector2(x, y)),
       16,
     );
-    // Two bronze urns flanking the crowning pedestal: a foot, a round bowl, a lid and a knob.
-    const URN = new T.LatheGeometry(
-      (
-        [
-          [0, 5.47], [0.11, 5.47], [0.11, 5.5], [0.08, 5.52], [0.052, 5.56], [0.062, 5.59], [0.11, 5.63],
-          [0.14, 5.69], [0.145, 5.74], [0.13, 5.8], [0.1, 5.83], [0.112, 5.85], [0.112, 5.87], [0.08, 5.88],
-          [0.075, 5.92], [0.04, 5.95], [0.05, 5.98], [0.035, 6.01], [0, 6.02],
-        ] as [number, number][]
-      ).map(([x, y]) => new T.Vector2(x, y)),
-      16,
-    );
     const standards: Piece[] = [];
     for (const sx of [-1, 1]) {
       const x = sx * colX;
@@ -299,8 +284,6 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
         { geometry: ledge(0.36, 0.08, 0.36, 0.02), at: [x, 5.45, 0] },
         { geometry: STANDARD, at: [x, 0, 0] },
         { geometry: CAP, at: [x, 0, 0] },
-        { geometry: ledge(0.28, 0.06, 0.28, 0.015), at: [sx * 1.3, 5.44, 0] },
-        { geometry: URN, at: [sx * 1.3, 0, 0] },
       );
       const globe = new T.Mesh(new T.SphereGeometry(0.2, 16, 12), lampGlass());
       globe.position.set(x, 6.18, 0);
