@@ -1592,6 +1592,39 @@ for (let i = 0; i < 720; i++) {
   assert(Math.hypot(balloon.object.position.x, balloon.object.position.z) > 30, 'The drift turns the balloon over the town.');
   balloon.update(0, 0);
 }
+// The balloon's detailing (hotAirBalloon: gores, load tapes, crown ring, skirt, burner frame,
+// basket) keeps the size the opening-view checks above were made for: within 1.6 of its axis and
+// between the basket's foot (-0.05) and the crown (5.06); the burner and its frame hang between
+// the basket's rim and the envelope's mouth, inside the skirt's reach; all of it is no-shadow
+// cloth and cane in at most 2 batched meshes and 7k triangles.
+{
+  const b = balloon.object,
+    keep = [b.position.clone(), b.rotation.clone()],
+    p = new T.Vector3();
+  b.position.set(0, 0, 0);
+  b.rotation.set(0, 0, 0);
+  b.updateMatrixWorld(true);
+  let tris = 0,
+    count = 0;
+  for (const o of b.children) {
+    if (!o.isMesh) continue;
+    count++;
+    assert(!o.castShadow, 'Part of the balloon casts a shadow.');
+    const pos = o.geometry.getAttribute('position');
+    tris += (o.geometry.index?.count ?? pos.count) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      assert(Math.hypot(p.x, p.z) <= 1.6 + 1e-4 && p.y >= -0.05 - 1e-4 && p.y <= 5.06 + 1e-4, `The balloon grows past its old size at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      // Between the basket's rim (0.52) and the mouth (1.01) only the burner, its frame and rods,
+      // the flying wires and the skirt: nothing out past the skirt's hem (0.42).
+      if (p.y > 0.52 && p.y < 0.95) assert(Math.hypot(p.x, p.z) <= 0.43, `Something hangs out between the basket and the mouth at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}.`);
+    }
+  }
+  assert(count <= 2 && tris <= 7000, `The balloon costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  b.position.copy(keep[0]);
+  b.rotation.copy(keep[1]);
+  b.updateMatrixWorld(true);
+}
 // The dinghy's mooring lines are static, so the ends buried at its fairleads must stay inside
 // its hull (y -0.06 to 0.175, 0.31-0.38 half-wide) as it bobs and pitches.
 {
@@ -1772,6 +1805,78 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     bikeFront = reach(model.animated.find((e) => e.object.name === 'cyclist').object);
   assert(Math.abs(TRAM_TIMETABLE.nose - tramFront) < 0.02, `The tram's nose (${TRAM_TIMETABLE.nose}) is not its front (${tramFront.toFixed(3)}).`);
   assert(Math.abs(CYCLIST_TIMETABLE.nose - bikeFront) < 0.02, `The bike's nose (${CYCLIST_TIMETABLE.nose}) is not its front (${bikeFront.toFixed(3)}).`);
+}
+// The tram (buildTram) stays inside the body the signal clearances sweep (1.2 wide, its nose and
+// tail at TRAM_TIMETABLE.nose), above the rail head, and rides on its wheels: its lowest parts are
+// the eight wheels' treads, over the rails (x +-0.42) at its two bogies (z +-1.1, axles 0.5 apart).
+// Its detailing costs at most 11k triangles in 5 meshes (body, glazing, undergear and two lamps).
+{
+  const tram = model.tram,
+    keep = [tram.position.clone(), tram.rotation.clone()],
+    p = new T.Vector3(),
+    treads = new Map();
+  tram.position.set(0, 0, 0);
+  tram.rotation.set(0, 0, 0);
+  tram.updateMatrixWorld(true);
+  let tris = 0,
+    count = 0;
+  tram.traverse((o) => {
+    if (!o.isMesh) return;
+    count++;
+    const pos = o.geometry.getAttribute('position');
+    tris += (o.geometry.index?.count ?? pos.count) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      assert(Math.abs(p.x) <= 0.6 + 1e-4 && Math.abs(p.z) <= TRAM_TIMETABLE.nose + 1e-4, `The tram reaches out of its swept body at ${p.x.toFixed(3)}, ${p.z.toFixed(3)}.`);
+      assert(p.y >= -1e-4, `The tram dips under the rail head (${p.y.toFixed(3)}).`);
+      if (p.y > 0.03) continue;
+      const axle = Math.sign(p.z) * 1.1 + (Math.abs(p.z) > 1.1 ? 0.25 : -0.25) * Math.sign(p.z);
+      assert(Math.abs(Math.abs(p.x) - 0.42) <= 0.04 && Math.abs(p.z - axle) <= 0.08, `Something but a wheel touches the rails at ${p.x.toFixed(3)}, ${p.z.toFixed(3)}.`);
+      treads.set(`${Math.sign(p.x)},${axle.toFixed(2)}`, true);
+    }
+  });
+  assert.equal(treads.size, 8, `The tram stands on ${treads.size} wheels.`);
+  assert(tris <= 11000 && count <= 5, `The tram costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  tram.position.copy(keep[0]);
+  tram.rotation.copy(keep[1]);
+  tram.updateMatrixWorld(true);
+}
+// The harbour boat (buildBoat, BOAT's lines): nothing below its keel or past its stem and transom
+// (by more than the cap rail and the rubbing strake's thickness); everything standing on its deck
+// (the wheelhouse, casing and funnel, hatch, winch, mast and rigging, boxes and the cap rail) within
+// the hull's outer line at the sheer, so nothing pokes out through the bulwarks; its one lamp the
+// mast lantern, over everything; and at most 9k triangles in 6 batched meshes.
+{
+  const { createMovers, BOAT, boatBreadth } = await load('town-movers'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    boat = createMovers(ctx, createKit(ctx)).buildBoat(),
+    p = new T.Vector3();
+  boat.updateMatrixWorld(true);
+  assert.equal(ctx.lamps.length, 1, 'The boat has one lamp.');
+  const lantern = ctx.lamps[0].getWorldPosition(new T.Vector3());
+  boat.traverse((o) => {
+    if (!o.isMesh || ctx.lamps.includes(o)) return;
+    const pos = o.geometry.getAttribute('position'),
+      points = [];
+    for (let i = 0; i < pos.count; i++) points.push(p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).clone());
+    const onDeck = Math.min(...points.map((q) => q.y)) >= BOAT.deck - 0.01;
+    for (const q of points) {
+      assert(q.y >= BOAT.keel - 1e-4 && q.z >= BOAT.stern - 0.05 && q.z <= BOAT.bow + 0.05, `The boat reaches out of its hull's ends at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}, ${q.z.toFixed(2)}.`);
+      assert(q.y < lantern.y, 'Something on the boat stands over its mast lantern.');
+      if (onDeck) assert(Math.abs(q.x) <= boatBreadth(q.z) * 1.05 + 0.05, `Something on the boat's deck pokes out through its bulwarks at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}, ${q.z.toFixed(2)}.`);
+    }
+  });
+  let tris = 0,
+    count = 0;
+  model.boat.traverse((o) => {
+    if (!o.isMesh) return;
+    count++;
+    tris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
+  });
+  assert(tris <= 9000 && count <= 6, `The boat costs ${Math.round(tris)} triangles in ${count} meshes.`);
 }
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.

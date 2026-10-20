@@ -1,7 +1,214 @@
 import * as T from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { SurfaceKind } from './city-materials';
 import { palette, type TownContext } from './town-shared';
 import type { Kit } from './town-kit';
+import { mouldedBlock, type Moulding } from './town-sculpt';
+
+/* ------------------------------------------------------------------ */
+/* Shapes the vehicles are made of                                     */
+/* ------------------------------------------------------------------ */
+/** Undergear, bumpers, lamp housings and the winch: painted dark iron, a shade off the street iron. */
+const UNDERGEAR = '#3a3f44';
+/**
+ * A stadium plan (half-width hx, half-length hz: a box with half-round ends) swept up a moulding
+ * profile: mouldedBlock with corners as round as the block is wide, so every ring is a stadium
+ * inset by its step's s and the straight sides keep one length. Closed on top, open below.
+ */
+function stadium(hx: number, hz: number, profile: Moulding[], arc = 10) {
+  return mouldedBlock(hx, hz, profile, hx, arc);
+}
+/**
+ * A window post for a round-ended body, w wide and h tall on y 0, d deep out along +z, with a
+ * concave quarter-round fillet of radius f at each of its four corners: set between a sill and a
+ * header rail, the openings either side of it get rounded corners. Bevelled by b (which also
+ * fattens its outline by b).
+ */
+function filletPost(w: number, h: number, f: number, d: number, b: number) {
+  const s = new T.Shape(),
+    x = w / 2;
+  s.moveTo(-x - f, 0);
+  s.lineTo(x + f, 0);
+  s.absarc(x + f, f, f, -Math.PI / 2, Math.PI, true);
+  s.lineTo(x, h - f);
+  s.absarc(x + f, h - f, f, Math.PI, Math.PI / 2, true);
+  s.lineTo(-x - f, h);
+  s.absarc(-x - f, h - f, f, Math.PI / 2, 0, true);
+  s.lineTo(-x, f);
+  s.absarc(-x - f, f, f, 0, -Math.PI / 2, true);
+  return frontOnly(new T.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 1, curveSegments: 3 }), 0);
+}
+/** An extrusion without its hidden back: the triangles lying wholly at or behind z = back (its back cap and back bevel, set into a wall). */
+function frontOnly(g: T.BufferGeometry, back: number) {
+  const plain = g.index ? g.toNonIndexed() : g,
+    p = plain.getAttribute('position'),
+    keep: number[] = [];
+  for (let i = 0; i < p.count; i += 3) if (Math.max(p.getZ(i), p.getZ(i + 1), p.getZ(i + 2)) > back + 1e-6) keep.push(i, i + 1, i + 2);
+  const out = new T.BufferGeometry();
+  for (const name of ['position', 'normal']) {
+    const a = plain.getAttribute(name);
+    out.setAttribute(name, new T.Float32BufferAttribute(keep.flatMap((i) => [a.getX(i), a.getY(i), a.getZ(i)]), 3));
+  }
+  g.dispose();
+  if (plain !== g) plain.dispose();
+  return out;
+}
+/** A rounded rectangle (w x h, corner radius r) about the origin, as a path (for a frame's outline or its hole). */
+function roundedRect(path: T.Path, w: number, h: number, r: number) {
+  const x = w / 2, y = h / 2;
+  path.moveTo(-x + r, -y);
+  path.lineTo(x - r, -y);
+  path.absarc(x - r, -y + r, r, -Math.PI / 2, 0, false);
+  path.lineTo(x, y - r);
+  path.absarc(x - r, y - r, r, 0, Math.PI / 2, false);
+  path.lineTo(-x + r, y);
+  path.absarc(-x + r, y - r, r, Math.PI / 2, Math.PI, false);
+  path.lineTo(-x, -y + r);
+  path.absarc(-x + r, -y + r, r, Math.PI, Math.PI * 1.5, false);
+  return path;
+}
+/**
+ * A frame: a rounded rectangle (w x h, corners r) with a rounded hole (iw x ih, corners ir), d
+ * deep out along +z and bevelled by b (none at 0), about its middle; `curve` segments a corner.
+ * Its back (z 0 and behind) is left off: frames are set on a face.
+ */
+function frameGeometry(w: number, h: number, r: number, iw: number, ih: number, ir: number, d: number, b: number, curve = 3) {
+  const shape = roundedRect(new T.Shape(), w, h, r) as T.Shape;
+  shape.holes.push(roundedRect(new T.Path(), iw, ih, ir));
+  return frontOnly(new T.ExtrudeGeometry(shape, { depth: d, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 1, curveSegments: curve }), 0);
+}
+/**
+ * A profile (radius, height) swept round the y axis from angle a0 to a1 (0 is +z, a quarter turn
+ * +x, as a lathe turns), its reach beyond rIn eased to nothing over the last `ease` of each end,
+ * so a band laid round a round end dies into the body instead of stopping on an open section.
+ */
+function endBand(profile: [number, number][], a0: number, a1: number, n: number, rIn: number, ease: number) {
+  const pos: number[] = [], idx: number[] = [];
+  for (let k = 0; k <= n; k++) {
+    const t = k / n,
+      a = a0 + (a1 - a0) * t,
+      e = T.MathUtils.smoothstep(Math.min(t, 1 - t), 0, ease);
+    for (const [r, y] of profile) {
+      const rr = rIn + (r - rIn) * e;
+      pos.push(rr * Math.sin(a), y, rr * Math.cos(a));
+    }
+  }
+  const m = profile.length;
+  for (let k = 0; k < n; k++)
+    for (let j = 0; j < m - 1; j++) {
+      const a = k * m + j, b = a + m;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+/** Merge geometries (positions and normals only) into one, as one part. */
+function mergeParts(list: T.BufferGeometry[]) {
+  const plain = list.map((g) => {
+    const p = g.index ? g.toNonIndexed() : g.clone();
+    for (const name of Object.keys(p.attributes)) if (name !== 'position' && name !== 'normal') p.deleteAttribute(name);
+    if (!p.getAttribute('normal')) p.computeVertexNormals();
+    return p;
+  });
+  const merged = mergeGeometries(plain, false)!;
+  for (const g of [...list, ...plain]) g.dispose();
+  return merged;
+}
+/**
+ * The harbour boat's lines (local units: bow +z, waterline y 0): the stem at `bow`, the transom at
+ * `stern`, `beam` the half-breadth amidships, the keel's depth, the flat deck's height inside the
+ * bulwarks and the bulwarks' thickness.
+ */
+export const BOAT = { bow: 2.0, stern: -1.45, beam: 0.66, keel: -0.14, deck: 0.44, bulwark: 0.07 };
+/** The hull's half-breadth at z: full amidships, a full bow drawn in to a fine stem, quarters eased into the transom. */
+export function boatBreadth(z: number) {
+  if (z >= 0.4) {
+    const t = Math.min(1, (z - 0.4) / (BOAT.bow - 0.4));
+    return BOAT.beam * Math.pow(1 - Math.pow(t, 1.8), 0.7);
+  }
+  if (z <= -0.95) {
+    const t = Math.min(1, (-0.95 - z) / (-0.95 - BOAT.stern));
+    return BOAT.beam * (1 - 0.16 * t * t);
+  }
+  return BOAT.beam;
+}
+/** The sheer (the bulwarks' top) at z: lowest just abaft amidships, rising to a raised bow. */
+export function boatSheer(z: number) {
+  const t = (z - BOAT.stern) / (BOAT.bow - BOAT.stern);
+  return 0.56 + 0.17 * Math.pow(t, 2.6) + 0.03 * Math.pow(1 - t, 3);
+}
+/** The hull's outer face at height y of the station at z (half-breadth b): the bilge rounds in below y 0.06, the side flares a little above it. */
+function hullHalf(b: number, y: number, top: number) {
+  if (y >= 0.06) return b * (1 + (0.05 * (y - 0.06)) / (top - 0.06));
+  const c = (0.06 - y) / (0.06 - BOAT.keel);
+  return b * Math.sqrt(Math.max(0, 1 - c * c));
+}
+/** The boat's stations, stern to stem, closer together where the bow draws in. */
+const boatStations = Array.from({ length: 25 }, (_, i) => BOAT.stern + (BOAT.bow - BOAT.stern) * (1 - Math.pow(1 - i / 24, 1.35)));
+/**
+ * The hull's outer skin, keel to sheer: each station a section from the port sheer down round the
+ * bilge to the keel and up to the starboard sheer, lofted stern to stem and smooth-shaded.
+ */
+function hullSkin() {
+  const half = [0.5, 0.75, 0.9, 1].map((a) => Math.sin((a * Math.PI) / 2)); // bilge rows (fractions round the quarter)
+  const pos: number[] = [], idx: number[] = [];
+  let width = 0;
+  for (const z of boatStations) {
+    const b = boatBreadth(z), top = boatSheer(z), rows: [number, number][] = [];
+    for (const s of half) {
+      const y = 0.06 - (0.06 - BOAT.keel) * Math.cos(Math.asin(s));
+      rows.push([b * s, y]);
+    }
+    for (const f of [1 / 3, 2 / 3, 1]) {
+      const y = 0.06 + (top - 0.06) * f;
+      rows.push([hullHalf(b, y, top), y]);
+    }
+    const section: [number, number][] = [...rows.slice().reverse().map(([x, y]): [number, number] => [-x, y]), [0, BOAT.keel], ...rows];
+    width = section.length;
+    for (const [x, y] of section) pos.push(x, y, z);
+  }
+  for (let i = 0; i < boatStations.length - 1; i++)
+    for (let j = 0; j < width - 1; j++) {
+      const a = i * width + j, c = a + width;
+      idx.push(a, a + 1, c, a + 1, c + 1, c);
+    }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return { skin: g, section: (i: number) => Array.from({ length: width }, (_, j) => new T.Vector2(pos[(i * width + j) * 3], pos[(i * width + j) * 3 + 1])) };
+}
+/** A band on the hull's skin from y0 to y1, `out` proud of it, along both sides and across the transom (the boot-top at the waterline). */
+function hullBand(y0: number, y1: number, out: number) {
+  const pos: number[] = [],
+    at = (z: number, y: number, sx: number) => [sx * (hullHalf(boatBreadth(z), y, boatSheer(z)) + out), y, z];
+  // Rows every 0.03 or so, so the band follows the bilge's curve instead of cutting under it.
+  const rows = Math.max(1, Math.ceil((y1 - y0) / 0.03));
+  for (let i = 0; i < boatStations.length - 1; i++)
+    for (let r = 0; r < rows; r++) {
+      const za = boatStations[i], zb = boatStations[i + 1], ya = y0 + ((y1 - y0) * r) / rows, yb = y0 + ((y1 - y0) * (r + 1)) / rows;
+      for (const sx of [-1, 1]) {
+        const a0 = at(za, ya, sx), a1 = at(za, yb, sx), b0 = at(zb, ya, sx), b1 = at(zb, yb, sx);
+        pos.push(...(sx > 0 ? [...a0, ...a1, ...b0, ...a1, ...b1, ...b0] : [...a0, ...b0, ...a1, ...a1, ...b0, ...b1]));
+      }
+    }
+  const z = BOAT.stern - out, l0 = at(BOAT.stern, y0, -1), l1 = at(BOAT.stern, y1, -1);
+  pos.push(-l0[0], y0, z, l0[0], y0, z, l1[0], y1, z, -l0[0], y0, z, l1[0], y1, z, -l1[0], y1, z);
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+/** A geometry placed: turned by ry about y (then rx about x), moved to (x, y, z). */
+function placed(g: T.BufferGeometry, x: number, y: number, z: number, ry = 0, rx = 0) {
+  if (rx) g.rotateX(rx);
+  if (ry) g.rotateY(ry);
+  return g.translate(x, y, z);
+}
 
 /* ------------------------------------------------------------------ */
 /* Vehicles and people                                                 */
@@ -45,38 +252,100 @@ export function followDrift(object: T.Object3D, target: T.Vector3, drift: number
  */
 export const BALLOON_NIGHT_DIM = 0.5;
 
+/**
+ * The balloon envelope's profile (radius, height over its base): the mouth, the cone's gentle
+ * S, the full shoulder (1.56 across at 2.75, so with its gores it stays within 1.6) and the dome
+ * to the crown ring.
+ */
+const BALLOON_PROFILE = [[0.36, 0.06], [0.52, 0.35], [0.85, 0.95], [1.26, 1.62], [1.5, 2.25], [1.56, 2.75], [1.47, 3.25], [1.2, 3.65], [0.8, 3.93], [0.42, 4.04]];
+/** The skirt round the burner: a deep red, quieter than the gores. */
+const BALLOON_SKIRT = '#8e3b2e';
+/** The basket's wicker, a pale cane in the wood family, and the darker cane of its woven bands. */
+const BALLOON_WICKER = '#c49c68',
+  BALLOON_WEAVE = '#98744c';
+/**
+ * The envelope as `gores` panels round the y axis along `profile` (radius x at height y), each
+ * `cols` columns wide and a little full (by `full` of the radius at the equator, nothing at the
+ * mouth and crown) between its seams, so the seams crease as a real envelope's load tapes do.
+ * Each panel is shaded on its own; alternate panels go to `red` and `cream`. `tapes` is a ribbon
+ * 0.08 wide, 0.012 proud, along every seam.
+ */
+function balloonEnvelope(profile: T.Vector2[], gores: number, cols: number, full: number) {
+  const red: T.BufferGeometry[] = [], cream: T.BufferGeometry[] = [], rows = profile.length;
+  const grid = (at: (i: number, c: number) => number[], width: number) => {
+    const pos: number[] = [], idx: number[] = [];
+    for (let i = 0; i < rows; i++) for (let c = 0; c <= width; c++) pos.push(...at(i, c));
+    for (let i = 0; i < rows - 1; i++)
+      for (let c = 0; c < width; c++) {
+        const a = i * (width + 1) + c, d = a + width + 1;
+        idx.push(a, a + 1, d, a + 1, d + 1, d);
+      }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    geometry.setIndex(idx);
+    geometry.computeVertexNormals();
+    return geometry;
+  };
+  const tapes: T.BufferGeometry[] = [];
+  for (let gore = 0; gore < gores; gore++) {
+    const panel = grid((i, c) => {
+      const { x: r, y } = profile[i], f = c / cols, a = ((gore + f) / gores) * Math.PI * 2,
+        rr = r * (1 + full * Math.pow(Math.sin(Math.PI * f), 0.7) * Math.sin((Math.PI * i) / (rows - 1)));
+      return [rr * Math.sin(a), y, rr * Math.cos(a)];
+    }, cols);
+    (gore % 2 ? cream : red).push(panel);
+    tapes.push(grid((i, c) => {
+      const { x: r, y } = profile[i], a = (gore / gores) * Math.PI * 2 + ((c - 0.5) * 0.08) / r, rr = r + 0.012;
+      return [rr * Math.sin(a), y, rr * Math.cos(a)];
+    }, 1));
+  }
+  return { red, cream, tapes: mergeParts(tapes) };
+}
+
 export function createMovers(ctx: TownContext, kit: Kit) {
   const { material, lamps, animated } = ctx;
-  const { box, cylinder, strut, hullShape, hullSolid, lampGlass } = kit;
+  const { box, cylinder, strut, lampGlass } = kit;
   function hotAirBalloon(g: T.Object3D) {
     const b = new T.Group();
     g.add(b);
-    // A teardrop envelope lathed from the mouth (y 0) to the crown (y 4.1), with 12 crisp gores.
-    const prof = [[0, 0], [0.3, 0.02], [0.42, 0.3], [0.75, 0.9], [1.25, 1.6], [1.55, 2.3], [1.6, 2.75], [1.48, 3.25], [1.15, 3.7], [0.62, 4.0], [0, 4.1]].map(
-      ([r, y]) => new T.Vector2(r, y),
-    );
-    const lathe = new T.LatheGeometry(prof, 24).toNonIndexed(),
-      pos = lathe.getAttribute('position'),
-      col = new Float32Array(pos.count * 3),
-      stripe = [new T.Color(palette.balloon), new T.Color(palette.balloonBand)];
-    for (let i = 0; i < pos.count; i += 3) {
-      const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3,
-        cz = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
-      const c = stripe[Math.floor(((Math.atan2(cx, cz) + Math.PI) / (Math.PI * 2)) * 12) % 2];
-      for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
-    }
-    lathe.setAttribute('color', new T.BufferAttribute(col, 3));
-    const envelope = new T.Mesh(lathe, material('#ffffff', 'fabric'));
-    envelope.position.y = 0.95;
-    envelope.receiveShadow = true;
-    b.add(envelope);
-    cylinder(b, 0, 5.0, 0, 0.5, 0.62, 0.12, palette.gold, 'fabric', 18); // crown cap
-    box(b, 0, 0.2, 0, 0.7, 0.5, 0.7, palette.wood, 'wood'); // basket
-    box(b, 0, 0.47, 0, 0.8, 0.1, 0.8, palette.woodDark, 'wood'); // rim
-    // Rope tops end inside the mouth (r 0.32 there).
-    for (const sx of [-1, 1])
-      for (const sz of [-1, 1])
-        strut(b, new T.Vector3(sx * 0.32, 0.5, sz * 0.32), new T.Vector3(sx * 0.17, 1.02, sz * 0.17), 0.035, palette.woodDark, 'wood');
+    // The envelope: twelve gores in red and cream, a little full between their load tapes, from the
+    // mouth (y 0.06 over its base at 0.95) up a smooth teardrop to the crown ring (y 4.04).
+    const base = 0.95,
+      profile = new T.SplineCurve(BALLOON_PROFILE.map(([r, y]) => new T.Vector2(r, y))).getSpacedPoints(25),
+      { red, cream, tapes } = balloonEnvelope(profile, 12, 6, 0.025);
+    part(b, mergeParts(red).translate(0, base, 0), palette.balloon, 'fabric', true);
+    part(b, mergeParts(cream).translate(0, base, 0), palette.balloonBand, 'fabric', true);
+    part(b, tapes.translate(0, base, 0), palette.rope, 'fabric', true);
+    // The crown: a dark ring round the parachute vent's domed cap; the mouth: a dark ring and the skirt below it.
+    const top = profile[profile.length - 1], mouth = profile[0],
+      lathe = (pts: number[][], n = 24) => new T.LatheGeometry(pts.map(([r, y]) => new T.Vector2(r, y)), n).translate(0, base, 0);
+    part(b, mergeParts([
+      new T.TorusGeometry(top.x, 0.05, 6, 24).rotateX(Math.PI / 2).translate(0, base + top.y, 0),
+      new T.TorusGeometry(mouth.x, 0.045, 6, 24).rotateX(Math.PI / 2).translate(0, base + mouth.y, 0),
+    ]), palette.woodDark, 'fabric', true);
+    part(b, lathe([[top.x, top.y - 0.02], [top.x - 0.07, top.y + 0.035], [top.x * 0.5, top.y + 0.062], [0, top.y + 0.07]]), palette.gold, 'fabric', true);
+    part(b, lathe([[mouth.x + 0.06, mouth.y - 0.18], [mouth.x + 0.03, mouth.y - 0.06], [mouth.x + 0.01, mouth.y + 0.02]]), BALLOON_SKIRT, 'fabric', true);
+    // The burner under the mouth on its square frame, the frame on four rods from the basket's
+    // corners, and four flying wires from the corners up inside the skirt to the mouth ring.
+    const steel = '#7d8288',
+      rod = (a: T.Vector3, c: T.Vector3) => new T.TubeGeometry(new T.LineCurve3(a, c), 1, 0.035, 6, false);
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    part(b, mergeParts([
+      new T.CylinderGeometry(0.1, 0.1, 0.12, 12).translate(0, 0.8, 0), // burner
+      new T.TorusGeometry(0.1, 0.035, 5, 12).rotateX(Math.PI / 2).translate(0, 0.86, 0), // coil
+      ...[0, 1, 2, 3].map((k) => new T.BoxGeometry(0.51, 0.07, 0.07).translate(0, 0.7, 0.22).rotateY((k * Math.PI) / 2)), // frame
+      ...corners.map(([sx, sz]) => rod(new T.Vector3(sx * 0.27, 0.5, sz * 0.27), new T.Vector3(sx * 0.22, 0.7, sz * 0.22))),
+      ...corners.map(([sx, sz]) => rod(new T.Vector3(sx * 0.3, 0.5, sz * 0.3), new T.Vector3(sx * mouth.x * Math.SQRT1_2, base + mouth.y, sz * mouth.x * Math.SQRT1_2))),
+    ]), steel, 'fabric', true);
+    // The wicker basket, a little narrower at its foot, with a woven band round it, a dark skid at
+    // its foot, a padded leather rim and its dark inside.
+    part(b, mouldedBlock(0.35, 0.35, [{ s: 0.035, y: -0.05 }, { s: 0, y: 0.06 }, { s: 0, y: 0.42 }], 0.07, 3), BALLOON_WICKER, 'fabric', true);
+    part(b, mergeParts([
+      mouldedBlock(0.35, 0.35, [{ s: -0.012, y: 0.2 }, { s: -0.016, y: 0.235 }, { s: -0.012, y: 0.27 }], 0.07, 3),
+      mouldedBlock(0.35, 0.35, [{ s: 0.03, y: -0.05 }, { s: -0.005, y: -0.015 }, { s: -0.005, y: 0.03 }, { s: 0.01, y: 0.05 }], 0.07, 3),
+    ]), BALLOON_WEAVE, 'fabric', true);
+    part(b, mergeParts([0, 1, 2, 3].map((k) => new RoundedBoxGeometry(0.8, 0.1, 0.1, 1, 0.045).translate(0, 0.465, 0.35).rotateY((k * Math.PI) / 2))), palette.woodDark, 'fabric', true);
+    part(b, new T.BoxGeometry(0.62, 0.02, 0.62).translate(0, 0.43, 0), '#4f3a2a', 'fabric', true);
     // No shadow: from its beat off the west shore the sun lays it on the beach behind the
     // terrace, where it reads as a dark blot in the People chapter rather than as a balloon.
     b.traverse((o) => {
@@ -130,72 +399,305 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     return b;
   }
 
-  /** Glasgow Corporation tram: orange, green and cream tiers with half-round ends, an eaved roof and a trolley pole. */
+  /** One mesh of `geometry` in g, casting and receiving unless `noShadow`. */
+  function part(g: T.Object3D, geometry: T.BufferGeometry, colour: string, kind: SurfaceKind, noShadow = false) {
+    const m = new T.Mesh(geometry, material(colour, kind));
+    m.castShadow = !noShadow;
+    m.receiveShadow = true;
+    if (noShadow) m.userData.noShadow = true;
+    g.add(m);
+    return m;
+  }
+  /**
+   * The tram's measures (local units: +z forward, y 0 the rail head). The body is a stadium
+   * TRAM.half wide with half-round ends about z ±TRAM.straight; the bogies sit at ±TRAM.bogie
+   * (plan's TRAM_BOGIE) on wheels over the rails at x ±TRAM.gauge; the headlamp housings' rims
+   * are its nose (plan's TRAM_DRIVE.nose).
+   */
+  const TRAM = { half: 0.6, straight: 1.26, bogie: 1.1, gauge: 0.42, wheel: 0.12, wheelbase: 0.5, nose: 1.89 };
+  /**
+   * A Glasgow Corporation 'Coronation'-style single-deck car in the Corporation's orange, green and
+   * cream. The body is swept up moulded profiles round its half-round ends: a green bottom rail,
+   * orange lower panels with a slight tumblehome, a proud green waist rail, a cream sill, wrap-round
+   * glazing between cream window posts whose filleted corners round every opening, a cream header
+   * rail and a green domed roof with a rain-strip eave, a cream roof board and a blank destination
+   * box on the dome at either end. A framed, glazed door at each corner over a dark step; at each
+   * end a dark wrap-round bumper, the lifeguard's tray under it and a headlamp in a drum housing; under
+   * it two bogies with visible wheels on the rails, side frames and axle boxes. The trolley pole
+   * rises aft from a sprung base on the roof board to its wheel. Nothing on it is lettered.
+   */
   function buildTram() {
     const tram = new T.Group();
     tram.name = 'tram';
-    const orange = palette.tramOrange, green = palette.tram, cream = palette.tramCream, half = 1.26;
-    // Each tier is a box with a half-round cylinder at either end.
-    const tier = (y: number, h: number, r: number, c: string, k: SurfaceKind) => {
-      box(tram, 0, y, 0, r * 2, h, half * 2, c, k);
-      for (const z of [-half, half]) cylinder(tram, 0, y, z, r, r, h, c, k, 24);
-    };
-    tier(0.48, 0.55, 0.54, orange, 'enamel'); // 0.205..0.755
-    tier(0.8, 0.1, 0.565, green, 'enamel'); // waist band
-    tier(1.09, 0.48, 0.52, cream, 'enamel'); // 0.85..1.33
-    tier(1.1, 0.3, 0.535, palette.glass, 'glass'); // wrap-round windows, 0.015 proud
-    tier(1.4, 0.14, 0.6, green, 'enamel'); // roof 1.33..1.47, 0.08 eave
-    box(tram, 0, 1.53, 0, 0.7, 0.12, 2.0, cream, 'enamel'); // clerestory 1.47..1.59
-    for (const z of [-0.84, -0.28, 0.28, 0.84]) box(tram, 0, 1.1, z, 1.1, 0.32, 0.1, cream, 'enamel'); // pillars
-    for (const z of [-1.1, 1.1]) box(tram, 0, 0.13, z, 0.86, 0.22, 0.9, '#3a3f44', 'iron'); // bogie skirts replace 8 wheels
-    box(tram, 0, 1.65, 0.5, 0.3, 0.12, 0.3, palette.metal, 'iron'); // pole base ON the clerestory
-    box(tram, 0, 1.99, -0.085, 0.07, 0.07, 1.3, palette.metal, 'iron', { rx: 0.45 }); // trolley pole, lower end at the base
-    for (const z of [-1.8, 1.8]) {
-      const light = lampGlass();
-      const head = new T.Mesh(new T.SphereGeometry(0.09, 12, 8), light);
-      head.position.set(0, 0.5, z);
-      tram.add(head);
-      lamps.push(head);
+    const orange = palette.tramOrange, green = palette.tram, cream = palette.tramCream,
+      { half: R, straight: az } = TRAM,
+      hz = az + R;
+    const body = (profile: Moulding[], colour: string, kind: SurfaceKind = 'enamel', arc = 8) =>
+      part(tram, stadium(R, hz, profile, arc), colour, kind);
+    // The body, foot to roof (s is the inset from the 0.6 half-width).
+    body([{ s: 0.12, y: 0.22 }, { s: 0.07, y: 0.245 }, { s: 0.05, y: 0.27 }, { s: 0.05, y: 0.3 }, { s: 0.07, y: 0.32 }], green); // bottom rail
+    body([{ s: 0.075, y: 0.3 }, { s: 0.068, y: 0.4 }, { s: 0.062, y: 0.55 }, { s: 0.062, y: 0.75 }], orange); // lower panels
+    body([{ s: 0.07, y: 0.73 }, { s: 0.045, y: 0.75 }, { s: 0.035, y: 0.78 }, { s: 0.035, y: 0.82 }, { s: 0.045, y: 0.85 }, { s: 0.07, y: 0.87 }], green); // waist rail
+    body([{ s: 0.07, y: 0.86 }, { s: 0.06, y: 0.88 }, { s: 0.06, y: 0.92, sharp: true }, { s: 0.11, y: 0.935 }], cream); // sill
+    body([{ s: 0.11, y: 1.3 }, { s: 0.06, y: 1.315, sharp: true }, { s: 0.06, y: 1.38 }, { s: 0.08, y: 1.39 }], cream); // header rail
+    body([
+      { s: 0.08, y: 1.38 }, { s: 0.01, y: 1.395 }, { s: 0, y: 1.42 }, { s: 0.01, y: 1.445 }, { s: 0.05, y: 1.46, sharp: true }, // rain-strip eave
+      { s: 0.07, y: 1.49 }, { s: 0.12, y: 1.54 }, { s: 0.19, y: 1.58 }, { s: 0.27, y: 1.605 }, { s: 0.33, y: 1.615 },
+    ], green, 'enamel', 10); // domed roof
+    part(tram, stadium(0.25, 1.2, [{ s: 0.02, y: 1.58 }, { s: 0, y: 1.6 }, { s: 0, y: 1.66, sharp: true }, { s: 0.035, y: 1.69 }], 6), cream, 'enamel'); // roof board
+    // Glazing: one wrap-round band behind the posts, and the doors' lights, as one pane.
+    const glass: T.BufferGeometry[] = [stadium(R, hz, [{ s: 0.11, y: 0.92 }, { s: 0.11, y: 1.31 }], 10)];
+    // Window posts on the glazing's face (0.49 out): three bays a side between the doors, three
+    // lights round each end (a quarter light either side of the windscreen).
+    const posts: T.BufferGeometry[] = [],
+      rg = R - 0.11,
+      post = () => filletPost(0.09, 0.39, 0.05, 0.035, 0.012).translate(0, 0.925, -0.01);
+    for (const sx of [-1, 1]) for (const z of [-0.8, -0.27, 0.27, 0.8]) posts.push(placed(post(), sx * rg, 0, z, (sx * Math.PI) / 2));
+    for (const ez of [-1, 1])
+      for (const a of [0, 0.9, Math.PI - 0.9, Math.PI]) {
+        const nx = Math.cos(a), nz = ez * Math.sin(a);
+        posts.push(placed(post(), rg * nx, 0, ez * az + rg * nz, Math.atan2(nx, nz)));
+      }
+    part(tram, mergeParts(posts), cream, 'enamel');
+    // Doors at the four corners: a cream frame, a green leaf with a big light over a panel, a dark step.
+    const frames: T.BufferGeometry[] = [], leaves: T.BufferGeometry[] = [], steps: T.BufferGeometry[] = [];
+    for (const sx of [-1, 1])
+      for (const ez of [-1, 1]) {
+        const z = ez * 1.03, ry = (sx * Math.PI) / 2, at = (x: number) => sx * x;
+        frames.push(placed(frameGeometry(0.4, 1.1, 0.06, 0.3, 0.99, 0.035, 0.025, 0.01, 2), at(0.555), 0.81, z, ry));
+        leaves.push(
+          placed(new RoundedBoxGeometry(0.3, 0.6, 0.045, 1, 0.015), at(0.552), 0.6, z, ry), // the lower panel
+          placed(frameGeometry(0.3, 0.46, 0.02, 0.16, 0.32, 0.03, 0.035, 0, 2), at(0.535), 1.08, z, ry), // stiles and rails round the light
+        );
+        glass.push(placed(new T.BoxGeometry(0.17, 0.37, 0.02), at(0.555), 1.08, z, ry));
+        steps.push(placed(new RoundedBoxGeometry(0.11, 0.07, 0.36, 1, 0.02), at(0.535), 0.215, z));
+      }
+    part(tram, mergeParts(frames), cream, 'enamel');
+    part(tram, mergeParts(leaves), green, 'enamel');
+    part(tram, mergeParts(glass), palette.glass, 'glass');
+    // The ends: a destination box on the dome (a green hood round a blank cream blind), a wrap-round
+    // bumper over the bottom rail, the lifeguard's tray under it, and the headlamp's drum housing.
+    const hoods: T.BufferGeometry[] = [], blinds: T.BufferGeometry[] = [], dark: T.BufferGeometry[] = [];
+    const bumper: [number, number][] = [[0.5, 0.25], [0.57, 0.255], [0.595, 0.275], [0.6, 0.305], [0.595, 0.335], [0.57, 0.355], [0.5, 0.36]],
+      lifeguard: [number, number][] = [[0.4, 0.07], [0.49, 0.07], [0.52, 0.09], [0.53, 0.13], [0.52, 0.2], [0.4, 0.22]];
+    const housing = [[0.085, 0], [0.105, 0.03], [0.105, 0.08], [0.114, 0.1], [0.1, 0.12], [0.08, 0.1]].map(([r, y]) => new T.Vector2(r, y));
+    for (const ez of [-1, 1]) {
+      const end = (g: T.BufferGeometry) => (ez > 0 ? g.translate(0, 0, az) : g.rotateY(Math.PI).translate(0, 0, -az));
+      hoods.push(placed(new RoundedBoxGeometry(0.46, 0.17, 0.22, 1, 0.05), 0, 1.6, ez * 1.6));
+      blinds.push(placed(new RoundedBoxGeometry(0.34, 0.09, 0.04, 1, 0.015), 0, 1.6, ez * 1.705));
+      dark.push(end(endBand(bumper, -1.32, 1.32, 20, 0.5, 0.18)));
+      dark.push(end(endBand(lifeguard, -0.95, 0.95, 12, 0.4, 0.25)));
+      dark.push(placed(new T.LatheGeometry(housing, 12), 0, 0.52, ez * (TRAM.nose - 0.12), ez > 0 ? 0 : Math.PI, Math.PI / 2));
+    }
+    part(tram, mergeParts(hoods), green, 'enamel');
+    part(tram, mergeParts(blinds), cream, 'enamel');
+    part(tram, mergeParts(dark), UNDERGEAR, 'enamel');
+    // Bogies: per bogie, the wheels on the rails, side frames outside them with an axle box over
+    // each axle and a spring plank between, and a bolster under the body.
+    for (const ez of [-1, 1]) {
+      const zc = ez * TRAM.bogie, gear: T.BufferGeometry[] = [];
+      for (const sx of [-1, 1]) {
+        for (const dz of [-TRAM.wheelbase / 2, TRAM.wheelbase / 2]) {
+          gear.push(new T.CylinderGeometry(TRAM.wheel, TRAM.wheel, 0.07, 12).rotateZ(Math.PI / 2).translate(sx * TRAM.gauge, TRAM.wheel, zc + dz)); // wheel
+          gear.push(placed(new T.BoxGeometry(0.09, 0.12, 0.13), sx * 0.5, 0.13, zc + dz)); // axle box
+        }
+        gear.push(placed(new RoundedBoxGeometry(0.07, 0.1, 0.82, 1, 0.025), sx * 0.5, 0.2, zc)); // side frame
+        gear.push(placed(new T.BoxGeometry(0.08, 0.07, 0.3), sx * 0.5, 0.115, zc)); // spring plank
+      }
+      gear.push(placed(new T.BoxGeometry(0.92, 0.07, 0.18), 0, 0.2, zc)); // bolster
+      part(tram, mergeParts(gear), UNDERGEAR, 'iron');
+    }
+    part(tram, mergeParts(steps), UNDERGEAR, 'iron');
+    // The trolley pole: a sprung base on the roof board, the pole rising aft, the trolley head and wheel.
+    const foot = new T.Vector3(0, 1.79, 0.45), head = new T.Vector3(0, 2.33, -0.72), along = head.clone().sub(foot).normalize();
+    const pole = [
+      placed(new T.CylinderGeometry(0.13, 0.14, 0.05, 16), 0, 1.715, 0.45), // turntable
+      placed(new RoundedBoxGeometry(0.18, 0.1, 0.34, 1, 0.03), 0, 1.79, 0.38), // spring housing
+      new T.CylinderGeometry(0.035, 0.04, foot.distanceTo(head), 8)
+        .applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), along))
+        .translate((foot.x + head.x) / 2, (foot.y + head.y) / 2, (foot.z + head.z) / 2),
+      placed(new RoundedBoxGeometry(0.1, 0.09, 0.12, 1, 0.025), head.x, head.y, head.z), // trolley head
+      new T.CylinderGeometry(0.065, 0.065, 0.07, 14).rotateZ(Math.PI / 2).translate(head.x, head.y + 0.05, head.z - 0.06), // wheel
+    ];
+    part(tram, mergeParts(pole), palette.metal, 'iron');
+    // The headlamps' lenses, set in their housings (the nose is the housings' rims).
+    for (const ez of [-1, 1]) {
+      const lens = new T.Mesh(new T.IcosahedronGeometry(0.08, 1).scale(1, 1, 0.4), lampGlass());
+      lens.position.set(0, 0.52, ez * (TRAM.nose - 0.035));
+      tram.add(lens);
+      lamps.push(lens);
     }
     return tram;
   }
-  /** Harbour boat: a shaped red hull sitting in the water (waterline at local 0), a wheelhouse, funnel and a mast on its roof. */
+  /**
+   * The harbour boat, a little Clyde puffer (BOAT's lines; waterline at local 0, bow +z): a lofted
+   * red hull with a round bilge, a flared side and a sheer rising to a raised bow, a square transom,
+   * a dark rubbing strake round it at the deck line and a cream cap rail on cream bulwarks round a
+   * planked deck. Aft, a cream wheelhouse on a dark skirting: three framed windows forward, a side
+   * window over a quartered lifebuoy and a glazed teak door on either side, under a red roof with a
+   * deep rounded eave. Forward of it, the engine casing and the funnel (cream, a red band, a dark
+   * top with a flared rim); amidships, the hold's coaming under a lashed tarpaulin; then the winch
+   * (a drum of rope between its frames, warping ends outboard) at the foot of the mast, which carries
+   * a crosstree, the derrick boom over the hatch, a forestay, shrouds, a topping lift and the mast
+   * lantern; fish boxes in the bows, a locker at the stern and tyre-dark fenders over the sides. No
+   * name, no number. Parts of a colour merge before batching, so the boat keeps its batched meshes.
+   */
   function buildBoat() {
     const boat = new T.Group();
     boat.name = 'harbour-boat';
-    const red = palette.boat, cream = palette.tramCream, wood = palette.wood, dark = palette.woodDark;
-    hullSolid(boat, 0.62, 2.0, 1.45, -0.12, 0.36, 0.06, red, 'enamel'); // -0.12..0.36, waterline at local 0
-    hullSolid(boat, 0.66, 2.02, 1.47, 0.34, 0.04, 0.04, cream, 'enamel'); // gunwale 0.34..0.46, 0.02 proud
-    const deck = new T.Mesh(new T.ShapeGeometry(hullShape(0.56, 1.8, 1.32), 6).rotateX(-Math.PI / 2), material(wood, 'wood'));
-    deck.position.y = 0.465;
-    deck.receiveShadow = true;
-    boat.add(deck);
-    box(boat, 0, 0.83, -0.45, 0.9, 0.74, 0.85, cream, 'enamel'); // wheelhouse 0.46..1.20
-    box(boat, 0, 0.95, -0.45, 0.94, 0.26, 0.89, palette.glass, 'glass'); // wrap-round windows
-    box(boat, 0, 1.26, -0.45, 1.04, 0.12, 1.0, red, 'enamel'); // roof, 0.07 eave
-    cylinder(boat, 0, 1.52, -0.72, 0.13, 0.15, 0.4, cream, 'enamel', 18); // funnel
-    cylinder(boat, 0, 1.66, -0.72, 0.145, 0.145, 0.1, red, 'enamel', 18); // funnel band
-    cylinder(boat, 0, 1.75, -0.15, 0.055, 0.065, 0.9, dark, 'wood', 18); // mast stepped ON the roof (1.30..2.20)
-    box(boat, 0, 1.98, -0.15, 0.7, 0.08, 0.08, dark, 'wood'); // yard
-    box(boat, 0.18, 0.62, 0.75, 0.32, 0.3, 0.32, wood, 'wood', { ry: 0.3 }); // deck cargo
-    box(boat, -0.2, 0.6, 1.05, 0.26, 0.26, 0.26, palette.gold, 'paint', { ry: -0.2 });
-    for (const sx of [-1, 1])
-      for (const fz of [-0.6, 0.35]) {
-        const f = new T.Mesh(new T.TorusGeometry(0.09, 0.045, 6, 10), material('#3a3f44', 'paint')); // fenders
-        f.position.set(sx * 0.72, 0.22, fz);
-        f.rotation.y = Math.PI / 2;
-        f.castShadow = true;
-        boat.add(f);
+    const red = palette.boat, cream = palette.tramCream, wood = palette.wood, dark = palette.woodDark,
+      tarp = '#66705f', t = BOAT.bulwark;
+    // The hull: the skin, the transom, the bulwarks' inner face and the deck.
+    const { skin, section } = hullSkin();
+    const transom = new T.ShapeGeometry(new T.Shape(section(0)), 1).rotateY(Math.PI).translate(0, 0, BOAT.stern);
+    part(boat, mergeParts([skin, transom]), red, 'enamel');
+    part(boat, hullBand(-0.01, 0.09, 0.004), UNDERGEAR, 'enamel'); // the boot-top at the waterline
+    const inner = (z: number) => Math.max(0, hullHalf(boatBreadth(z), boatSheer(z), boatSheer(z)) - t);
+    const lining: number[] = [];
+    for (let i = 0; i < boatStations.length - 1; i++)
+      for (const sx of [-1, 1]) {
+        const za = boatStations[i], zb = boatStations[i + 1],
+          a0 = [sx * inner(za), boatSheer(za), za], a1 = [sx * inner(za), BOAT.deck, za],
+          b0 = [sx * inner(zb), boatSheer(zb), zb], b1 = [sx * inner(zb), BOAT.deck, zb];
+        lining.push(...(sx > 0 ? [...a0, ...a1, ...b0, ...a1, ...b1, ...b0] : [...a0, ...b0, ...a1, ...a1, ...b0, ...b1]));
       }
-    const buoyRing = new T.Mesh(new T.TorusGeometry(0.14, 0.05, 8, 14), material(palette.flowers[0], 'enamel'));
-    buoyRing.position.set(0.5, 0.66, -0.45);
-    buoyRing.rotation.y = Math.PI / 2;
-    boat.add(buoyRing);
+    {
+      const zs = BOAT.stern + t, x = inner(zs), top = boatSheer(zs);
+      lining.push(-x, top, zs, -x, BOAT.deck, zs, x, BOAT.deck, zs, -x, top, zs, x, BOAT.deck, zs, x, top, zs); // the transom's inner face
+    }
+    const bulwarks = new T.BufferGeometry();
+    bulwarks.setAttribute('position', new T.Float32BufferAttribute(lining, 3));
+    bulwarks.computeVertexNormals();
+    // The cap rail and the rubbing strake: closed tubes round the sheer and round the deck line.
+    const loop = (y: (z: number) => number, x: (z: number) => number, aft = 0) => {
+      const zs = [BOAT.stern + aft, BOAT.stern + aft + 0.05, ...boatStations.slice(1, -1)],
+        side = (sx: number) => (sx > 0 ? zs : zs.slice().reverse()).map((z) => new T.Vector3(sx * x(z), y(z), z));
+      // Across the transom it runs straight, through points of its own, rather than bowing aft between the quarters.
+      const z0 = zs[0], x0 = x(z0), across = [x0 - 0.05, x0 / 2, 0, -x0 / 2, 0.05 - x0].map((ax) => new T.Vector3(-ax, y(z0), z0));
+      return new T.CatmullRomCurve3([...side(1), new T.Vector3(0, y(BOAT.bow - 0.02), BOAT.bow - 0.01), ...side(-1), ...across], true, 'centripetal');
+    };
+    // The cap rail's outer edge is flush with the skin and the transom at the sheer, so only its rounded top shows.
+    const capX = (z: number) => Math.max(0, hullHalf(boatBreadth(z), boatSheer(z), boatSheer(z)) - 0.048),
+      cap = loop((z) => boatSheer(z), capX, 0.048);
+    const strake = loop((z) => boatSheer(z) - 0.16, (z) => hullHalf(boatBreadth(z), boatSheer(z) - 0.16, boatSheer(z)));
+    part(boat, mergeParts([bulwarks, new T.TubeGeometry(cap, 72, 0.048, 6, true)]), cream, 'enamel');
+    part(boat, new T.TubeGeometry(strake, 72, 0.04, 5, true), dark, 'wood');
+    const deckOutline = boatStations.slice(0, -1).map((z) => new T.Vector2(inner(z), -z));
+    const deck = new T.ShapeGeometry(new T.Shape([...deckOutline, ...deckOutline.slice().reverse().map((p) => new T.Vector2(-p.x, p.y))]), 1)
+      .rotateX(-Math.PI / 2)
+      .translate(0, BOAT.deck, 0);
+    part(boat, deck, wood, 'wood');
+    // The wheelhouse, aft: walls on a dark skirting, a red roof with a deep rounded eave.
+    const wz = -0.78, wx = 0.4, wd = 0.34, face = wz + wd;
+    part(boat, mouldedBlock(wx, wd, [{ s: 0, y: 0.5 }, { s: 0, y: 1.12 }, { s: -0.012, y: 1.14 }], 0.04, 3).translate(0, 0, wz), cream, 'enamel');
+    part(boat, mouldedBlock(wx, wd, [{ s: -0.025, y: BOAT.deck }, { s: -0.025, y: 0.51, sharp: true }, { s: 0, y: 0.53 }], 0.05, 3).translate(0, 0, wz), dark, 'wood');
+    part(boat, mouldedBlock(wx + 0.08, wd + 0.08, [{ s: 0.06, y: 1.12 }, { s: 0.01, y: 1.15 }, { s: 0, y: 1.17 }, { s: 0, y: 1.2, sharp: true }, { s: 0.035, y: 1.235 }, { s: 0.09, y: 1.25 }], 0.12, 3).translate(0, 0, wz), red, 'enamel');
+    // Windows (a red frame round a glass pane set into the wall) and the doors.
+    const frames: T.BufferGeometry[] = [], panes: T.BufferGeometry[] = [], leaves: T.BufferGeometry[] = [];
+    const glazed = (x: number, y: number, z: number, ry: number, w: number, h: number) => {
+      frames.push(placed(frameGeometry(w + 0.12, h + 0.12, 0.06, w, h, 0.03, 0.025, 0.008, 2), x, y, z, ry)); // members 0.06 (0.076 with the bevel)
+      panes.push(placed(new T.BoxGeometry(w + 0.02, h + 0.02, 0.03), x - 0.005 * Math.sin(ry), y, z - 0.005 * Math.cos(ry), ry));
+    };
+    for (const x of [-0.235, 0, 0.235]) glazed(x, 0.93, face, 0, 0.13, 0.2);
+    for (const sx of [-1, 1]) {
+      const ry = (sx * Math.PI) / 2;
+      glazed(sx * wx, 0.95, wz + 0.17, ry, 0.14, 0.2);
+      // The door, aft: a teak leaf with a small light, in a red frame.
+      frames.push(placed(frameGeometry(0.32, 0.66, 0.06, 0.2, 0.54, 0.03, 0.025, 0.008, 2), sx * wx, 0.8, wz - 0.14, ry));
+      leaves.push(placed(new RoundedBoxGeometry(0.2, 0.55, 0.04, 1, 0.015), sx * (wx - 0.005), 0.8, wz - 0.14, ry));
+      panes.push(placed(new T.BoxGeometry(0.1, 0.13, 0.03), sx * (wx + 0.012), 0.93, wz - 0.14, ry));
+    }
+    part(boat, mergeParts(frames), red, 'enamel');
+    part(boat, mergeParts(panes), palette.glass, 'glass');
+    part(boat, mergeParts(leaves), wood, 'wood');
+    // A lifebuoy under each side window: a ring in red and cream quarters.
+    const buoys: T.BufferGeometry[][] = [[], []];
+    for (const sx of [-1, 1])
+      for (let k = 0; k < 4; k++)
+        buoys[k % 2].push(new T.TorusGeometry(0.105, 0.042, 5, 4, Math.PI / 2).rotateZ((k * Math.PI) / 2 + Math.PI / 4).rotateY(Math.PI / 2).translate(sx * (wx + 0.07), 0.64, wz + 0.17));
+    part(boat, mergeParts(buoys[0]), palette.flowers[0], 'enamel');
+    part(boat, mergeParts(buoys[1]), cream, 'enamel');
+    // The engine casing and the funnel on it: cream, a red band, a dark top with a flared rim.
+    part(boat, mouldedBlock(0.26, 0.17, [{ s: -0.015, y: BOAT.deck }, { s: -0.015, y: 0.47, sharp: true }, { s: 0, y: 0.48 }, { s: 0, y: 0.6 }, { s: 0.02, y: 0.62 }], 0.05, 3).translate(0, 0, -0.26), cream, 'enamel');
+    const fz = -0.27,
+      turn = (pts: number[][]) => new T.LatheGeometry(pts.map(([r, y]) => new T.Vector2(r, y)), 16).translate(0, 0, fz);
+    part(boat, mergeParts([turn([[0.17, 0.6], [0.168, 0.64], [0.156, 0.68], [0.146, 1.3]]), turn([[0.141, 1.42], [0.139, 1.5]])]), cream, 'enamel');
+    part(boat, turn([[0.144, 1.29], [0.156, 1.3], [0.156, 1.42], [0.141, 1.43]]), red, 'enamel');
+    part(boat, turn([[0.14, 1.49], [0.146, 1.5], [0.146, 1.58], [0.158, 1.6], [0.158, 1.62], [0.125, 1.62], [0.112, 1.595], [0, 1.59]]), UNDERGEAR, 'enamel'); // sooted inside
+    // The hold: a teak coaming under a domed tarpaulin, battened along its sides and lashed across.
+    const hz = 0.43, hd = 0.42, hw = 0.37;
+    part(boat, mouldedBlock(hw, hd, [{ s: 0, y: BOAT.deck }, { s: 0, y: 0.58, sharp: true }, { s: -0.02, y: 0.6 }, { s: 0, y: 0.62 }], 0.05, 3).translate(0, 0, hz), dark, 'wood');
+    const cover: Moulding[] = [{ s: 0, y: 0.6 }, { s: 0, y: 0.64 }, { s: 0.07, y: 0.685 }, { s: 0.16, y: 0.7 }, { s: 0.3, y: 0.705 }];
+    part(boat, mouldedBlock(hw - 0.01, hd - 0.01, cover, 0.06, 3).translate(0, 0, hz), tarp, 'paint');
+    /** The tarpaulin's height |x| out from the middle (its profile read across). */
+    const crown = (x: number) => {
+      const s = hw - 0.01 - Math.abs(x);
+      for (let k = 2; k < cover.length; k++)
+        if (s <= cover[k].s) return T.MathUtils.lerp(cover[k - 1].y, cover[k].y, (s - cover[k - 1].s) / (cover[k].s - cover[k - 1].s));
+      return cover[cover.length - 1].y;
+    };
+    const lashings = [-0.27, 0, 0.27].map((dz) =>
+      new T.TubeGeometry(new T.CatmullRomCurve3(Array.from({ length: 7 }, (_, k) => {
+        const x = -hw - 0.005 + ((2 * hw + 0.01) * k) / 6;
+        return new T.Vector3(x, Math.abs(x) > hw - 0.02 ? 0.6 : crown(x) + 0.02, hz + dz);
+      })), 12, 0.035, 5, false));
+    part(boat, mergeParts([...lashings, ...[-1, 1].map((sx) => new RoundedBoxGeometry(0.07, 0.07, 2 * hd, 1, 0.02).translate(sx * (hw - 0.01), 0.635, hz))]), palette.rope, 'paint');
+    // The winch at the mast's foot: a drum of rope between two frames on a bedplate, warping ends outboard.
+    const mz = 1.3, kz = 1.06;
+    part(boat, mergeParts([
+      new RoundedBoxGeometry(0.44, 0.07, 0.22, 1, 0.02).translate(0, BOAT.deck + 0.025, kz),
+      ...[-1, 1].flatMap((sx) => [
+        new RoundedBoxGeometry(0.07, 0.22, 0.2, 1, 0.02).translate(sx * 0.15, 0.57, kz),
+        new T.CylinderGeometry(0.05, 0.065, 0.09, 10).rotateZ((sx * Math.PI) / 2).translate(sx * 0.235, 0.6, kz),
+      ]),
+      new T.CylinderGeometry(0.092, 0.092, 0.07, 14).rotateZ(Math.PI / 2).translate(-0.085, 0.6, kz), // drum flanges
+      new T.CylinderGeometry(0.092, 0.092, 0.07, 14).rotateZ(Math.PI / 2).translate(0.085, 0.6, kz),
+    ]), UNDERGEAR, 'paint');
+    part(boat, new T.CylinderGeometry(0.075, 0.075, 0.12, 14).rotateZ(Math.PI / 2).translate(0, 0.6, kz), palette.rope, 'paint', true); // the drum's rope
+    // The mast, its crosstree and cap, the derrick boom over the hatch and the stemhead.
+    const top = new T.Vector3(0, 2.2, mz), goose = new T.Vector3(0, 0.8, mz - 0.06), boomEnd = new T.Vector3(0, 1.0, 0.22);
+    const boom = boomEnd.clone().sub(goose);
+    part(boat, mergeParts([
+      new T.CylinderGeometry(0.045, 0.062, 2.2 - BOAT.deck, 10).translate(0, (2.2 + BOAT.deck) / 2, mz),
+      new RoundedBoxGeometry(0.5, 0.07, 0.07, 1, 0.02).translate(0, 1.92, mz),
+      new T.CylinderGeometry(0.04, 0.04, boom.length(), 8)
+        .applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), boom.clone().normalize()))
+        .translate((goose.x + boomEnd.x) / 2, (goose.y + boomEnd.y) / 2, (goose.z + boomEnd.z) / 2),
+      new RoundedBoxGeometry(0.09, 0.16, 0.09, 1, 0.025).translate(0, boatSheer(BOAT.bow - 0.06) + 0.05, BOAT.bow - 0.06), // stemhead
+    ]), dark, 'wood');
+    part(boat, new T.CylinderGeometry(0.06, 0.06, 0.08, 10).translate(0, 2.2, mz), UNDERGEAR, 'paint'); // mast cap under the lantern
+    // Standing rigging (galvanised wire) and the topping lift: thin, so they cast no shadow.
+    const wire = (a: T.Vector3, b: T.Vector3) => new T.TubeGeometry(new T.LineCurve3(a, b), 1, 0.035, 5, false);
+    const stem = new T.Vector3(0, boatSheer(BOAT.bow - 0.06) + 0.1, BOAT.bow - 0.06);
+    part(boat, mergeParts([
+      wire(top.clone().setY(2.12), stem),
+      ...[-1, 1].map((sx) => wire(new T.Vector3(0, 1.9, mz), new T.Vector3(sx * capX(mz - 0.25), boatSheer(mz - 0.25), mz - 0.25))), // shrouds, into the cap rail
+      wire(top.clone().setY(2.08), boomEnd.clone().add(new T.Vector3(0, 0.03, 0))),
+    ]), '#7d8288', 'paint', true);
+    // Fish boxes in the bows, a locker at the stern, fenders over the sides.
+    part(boat, mergeParts([
+      new RoundedBoxGeometry(0.26, 0.14, 0.24, 1, 0.03).rotateY(0.1).translate(0.1, BOAT.deck + 0.07, 1.48),
+      new RoundedBoxGeometry(0.26, 0.14, 0.24, 1, 0.03).rotateY(-0.04).translate(0.09, BOAT.deck + 0.21, 1.47),
+      new RoundedBoxGeometry(0.5, 0.2, 0.16, 1, 0.04).translate(0, BOAT.deck + 0.1, BOAT.stern + t + 0.11),
+    ]), wood, 'wood');
+    part(boat, new RoundedBoxGeometry(0.2, 0.18, 0.18, 1, 0.04).rotateY(0.2).translate(-0.165, BOAT.deck + 0.09, 1.5), palette.gold, 'paint');
+    const fenders: T.BufferGeometry[] = [];
+    for (const sx of [-1, 1])
+      for (const z of [-0.55, 0.45]) {
+        const b = boatBreadth(z), x = sx * (hullHalf(b, 0.3, boatSheer(z)) + 0.07);
+        fenders.push(new T.CylinderGeometry(0.07, 0.07, 0.24, 10).translate(x, 0.3, z));
+        fenders.push(wire(new T.Vector3(x, 0.4, z), new T.Vector3(sx * (inner(z) + t), boatSheer(z) - 0.01, z)));
+      }
+    part(boat, mergeParts(fenders), UNDERGEAR, 'paint', true);
     // Bow waves: each strip's forward end hugs the stem and its aft end trails outward, just clear of the hull.
-    for (const s of [-1, 1]) box(boat, s * 0.52, 0.02, 1.5, 0.12, 0.03, 0.7, '#eaf6f2', 'paint', { ry: -s * 0.5 });
+    for (const s of [-1, 1]) {
+      const fore = [s * (boatBreadth(1.8) + 0.07), 1.8], aft = [s * (boatBreadth(1.15) + 0.2), 1.15],
+        dx = fore[0] - aft[0], dz = fore[1] - aft[1];
+      box(boat, (fore[0] + aft[0]) / 2, 0.02, (fore[1] + aft[1]) / 2, 0.12, 0.03, Math.hypot(dx, dz), '#eaf6f2', 'paint', { ry: Math.atan2(dx, dz) });
+    }
     const light = lampGlass();
     const lanternMesh = new T.Mesh(new T.SphereGeometry(0.1, 12, 8), light);
-    lanternMesh.position.set(0, 2.28, -0.15); // mast lantern
+    lanternMesh.position.set(0, 2.32, mz); // mast lantern
     boat.add(lanternMesh);
     lamps.push(lanternMesh);
     return boat;
