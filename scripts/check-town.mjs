@@ -1771,6 +1771,41 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   assert(Math.abs(TRAM_TIMETABLE.nose - tramFront) < 0.02, `The tram's nose (${TRAM_TIMETABLE.nose}) is not its front (${tramFront.toFixed(3)}).`);
   assert(Math.abs(CYCLIST_TIMETABLE.nose - bikeFront) < 0.02, `The bike's nose (${CYCLIST_TIMETABLE.nose}) is not its front (${bikeFront.toFixed(3)}).`);
 }
+// The tram (buildTram) stays inside the body the signal clearances sweep (1.2 wide, its nose and
+// tail at TRAM_TIMETABLE.nose), above the rail head, and rides on its wheels: its lowest parts are
+// the eight wheels' treads, over the rails (x +-0.42) at its two bogies (z +-1.1, axles 0.5 apart).
+// Its detailing costs at most 11k triangles in 5 meshes (body, glazing, undergear and two lamps).
+{
+  const tram = model.tram,
+    keep = [tram.position.clone(), tram.rotation.clone()],
+    p = new T.Vector3(),
+    treads = new Map();
+  tram.position.set(0, 0, 0);
+  tram.rotation.set(0, 0, 0);
+  tram.updateMatrixWorld(true);
+  let tris = 0,
+    count = 0;
+  tram.traverse((o) => {
+    if (!o.isMesh) return;
+    count++;
+    const pos = o.geometry.getAttribute('position');
+    tris += (o.geometry.index?.count ?? pos.count) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      assert(Math.abs(p.x) <= 0.6 + 1e-4 && Math.abs(p.z) <= TRAM_TIMETABLE.nose + 1e-4, `The tram reaches out of its swept body at ${p.x.toFixed(3)}, ${p.z.toFixed(3)}.`);
+      assert(p.y >= -1e-4, `The tram dips under the rail head (${p.y.toFixed(3)}).`);
+      if (p.y > 0.03) continue;
+      const axle = Math.sign(p.z) * 1.1 + (Math.abs(p.z) > 1.1 ? 0.25 : -0.25) * Math.sign(p.z);
+      assert(Math.abs(Math.abs(p.x) - 0.42) <= 0.04 && Math.abs(p.z - axle) <= 0.08, `Something but a wheel touches the rails at ${p.x.toFixed(3)}, ${p.z.toFixed(3)}.`);
+      treads.set(`${Math.sign(p.x)},${axle.toFixed(2)}`, true);
+    }
+  });
+  assert.equal(treads.size, 8, `The tram stands on ${treads.size} wheels.`);
+  assert(tris <= 11000 && count <= 5, `The tram costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  tram.position.copy(keep[0]);
+  tram.rotation.copy(keep[1]);
+  tram.updateMatrixWorld(true);
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>
