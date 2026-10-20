@@ -2,8 +2,11 @@ import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
+  COURSE_HEIGHT,
   GROUND_KINDS,
+  SURFACE_UV_KINDS,
   projectMaterialUV,
+  surfacePattern,
   type SurfaceKind,
 } from './city-materials';
 import * as plan from './town-plan';
@@ -14,6 +17,46 @@ import type { TownContext } from './town-shared';
 /* ------------------------------------------------------------------ */
 /** batch() bakes contact and eave distances up to this many units (the shader's `aBake * 4.`). */
 const BAKE_RANGE = 4;
+/** The concave-corner distance's reach (aBake.z, 0..1 over this many units). */
+const CORNER_REACH = 1;
+/**
+ * A face takes the corner bake only along its spans of at least this much: the bake is linear
+ * between a face's vertices (a box's are at its edges), so a narrower span (a door between its
+ * jambs, a step's tread, a frame) would darken all over instead of toward its corner.
+ */
+const CORNER_SPAN = 0.9;
+/** The top-lit gradient: an object's tone at its foot and at its top (5 units up at most). */
+const TOP_LIT = [0.91, 1.055] as const;
+/** A mesh whose box in g is its own: a plain or rounded box turned only in quarter turns. */
+function isSquareBox(o: T.Mesh, toG: T.Matrix4) {
+  if (!(o.geometry instanceof RoundedBoxGeometry) && o.geometry.type !== 'BoxGeometry') return false;
+  const e = toG.elements;
+  for (let c = 0; c < 3; c++) {
+    const big = [e[c * 4], e[c * 4 + 1], e[c * 4 + 2]].filter((v) => Math.abs(v) > 1e-4).length;
+    if (big !== 1) return false;
+  }
+  return true;
+}
+/** Where a ray from q along unit d enters box b, within `limit` (limit when it misses). */
+function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
+  let t0 = 0,
+    t1 = limit;
+  const lo = [b.min.x, b.min.y, b.min.z],
+    hi = [b.max.x, b.max.y, b.max.z];
+  for (let a = 0; a < 3; a++) {
+    if (Math.abs(d[a]) < 1e-9) {
+      if (q[a] < lo[a] || q[a] > hi[a]) return limit;
+      continue;
+    }
+    let ta = (lo[a] - q[a]) / d[a],
+      tb = (hi[a] - q[a]) / d[a];
+    if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta);
+    t1 = Math.min(t1, tb);
+    if (t0 > t1) return limit;
+  }
+  return t0;
+}
 
 /*
  * Night windows. Every glass pane carries its own light in `aWindow` (four normalised bytes, the
@@ -92,6 +135,82 @@ function windowLight(o: T.Object3D, role: WindowRole, at: T.Vector3, claimed: Cl
   return [byte(level), byte(tint), off, u4 < m.risers && (!lit || off < 255) ? claim(claimed.wake, 10, 245, u4 / m.risers) : 255];
 }
 
+/*
+ * Surface coordinates for the bake shader's patterns (uv, in units; see city-materials' SURFACE_PATTERN).
+ * Masonry and roofs: x across the face (horizontal, in the batch's frame, so courses and bonds
+ * line up from one mesh to the next), y up the face from the mesh's foot, or up its slope on a
+ * sloped face (so courses run along the eaves); a face looking up or down takes x and z. Round
+ * parts (cylinders, cones, lathes) measure x round their own circumference. A coursed mesh only
+ * one or two courses high (a plinth) has its courses stretched to fit it whole.
+ * Wood: x along the grain (the mesh's longest axis), y across it on the face, offset by 1000 where
+ * the face is not planked (narrower than 0.42: posts, rails, beams, single boards such as the
+ * pier's deck planks); round wood is
+ * planked (staves) from a radius of 0.2.
+ */
+const ROUND_GEOMETRY = new Set(['CylinderGeometry', 'ConeGeometry', 'LatheGeometry', 'SphereGeometry']);
+function surfaceUV(o: T.Mesh, geometry: T.BufferGeometry, bounds: T.Box3, kind: SurfaceKind) {
+  const p = geometry.getAttribute('position'),
+    n = geometry.getAttribute('normal'),
+    count = p.count,
+    uv = new Float32Array(count * 2),
+    src = o.geometry,
+    srcUV = src.getAttribute('uv'),
+    srcP = src.getAttribute('position'),
+    s = o.scale;
+  const round = ROUND_GEOMETRY.has(src.type) && !!srcUV && srcUV.count === count;
+  let radius = 0;
+  if (round) {
+    for (let i = 0; i < count; i++) radius += Math.hypot(srcP.getX(i) * s.x, srcP.getZ(i) * s.z);
+    radius /= count;
+  }
+  const around = (i: number) => srcUV.getX(i) * 2 * Math.PI * radius;
+  if (kind === 'wood') {
+    src.computeBoundingBox();
+    const size = src.boundingBox!.getSize(new T.Vector3()).multiply(s).toArray(),
+      sn = src.getAttribute('normal'),
+      long = size.indexOf(Math.max(...size));
+    for (let i = 0; i < count; i++) {
+      const lp = [srcP.getX(i) * s.x, srcP.getY(i) * s.y, srcP.getZ(i) * s.z];
+      if (round) {
+        uv[i * 2] = lp[1];
+        uv[i * 2 + 1] = around(i) + (radius >= 0.2 ? 0 : 1000);
+        continue;
+      }
+      const ln = sn ? [Math.abs(sn.getX(i)), Math.abs(sn.getY(i)), Math.abs(sn.getZ(i))] : [0, 1, 0],
+        face = ln.indexOf(Math.max(...ln)),
+        others = [0, 1, 2].filter((a) => a !== long),
+        across = face === long ? (size[others[0]] >= size[others[1]] ? others[0] : others[1]) : 3 - long - face;
+      uv[i * 2] = lp[long];
+      uv[i * 2 + 1] = lp[across] + (face !== long && size[across] >= 0.42 ? 0 : 1000);
+    }
+  } else {
+    const course = COURSE_HEIGHT[kind],
+      tall = bounds.max.y - bounds.min.y,
+      fit = course && tall / course < 2.5 ? Math.max(1, Math.round(tall / course)) * course / tall : 1;
+    for (let i = 0; i < count; i++) {
+      const px = p.getX(i),
+        py = p.getY(i),
+        pz = p.getZ(i),
+        nx = n.getX(i),
+        ny = n.getY(i),
+        nz = n.getZ(i),
+        hn = Math.hypot(nx, nz);
+      if (round) {
+        uv[i * 2] = around(i);
+        uv[i * 2 + 1] = (py - bounds.min.y) * fit;
+      } else if (hn > 0.25) {
+        uv[i * 2] = (px * nz - pz * nx) / hn;
+        // Up the face: height on a wall, the distance up the slope on a roof.
+        uv[i * 2 + 1] = hn > 0.97 ? (py - bounds.min.y) * fit : (py * (1 - ny * ny) - ny * (nx * px + nz * pz)) / hn;
+      } else {
+        uv[i * 2] = px;
+        uv[i * 2 + 1] = pz;
+      }
+    }
+  }
+  geometry.setAttribute('uv', new T.BufferAttribute(uv, 2));
+}
+
 export function createBatch(ctx: TownContext) {
   const { library, lamps } = ctx;
   // Per build, like ctx: the off and wake bytes already taken, every lit place's pane list, and
@@ -141,15 +260,33 @@ export function createBatch(ctx: TownContext) {
     type Cap = { id: number; box: T.Box3; top: number; bay: boolean };
     const caps = new Map<number, Cap[]>();
     const cellOf = (x: number, z: number) => (Math.floor(x / 4) + 512) * 1024 + Math.floor(z / 4) + 512;
+    // Concave corners: the axis-aligned boxes (plain or rounded, square to g) that a face can meet,
+    // in a 1-unit grid; see cornerAt below.
+    type Solid = { id: number; box: T.Box3; seen: number; inside: boolean };
+    const solids = new Map<number, Solid[]>(),
+      receivers = new Map<number, T.Vector3>(); // the boxes whose faces take the corner bake (0.4 or more across), by size
+    const unitCell = (x: number, z: number) => (Math.floor(x) + 512) * 1024 + Math.floor(z) + 512;
     if (mode !== 'none')
       g.traverse((o) => {
         if (!(o instanceof T.Mesh) || lamps.includes(o)) return;
         const k = kindOf(o);
-        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.ground || o.userData.band) return;
+        if (GROUND_KINDS.has(k) || k === 'foliage' || o.userData.ground) return;
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
         const toG = inv.clone().multiply(o.matrixWorld),
           box = o.geometry.boundingBox!.clone().applyMatrix4(toG),
           s = box.getSize(new T.Vector3());
+        if (mode === 'terrain' && k !== 'glass' && k !== 'bark' && Math.min(s.x, s.y, s.z) >= 0.04 && isSquareBox(o, toG)) {
+          const solid = { id: o.id, box, seen: 0, inside: false };
+          if (Math.max(s.x, s.y, s.z) >= 0.4) receivers.set(o.id, s);
+          for (let cx = Math.floor(box.min.x); cx <= Math.floor(box.max.x); cx++)
+            for (let cz = Math.floor(box.min.z); cz <= Math.floor(box.max.z); cz++) {
+              const key = (cx + 512) * 1024 + cz + 512;
+              const list = solids.get(key);
+              if (list) list.push(solid);
+              else solids.set(key, [solid]);
+            }
+        }
+        if (o.userData.band) return;
         if (!o.userData.roof && !(s.y <= 0.3 && s.y >= 0.03 && Math.min(s.x, s.z) >= 0.5)) return;
         // A sloped roof's box drops below the wall plate, so roofs say where their eave is.
         const top =
@@ -165,6 +302,63 @@ export function createBatch(ctx: TownContext) {
             else caps.set(key, [cap]);
           }
       });
+    /**
+     * The distance (0..1 units) from a point on a receiver's face to the nearest concave corner it
+     * makes with another box (a rounded box has vertices only at its bevel rows, so this reads the
+     * steps a face meets at its edges: a wall on its plinth or a ledge, a ledge against a wall):
+     * from just off the face, along the face both ways and down (a wall standing on a ledge), or
+     * along a top face (a ledge meeting a wall), along the face's spans of CORNER_SPAN or more.
+     * Boxes the probe starts inside are hidden overlaps and ignored. Linear across a face, like the
+     * other bake distances.
+     */
+    const probe = [0, 0, 0],
+      dirs: number[][] = [];
+    let stamp = 0;
+    function cornerAt(id: number, px: number, py: number, pz: number, nx: number, ny: number, nz: number) {
+      const hn = Math.hypot(nx, nz),
+        span = receivers.get(id)!;
+      dirs.length = 0;
+      if (ny >= 0.6) dirs.push([1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]);
+      else if (hn > 0.6) dirs.push([nz / hn, 0, -nx / hn], [-nz / hn, 0, nx / hn], [0, -1, 0]);
+      for (let i = dirs.length - 1; i >= 0; i--) {
+        const [dx, dy, dz] = dirs[i];
+        if (Math.abs(dx) * span.x + Math.abs(dy) * span.y + Math.abs(dz) * span.z < CORNER_SPAN) dirs.splice(i, 1);
+      }
+      probe[0] = px + nx * 0.05;
+      probe[1] = py + ny * 0.05;
+      probe[2] = pz + nz * 0.05;
+      let best = CORNER_REACH;
+      stamp++;
+      for (const d of dirs)
+        for (let cx = Math.floor(Math.min(probe[0], probe[0] + d[0] * CORNER_REACH)); cx <= Math.floor(Math.max(probe[0], probe[0] + d[0] * CORNER_REACH)); cx++)
+          for (let cz = Math.floor(Math.min(probe[2], probe[2] + d[2] * CORNER_REACH)); cz <= Math.floor(Math.max(probe[2], probe[2] + d[2] * CORNER_REACH)); cz++)
+            for (const solid of solids.get(unitCell(cx, cz)) ?? []) {
+              if (solid.id === id) continue;
+              const b = solid.box;
+              if (solid.seen !== stamp) {
+                solid.seen = stamp;
+                if (probe[0] > b.min.x && probe[0] < b.max.x && probe[1] > b.min.y && probe[1] < b.max.y && probe[2] > b.min.z && probe[2] < b.max.z) {
+                  solid.inside = true;
+                  continue;
+                }
+                solid.inside = false;
+              } else if (solid.inside) continue;
+              best = Math.min(best, rayBox(probe, d, b, best));
+            }
+      return best;
+    }
+    // The top-lit gradient's objects: a building's shell or a mover is one object, the land's and
+    // the park's are their top-level parts (a tree, a lamp, a cottage). Each vertex's height above
+    // the ground (or, for a mover, above its foot) is kept until the object's height is known.
+    const whole = opts.place !== undefined || mode !== 'terrain';
+    const objectOf = (o: T.Object3D) => {
+      if (whole) return g;
+      let top = o;
+      while (top.parent && top.parent !== g) top = top.parent;
+      return top;
+    };
+    const toned: { colors: Float32Array; heights: Float32Array; object: T.Object3D }[] = [],
+      reach = new Map<T.Object3D, { low: number; high: number }>();
     const world = new T.Vector3();
     g.traverse((o) => {
       if (!(o instanceof T.Mesh)) return;
@@ -195,6 +389,7 @@ export function createBatch(ctx: TownContext) {
       const key = mat.uuid + (cast ? '|c' : '|n');
       if (source.userData.surfaceKind === 'grass') projectMaterialUV(geometry, 'grass');
       if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      if (SURFACE_UV_KINDS.has(k) && !geometry.userData.longitudinalUV) surfaceUV(o, geometry, bb, k);
       if (k === 'glass') {
         paneUV(geometry, bb, o.userData);
         if (o.userData.sashPane) {
@@ -215,11 +410,19 @@ export function createBatch(ctx: TownContext) {
         rounded = o.geometry instanceof RoundedBoxGeometry,
         span = Math.max(1e-3, size.y);
       const colors = new Float32Array(count * 3),
-        bake = new Uint8Array(count * 2);
+        heights = new Float32Array(count),
+        bake = new Uint8Array(count * 4),
+        object = objectOf(o),
+        corners = solid && receivers.has(o.id);
+      // The surface pattern (city-materials' SURFACE_PATTERN), for solids only.
+      const pattern = solid && k !== 'glass' ? surfacePattern(k) : 0;
+      // Dressed stone (cornices, quoins, sills, rocks): each piece a shade of its own, within 2.5%.
+      const piece = k === 'stone' && solid ? 1 + 0.05 * (plan.hash(bb.min.x * 12.9898 + bb.min.y * 78.233 + bb.min.z * 37.719) - 0.5) : 1;
       for (let i = 0; i < count; i++) {
         let h = BAKE_RANGE,
           eave = BAKE_RANGE,
-          shade = 1,
+          corner = CORNER_REACH,
+          shade = piece,
           warm = 0;
         if (solid) {
           const px = positions.getX(i),
@@ -228,13 +431,18 @@ export function createBatch(ctx: TownContext) {
             nx = normals.getX(i),
             ny = normals.getY(i),
             nz = normals.getZ(i);
+          // Height above the ground (or the mover's floor), for the contact and the top-lit gradient.
+          let above = py;
+          if (mode === 'local') above = py - localFloor;
+          else if (mode === 'terrain') {
+            world.set(px, py, pz).applyMatrix4(g.matrixWorld);
+            above = world.y - plan.terrainHeight(world.x, world.z);
+          }
+          heights[i] = above;
+          if (corners && ny > -0.6) corner = cornerAt(o.id, px, py, pz, nx, ny, nz);
           // Contact: height above the ground; eave: depth below the nearest overhang.
           if (mode !== 'none' && ny < 0.6) {
-            if (mode === 'local') h = py - localFloor;
-            else {
-              world.set(px, py, pz).applyMatrix4(g.matrixWorld);
-              h = world.y - plan.terrainHeight(world.x, world.z);
-            }
+            h = above;
             if (Math.abs(ny) < 0.6) {
               const qx = px + nx * 0.08,
                 qz = pz + nz * 0.08;
@@ -256,14 +464,25 @@ export function createBatch(ctx: TownContext) {
           }
           if (k === 'glass' && !o.userData.flatGlass) shade *= T.MathUtils.lerp(0.7, 1.15, (py - bb.min.y) / span);
         }
-        bake[i * 2] = Math.round(T.MathUtils.clamp(h / BAKE_RANGE, 0, 1) * 255);
-        bake[i * 2 + 1] = Math.round(T.MathUtils.clamp(eave / BAKE_RANGE, 0, 1) * 255);
+        bake[i * 4] = Math.round(T.MathUtils.clamp(h / BAKE_RANGE, 0, 1) * 255);
+        bake[i * 4 + 1] = Math.round(T.MathUtils.clamp(eave / BAKE_RANGE, 0, 1) * 255);
+        bake[i * 4 + 2] = Math.round(T.MathUtils.clamp(corner / CORNER_REACH, 0, 1) * 255);
+        bake[i * 4 + 3] = pattern;
         colors[i * 3] = source.color.r * (previous ? previous.getX(i) : 1) * shade * (1 + warm);
         colors[i * 3 + 1] = source.color.g * (previous ? previous.getY(i) : 1) * shade;
         colors[i * 3 + 2] = source.color.b * (previous ? previous.getZ(i) : 1) * shade * (1 - 0.6 * warm);
       }
       geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
-      geometry.setAttribute('aBake', new T.BufferAttribute(bake, 2, true));
+      geometry.setAttribute('aBake', new T.BufferAttribute(bake, 4, true));
+      if (solid && k !== 'glass') {
+        toned.push({ colors, heights, object });
+        const r = reach.get(object) ?? { low: Infinity, high: -Infinity };
+        for (const v of heights) {
+          r.low = Math.min(r.low, v);
+          r.high = Math.max(r.high, v);
+        }
+        reach.set(object, r);
+      }
       if (k === 'glass') {
         // A window group (a bay storey's sash panes) is one light: its first pane draws and claims, the rest reuse it.
         const group: string | undefined = o.userData.windowGroup;
@@ -282,6 +501,22 @@ export function createBatch(ctx: TownContext) {
       groups.get(key)!.list.push(geometry);
       old.push(o);
     });
+    // Tonal depth: each object a little deeper at its foot and lighter toward its top (TOP_LIT),
+    // over its height up to 5 units; objects under about a unit tall fade to no gradient.
+    for (const { colors, heights, object } of toned) {
+      const r = reach.get(object)!,
+        foot = mode === 'none' ? r.low : 0,
+        tall = Math.min(5, r.high - foot),
+        amp = T.MathUtils.smoothstep(tall, 0.4, 1.6);
+      if (amp <= 0) continue;
+      for (let i = 0; i < heights.length; i++) {
+        const t = T.MathUtils.clamp((heights[i] - foot) / tall, 0, 1),
+          tone = 1 + amp * (TOP_LIT[0] - 1 + (TOP_LIT[1] - TOP_LIT[0]) * t);
+        colors[i * 3] *= tone;
+        colors[i * 3 + 1] *= tone;
+        colors[i * 3 + 2] *= tone;
+      }
+    }
     old.forEach((o) => o.removeFromParent());
     for (const { mat, cast, list: geometries } of groups.values()) {
       const normalized = geometries.map((geo) => {

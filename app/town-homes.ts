@@ -192,7 +192,7 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     const base = red ? palette.plinthRed : palette.plinth;
     const doorColor = variant === 'villa' ? palette.greenDoor : red ? palette.blueDoor : palette.redDoor;
     plinth(shell, w, d, base, { height: P, proud: 0.25 });
-    box(shell, 0, P + h / 2, 0, w, h, d, stone, 'stone');
+    box(shell, 0, P + h / 2, 0, w, h, d, stone, 'ashlar');
     quoins(shell, w, d, P, top, dress, { front: 0.25, corners: 'front' });
     box(shell, 0, top + 0.1, 0, w + 0.3, 0.2, d + 0.3, dress, 'stone');
     // The signature bay: a Glasgow canted sandstone bay in the 1.06 slot between the left quoins
@@ -215,7 +215,7 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
         { group: `${site.id}-bay-${n}`, lit: n === 0, single: arris !== 0, deep: arris ? 0.06 : 0.08 }));
     cantedPrism(shell, bay, 0, P, base, 'stone', 0.06); // footing on the plinth line
     cantedPrism(shell, bay, 0.56, 0.68, dress, 'stone', 0.06).userData.band = true; // sill course; frames sit on it
-    cantedPrism(shell, bay, P, 1.76, stone); // ground storey
+    cantedPrism(shell, bay, P, 1.76, stone, 'ashlar'); // ground storey
     storey(0, 1.2, 0.86); // glass 0.77-1.63, frames 0.69-1.71
     // A window box on the front's sill course, in front of the frame and under the glass's foot
     // (0.765); painted like the door. Inside z 2.85, as everything above 0.7 on the bay is.
@@ -248,7 +248,7 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
       // under the eave lip. Qin's stops lower, under its own piended slate roof below the gable window.
       const upper = red ? 2.78 : 2.64;
       cantedPrism(shell, bay, 1.76, 1.9, dress, 'stone', 0.07).userData.band = true; // string course
-      cantedPrism(shell, bay, 1.9, upper, stone);
+      cantedPrism(shell, bay, 1.9, upper, stone, 'ashlar');
       if (red) storey(1, 2.33, 0.7); // frames 1.90-2.76
       else storey(1, 2.25, 0.54); // frames 1.90-2.60
       cantedPrism(shell, bay, upper, upper + (red ? 0.18 : 0.16), dress, 'stone', 0.1).userData.bayCap = true; // front at z 2.75
@@ -301,7 +301,7 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     // red pantile, with a fat gable chimney. The wall is 2.0 so the door head clears the eave soffit.
     const w=2.8, d=2.4, P=0.3, h=2.0, top=P+h;
     plinth(root,w,d,palette.plinth,{height:P,proud:0.2});
-    box(root,0,P+h/2,0,w,h,d,c.color,'stone');
+    box(root,0,P+h/2,0,w,h,d,c.color,'ashlar');
     const pan=index%2===1, ridge=slabRoof(root,0,top,0,w,d,1.4,pan?palette.pantile:palette.slate,{eave:0.25,verge:0.25,inset:0,ridge:pan?palette.pantileLight:palette.slateLight,gable:c.color});
     const doorColour = [palette.greenDoor, palette.blueDoor, palette.redDoor][index % 3];
     door(root,0.6,P,d/2,0.75,1.5,doorColour,{landing:0.2,width:1.0});
