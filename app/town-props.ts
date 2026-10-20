@@ -515,7 +515,6 @@ export function createProps(ctx: TownContext, kit: Kit) {
       { geometry: mouldedBlock(0.385, 0.385, [{ s: 0, y: 0.2 }, { s: 0, y: 0.32, sharp: true }, { s: 0.015, y: 0.34 }, { s: 0.03, y: 0.36, sharp: true }], 0.03, 2) },
       { geometry: chamferBox(0.66, 1.4, 0.66), at: [0, 1.06, 0] },
       { geometry: mouldedBlock(0.39, 0.39, [{ s: 0.03, y: 1.715 }, { s: 0, y: 1.74 }, { s: 0, y: 1.765, sharp: true }, { s: 0.012, y: 1.78, sharp: true }], 0.04, 2) },
-      { geometry: k6Roof(0.375, 1.78, 0.14, 1.76) },
       ...[-1, 1].flatMap((sx) => [-1, 1].map((sz): Piece => ({ geometry: chamferBox(0.11, 1.36, 0.11), at: [sx * 0.315, 1.04, sz * 0.315] }))),
     ];
     const bars: Piece[] = [];
@@ -547,6 +546,8 @@ export function createProps(ctx: TownContext, kit: Kit) {
       box(p, ...on([0, 1.612, 0.338]), 0.48, 0.1, 0.03, palette.white, 'enamel', { ry: turn });
     }
     part(p, body, red, 'enamel');
+    // The dome in a matte finish: clear-coated, its top caught the sky as a pale pink spot.
+    part(p, k6Roof(0.375, 1.78, 0.14, 1.76), red, 'paint');
     part(p, bars, red, 'enamel');
     return p;
   }
@@ -675,7 +676,9 @@ export function createProps(ctx: TownContext, kit: Kit) {
     const grow = 1 / Math.cos(Math.PI / 8),
       ribs: Piece[] = [];
     const hip = new T.TubeGeometry(new T.CatmullRomCurve3(ogee.map((q) => new T.Vector3(0, q.y + 0.02, q.r * grow + 0.01))), 14, 0.04, 5, false);
-    for (let i = 0; i < 8; i++) ribs.push({ geometry: hip, rotation: [0, corner(i), 0] });
+    // Each rib ends at the eaves in a round knob.
+    const knob = new T.IcosahedronGeometry(0.065, 1);
+    for (let i = 0; i < 8; i++) ribs.push({ geometry: hip, rotation: [0, corner(i), 0] }, { geometry: knob, at: atAngle(corner(i), ogee[0].r * grow + 0.02, ogee[0].y + 0.03) });
     ribs.push({ geometry: turned([{ r: 0.2, y: 4.15 }, { r: 0.21, y: 4.19 }, { r: 0.2, y: 4.24 }, { r: 0.13, y: 4.26, sharp: true }], 10, { cap: true }) }); // collar
     part(p, ribs, palette.copperLight, 'copper');
     part(p, turned([
@@ -822,11 +825,12 @@ export function createProps(ctx: TownContext, kit: Kit) {
       C1 = -3.05;
     for (const s of [-1, 1]) {
       yellow.push({ geometry: chamferBox(C0 - C1, 0.16, 0.12), at: [(C0 + C1) / 2, 0, s * 0.3] });
-      for (const u of [-0.9, -1.7, -2.5]) iron.push(member([u, 0.08, s * 0.3], [u, 0.48, s * 0.3], 0.07));
-      iron.push(member([-0.6, 0.48, s * 0.3], [-2.95, 0.48, s * 0.3], 0.07));
+      // The walkway's handrails, painted like the jib.
+      for (const u of [-0.9, -1.7, -2.5]) yellow.push(member([u, 0.08, s * 0.3], [u, 0.48, s * 0.3], 0.07));
+      yellow.push(member([-0.6, 0.48, s * 0.3], [-2.95, 0.48, s * 0.3], 0.07));
     }
     for (const u of [-1.1, -1.9, -2.7]) yellow.push(member([u, 0, -0.3], [u, 0, 0.3], 0.08));
-    iron.push({ geometry: chamferBox(2.3, 0.04, 0.48), at: [-1.75, 0.1, 0] }); // walkway
+    const galvanised: Piece[] = [{ geometry: chamferBox(2.3, 0.04, 0.48), at: [-1.75, 0.1, 0] }]; // walkway grating
     iron.push({ geometry: new T.CylinderGeometry(0.17, 0.17, 0.46, 14), at: [-1.15, 0.3, 0], rotation: [Math.PI / 2, 0, 0] }); // winch drum
     cream.push({ geometry: chamferBox(0.34, 0.3, 0.3), at: [-1.6, 0.27, 0] }); // its motor
     for (const u of [-2.38, -2.62, -2.86]) weights.push({ geometry: chamferBox(0.22, 0.95, 0.8), at: [u, -0.4, 0] });
@@ -870,6 +874,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
     part(jib, hook, palette.boat, 'enamel');
     part(jib, cream, palette.tramCream, 'enamel');
     part(jib, iron, IRON, 'iron');
+    part(jib, galvanised, '#8d9396', 'iron');
     part(jib, weights, CONCRETE, 'stone');
     part(jib, boards, palette.wood, 'wood');
     animated.push({
@@ -900,7 +905,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
     const taken: [number, number, number, number][] = [
       [-CRANE_BASE / 2, -CRANE_BASE / 2, CRANE_BASE / 2, CRANE_BASE / 2],
       [-0.05, -2.3, 1.55, -1.4], // cabin
-      [-1.15, -2.3, -0.15, -1.3], // mixer
+      [-0.85, -2.3, -0.05, -0.9], // mixer
       [-2.35, -1.1, -1.05, 1.3], // slab
       [1.25, -1.45, 2.05, 0.05], // boards
       [1.25, 0.2, 2.15, 0.9], // bricks
@@ -938,6 +943,7 @@ export function createProps(ctx: TownContext, kit: Kit) {
         for (const s of [-1, 1]) {
           const c = s * 0.45;
           for (const h of [0.25, 0.85]) put(blue, chamferBox(0.84, 0.08, 0.05), [c, h, out + inward * 0.01]);
+          for (const e of [-0.38, 0.38]) put(blue, chamferBox(0.07, 0.68, 0.05), [c + e, 0.55, out + inward * 0.01]); // stiles
           const a = new T.Vector3(c - s * 0.36, 0.28, out + inward * 0.01).applyMatrix4(frameOf),
             b = new T.Vector3(c + s * 0.36, 0.82, out + inward * 0.01).applyMatrix4(frameOf);
           blue.push(member([a.x, a.y, a.z], [b.x, b.y, b.z], 0.07));
@@ -970,22 +976,36 @@ export function createProps(ctx: TownContext, kit: Kit) {
     stone.push({ geometry: chamferBox(0.24, 0.1, 0.44), at: [cabin.x + 0.9, 0.05, cabin.z + 0.02] }); // its step
     part(site, cabinPaint, CABIN, 'paint');
     part(site, steel, STEEL, 'paint');
-    // The cement mixer: a tilted drum on a yoke over two wheels, a motor box and a tow bar.
-    const mixer = { x: -0.6, z: -1.8 },
-      drum = turned([
-        { r: 0, y: 0 }, { r: 0.08, y: 0.01 }, { r: 0.17, y: 0.06 }, { r: 0.23, y: 0.16 }, { r: 0.24, y: 0.27 }, { r: 0.2, y: 0.39 }, { r: 0.13, y: 0.49 },
-        { r: 0.11, y: 0.54, sharp: true }, { r: 0.09, y: 0.52, sharp: true }, { r: 0, y: 0.48 },
-      ], 12);
-    part(site, [{ geometry: drum, at: [mixer.x + 0.12, 0.38, mixer.z], rotation: [0, 0, 0.6] }, { geometry: turned([{ r: 0.235, y: 0.25 }, { r: 0.252, y: 0.27 }, { r: 0.235, y: 0.29 }], 12), at: [mixer.x + 0.12, 0.38, mixer.z], rotation: [0, 0, 0.6] }], '#c9783a', 'enamel');
-    const mixerIron: Piece[] = [
-      member([mixer.x, 0.15, mixer.z - 0.32], [mixer.x, 0.15, mixer.z + 0.32], 0.07), // axle
-      ...[-1, 1].map((s) => member([mixer.x, 0.15, mixer.z + s * 0.29], [mixer.x + 0.05, 0.48, mixer.z + s * 0.29], 0.07)), // the yoke
-      member([mixer.x, 0.15, mixer.z], [mixer.x - 0.45, 0.06, mixer.z], 0.07), // tow bar
-      { geometry: chamferBox(0.1, 0.08, 0.1), at: [mixer.x - 0.45, 0.04, mixer.z] },
-    ];
-    part(site, mixerIron, palette.metal, 'iron');
-    part(site, [-1, 1].map((s): Piece => ({ geometry: new T.CylinderGeometry(0.15, 0.15, 0.07, 14), at: [mixer.x, 0.15, mixer.z + s * 0.37], rotation: [Math.PI / 2, 0, 0] })), palette.ink, 'iron');
-    part(site, [{ geometry: chamferBox(0.22, 0.2, 0.24), at: [mixer.x - 0.22, 0.3, mixer.z] }], palette.tramCream, 'enamel');
+    // The cement mixer, long and low so it reads as a machine: a fat drum leaning back on its
+    // cradle (a band round its belly, the dark mouth), the frame's two rails over a pair of wheels,
+    // a dark engine cover behind the drum, a stand leg and a tow bar. Its mouth looks north, away
+    // from the overview and the Research chapter alike: seen end-on, the round drum and its dark
+    // mouth read as a face with one eye.
+    const mixer = new T.Group();
+    mixer.position.set(-0.45, 0, -1.5);
+    mixer.rotation.y = -Math.PI / 2;
+    site.add(mixer);
+    const tilt: V3 = [0, 0, 0.9],
+      pivot: V3 = [0.02, 0.3, 0];
+    part(mixer, [
+      { geometry: turned([{ r: 0, y: 0 }, { r: 0.09, y: 0.01 }, { r: 0.19, y: 0.06 }, { r: 0.255, y: 0.17 }, { r: 0.265, y: 0.28 }, { r: 0.22, y: 0.41 }, { r: 0.14, y: 0.52 }, { r: 0.12, y: 0.58, sharp: true }], 12), at: pivot, rotation: tilt },
+      { geometry: turned([{ r: 0.258, y: 0.25 }, { r: 0.278, y: 0.27 }, { r: 0.258, y: 0.29 }], 12), at: pivot, rotation: tilt },
+    ], '#c9783a', 'enamel');
+    part(mixer, [
+      { geometry: turned([{ r: 0.12, y: 0.58 }, { r: 0.1, y: 0.56, sharp: true }, { r: 0, y: 0.52 }], 12), at: pivot, rotation: tilt }, // the mouth
+      ...[-1, 1].map((s): Piece => ({ geometry: new T.CylinderGeometry(0.15, 0.15, 0.07, 14), at: [0.28, 0.15, s * 0.3], rotation: [Math.PI / 2, 0, 0] })), // wheels
+      { geometry: chamferBox(0.22, 0.17, 0.32), at: [0.34, 0.33, 0] }, // engine cover
+    ], palette.ink, 'iron');
+    part(mixer, [
+      ...[-1, 1].flatMap((s) => [
+        member([-0.5, 0.2, s * 0.17], [0.42, 0.2, s * 0.17], 0.07), // the frame's rails
+        member([0.02, 0.2, s * 0.17], [0.02, 0.36, s * 0.27], 0.07), // the cradle's arms
+        member([-0.42, 0.2, s * 0.17], [-0.46, 0, s * 0.2], 0.07), // the stand's legs
+      ]),
+      member([0.28, 0.15, -0.34], [0.28, 0.15, 0.34], 0.07), // axle
+      member([-0.5, 0.2, 0], [-0.7, 0.08, 0], 0.07), // tow bar
+      { geometry: chamferBox(0.1, 0.08, 0.1), at: [-0.7, 0.04, 0] },
+    ], palette.metal, 'iron');
     // The ground slab and the formwork for a wall on it: two plywood shutters, soldiers and walers
     // either side, raking props, and rebar standing out of the top.
     const slab = { x: -1.7, z: 0.1 };
