@@ -2875,6 +2875,148 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     });
   }
 }
+// The park and street props and the building site (town-props' pavilion, phoneBox, bin, bench,
+// memoryBoard, cycleHoop and crane), each built alone before batching:
+// - the bandstand keeps its plinth within the old octagon (2.01 to a corner), its steps on the
+//   gravel spur, and everything over the plinth within 2.12 of its axis, under 4.75; it stays 0.2 clear of
+//   the picnic rug and 0.1 of the two benches; from the overview and the Life chapter the frieze's
+//   roundels show under the eaves (a ray to the plate just above the middle roundel of the face
+//   towards the camera hits the plate, not the roof); at most 11k triangles in 8 meshes;
+// - the phone box stands within its 0.84 plinth square and under 2.1, with its four glazed faces
+//   lit all night ('kiosk'); the bin within 0.26 of its axis and under 0.9; the bench within its
+//   old 1.3 x 0.6 footprint (0.33 back, 0.27 forward) and under 0.95; the memory board within
+//   0.95 x 0.35 and under 2; the cycle hoop within 0.33 x 0.08, under 0.5, casting nothing;
+// - the crane's site: everything but the slewing part stays within 0.16 of the hoarding's line
+//   (its posts and caps stand outside the panels), nothing but the mast stands on its footing, nothing but the hoarding's posts rises
+//   over the capping rail (1.06), and every site pane (the cab's and the site cabin's) is unlit
+//   at night and shares one light; the slewing part reaches no more than 6.5 from the mast, its
+//   load hangs clear over the hoarding, and it batches into at most 5 meshes; the whole site costs
+//   at most 9000 triangles.
+{
+  const { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    { bandstandAt, HOARDING_THICKNESS } = await load('town-shared'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    props = createProps(ctx, createKit(ctx)),
+    v = new T.Vector3();
+  const meshesOf = (root) => {
+      const out = [];
+      root.updateMatrixWorld(true);
+      root.traverse((o) => o.isMesh && out.push(o));
+      return out;
+    },
+    trisOf = (list) => list.reduce((n, m) => n + (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3, 0),
+    each = (list, fn) => {
+      for (const m of list) {
+        const p = m.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) fn(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld), m);
+      }
+    },
+    /** Distance from (x, z) to a rectangle centred at (cx, cz), half-sizes (hx, hz), turned by ry. */
+    toRect = (x, z, cx, cz, hx, hz, ry) => {
+      const c = Math.cos(ry),
+        s = Math.sin(ry),
+        lx = Math.abs((x - cx) * c - (z - cz) * s) - hx,
+        lz = Math.abs((x - cx) * s + (z - cz) * c) - hz;
+      return Math.hypot(Math.max(lx, 0), Math.max(lz, 0)) + Math.min(Math.max(lx, lz), 0);
+    };
+  // The bandstand, where the park puts it.
+  {
+    const stage = new T.Group(),
+      [bx, bz] = bandstandAt(),
+      { park } = plan;
+    props.pavilion(stage, bx, 0.1, bz);
+    const list = meshesOf(stage);
+    assert(trisOf(list) <= 11000 && list.length <= 8, `The bandstand costs ${trisOf(list)} triangles in ${list.length} meshes.`);
+    let top = 0;
+    each(list, (p) => {
+      const x = p.x - bx,
+        z = p.z - bz,
+        r = Math.hypot(x, z),
+        // The octagon's apothem along this point's direction (faces square to the axes).
+        apothem = Math.max(...[0, 1, 2, 3].map((k) => Math.abs(x * Math.cos((k * Math.PI) / 4) + z * Math.sin((k * Math.PI) / 4))));
+      top = Math.max(top, p.y);
+      if (p.y < 0.6) assert(apothem <= 1.871 || (Math.abs(x) <= 0.52 && z <= 2.5), `The bandstand's plinth spreads to ${apothem.toFixed(3)} at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      if (p.y >= 0.45) assert(r <= 2.12, `The bandstand reaches ${r.toFixed(3)} from its axis.`);
+      if (p.y < 1.2) {
+        assert(toRect(p.x, p.z, -12.25, 10.08, 0.55, 0.4, 0.12) >= 0.2, 'The bandstand crowds the picnic rug.');
+        for (const sx of [-2.6, 1.4]) assert(toRect(p.x, p.z, park.x + sx, park.z + 2.1, 0.65, 0.32, 0) >= 0.1, 'The bandstand crowds a park bench.');
+      }
+    });
+    assert(top - 0.1 <= 4.75, `The bandstand's finial stands ${(top - 0.1).toFixed(2)} over the turf.`);
+    // The roundels show under the eaves: the plate (its outer face 1.487 out) beside the middle
+    // roundel, level with the roundels' tops (2.52 up), on the face towards the camera.
+    const ray = new T.Raycaster();
+    for (const bearing of [plan.chapterBearings.overview, plan.chapterBearings['corner-park']]) {
+      const th = Math.round(bearing / (Math.PI / 4)) * (Math.PI / 4),
+        aim = new T.Vector3(bx + 1.488 * Math.sin(th) + 0.15 * Math.cos(th), 0.1 + 2.52, bz + 1.488 * Math.cos(th) - 0.15 * Math.sin(th)),
+        dir = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize().negate();
+      ray.set(aim.clone().addScaledVector(dir, -50), dir);
+      const hit = ray.intersectObjects(list, false)[0];
+      assert(hit && hit.point.distanceTo(aim) < 0.03, `At bearing ${bearing.toFixed(2)} the eaves hide the bandstand's frieze roundels.`);
+    }
+  }
+  // The street furniture, each at its own origin.
+  {
+    const stage = new T.Group();
+    const extent = (build, name) => {
+      const g = new T.Group();
+      stage.add(g);
+      build(g);
+      const list = meshesOf(g),
+        box = new T.Box3();
+      for (const m of list) box.expandByObject(m);
+      return { list, box, name };
+    };
+    const phone = extent((g) => props.phoneBox(g, 0, 0, 0)),
+      bin = extent((g) => props.bin(g, 0, 0, 0)),
+      bench = extent((g) => props.bench(g, 0, 0, 0)),
+      board = extent((g) => props.memoryBoard(g, 0, 0, 0, 0)),
+      hoop = extent((g) => props.cycleHoop(g, 0, 0, 0));
+    assert(phone.box.max.x <= 0.4201 && phone.box.min.x >= -0.4201 && phone.box.max.z <= 0.4201 && phone.box.min.z >= -0.4201 && phone.box.max.y <= 2.1, 'The phone box spreads beyond its plinth or stands 2.1 or taller.');
+    assert.equal(phone.list.filter((m) => m.userData.window === 'kiosk').length, 4, 'The phone box keeps four lit panes.');
+    assert(trisOf(phone.list) <= 3000, `The phone box costs ${trisOf(phone.list)} triangles.`);
+    each(bin.list, (p) => assert(Math.hypot(p.x, p.z) <= 0.26 && p.y <= 0.9, 'The bin spreads beyond 0.26 or stands 0.9 or taller.'));
+    assert(bench.box.max.x <= 0.65 && bench.box.min.x >= -0.65 && bench.box.min.z >= -0.33 && bench.box.max.z <= 0.27 && bench.box.max.y <= 0.95, 'The bench leaves its footprint.');
+    assert(board.box.max.x <= 0.95 && board.box.min.x >= -0.95 && Math.max(board.box.max.z, -board.box.min.z) <= 0.35 && board.box.max.y <= 2, 'The memory board leaves its footprint.');
+    assert(hoop.box.max.x <= 0.33 && hoop.box.min.x >= -0.33 && Math.max(hoop.box.max.z, -hoop.box.min.z) <= 0.08 && hoop.box.max.y <= 0.5, 'The cycle hoop is no longer 0.57 wide and under a bike bar.');
+    assert(hoop.list.every((m) => !m.castShadow && m.userData.noShadow), 'A cycle hoop casts a shadow.');
+    assert(trisOf([...bin.list, ...bench.list, ...board.list, ...hoop.list]) <= 3200, 'The bin, bench, board and hoop cost too much.');
+  }
+  // The building site.
+  {
+    const stage = new T.Group(),
+      P = plan.reservedPlot;
+    props.crane(stage, P.x, P.z);
+    const all = meshesOf(stage),
+      slewing = ctx.animated[ctx.animated.length - 1].object,
+      onJib = new Set(meshesOf(slewing)),
+      mast = stage.children[0],
+      onMast = new Set(meshesOf(mast).filter((m) => !onJib.has(m))),
+      ground = all.filter((m) => !onJib.has(m)),
+      out = HOARDING_THICKNESS + 0.04; // the posts and the gate posts' caps stand outside the panels
+    assert(trisOf(all) <= 9000, `The building site costs ${trisOf(all)} triangles.`);
+    each(ground, (p, m) => {
+      const x = p.x - P.x,
+        z = p.z - P.z;
+      assert(Math.abs(x) <= P.w / 2 + out && Math.abs(z) <= P.d / 2 + out, `The site spills over its hoarding at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      if (!onMast.has(m) && p.y > 0.05) assert(Math.max(Math.abs(x), Math.abs(z)) >= 0.9 - 1e-6, `Something stands on the crane's footing at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      if (!onMast.has(m) && p.y > 1.06) assert(Math.max(Math.abs(x), Math.abs(z)) >= P.w / 2 - 0.15, `Something on the site rises over the hoarding at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+    });
+    const panes = all.filter((m) => m.material.userData.surfaceKind === 'glass');
+    assert(panes.length >= 4 && panes.every((m) => m.userData.window === 'unlit' && m.userData.windowGroup === 'building-site'), 'A site pane would light at night or keep a light of its own.');
+    let reach = 0,
+      low = Infinity;
+    each([...onJib], (p) => {
+      reach = Math.max(reach, Math.hypot(p.x - P.x, p.z - P.z));
+      if (Math.hypot(p.x - P.x, p.z - P.z) > 3.6) low = Math.min(low, p.y);
+    });
+    assert(reach <= 6.5 && low >= 1.5, `The slewing part reaches ${reach.toFixed(2)} and hangs down to ${low.toFixed(2)}.`);
+    assert(new Set([...onJib].map((m) => `${m.material.userData.surfaceKind}|${m.castShadow && !m.userData.noShadow && m.material.userData.surfaceKind !== 'glass'}`)).size <= 5, 'The slewing part batches into more than five meshes.');
+  }
+}
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
