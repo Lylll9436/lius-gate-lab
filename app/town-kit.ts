@@ -15,6 +15,9 @@ function roofKind(colour: string): SurfaceKind {
   if (colour === palette.pantile || colour === palette.pantileLight) return 'pantile';
   return 'slate';
 }
+type V3 = [number, number, number];
+/** A part for cluster(): a shared geometry placed at `at`, turned by `rotation` (an XYZ Euler). */
+export type Piece = { geometry: T.BufferGeometry; at: V3; rotation?: V3 };
 /** A canted bay's plan on its wall (see bayOutline): centre x, wall face z0, root width, projection and cant per side. */
 export type Bay = { x: number; z0: number; root: number; depth: number; cant: number };
 /**
@@ -432,8 +435,11 @@ export function createKit(ctx: TownContext) {
     if (opts.ridge !== false) box(g, x, y + rise - 0.01, z, w + 0.04, 0.12, 0.2, ridge, roofKind(ridge));
     return mesh;
   }
-  /** Two rounded 0.2 slabs on the plate edges (+-d/2 at y), eave/verge overhang, 0.16x0.26 ridge, stone gables tucked under. Ridge along x. Returns ridge top. */
-  function slabRoof(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, rise: number, color: string, opts: { eave?: number; verge?: number; thick?: number; ridge?: string; gable?: string; inset?: number } = {}) {
+  /**
+   * Two rounded 0.2 slabs on the plate edges (+-d/2 at y), eave/verge overhang, 0.16x0.26 ridge, stone gables tucked under. Ridge along x. Returns ridge top.
+   * `gableKind` finishes the gables (ashlar unless given: a harled cottage's are render).
+   */
+  function slabRoof(g: T.Object3D, x: number, y: number, z: number, w: number, d: number, rise: number, color: string, opts: { eave?: number; verge?: number; thick?: number; ridge?: string; gable?: string; inset?: number; gableKind?: SurfaceKind } = {}) {
     const e = opts.eave ?? 0.4, v = opts.verge ?? 0.25, t = opts.thick ?? 0.2, half = d / 2;
     const a = Math.atan2(rise, half), s = Math.sin(a), c = Math.cos(a);
     const len = (half + e + t * s) / c, zc = (half + e) / 2;
@@ -452,7 +458,7 @@ export function createKit(ctx: TownContext) {
       const sh = new T.Shape(); sh.moveTo(-inner, 0); sh.lineTo(inner, 0);
       if (k > 0.01) sh.lineTo(inner, k); sh.lineTo(0, rise - 0.02); if (k > 0.01) sh.lineTo(-inner, k); sh.closePath();
       const geo = new T.ExtrudeGeometry(sh, { depth: 0.16, bevelEnabled: false });
-      for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, 'ashlar')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
+      for (const side of [-1, 1]) { const m = new T.Mesh(geo, material(opts.gable, opts.gableKind ?? 'ashlar')); m.rotation.y = Math.PI / 2; m.position.set(x + side * w / 2 - (side > 0 ? 0.16 : 0), y, z); m.castShadow = m.receiveShadow = true; g.add(m); }
     }
     return top;
   }
@@ -631,6 +637,132 @@ export function createKit(ctx: TownContext) {
   }
   /** A fat chimney stack from y0 to top with a cap and `pots` pantile pots. */
   function chimney(g: T.Object3D, x: number, y0: number, top: number, z: number, color: string, cap: string, pots = 2) { box(g,x,(y0+top)/2,z,0.7,top-y0,0.85,color,'ashlar'); box(g,x,top+0.08,z,0.86,0.16,1.01,cap,'stone'); for(let i=0;i<pots;i++) cylinder(g,x,top+0.31,z+(pots===1?0:(i-0.5)*0.36),0.11,0.13,0.3,palette.pantile,'pantile',18); }
+
+  /*
+   * Dressing kit (the homes' mouldings, copes and ironwork; new helpers, so nothing built before
+   * them changes). A chamfered block is an extruded outline with one 45-degree bevel: 28 triangles
+   * against a rounded box's 108, so the many small dressings stay cheap and still catch a line of
+   * light on every edge. `cluster` merges repeated small parts into one mesh, so they batch with
+   * their family rather than as a family of their own (a part under 0.3 casts nothing, and would).
+   */
+  const prisms = new Map<string, T.BufferGeometry>();
+  /** An extruded outline (x, y points) from z0 to z0 + depth, its edges chamfered by c (shared per shape). */
+  function prism(points: [number, number][], depth: number, c = 0.02, z0 = 0) {
+    const key = [...points.flat(), depth, c, z0].map((n) => n.toFixed(4)).join('|');
+    let geometry = prisms.get(key);
+    if (!geometry) {
+      geometry = new T.ExtrudeGeometry(new T.Shape(points.map(([x, y]) => new T.Vector2(x, y))), {
+        depth: depth - 2 * c,
+        bevelEnabled: c > 0,
+        bevelThickness: c,
+        bevelSize: c,
+        bevelOffset: -c,
+        bevelSegments: 1,
+      }).translate(0, 0, z0 + c);
+      prisms.set(key, geometry);
+    }
+    return geometry;
+  }
+  /** A w x h x d block about its middle, chamfered by a quarter of its thinnest side (at most 0.025). */
+  const chamfered = (w: number, h: number, d: number) =>
+    prism([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]], d, Math.min(0.025, 0.25 * Math.min(w, h, d)), -d / 2);
+  /**
+   * Parts as one mesh in g's space. It casts unless `shadow` is false (a thin caster ghosts in the
+   * shadow map), and is a `band` unless told otherwise: a run of dressings spread over a wall is
+   * flat and wide, and batch() would take it for an overhang and darken the wall under it.
+   */
+  function cluster(g: T.Object3D, pieces: Piece[], colour: string, kind: SurfaceKind, opts: { shadow?: boolean; band?: boolean } = {}) {
+    if (!pieces.length) return undefined;
+    const m4 = new T.Matrix4(),
+      q = new T.Quaternion(),
+      one = new T.Vector3(1, 1, 1);
+    const parts = pieces.map(({ geometry, at, rotation = [0, 0, 0] }) =>
+      (geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(m4.compose(new T.Vector3(...at), q.setFromEuler(new T.Euler(...rotation)), one)),
+    );
+    for (const p of parts) for (const name of Object.keys(p.attributes)) if (!['position', 'normal', 'uv'].includes(name)) p.deleteAttribute(name);
+    const m = new T.Mesh(mergeGeometries(parts)!, material(colour, kind));
+    parts.forEach((p) => p.dispose());
+    const shadow = opts.shadow ?? true;
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    if (!shadow) m.userData.noShadow = true;
+    if (opts.band ?? true) m.userData.band = true;
+    g.add(m);
+    return m;
+  }
+  /** A round rod piece of radius r from a to b (8 sides): pipes, rails, balusters. */
+  function rod(a: V3, b: V3, r: number): Piece {
+    const d = new T.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+      e = new T.Euler().setFromQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), d.clone().normalize()));
+    return { geometry: rodGeometry(r, d.length()), at: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], rotation: [e.x, e.y, e.z] };
+  }
+  const rods = new Map<string, T.BufferGeometry>();
+  const rodGeometry = (r: number, h: number) => {
+    const key = r.toFixed(4) + '|' + h.toFixed(4);
+    let g = rods.get(key);
+    if (!g) rods.set(key, (g = new T.CylinderGeometry(r, r, h, 8)));
+    return g;
+  };
+  /**
+   * A frame on a roof slope, at (x, z) in g's plan on the slates' face: +x along the ridge, +y up
+   * the slope, +z out of it. The slope falls toward (sin yaw, cos yaw) from a ridge line through
+   * g's origin (or `ridgeAt` along the fall), its face at `apex` on that line and `pitch` lower per
+   * unit out.
+   */
+  function slopeFrame(g: T.Object3D, x: number, z: number, yaw: number, apex: number, pitch: number, ridgeAt = 0) {
+    const along = x * Math.sin(yaw) + z * Math.cos(yaw) - ridgeAt,
+      f = new T.Group();
+    f.position.set(x, apex - along * pitch, z);
+    f.rotation.set(Math.atan(pitch) - Math.PI / 2, yaw, 0, 'YXZ');
+    g.add(f);
+    return f;
+  }
+  /** A chimney can's profile (radius, height): a flared foot, a tapering body, a rolled rim. */
+  const CAN = [[0, 0], [0.125, 0], [0.125, 0.045], [0.1, 0.075], [0.088, 0.25], [0.116, 0.27], [0.116, 0.31], [0.09, 0.325], [0, 0.325]];
+  const cans = new Map<number, T.BufferGeometry>();
+  const canGeometry = (tall: number) => {
+    let g = cans.get(tall);
+    if (!g) cans.set(tall, (g = new T.LatheGeometry(CAN.map(([r, y]) => new T.Vector2(r, y * tall)), 10)));
+    return g;
+  };
+  /**
+   * A Glasgow chimney stack from y0 to top (`w` across x, `d` along z): the shaft, a necking band
+   * 0.26 under the cope, the cope (as chimney()'s cap: 0.16 thick, 0.08 proud), a mortar flaunching
+   * on it and a row of cans along the stack's long side, each `heights[i]` of a 0.33 can. With the
+   * roof's `apex` and `pitch` (a ridge along `ridge` through the stack's middle), lead flashings
+   * dress its foot on both slopes.
+   */
+  function stack(g: T.Object3D, x: number, z: number, y0: number, top: number,
+    o: { colour: string; dress: string; kind?: SurfaceKind; w?: number; d?: number; heights?: number[]; ridge?: 'x' | 'z'; apex?: number; pitch?: number }) {
+    const w = o.w ?? 0.7,
+      d = o.d ?? 0.85;
+    box(g, x, (y0 + top) / 2, z, w, top - y0, d, o.colour, o.kind ?? 'ashlar');
+    box(g, x, top + 0.08, z, w + 0.16, 0.16, d + 0.16, o.dress, 'stone');
+    cluster(g, [
+      { geometry: chamfered(w + 0.08, 0.08, d + 0.08), at: [x, top - 0.26, z] },
+      { geometry: chamfered(w - 0.12, 0.07, d - 0.12), at: [x, top + 0.19, z] },
+    ], o.dress, 'stone');
+    const heights = o.heights ?? [1],
+      n = heights.length,
+      long = Math.max(w, d),
+      step = n > 1 ? Math.min(0.27, (long - 0.3) / (n - 1)) : 0;
+    cluster(g, heights.map((tall, i): Piece => {
+      const off = (i - (n - 1) / 2) * step;
+      return { geometry: canGeometry(tall), at: d >= w ? [x, top + 0.2, z + off] : [x + off, top + 0.2, z] };
+    }), palette.pantile, 'pantile');
+    if (o.apex === undefined || o.pitch === undefined) return;
+    const flash: [T.Object3D, Piece][] = [];
+    for (const s of [-1, 1]) {
+      const across = o.ridge === 'z' ? w : d,
+        along = o.ridge === 'z' ? d : w,
+        reach = across / 2 + 0.1,
+        len = reach * Math.hypot(1, o.pitch),
+        yaw = o.ridge === 'z' ? (s * Math.PI) / 2 : s > 0 ? 0 : Math.PI,
+        f = o.ridge === 'z' ? slopeFrame(g, x + (s * reach) / 2, z, yaw, o.apex, o.pitch, x * s) : slopeFrame(g, x, z + (s * reach) / 2, yaw, o.apex, o.pitch, z * s);
+      flash.push([f, { geometry: chamfered(along + 0.12, len, 0.03), at: [0, 0, 0.015] }]);
+    }
+    for (const [f, p] of flash) cluster(f, [p], palette.lead, 'paint');
+  }
   /**
    * Glass for a lamp, which the frame loop lights at night. Lamps are never batched, so they miss
    * the glass spec patch; frosted, a globe shows one soft highlight instead of pinpoint specks.
@@ -829,6 +961,6 @@ export function createKit(ctx: TownContext) {
     const hit = ground ? groundRay.intersectObject(ground, false)[0] : undefined;
     return hit ? hit.point.y : plan.terrainHeight(x, z);
   }
-  return { box, cylinder, strut, bollard, rope, eye, coilPoints, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, bayRoof, door, quoins, plinth, chimney, lampGlass, groundY, ivy };
+  return { box, cylinder, strut, bollard, rope, eye, coilPoints, cone, sphere, hullShape, hullSolid, pitchedRoof, slabRoof, frameRing, windowAt, bayOutline, cantedPrism, bayFaces, sash, bayRoof, door, quoins, plinth, chimney, lampGlass, groundY, ivy, prism, chamfered, cluster, rod, slopeFrame, stack };
 }
 export type Kit = ReturnType<typeof createKit>;

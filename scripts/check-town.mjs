@@ -874,7 +874,9 @@ for (const [id, m] of models) {
         }
       }
     }
-    assert(tris < 6000, `${id}: ${Math.round(tris)} triangles`);
+    // 11k since the homes' Glasgow dressings (doorpiece, steps and railings, dressed sashes, courses and
+    // dentils, skews, stack and cans, rooflight, gutters and downpipes); it was 6k.
+    assert(tris < 11000, `${id}: ${Math.round(tris)} triangles`);
     if (!bodies) continue;
     assert(walls >= 4 && capped >= 9, `${id}: found ${walls} main-wall and ${capped} capped bay vertices`);
     // Once per-pane night lights land (model.windows): each bay storey is one light, and the ground storey is forced
