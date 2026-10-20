@@ -1362,6 +1362,56 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
     }
   }
 }
+// The gate's triumphal-arch dressings (buildGate): the whole arch stays within x 2.385, z 1.005 and
+// y 6.47 (so its hit box, close-up and chapter framing barely move); at the ground (the plinths and
+// their breaks under the column pedestals) nothing leaves the island's paved disc (radius 2.4,
+// inside the pool's inner coping) except along the east and west causeways, within 21.8 degrees of
+// the x axis; the passage stays open (1.69 wide under the imposts, the vault 0.86 or more from the
+// springing's middle); it costs at most 28k triangles in 7 meshes (it was 2.9k in 4); its two night
+// lamps crown the attic over the columns, mirrored; the bronze wreaths keep clear of the archivolt
+// and the columns; and the only bronze on the attic's faces is the blank tablet.
+{
+  const { shell } = models.get('lius-gate'),
+    toShell = shell.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    bounds = new T.Box3(),
+    brass = [];
+  let tris = 0,
+    count = 0;
+  shell.traverse((o) => {
+    if (!o.isMesh) return;
+    count++;
+    const p = o.geometry.attributes.position,
+      m = toShell.clone().multiply(o.matrixWorld),
+      kind = o.material.userData.surfaceKind;
+    tris += (o.geometry.index?.count ?? p.count) / 3;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m);
+      bounds.expandByPoint(v);
+      if (kind === 'brass') brass.push(v.clone());
+      if (v.y < 0.46 && Math.hypot(v.x, v.z) > 2.4)
+        assert(Math.abs(v.z) < Math.abs(v.x) * Math.tan((21.8 * Math.PI) / 180), `The gate's footing leaves the causeway at ${v.x.toFixed(2)}, ${v.z.toFixed(2)}.`);
+      if (Math.abs(v.z) < 1.01) {
+        assert(v.y > 2.45 || Math.abs(v.x) >= 0.845, `The gate's passage narrows at ${v.x.toFixed(3)}, ${v.y.toFixed(2)}.`);
+        assert(v.y <= 2.45 || Math.hypot(v.x, v.y - 2.45) >= 0.86, `Something hangs in the gate's arch at ${v.x.toFixed(2)}, ${v.y.toFixed(2)}.`);
+      }
+    }
+  });
+  const show = (b) => [b.min, b.max].map((c) => c.toArray().map((n) => n.toFixed(3)).join(' ')).join(' to ');
+  assert(bounds.max.x < 2.385 && bounds.min.x > -2.385 && bounds.max.z < 1.005 && bounds.min.z > -1.005 && bounds.min.y > -0.001 && bounds.max.y < 6.47, `The gate outgrew its frame: ${show(bounds)}`);
+  assert(bounds.max.y > 6.3 && bounds.max.x > 2.3, `The gate lost its crown or its cornice: ${show(bounds)}`);
+  assert(tris <= 28000 && count <= 7, `The gate costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  const own = lamps.filter((l) => { let o = l; while (o && o !== shell) o = o.parent; return o === shell; }).map((l) => l.getWorldPosition(new T.Vector3()).applyMatrix4(toShell));
+  assert.equal(own.length, 2, 'The gate keeps its two night lamps.');
+  own.sort((a, b) => a.x - b.x);
+  assert(Math.abs(own[0].x + own[1].x) < 1e-6 && Math.abs(own[0].y - own[1].y) < 1e-6 && own.every((q) => q.y > 5.9 && Math.abs(q.z) < 1e-6 && Math.abs(Math.abs(q.x) - 1.84) < 1e-6), `The gate's lamps moved: ${own.map((q) => q.toArray().map((n) => n.toFixed(2)))}`);
+  // Spandrel bronze (the wreaths and bosses on the faces between the impost and the architrave).
+  const spandrels = brass.filter((q) => Math.abs(q.z) > 0.75 && q.y > 3.2 && q.y < 3.95);
+  assert(spandrels.length > 500, `Only ${spandrels.length} wreath vertices in the gate's spandrels.`);
+  for (const q of spandrels) assert(Math.hypot(q.x, q.y - 2.45) > 1.5 && Math.abs(q.x) < 1.65, `A spandrel wreath crowds the archivolt or a column at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}.`);
+  for (const q of brass.filter((p) => Math.abs(p.z) > 0.7 && p.y > 4.7 && p.y < 5.24))
+    assert(Math.abs(q.x) <= 1.09 && Math.abs(q.y - 4.97) <= 0.16, `Bronze on the gate's attic off its blank tablet at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}.`);
+}
 // Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
 {
   const role = (r) => panes.filter((p) => p.role === r);
