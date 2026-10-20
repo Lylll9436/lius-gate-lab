@@ -237,7 +237,8 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
   /**
    * A Glasgow main door on the wall face at z, its opening w x h over the sill y (the plinth's
    * landing): a four-panel enamelled leaf (raised stiles and rails round two fielded panels) under
-   * a painted transom and a three-light fanlight; a stone doorpiece of two pilasters on bases, with
+   * a painted transom and a three-light fanlight (its pane one light at night with `group`, the hall
+   * lamp burning while the front room is lit); a stone doorpiece of two pilasters on bases, with
    * capitals carrying a frieze and a cornice hood 0.32 proud (within the old surround's reach, so
    * the bay beside it keeps its clearance); and the steps, between simple cast-iron railings (a
    * newel with a ball on each step, a sloping handrail and one baluster), which go into `iron`.
@@ -293,7 +294,7 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     }
   }
   /**
-   * A cast-iron downpipe (into `iron`): from a gutter's outlet at `from` a short drop, a swan neck
+   * A cast-iron downpipe (its pieces into `iron`, the list given): from a gutter's outlet at `from` a short drop, a swan neck
    * at 45 degrees to `wall` (the pipe's line by the wall), the pipe down to the plinth course and a
    * shoe kicked out by `kick`; sockets with holdfast ears every 0.75 reach `ear` back to the wall.
    */
