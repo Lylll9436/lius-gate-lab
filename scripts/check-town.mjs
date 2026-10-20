@@ -2675,7 +2675,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     }
     assert(slopes >= 4, `${id}: no slate roof found`);
   }
-  footAndHead('The hall', faceOf(models.get('town-hall').shell, 2, 2.3), 0.62, 4.18);
+  footAndHead('The hall', faceOf(models.get('town-hall').shell, 2, 2.3), 0.62, 4.68); // the walls rise to 4.8 under the parapet
   let gate = 0;
   models.get('lius-gate').shell.traverse((o) => {
     const bake = o.isMesh && o.geometry.getAttribute('aBake');
@@ -2874,6 +2874,53 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       });
     });
   }
+}
+// The Town Hall's dressings (buildHall): everything stays inside the hall's old outline (so its hit
+// box, close-up and chapter framing do not move) and within its budget; the doorway under the
+// aedicule stays open between the columns and the rustication; the dormers' and the gables' new
+// lights sit above the eaves and inside the roof; the late-lit fanlight and tower window are still
+// on the tower's front.
+{
+  const { shell } = models.get('town-hall'),
+    site = plan.sites['town-hall'],
+    TF = site.d / 2 + 0.6,
+    toShell = shell.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    c = new T.Vector3(),
+    outline = new T.Box3();
+  let tris = 0,
+    meshes = 0;
+  shell.traverse((o) => {
+    if (!o.isMesh) return;
+    meshes++;
+    tris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
+    const p = o.geometry.attributes.position,
+      m = toShell.clone().multiply(o.matrixWorld),
+      stone = o.material.userData.surfaceKind === 'stone' && !o.geometry.index;
+    for (let i = 0; i < p.count; i++) outline.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m));
+    if (!stone) return;
+    for (let i = 0; i + 2 < p.count; i += 3) {
+      c.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) c.add(v.fromBufferAttribute(p, i + k).applyMatrix4(m));
+      c.multiplyScalar(1 / 3);
+      assert(!(Math.abs(c.x) < 0.5 && c.y > 0.6 && c.y < 1.95 && c.z > TF + 0.02 && c.z < TF + 0.5), `Stone stands in the hall's doorway at ${c.toArray().map((n) => n.toFixed(2))}.`);
+    }
+  });
+  assert(
+    outline.min.x >= -4.035 && outline.max.x <= 4.035 && outline.min.z >= -2.885 && outline.max.z <= 4.055 && outline.min.y > -0.01 && outline.max.y <= 13.305,
+    `The hall outgrew its outline: ${outline.min.toArray().map((n) => n.toFixed(2))} to ${outline.max.toArray().map((n) => n.toFixed(2))}.`,
+  );
+  assert(tris <= 40000 && meshes <= 21, `The hall has ${tris} triangles in ${meshes} meshes.`);
+  const panes = model.windows.filter((p) => p.place === 'town-hall' && p.role !== 'dial').map((p) => ({ ...p, local: p.at.clone().applyMatrix4(toShell) }));
+  const high = panes.filter((p) => p.local.y > 5.4);
+  assert.equal(high.length, 4, 'The hall has two dormer lights and two gable oculi.');
+  for (const p of high) {
+    const dormer = Math.abs(Math.abs(p.local.x) - 2.54) < 0.01 && Math.abs(p.local.z - 1.81) < 0.01,
+      oculus = Math.abs(Math.abs(p.local.x) - (site.w / 2 + 0.02)) < 0.01 && Math.abs(p.local.z) < 0.01;
+    assert(dormer || oculus, `A hall light at ${p.local.toArray().map((n) => n.toFixed(2))} is neither a dormer's nor an oculus.`);
+  }
+  const late = panes.filter((p) => Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128);
+  assert(late.length === 2 && late.every((p) => Math.abs(p.local.x) < 0.01 && Math.abs(p.local.z - (TF + 0.06)) < 0.01), 'The hall’s late lights left the tower’s front.');
 }
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
