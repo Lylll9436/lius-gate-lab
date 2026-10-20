@@ -28,6 +28,9 @@ export const WINDOW_BOX: Record<Season, { leaf: string; top: string; blooms: str
 };
 /** The cottage (plan.cottages index) with ivy on its blank +x gable. */
 export const IVY_COTTAGE = 0;
+/** The cottage with a gabled porch at its door, and the one with a lean-to store on its +x gable. */
+export const PORCH = 1,
+  LEAN_TO = 4;
 /** A small smooth blob (20 triangles): a window-box bloom, heather tuft or trailing leaf. */
 const blobGeometry = (() => {
   const g = new T.IcosahedronGeometry(1, 0);
@@ -573,9 +576,6 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     }
     if (y > 0.05) steps(g, x, y, z, o.landing, o.width, palette.trim);
   }
-  /** The cottage (plan.cottages index) with a gabled porch at its door, and the one with a lean-to on its +x gable. */
-  const PORCH = 1,
-    LEAN_TO = 4;
   function buildCottage(g: T.Object3D, c: (typeof plan.cottages)[number], index: number) {
     const root = new T.Group();
     root.position.set(c.x, plan.terrainHeight(c.x, c.z), c.z);
