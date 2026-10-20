@@ -16,20 +16,63 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
   const { box, cylinder, cone, sphere, strut, slabRoof, frameRing, windowAt, door, plinth, lampGlass, ivy } = kit;
   const { topiary } = nature;
   const { bench } = props;
+  /**
+   * LIU'S GATE: a Glasgow triumphal arch in blonde and red sandstone with bronze accents, built in
+   * Clash's secondary and tertiary structure (the ashlar is the shader's). Front +z, the opening
+   * along z. Heights: plinth 0-0.45, base course to 0.57, banded rustication (five chamfered
+   * courses) on the piers to the impost belt (2.31-2.45, the springing); an engaged Tuscan column
+   * on each pier and face, on a pedestal (to 1.33), its capital under the architrave (3.95); the
+   * archivolt (alternate red and cream voussoirs inside a cream moulding, 0.95-1.48) and a scroll
+   * keystone rising into the entablature; bronze wreaths in the spandrels and on the side faces;
+   * a coffered soffit; the entablature (two-fascia architrave, red frieze, dentils, a corona 1.0
+   * out from the middle at 4.44-4.55); the attic (4.61-5.43) framing a blank bronze tablet between
+   * red end blocks over the columns; a stepped crowning pedestal (to 5.95) between two cast-bronze
+   * lamp standards whose globes are the night lamps. Everything stays inside x 2.38, z 1.0 and
+   * y 6.45 (check-town), so the hit box and the chapter's framing barely move.
+   */
   function buildGate(shell: T.Group) {
-    // One solid arch mass: piers, spandrels and entablature are a single bevelled extrusion, so no
-    // light shows between the piers and the attic. Red and cream voussoirs, battered plinths.
     const W = 2.2,
       D = 1.5,
+      F = D / 2, // the faces
       r = 0.95,
       foot = 0.45,
       spring = 2.45,
-      top = 4.2,
       b = 0.1,
-      stone = palette.blonde,
-      dress = palette.trim;
-    // Plinth corners at (2.35, 0.9) stay inside the causeway sector (21.0 degrees, under 21.8).
-    for (const sx of [-1, 1]) box(shell, sx * 1.6, foot / 2, 0, 1.5, foot, D + 0.3, palette.plinth, 'ashlar', { taper: 0.05 });
+      blonde = palette.blonde,
+      dress = palette.trim,
+      red = palette.red,
+      bronze = palette.bronze,
+      colX = 1.84, // the engaged columns' axes, a little into the faces
+      colZ = F - 0.03,
+      pierX = (r - 0.04 + W + 0.04) / 2, // the rusticated piers' middle (0.91 to 2.24)
+      pierW = W - r + 0.08,
+      faces = [1, -1] as const,
+      polar = (a: number, R: number): [number, number] => [Math.cos(a) * R, Math.sin(a) * R],
+      /** An annulus sector about the springing's middle, R0 to R1 from a0 to a1, n steps. */
+      band = (R0: number, R1: number, a0: number, a1: number, n: number): [number, number][] => [
+        ...Array.from({ length: n + 1 }, (_, k) => polar(a0 + ((a1 - a0) * k) / n, R1)),
+        ...Array.from({ length: n + 1 }, (_, k) => polar(a1 - ((a1 - a0) * k) / n, R0)),
+      ],
+      /** A w x h x d block about its middle, its edges chamfered by c. */
+      slab = (w: number, h: number, d: number, c: number) => prism([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]], d, c, -d / 2);
+    /** One dressed stone (each its own shade in the bake). */
+    const stoneAt = (x: number, y: number, z: number, w: number, h: number, d: number, c: number, colour = dress, kind: SurfaceKind = 'stone') => {
+      const m = new T.Mesh(slab(w, h, d, c), material(colour, kind));
+      m.position.set(x, y, z);
+      m.castShadow = m.receiveShadow = true;
+      shell.add(m);
+      return m;
+    };
+    // Battered plinths; their corners at (2.35, 0.9) stay inside the causeway sector (21.0 degrees,
+    // under 21.8). Under each column pedestal the plinth breaks forward to z 0.99 (x 1.56-2.12, so
+    // within 2.34 of the middle: on the island, inside the pool's inner coping at 2.4), 0.01 lower
+    // than the plinth so the two tops never share a plane.
+    for (const sx of [-1, 1]) {
+      box(shell, sx * 1.6, foot / 2, 0, 1.5, foot, D + 0.3, palette.plinth, 'ashlar', { taper: 0.05 });
+      for (const sz of faces) box(shell, sx * colX, 0.22, sz * 0.745, 0.56, 0.44, 0.49, palette.plinth, 'ashlar', { taper: 0.04 });
+    }
+    // One solid arch mass (piers, spandrels and the entablature's core) as a bevelled extrusion, so
+    // no light shows between its parts; its top hides under the cornice.
     const body = new T.Shape();
     body.moveTo(-W, foot);
     body.lineTo(-r, foot);
@@ -37,54 +80,208 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     body.absarc(0, spring, r, Math.PI, 0, true);
     body.lineTo(r, foot);
     body.lineTo(W, foot);
-    body.lineTo(W, top);
-    body.lineTo(-W, top);
+    body.lineTo(W, 4.3);
+    body.lineTo(-W, 4.3);
     body.closePath();
     const mass = new T.Mesh(
       new T.ExtrudeGeometry(body, { depth: D - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 2, curveSegments: 16 }),
-      material(stone, 'ashlar'),
+      material(blonde, 'ashlar'),
     );
-    mass.position.z = -D / 2 + b;
+    mass.position.z = -F + b;
     mass.castShadow = mass.receiveShadow = true;
     shell.add(mass);
-    // Seven chunky voussoirs, alternating dressing and red, standing 0.08 proud of each face.
-    for (let i = 0; i < 7; i++) {
-      const a0 = (i * Math.PI) / 7 + 0.012,
-        a1 = ((i + 1) * Math.PI) / 7 - 0.012,
-        ri = r - 0.03,
-        ro = 1.5;
-      const v = new T.Shape();
-      v.moveTo(Math.cos(a0) * ri, spring + Math.sin(a0) * ri);
-      v.lineTo(Math.cos(a0) * ro, spring + Math.sin(a0) * ro);
-      v.lineTo(Math.cos(a1) * ro, spring + Math.sin(a1) * ro);
-      v.lineTo(Math.cos(a1) * ri, spring + Math.sin(a1) * ri);
-      v.closePath();
-      const m = new T.Mesh(
-        new T.ExtrudeGeometry(v, { depth: D + 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelOffset: -0.03, bevelSegments: 1 }),
-        material(i % 2 ? palette.red : dress, 'stone'),
+    // The piers: a moulded base course, five courses of banded rustication (each chamfered 0.045,
+    // so a V channel parts them; 0.35 tall, like the ashlar's courses, so nothing shimmers) wrapping
+    // the faces, the outer sides and the reveals, and a two-step impost belt at the springing.
+    for (const sx of [-1, 1]) {
+      stoneAt(sx * pierX, 0.51, 0, pierW + 0.04, 0.12, D + 0.12, 0.03);
+      const c0 = 0.57,
+        ch = (2.31 - c0) / 5;
+      for (let i = 0; i < 5; i++) stoneAt(sx * pierX, c0 + ch * (i + 0.5), 0, pierW, ch, D + 0.08, 0.045, blonde);
+      stoneAt(sx * pierX, 2.345, 0, pierW + 0.06, 0.07, D + 0.14, 0.02).userData.band = true;
+      stoneAt(sx * pierX, 2.415, 0, pierW + 0.12, 0.07, D + 0.2, 0.025).userData.band = true;
+    }
+    // Engaged Tuscan columns, one on each pier and face: a pedestal (base, die and cap, standing on
+    // the plinth's break), a square plinth, the torus, a shaft tapering over its upper two thirds,
+    // an astragal and echinus turned in one half-round (its open back is in the wall), the abacus.
+    const COLUMN = new T.LatheGeometry(
+      (
+        [
+          [0, 1.41], [0.225, 1.41], [0.24, 1.44], [0.225, 1.475], [0.19, 1.49],
+          [0.185, 1.53], [0.182, 2.3], [0.165, 3.64],
+          [0.187, 3.655], [0.192, 3.685], [0.172, 3.7],
+          [0.172, 3.72], [0.215, 3.77], [0.232, 3.81], [0, 3.81],
+        ] as [number, number][]
+      ).map(([x, y]) => new T.Vector2(x, y)),
+      12,
+      -Math.PI / 2,
+      Math.PI,
+    );
+    const columns: Piece[] = [];
+    for (const sx of [-1, 1])
+      for (const sz of faces) {
+        const x = sx * colX,
+          back = sz * 0.55, // every pedestal piece reaches back into the rustication
+          out = (front: number) => (back + sz * front) / 2;
+        stoneAt(x, 0.51, out(0.97), 0.56, 0.12, 0.42, 0.03);
+        stoneAt(x, 0.9, out(0.93), 0.48, 0.66, 0.38, 0.035, blonde);
+        stoneAt(x, 1.28, out(0.97), 0.56, 0.1, 0.42, 0.03);
+        stoneAt(x, 1.37, out(0.95), 0.48, 0.08, 0.4, 0.02);
+        stoneAt(x, 3.88, out(0.97), 0.52, 0.14, 0.42, 0.03);
+        columns.push({ geometry: COLUMN, at: [x, 0, sz * colZ], rotation: [0, sz > 0 ? 0 : Math.PI, 0] });
+      }
+    cluster(shell, columns, dress, 'stone');
+    // The archivolt on each face: eight voussoirs (0.95-1.34, 0.06 proud), cream and red in turn from
+    // the springing, butting in chamfered V joints, inside a continuous cream moulding (1.34-1.48,
+    // 0.1 proud) that stands on the impost belt; a keystone, wider than its slot, rises in front of
+    // the architrave, a scroll rolled under its foot and an oval boss on its face.
+    const ring = band(1.34, 1.48, 0, Math.PI, 24),
+      keyShape: [number, number][] = [[-0.165, 0.91], [0.165, 0.91], [0.3, 1.62], [-0.3, 1.62]],
+      keystones: Piece[] = [];
+    for (const sz of faces) {
+      for (let i = 0; i < 9; i++) {
+        if (i === 4) continue;
+        const a0 = (i * Math.PI) / 9,
+          a1 = ((i + 1) * Math.PI) / 9,
+          v = new T.Mesh(prism([polar(a0, r), polar(a0, 1.34), polar(a1, 1.34), polar(a1, r)], 0.2, 0.025), material(i % 2 ? red : dress, 'stone'));
+        v.position.set(0, spring, sz > 0 ? F - 0.14 : -F - 0.06);
+        v.castShadow = v.receiveShadow = true;
+        shell.add(v);
+      }
+      const moulding = new T.Mesh(prism(ring, 0.24, 0.03), material(dress, 'stone'));
+      moulding.position.set(0, spring, sz > 0 ? F - 0.14 : -F - 0.1);
+      moulding.castShadow = moulding.receiveShadow = true;
+      shell.add(moulding);
+      keystones.push(
+        { geometry: prism(keyShape, 0.33, 0.025), at: [0, spring, sz > 0 ? F - 0.14 : -F - 0.19] },
+        { geometry: new T.CylinderGeometry(0.055, 0.055, 0.26, 12), at: [0, spring + 0.99, sz * (F + 0.18)], rotation: [0, 0, Math.PI / 2] },
+        { geometry: new T.IcosahedronGeometry(0.1, 2).scale(1, 1.3, 0.5), at: [0, spring + 1.28, sz * (F + 0.19)] },
       );
-      m.position.z = -(D + 0.16) / 2 + 0.03;
-      m.castShadow = m.receiveShadow = true;
-      shell.add(m);
     }
-    box(shell, 0, 3.8, 0, 0.5, 0.9, D + 0.24, dress, 'stone'); // keystone into cornice
+    cluster(shell, keystones, dress, 'stone');
+    // A coffered soffit (seen past the springing, up the haunches): transverse ribs at the faces and
+    // the middle, four longitudinal ribs, 0.07 deep, so each coffer is a recessed panel.
+    const soffit: Piece[] = [];
+    for (const [z, w] of [[-0.55, 0.12], [0, 0.09], [0.55, 0.12]]) soffit.push({ geometry: prism(band(0.88, 0.96, 0, Math.PI, 18), w, 0.015, -w / 2), at: [0, spring, z] });
+    for (let k = 1; k < 5; k++) {
+      const a = (k * Math.PI) / 5,
+        [x, y] = polar(a, 0.915);
+      soffit.push({ geometry: slab(0.09, 0.08, 1.1, 0.015), at: [x, spring + y, 0], rotation: [0, 0, a - Math.PI / 2] });
+    }
+    cluster(shell, soffit, dress, 'stone');
+    // Bronze wreaths on cream roundels: in both spandrels of each face and on the side faces. Each
+    // wreath is a ring of fourteen soft leafy swells round a domed boss, pressed flat to read as relief.
+    const wreath = (() => {
+      const g = new T.TorusGeometry(0.14, 0.042, 8, 56),
+        p = g.getAttribute('position');
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i),
+          y = p.getY(i),
+          u = Math.atan2(y, x),
+          cx = Math.cos(u) * 0.14,
+          cy = Math.sin(u) * 0.14,
+          k = 1 + 0.1 * Math.sin(u * 14);
+        p.setXYZ(i, cx + (x - cx) * k, cy + (y - cy) * k, p.getZ(i) * k * 0.75);
+      }
+      g.computeVertexNormals();
+      return g;
+    })();
+    const roundels: Piece[] = [],
+      wreaths: Piece[] = [],
+      disc = new T.CylinderGeometry(0.2, 0.2, 0.05, 28),
+      boss = new T.IcosahedronGeometry(0.07, 2).scale(1, 1, 0.6);
+    for (const sz of faces)
+      for (const sx of [-1, 1]) {
+        roundels.push({ geometry: disc, at: [sx * 1.36, 3.56, sz * (F + 0.025)], rotation: [Math.PI / 2, 0, 0] });
+        wreaths.push({ geometry: wreath, at: [sx * 1.36, 3.56, sz * (F + 0.075)] }, { geometry: boss, at: [sx * 1.36, 3.56, sz * (F + 0.06)] });
+      }
     for (const sx of [-1, 1]) {
-      box(shell, sx * (r + 0.1), spring - 0.1, 0, 0.32, 0.2, D + 0.12, dress, 'stone'); // impost
-      for (const sz of [-1, 1]) box(shell, sx * 1.6, 1.5, (sz * D) / 2, 0.7, 1.5, 0.12, dress, 'stone'); // pier panel, half set in
+      roundels.push({ geometry: disc, at: [sx * (W + 0.025), 3.2, 0], rotation: [0, 0, Math.PI / 2] });
+      wreaths.push({ geometry: wreath, at: [sx * (W + 0.075), 3.2, 0], rotation: [0, Math.PI / 2, 0] }, { geometry: boss, at: [sx * (W + 0.06), 3.2, 0], rotation: [0, Math.PI / 2, 0] });
     }
-    box(shell, 0, top + 0.1, 0, 2 * W + 0.3, 0.2, D + 0.3, dress, 'stone');
-    box(shell, 0, top + 0.6, 0, 2 * W - 0.3, 0.8, D - 0.1, stone, 'ashlar', { segments: 2 });
-    for (const sz of [-1, 1]) box(shell, 0, top + 0.6, sz * ((D - 0.1) / 2 + 0.03), 2.4, 0.46, 0.06, palette.bronze, 'brass'); // blank bronze plaques
-    box(shell, 0, top + 1.1, 0, 2 * W - 0.1, 0.2, D + 0.1, dress, 'stone');
-    box(shell, 0, top + 1.4, 0, 1.6, 0.4, 0.9, stone, 'ashlar');
+    cluster(shell, roundels, dress, 'stone');
+    cluster(shell, wreaths, bronze, 'brass');
+    // The entablature: a two-fascia architrave over the capitals, a red sandstone frieze, a bed
+    // moulding, a dentil course on its band (0.12 blocks about every 0.3, as on the archive), the
+    // corona (1.0 out from the middle, 2.38 at the ends) and a cyma on top.
+    stoneAt(0, 3.98, 0, 4.56, 0.06, 1.7, 0.02).userData.band = true;
+    stoneAt(0, 4.04, 0, 4.6, 0.06, 1.74, 0.02).userData.band = true;
+    stoneAt(0, 4.17, 0, 4.52, 0.2, 1.68, 0.03, red);
+    stoneAt(0, 4.295, 0, 4.62, 0.05, 1.78, 0.015).userData.band = true;
+    stoneAt(0, 4.38, 0, 4.46, 0.12, 1.66, 0.02).userData.band = true;
+    const dentils: Piece[] = [],
+      dentil = slab(0.12, 0.12, 0.12, 0.02);
+    for (let i = 0; i < 16; i++) for (const sz of faces) dentils.push({ geometry: dentil, at: [-2.25 + i * 0.3, 4.38, sz * 0.885] });
+    for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) dentils.push({ geometry: dentil, at: [sx * 2.25, 4.38, -0.6 + i * 0.3] });
+    cluster(shell, dentils, dress, 'stone')!.userData.band = true;
+    stoneAt(0, 4.495, 0, 4.76, 0.11, 2.0, 0.03);
+    stoneAt(0, 4.58, 0, 4.68, 0.06, 1.92, 0.02).userData.band = true;
+    // The attic: a base moulding, the die (ashlar), red end blocks over the columns, and in a cream
+    // frame on each face a blank bronze tablet (no lettering); a cap moulding and the attic cornice.
+    stoneAt(0, 4.655, 0, 4.24, 0.09, 1.64, 0.025).userData.band = true;
+    box(shell, 0, 4.97, 0, 4.08, 0.54, 1.52, blonde, 'ashlar', { segments: 2 });
+    for (const sx of [-1, 1]) stoneAt(sx * colX, 4.97, 0, 0.48, 0.54, 1.6, 0.035);
+    const frames: Piece[] = [];
+    for (const sz of faces) {
+      for (const dy of [-0.185, 0.185]) frames.push({ geometry: slab(2.3, 0.07, 0.09, 0.02), at: [0, 4.97 + dy, sz * 0.765] });
+      for (const sx of [-1, 1]) frames.push({ geometry: slab(0.07, 0.44, 0.09, 0.02), at: [sx * 1.115, 4.97, sz * 0.765] });
+      const tablet = new T.Mesh(slab(2.16, 0.3, 0.07, 0.03), material(bronze, 'brass'));
+      tablet.position.set(0, 4.97, sz * 0.77);
+      tablet.castShadow = tablet.receiveShadow = true;
+      shell.add(tablet);
+    }
+    cluster(shell, frames, dress, 'stone');
+    stoneAt(0, 5.275, 0, 4.24, 0.07, 1.64, 0.02).userData.band = true;
+    stoneAt(0, 5.36, 0, 4.36, 0.1, 1.72, 0.03).userData.band = true; // 0.1 proud: no deep eave over the tablet
+    // The stepped crowning pedestal: a step, an ashlar die, a cap and a blocking course.
+    stoneAt(0, 5.455, 0, 2.0, 0.09, 1.12, 0.025);
+    box(shell, 0, 5.68, 0, 1.6, 0.36, 0.84, blonde, 'ashlar');
+    stoneAt(0, 5.905, 0, 1.74, 0.09, 0.98, 0.025);
+    stoneAt(0, 5.99, 0, 1.46, 0.08, 0.72, 0.02);
+    // Two cast-bronze lamp standards on the attic cornice over the columns: a square foot, a turned
+    // baluster (foot ring, waist, knop, neck, collar) and a cup holding the globe (the night lamp),
+    // crowned by a cap and a knob.
+    const STANDARD = new T.LatheGeometry(
+      (
+        [
+          [0, 5.51], [0.15, 5.51], [0.15, 5.55], [0.12, 5.57], [0.09, 5.61], [0.07, 5.67],
+          [0.1, 5.73], [0.11, 5.765], [0.1, 5.8], [0.062, 5.85], [0.056, 5.92], [0.082, 5.935],
+          [0.082, 5.96], [0.12, 5.98], [0.155, 6.02], [0.16, 6.04], [0.11, 6.04], [0, 6.02],
+        ] as [number, number][]
+      ).map(([x, y]) => new T.Vector2(x, y)),
+      16,
+    );
+    const CAP = new T.LatheGeometry(
+      ([[0, 6.34], [0.095, 6.34], [0.095, 6.36], [0.065, 6.39], [0.035, 6.405], [0.046, 6.425], [0.028, 6.445], [0, 6.452]] as [number, number][]).map(([x, y]) => new T.Vector2(x, y)),
+      16,
+    );
+    // Two bronze urns flanking the crowning pedestal: a foot, a round bowl, a lid and a knob.
+    const URN = new T.LatheGeometry(
+      (
+        [
+          [0, 5.47], [0.11, 5.47], [0.11, 5.5], [0.08, 5.52], [0.052, 5.56], [0.062, 5.59], [0.11, 5.63],
+          [0.14, 5.69], [0.145, 5.74], [0.13, 5.8], [0.1, 5.83], [0.112, 5.85], [0.112, 5.87], [0.08, 5.88],
+          [0.075, 5.92], [0.04, 5.95], [0.05, 5.98], [0.035, 6.01], [0, 6.02],
+        ] as [number, number][]
+      ).map(([x, y]) => new T.Vector2(x, y)),
+      16,
+    );
+    const standards: Piece[] = [];
     for (const sx of [-1, 1]) {
-      cylinder(shell, sx * 1.75, top + 1.45, 0, 0.1, 0.13, 0.5, palette.bronze, 'brass');
-      const glow = lampGlass();
-      const bowl = new T.Mesh(new T.SphereGeometry(0.24, 14, 10), glow);
-      bowl.position.set(sx * 1.75, top + 1.92, 0);
-      shell.add(bowl);
-      lamps.push(bowl);
+      const x = sx * colX;
+      standards.push(
+        { geometry: slab(0.36, 0.1, 0.36, 0.02), at: [x, 5.46, 0] },
+        { geometry: STANDARD, at: [x, 0, 0] },
+        { geometry: CAP, at: [x, 0, 0] },
+        { geometry: slab(0.28, 0.06, 0.28, 0.015), at: [sx * 1.3, 5.44, 0] },
+        { geometry: URN, at: [sx * 1.3, 0, 0] },
+      );
+      const globe = new T.Mesh(new T.SphereGeometry(0.19, 16, 12), lampGlass());
+      globe.position.set(x, 6.18, 0);
+      shell.add(globe);
+      lamps.push(globe);
     }
+    cluster(shell, standards, bronze, 'brass');
     shell.userData.landmark = "LIU'S GATE";
     shell.userData.openingWidth = r * 2;
   }
