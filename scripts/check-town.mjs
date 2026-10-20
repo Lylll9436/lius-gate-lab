@@ -874,7 +874,9 @@ for (const [id, m] of models) {
         }
       }
     }
-    assert(tris < 6000, `${id}: ${Math.round(tris)} triangles`);
+    // 11k since the homes' Glasgow dressings (doorpiece, steps and railings, dressed sashes, courses and
+    // dentils, skews, stack and cans, rooflight, gutters and downpipes); it was 6k.
+    assert(tris < 11000, `${id}: ${Math.round(tris)} triangles`);
     if (!bodies) continue;
     assert(walls >= 4 && capped >= 9, `${id}: found ${walls} main-wall and ${capped} capped bay vertices`);
     // Once per-pane night lights land (model.windows): each bay storey is one light, and the ground storey is forced
@@ -2969,6 +2971,83 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   assert(tris <= 13000 && meshes <= 14, `The studio has ${tris} triangles in ${meshes} meshes.`);
   const roof = model.windows.filter((p) => p.place === 'research-studio' && p.at.clone().applyMatrix4(toShell).y > 4.9);
   assert(roof.length === 1 && Math.round(roof[0].light[0] * 255) === 204, 'The studio’s rooflight is not lit late.');
+}
+// The homes' Glasgow dressings (town-homes: mainDoor, dressedWindow, skews, stack, rooflight, gutters and
+// downpipes). In each home's frame (front +z, the row along x): nothing reaches into the gaps beside it (every
+// vertex of the shell, the washing aside, stays within the roof's reach, |x| < w/2 + 0.55); its cast iron is one
+// mesh that casts nothing, with gutters high on two opposite sides and a railing on each side of the steps, none
+// of it past z d/2 + 0.85 (the steps' foot) at the front; the doorpiece's hood keeps within the old surround's
+// reach (0.64 either side of the door), so the bay's cheek keeps its clearance; and the fanlight and the rooflight
+// share the bay's and the attic's lights, so each home has as many lights as it had windows (5, 6 and 5).
+{
+  const LIGHTS = { 'pengyuan-liu': 5, 'yunlong-liu': 6, 'qin-li': 5 },
+    v = new T.Vector3();
+  for (const id of plan.chapterSubjects.people) {
+    const { shell } = models.get(id),
+      { w, d } = plan.sites[id],
+      gable = id === 'qin-li', // its eaves on the sides, the others' at the front and back
+      solid = shell.children.filter((o) => o.isMesh),
+      iron = solid.filter((o) => o.material.userData.surfaceKind === 'iron');
+    assert(iron.length === 1 && !iron[0].castShadow, `${id}: its cast iron is ${iron.length} meshes${iron.some((o) => o.castShadow) ? ', casting' : ''}.`);
+    let eaves = [0, 0],
+      rails = [0, 0],
+      hood = 0;
+    for (const o of solid) {
+      const p = o.geometry.attributes.position,
+        kind = o.material.userData.surfaceKind;
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        assert(Math.abs(v.x) < w / 2 + 0.55, `${id} reaches into the gap beside it at ${v.toArray().map((n) => n.toFixed(2))}`);
+        if (kind === 'iron') {
+          assert(v.z < d / 2 + 0.85, `${id}'s iron stands in the front garden at ${v.toArray().map((n) => n.toFixed(2))}`);
+          const out = gable ? v.x : v.z;
+          if (v.y > 2.9 && Math.abs(out) > (gable ? w / 2 + 0.3 : d / 2 + 0.5)) eaves[out > 0 ? 1 : 0]++;
+          if (v.y < 1.05 && v.z > d / 2 + 0.25) rails[v.x > 0.52 ? 1 : 0]++;
+        }
+        if (kind === 'stone' && v.y > 2.4 && v.y < 2.56 && v.z > d / 2 + 0.2 && Math.abs(v.x - 0.52) < 0.8) {
+          hood++;
+          assert(Math.abs(v.x - 0.52) <= 0.64, `${id}'s doorpiece reaches toward the bay at x ${v.x.toFixed(3)}`);
+        }
+      }
+    }
+    assert(eaves.every((n) => n > 20), `${id} has no gutters along both eaves (${eaves}).`);
+    assert(rails.every((n) => n > 50), `${id}'s steps lack a railing on each side (${rails}).`);
+    assert(hood > 8, `${id} has no doorpiece hood.`);
+    assert.equal(panes.filter((p) => p.place === id).length, LIGHTS[id], `${id}'s windows are not one light each.`);
+  }
+}
+// The cottages' dressings: each cottage's window is one light, and the porch (PORCH), the lean-to store (LEAN_TO)
+// and every pair of gate piers stand on the cottage's own ground: on the island, off the pavement, clear of the
+// trees (as the washing is), the lamps and the dog walk.
+{
+  const { PORCH, LEAN_TO } = await load('town-homes'),
+    lampSpots = plan.lampPlan(),
+    trees = plan.plantingPlan();
+  plan.cottages.forEach((c, i) => {
+    const toWorld = (x, z) => [c.x + x * Math.cos(c.rotation) + z * Math.sin(c.rotation), c.z - x * Math.sin(c.rotation) + z * Math.cos(c.rotation)];
+    assert.equal(panes.filter((p) => p.place === 'land' && Math.hypot(p.at.x - c.x, p.at.z - c.z) < 2).length, 1, `Cottage ${i}'s window is not one light.`);
+    // Footprints in the cottage's frame (x along its front, z out of it): [x0, z0, x1, z1].
+    const parts = [];
+    if (i === PORCH) parts.push(['porch', [-0.17, 1.2, 1.37, 2.27]]);
+    if (i === LEAN_TO) parts.push(['lean-to', [1.32, -0.9, 2.65, 0.9]]);
+    const fx = c.x + Math.sin(c.rotation) * 1.2,
+      fz = c.z + Math.cos(c.rotation) * 1.2,
+      room = plan.distanceToStreets(fx, fz) - plan.PAVEMENT_WIDTH - 0.05;
+    if (room > 1.25) {
+      const hz = 1.2 + (i === PORCH ? Math.min(1.45, room - 0.35) : Math.min(1.0, room - 0.35));
+      parts.push(['gate piers', [-0.05, hz - 0.15, 1.25, hz + 0.15]]);
+    }
+    for (const [name, [x0, z0, x1, z1]] of parts)
+      for (let a = 0; a <= 4; a++)
+        for (let b = 0; b <= 4; b++) {
+          const [x, z] = toWorld(x0 + ((x1 - x0) * a) / 4, z0 + ((z1 - z0) * b) / 4);
+          assert(plan.onIsland(x, z, 1), `Cottage ${i}'s ${name} by the shore at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+          assert(plan.distanceToStreets(x, z) > plan.PAVEMENT_WIDTH + 0.05, `Cottage ${i}'s ${name} on the pavement at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+          assert(plan.distanceToPolyline([x, z], plan.dogLoop, true) > 1.5, `Cottage ${i}'s ${name} on the dog walk.`);
+          for (const t of trees) assert(Math.hypot(t.x - x, t.z - z) > 1.3 * t.size + 0.2, `Cottage ${i}'s ${name} runs into ${t.id}.`);
+          for (const l of lampSpots) assert(Math.hypot(l.x - x, l.z - z) > 0.8, `Cottage ${i}'s ${name} crowds ${l.id}.`);
+        }
+  });
 }
 console.log(
   `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
