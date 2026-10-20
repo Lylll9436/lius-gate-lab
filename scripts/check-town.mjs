@@ -1590,6 +1590,39 @@ for (let i = 0; i < 720; i++) {
   assert(Math.hypot(balloon.object.position.x, balloon.object.position.z) > 30, 'The drift turns the balloon over the town.');
   balloon.update(0, 0);
 }
+// The balloon's detailing (hotAirBalloon: gores, load tapes, crown ring, skirt, burner frame,
+// basket) keeps the size the opening-view checks above were made for: within 1.6 of its axis and
+// between the basket's foot (-0.05) and the crown (5.06); the burner and its frame hang between
+// the basket's rim and the envelope's mouth, inside the skirt's reach; all of it is no-shadow
+// cloth and cane in at most 2 batched meshes and 7k triangles.
+{
+  const b = balloon.object,
+    keep = [b.position.clone(), b.rotation.clone()],
+    p = new T.Vector3();
+  b.position.set(0, 0, 0);
+  b.rotation.set(0, 0, 0);
+  b.updateMatrixWorld(true);
+  let tris = 0,
+    count = 0;
+  for (const o of b.children) {
+    if (!o.isMesh) continue;
+    count++;
+    assert(!o.castShadow, 'Part of the balloon casts a shadow.');
+    const pos = o.geometry.getAttribute('position');
+    tris += (o.geometry.index?.count ?? pos.count) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      assert(Math.hypot(p.x, p.z) <= 1.6 + 1e-4 && p.y >= -0.05 - 1e-4 && p.y <= 5.06 + 1e-4, `The balloon grows past its old size at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      // Between the basket's rim (0.52) and the mouth (1.01) only the burner, its frame and rods,
+      // the flying wires and the skirt: nothing out past the skirt's hem (0.42).
+      if (p.y > 0.52 && p.y < 0.95) assert(Math.hypot(p.x, p.z) <= 0.43, `Something hangs out between the basket and the mouth at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}.`);
+    }
+  }
+  assert(count <= 2 && tris <= 7000, `The balloon costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  b.position.copy(keep[0]);
+  b.rotation.copy(keep[1]);
+  b.updateMatrixWorld(true);
+}
 // The dinghy's mooring lines are static, so the ends buried at its fairleads must stay inside
 // its hull (y -0.06 to 0.175, 0.31-0.38 half-wide) as it bobs and pitches.
 {
