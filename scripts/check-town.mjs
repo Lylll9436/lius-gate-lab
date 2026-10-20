@@ -1806,6 +1806,43 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   tram.rotation.copy(keep[1]);
   tram.updateMatrixWorld(true);
 }
+// The harbour boat (buildBoat, BOAT's lines): nothing below its keel or past its stem and transom
+// (by more than the cap rail and the rubbing strake's thickness); everything standing on its deck
+// (the wheelhouse, casing and funnel, hatch, winch, mast and rigging, boxes and the cap rail) within
+// the hull's outer line at the sheer, so nothing pokes out through the bulwarks; its one lamp the
+// mast lantern, over everything; and at most 9k triangles in 6 batched meshes.
+{
+  const { createMovers, BOAT, boatBreadth } = await load('town-movers'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    boat = createMovers(ctx, createKit(ctx)).buildBoat(),
+    p = new T.Vector3();
+  boat.updateMatrixWorld(true);
+  assert.equal(ctx.lamps.length, 1, 'The boat has one lamp.');
+  const lantern = ctx.lamps[0].getWorldPosition(new T.Vector3());
+  boat.traverse((o) => {
+    if (!o.isMesh || ctx.lamps.includes(o)) return;
+    const pos = o.geometry.getAttribute('position'),
+      points = [];
+    for (let i = 0; i < pos.count; i++) points.push(p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).clone());
+    const onDeck = Math.min(...points.map((q) => q.y)) >= BOAT.deck - 0.01;
+    for (const q of points) {
+      assert(q.y >= BOAT.keel - 1e-4 && q.z >= BOAT.stern - 0.05 && q.z <= BOAT.bow + 0.05, `The boat reaches out of its hull's ends at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}, ${q.z.toFixed(2)}.`);
+      assert(q.y < lantern.y, 'Something on the boat stands over its mast lantern.');
+      if (onDeck) assert(Math.abs(q.x) <= boatBreadth(q.z) * 1.05 + 0.05, `Something on the boat's deck pokes out through its bulwarks at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}, ${q.z.toFixed(2)}.`);
+    }
+  });
+  let tris = 0,
+    count = 0;
+  model.boat.traverse((o) => {
+    if (!o.isMesh) return;
+    count++;
+    tris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
+  });
+  assert(tris <= 9000 && count <= 6, `The boat costs ${Math.round(tris)} triangles in ${count} meshes.`);
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>
