@@ -53,11 +53,30 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
         ...Array.from({ length: n + 1 }, (_, k) => polar(a0 + ((a1 - a0) * k) / n, R1)),
         ...Array.from({ length: n + 1 }, (_, k) => polar(a1 - ((a1 - a0) * k) / n, R0)),
       ],
-      /** A w x h x d block about its middle, its edges chamfered by c. */
+      /** A w x h x d block about its middle, the edges round its +-z faces chamfered by c (a face's trim). */
       slab = (w: number, h: number, d: number, c: number) => prism([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]], d, c, -d / 2);
+    /**
+     * A w x h x d block about its middle, its plan extruded upward so that every horizontal edge is
+     * chamfered by c and its upright corners are cut by c: a course or a moulding that reads from
+     * every side (a slab's chamfers run only round its front and back, so its sides kept sharp,
+     * invisible joints).
+     */
+    const ledge = (w: number, h: number, d: number, c: number) => {
+      const key = [w, h, d, c].map((n) => n.toFixed(4)).join('|');
+      let g = ledges.get(key);
+      if (!g) {
+        const x = w / 2,
+          z = d / 2;
+        g = prism([[-x + c, -z], [x - c, -z], [x, -z + c], [x, z - c], [x - c, z], [-x + c, z], [-x, z - c], [-x, -z + c]], h, c, -h / 2)
+          .clone()
+          .rotateX(-Math.PI / 2);
+        ledges.set(key, g);
+      }
+      return g;
+    };
     /** One dressed stone (each its own shade in the bake). */
     const stoneAt = (x: number, y: number, z: number, w: number, h: number, d: number, c: number, colour = dress, kind: SurfaceKind = 'stone') => {
-      const m = new T.Mesh(slab(w, h, d, c), material(colour, kind));
+      const m = new T.Mesh(ledge(w, h, d, c), material(colour, kind));
       m.position.set(x, y, z);
       m.castShadow = m.receiveShadow = true;
       shell.add(m);
@@ -90,14 +109,14 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     mass.position.z = -F + b;
     mass.castShadow = mass.receiveShadow = true;
     shell.add(mass);
-    // The piers: a moulded base course, five courses of banded rustication (each chamfered 0.045,
+    // The piers: a moulded base course, five courses of banded rustication (each chamfered 0.055,
     // so a V channel parts them; 0.35 tall, like the ashlar's courses, so nothing shimmers) wrapping
     // the faces, the outer sides and the reveals, and a two-step impost belt at the springing.
     for (const sx of [-1, 1]) {
       stoneAt(sx * pierX, 0.51, 0, pierW + 0.04, 0.12, D + 0.12, 0.03);
       const c0 = 0.57,
         ch = (2.31 - c0) / 5;
-      for (let i = 0; i < 5; i++) stoneAt(sx * pierX, c0 + ch * (i + 0.5), 0, pierW, ch, D + 0.08, 0.045, blonde);
+      for (let i = 0; i < 5; i++) stoneAt(sx * pierX, c0 + ch * (i + 0.5), 0, pierW, ch, D + 0.08, 0.055, blonde);
       stoneAt(sx * pierX, 2.345, 0, pierW + 0.06, 0.07, D + 0.14, 0.02).userData.band = true;
       stoneAt(sx * pierX, 2.415, 0, pierW + 0.12, 0.07, D + 0.2, 0.025).userData.band = true;
     }
@@ -221,12 +240,19 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     stoneAt(0, 4.655, 0, 4.24, 0.09, 1.64, 0.025).userData.band = true;
     box(shell, 0, 4.97, 0, 4.08, 0.54, 1.52, blonde, 'ashlar', { segments: 2 });
     for (const sx of [-1, 1]) stoneAt(sx * colX, 4.97, 0, 0.48, 0.54, 1.6, 0.035);
+    // The tablet is a shallow cushion (its face bowed 0.035 forward), so its upper half takes the sky
+    // and its lower half the paving: a flat bronze face read as a dark slot in the frame.
+    const cushion = new T.BoxGeometry(2.16, 0.3, 0.06, 1, 8, 1),
+      cp = cushion.getAttribute('position');
+    for (let i = 0; i < cp.count; i++) if (cp.getZ(i) > 0) cp.setZ(i, cp.getZ(i) + 0.035 * (1 - (cp.getY(i) / 0.15) ** 2));
+    cushion.computeVertexNormals();
     const frames: Piece[] = [];
     for (const sz of faces) {
       for (const dy of [-0.185, 0.185]) frames.push({ geometry: slab(2.3, 0.07, 0.09, 0.02), at: [0, 4.97 + dy, sz * 0.765] });
       for (const sx of [-1, 1]) frames.push({ geometry: slab(0.07, 0.44, 0.09, 0.02), at: [sx * 1.115, 4.97, sz * 0.765] });
-      const tablet = new T.Mesh(slab(2.16, 0.3, 0.07, 0.03), material(bronze, 'brass'));
-      tablet.position.set(0, 4.97, sz * 0.77);
+      const tablet = new T.Mesh(cushion, material(bronze, 'brass'));
+      tablet.position.set(0, 4.97, sz * 0.79);
+      tablet.rotation.y = sz > 0 ? 0 : Math.PI;
       tablet.castShadow = tablet.receiveShadow = true;
       shell.add(tablet);
     }
@@ -244,15 +270,15 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     const STANDARD = new T.LatheGeometry(
       (
         [
-          [0, 5.51], [0.15, 5.51], [0.15, 5.55], [0.12, 5.57], [0.09, 5.61], [0.07, 5.67],
-          [0.1, 5.73], [0.11, 5.765], [0.1, 5.8], [0.062, 5.85], [0.056, 5.92], [0.082, 5.935],
-          [0.082, 5.96], [0.12, 5.98], [0.155, 6.02], [0.16, 6.04], [0.11, 6.04], [0, 6.02],
+          [0, 5.49], [0.15, 5.49], [0.15, 5.53], [0.12, 5.55], [0.09, 5.59], [0.07, 5.65],
+          [0.1, 5.71], [0.11, 5.745], [0.1, 5.78], [0.062, 5.83], [0.056, 5.9], [0.082, 5.915],
+          [0.082, 5.94], [0.125, 5.96], [0.165, 6.0], [0.17, 6.02], [0.12, 6.02], [0, 6.0],
         ] as [number, number][]
       ).map(([x, y]) => new T.Vector2(x, y)),
       16,
     );
     const CAP = new T.LatheGeometry(
-      ([[0, 6.34], [0.095, 6.34], [0.095, 6.36], [0.065, 6.39], [0.035, 6.405], [0.046, 6.425], [0.028, 6.445], [0, 6.452]] as [number, number][]).map(([x, y]) => new T.Vector2(x, y)),
+      ([[0, 6.35], [0.1, 6.35], [0.1, 6.37], [0.068, 6.4], [0.035, 6.415], [0.046, 6.435], [0.028, 6.455], [0, 6.462]] as [number, number][]).map(([x, y]) => new T.Vector2(x, y)),
       16,
     );
     // Two bronze urns flanking the crowning pedestal: a foot, a round bowl, a lid and a knob.
@@ -270,13 +296,13 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
     for (const sx of [-1, 1]) {
       const x = sx * colX;
       standards.push(
-        { geometry: slab(0.36, 0.1, 0.36, 0.02), at: [x, 5.46, 0] },
+        { geometry: ledge(0.36, 0.08, 0.36, 0.02), at: [x, 5.45, 0] },
         { geometry: STANDARD, at: [x, 0, 0] },
         { geometry: CAP, at: [x, 0, 0] },
-        { geometry: slab(0.28, 0.06, 0.28, 0.015), at: [sx * 1.3, 5.44, 0] },
+        { geometry: ledge(0.28, 0.06, 0.28, 0.015), at: [sx * 1.3, 5.44, 0] },
         { geometry: URN, at: [sx * 1.3, 0, 0] },
       );
-      const globe = new T.Mesh(new T.SphereGeometry(0.19, 16, 12), lampGlass());
+      const globe = new T.Mesh(new T.SphereGeometry(0.2, 16, 12), lampGlass());
       globe.position.set(x, 6.18, 0);
       shell.add(globe);
       lamps.push(globe);
@@ -539,7 +565,8 @@ export function createBuildings(ctx: TownContext, kit: Kit, nature: Nature, prop
    * bars, dentils, pipe ears) into one mesh, so they batch with their family rather than adding a
    * batch of their own.
    */
-  const prisms = new Map<string, T.BufferGeometry>();
+  const prisms = new Map<string, T.BufferGeometry>(),
+    ledges = new Map<string, T.BufferGeometry>();
   /** An extruded outline (x, y points) from z0 to z0 + depth, its edges chamfered by c (shared per shape). */
   function prism(points: [number, number][], depth: number, c = 0.02, z0 = 0) {
     const key = [...points.flat(), depth, c, z0].map((n) => n.toFixed(4)).join('|');
