@@ -970,11 +970,12 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
         x1 = x0 + 0.8,
         za = -1.2,
         zb = 1.2,
-        top = 2.0;
+        top = 2.14;
       solid(x0 - 0.05, x1 + 0.1, 0, floor - 0.04, za - 0.1, zb + 0.1, palette.plinth, 'ashlar');
       solid(x0 - 0.05, x1, floor - 0.06, top, za, zb, L.render, 'paint', { bevel: 0.03 });
-      // The plinth course round it, a cornice band under a blonde coping (its roof, whose eave
-      // shades the walls), and a window to the south and to the north in a blonde surround.
+      // The hall's banded base runs on round it: the plinth course, the two courses of rustication
+      // and the sill band; a cornice band under a blonde coping (its roof, whose eave shades the
+      // walls), and to the south and the north a window on the sill band in a blonde surround.
       stone.push(
         block(x0, x1 + 0.12, COURSE[0], COURSE[1], zb - 0.1, zb + 0.12),
         block(x0, x1 + 0.12, COURSE[0], COURSE[1], za - 0.12, za + 0.1),
@@ -985,17 +986,18 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       cap.userData.eaveY = top;
       for (const [z, ry] of [[zb, 0], [za, Math.PI]] as const) {
         const g = faceAt((x0 + x1) / 2, z, ry),
-          y = 1.46,
           w = 0.34,
           h = 0.5,
+          y = SILL[1] + 0.07 + h / 2,
           ring = frameRing(g, 0, y, 0.02, w, h, 0.07, 0.09, L.green, 'paint'),
           pane = new T.Mesh(new T.ShapeGeometry(ring(0.01), 4), material(palette.glass, 'glass'));
         pane.position.set(0, y, 0.06);
         g.add(pane);
+        banded(g, -0.38, 0.38);
         bars.push({ geometry: new T.BoxGeometry(w, 0.07, 0.04), matrix: on(g, placed(0, y + 0.06, 0.09)) });
         stone.push(
-          block(-w / 2 - 0.16, w / 2 + 0.16, y + h / 2 + 0.06, y + h / 2 + 0.16, -0.03, 0.12, g),
-          block(-w / 2 - 0.14, w / 2 + 0.14, y - h / 2 - 0.13, y - h / 2 - 0.06, -0.03, 0.15, g),
+          block(-w / 2 - 0.16, w / 2 + 0.16, y + h / 2 + 0.07, y + h / 2 + 0.16, -0.03, 0.12, g),
+          block(-w / 2 - 0.14, w / 2 + 0.14, SILL[1] - 0.05, SILL[1] + 0.05, -0.03, 0.15, g),
         );
       }
     }
