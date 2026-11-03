@@ -1493,6 +1493,23 @@ for (const [x, z] of [
   const lawn = named('airport-deck')[0].geometry.attributes.position;
   for (let i = 0; i < lawn.count; i++) assert(Math.abs(lawn.getY(i) - plan.AIRPORT.deck) < 1e-6 && plan.airportDistance(lawn.getX(i), lawn.getZ(i)) <= -0.3 + 1e-4, 'The deck\'s grass leaves the deck.');
   assert.equal(ctx.lamps.length, 4, 'The airport\'s ground has not four lamps.');
+  // The causeway lamps' heads (above the post's boss) cast no shadow, but for the brass finial: four
+  // in a row threw chevrons along the road that read as painted arrows. Their posts still cast.
+  for (const lantern of ctx.lamps) {
+    let heads = 0,
+      posts = 0;
+    for (const part of lantern.parent.children) {
+      if (!part.isMesh || part === lantern) continue;
+      if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+      if (part.geometry.boundingBox.min.y > 1.0) {
+        if (part.material.userData.surfaceKind !== 'brass') {
+          heads++;
+          assert(!part.castShadow && part.userData.noShadow, 'A causeway lamp\'s head casts a shadow.');
+        }
+      } else if (part.castShadow) posts++;
+    }
+    assert(heads >= 3 && posts >= 3, `A causeway lamp has ${heads} head parts and ${posts} casting post parts.`);
+  }
   // The hall lane's dressing, flat on the ground and facing up: its kerb radii at the mouth (the
   // road's asphalt, across held at the carriageway's edge) and its flush edging of the town's
   // paving, from the ring's footway to the causeway's. It keeps a trunk's breadth from every tree

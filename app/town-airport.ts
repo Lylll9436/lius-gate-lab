@@ -476,10 +476,20 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     cluster(g, stone, L.coping, 'stone', { band: false });
     cluster(g, caps, L.dressing, 'stone', { band: false });
     // The causeway's lamps: the town's cast-iron standard, a little shorter, on the east piers.
-    // The key light turns with the camera, so shadows always fall to the right of the frame: from
-    // the east parapet, seen from the opening view and the airport's chapter, the lanterns' shadows
-    // fall on the flank and the sea, not across the road as a row of painted arrows.
-    for (const z of lampsAt) lamp(g, R.x + mid, z, 1.6, plan.airportRoadTop(z) + 0.5);
+    // Their heads (the ladder bar, the lantern's tray, roof and cap) cast no shadow: four in a row
+    // threw a row of chevrons along the road that read as painted arrows pointing at the airport.
+    // The key light turns with the camera and throws shadows to the right of the frame, so from the
+    // east parapet even the posts' thin shadows fall on the flank and the sea in the opening view
+    // and the airport's chapter.
+    for (const z of lampsAt)
+      lamp(g, R.x + mid, z, 1.6, plan.airportRoadTop(z) + 0.5).traverse((o) => {
+        if (!(o instanceof T.Mesh) || !o.castShadow || (o.material as T.Material).userData.surfaceKind === 'brass') return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        if (o.geometry.boundingBox!.min.y > 1.0) {
+          o.castShadow = false;
+          o.userData.noShadow = true;
+        }
+      });
     // Stones on both flanks in two overlapping courses like the island's, smaller where the ramp is
     // low, up to the island's own armour.
     const flank: Station[] = [];
