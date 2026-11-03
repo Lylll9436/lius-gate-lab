@@ -21,7 +21,7 @@ export const RESIDENCE_LOOK = {
   timber: '#b0855b',
   brass: '#cbb790',
   balustrade: '#a9cbd3',
-  lobby: '#c4ab7c',
+  lobby: '#d4ba8a',
   paving: '#d8cdb6',
   gravel: '#b4ad9e',
 };
@@ -33,7 +33,7 @@ export const RESIDENCE_LEVELS = { base: 0.3, first: 2.02, terrace: 3.5, top: 4.9
 /* ------------------------------------------------------------------ */
 export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, props: Props) {
   const { material } = ctx;
-  const { box, chamfered, cluster, frameRing } = kit;
+  const { box, chamfered, cluster, frameRing, prism } = kit;
   const { topiary } = nature;
   const { cycleHoop } = props;
   const L = RESIDENCE_LOOK;
@@ -46,6 +46,15 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
   const piece = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number): Piece => ({
     geometry: chamfered(x1 - x0, y1 - y0, z1 - z0),
     at: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2],
+  });
+  /**
+   * A cladding panel 0.05 thick (from 0.01 inside the face to 0.04 out), its edges chamfered 0.02
+   * so that two panels part in a V joint about 0.07 across (a plain chamfered block of that
+   * thickness bevels only 0.0125, a hairline that crawls when the camera pans).
+   */
+  const panel = (x0: number, x1: number, y0: number, y1: number): Piece => ({
+    geometry: prism([[-(x1 - x0) / 2, -(y1 - y0) / 2], [(x1 - x0) / 2, -(y1 - y0) / 2], [(x1 - x0) / 2, (y1 - y0) / 2], [-(x1 - x0) / 2, (y1 - y0) / 2]], 0.05, 0.02, -0.025),
+    at: [(x0 + x1) / 2, (y0 + y1) / 2, 0.015],
   });
   /** The parts of a..b left between the cuts. */
   function spans(a: number, b: number, cuts: [number, number][]) {
@@ -76,7 +85,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
         for (const [p, q] of spans(x0, x1, holes.filter((h) => mid > h[2] && mid < h[3]).map((h): [number, number] => [h[0], h[1]]))) {
           const m = Math.max(1, Math.round((q - p) / 1.1)),
             pw = (q - p) / m;
-          for (let k = 0; k < m; k++) list.push(piece(p + pw * k + J, p + pw * (k + 1) - J, a + J, b - J, -0.01, 0.04));
+          for (let k = 0; k < m; k++) list.push(panel(p + pw * k + J, p + pw * (k + 1) - J, a + J, b - J));
         }
       }
     }
@@ -93,7 +102,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
     return m;
   }
   /** A slim dark-bronze frame (0.06 face, `deep` out of the face at z) round an opening w x h about (x, y); it casts nothing. */
-  function bronzeFrame(g: T.Object3D, x: number, y: number, z: number, w: number, h: number, deep = 0.07, face = 0.06) {
+  function bronzeFrame(g: T.Object3D, x: number, y: number, z: number, w: number, h: number, deep = 0.07, face = 0.07) {
     frameRing(g, x, y, z, w, h, face, deep, L.bronze, 'iron');
     const m = g.children[g.children.length - 1] as T.Mesh;
     m.castShadow = false;
@@ -192,7 +201,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
         pz = -1.2;
       stone.push(piece(px - 0.45, px + 0.45, y, y + 0.42, pz - 0.36, pz + 0.36));
       dress.push(piece(px - 0.49, px + 0.49, y + 0.42, y + 0.48, pz - 0.4, pz + 0.4));
-      for (let k = 0; k < 3; k++) bronze.push(piece(px + 0.45, px + 0.5, y + 0.1 + k * 0.1, y + 0.17 + k * 0.1, pz - 0.26, pz + 0.26));
+      for (let k = 0; k < 3; k++) bronze.push(piece(px + 0.44, px + 0.51, y + 0.1 + k * 0.1, y + 0.17 + k * 0.1, pz - 0.26, pz + 0.26));
     }
 
     /* -------------------------------------------------------------- */
@@ -271,7 +280,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
         b1 = x1 + 0.08,
         out = hd + 0.62;
       block(shell, b0, b1, 1.86, F1, hd, out, L.dressing, 'stone', { bevel: 0.03 });
-      const G = 0.035,
+      const G = 0.07,
         top = F1 + 0.52;
       const glass = (x: number, z: number, w: number, d: number) => {
         const m = block(shell, x - w / 2, x + w / 2, F1 + 0.06, top, z - d / 2, z + d / 2, L.balustrade, 'glass', { bevel: 0 });
@@ -326,7 +335,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
         gx1 = hw - 0.2,
         gz = hd - 0.1,
         top = TR + 0.6;
-      const glass = block(shell, gx0, gx1, p0 + 0.04, top, gz - 0.0175, gz + 0.0175, L.balustrade, 'glass', { bevel: 0 });
+      const glass = block(shell, gx0, gx1, p0 + 0.04, top, gz - 0.035, gz + 0.035, L.balustrade, 'glass', { bevel: 0 });
       glass.userData.window = 'clear';
       glass.userData.noShadow = true;
       bronze.push(piece(gx0, gx1, TR + 0.1, TR + 0.18, gz - 0.04, gz + 0.04));
@@ -388,7 +397,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
           piece(x0, x1, y1, y1 + 0.12, -0.01, 0.14),
         );
         dressings.push([face, piece(x0 - 0.16, x1 + 0.16, y0 - 0.14, y0 - 0.02, -0.01, 0.2)]);
-        bronzeFrame(face, x, (y0 + y1) / 2, 0, w, y1 - y0, 0.06, 0.06);
+        bronzeFrame(face, x, (y0 + y1) / 2, 0, w, y1 - y0, 0.07, 0.07);
         pane(face, x, (y0 + y1) / 2, 0.02, w, y1 - y0, group);
         return [x0 - 0.12, x1 + 0.12, y0 - 0.14, y1 + 0.12] as [number, number, number, number];
       };
@@ -448,7 +457,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       // pavement at the south end, where the ring road comes closest); the path to the entrance
       // runs on through the wall's gap to the pavement.
       const wz = hd + 1.6,
-        fx0 = -hw - 0.1,
+        fx0 = -hw - 0.06, // in line with the base course: nothing of it in the gap toward the row
         fx1 = hw + 0.75,
         gap0 = EX0 + 0.04,
         gap1 = EX1 - 0.04;
@@ -463,8 +472,8 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       }));
       if (reach > 0.1) block(shell, gap0, gap1, 0, 0.06, wz - 0.1, wz + reach, L.paving, 'paving');
       for (const [x0, x1] of [[fx0, gap0 - 0.04], [gap1 + 0.04, fx1]]) {
-        stone.push(piece(x0, x1, 0, 0.4, wz - 0.08, wz + 0.08));
-        dress.push(piece(x0 - 0.02, x1 + 0.02, 0.4, 0.47, wz - 0.12, wz + 0.12));
+        stone.push(piece(x0 + 0.02, x1 - 0.02, 0, 0.4, wz - 0.08, wz + 0.08));
+        dress.push(piece(x0, x1, 0.4, 0.47, wz - 0.12, wz + 0.12));
       }
       // A low planter before the ground flat's window, its shrubs clipped below the sill.
       const pl0 = -hw + 0.3,
