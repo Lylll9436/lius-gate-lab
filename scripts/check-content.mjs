@@ -61,8 +61,18 @@ const tagsOf = (cat, day, locale) => {
 // Fixture news is dated a month before the run, so it stays inside Gate's News window
 // (the last 12 months) whatever day the checks run.
 const recent = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+/**
+ * A real record as the base of a test person, who stays unless the test gives them a departure:
+ * when the real person's departure is entered (ahead of the day, as maintainers may), their copy
+ * must not leave with them.
+ */
+const stayer = (p) => {
+  const copy = structuredClone(p);
+  delete copy.departure;
+  return copy;
+};
 const person = {
-  ...structuredClone(catalog.people[1]),
+  ...stayer(catalog.people[1]),
   id: 'test-member',
   title: text('Test member'),
   buildingId: null,
@@ -230,21 +240,40 @@ for (const [bad, error] of [
     error,
     'A malformed departure must fail: ' + JSON.stringify(bad),
   );
+/**
+ * A test catalogue in which a test member holds `home`, whoever lives there in `cat`. The home
+ * rules are tried on test people: a real person's departure, entered ahead, frees their home, and
+ * must not change what these checks expect.
+ */
+const holding = (cat, home) => ({
+  ...cat,
+  people: [
+    ...cat.people.map((p) => (p.buildingId === home ? { ...p, buildingId: null } : p)),
+    { ...person, id: 'test-occupant', buildingId: home },
+  ],
+});
 // Someone who has left keeps their home as history, and it is free for whoever moves in next,
 // even while their departure still lies ahead. Two people who are staying cannot share a home.
-{
-  const leaver = { ...person, id: 'test-leaver', buildingId: 'qin-li', departure };
-  assert(!validateCatalog({ ...next, people: [...next.people, leaver] }).length);
+// The rules hold whoever is leaving in the real catalogue: here no one, then everyone.
+for (const base of [
+  next,
+  { ...next, people: next.people.map((p) => ({ ...p, departure: { ...departure, date: '2099-12-31' } })) },
+]) {
+  const held = holding(base, 'qin-li'),
+    leaver = { ...person, id: 'test-leaver', buildingId: 'qin-li', departure };
+  assert(!validateCatalog(held).length);
+  assert(!validateCatalog({ ...held, people: [...held.people, leaver] }).length);
   assert(
     !validateCatalog({
-      ...next,
-      people: [...next.people, leaver, { ...leaver, id: 'test-leaver-2', departure: { ...departure, date: '2099-07-01' } }],
+      ...held,
+      people: [...held.people, leaver, { ...leaver, id: 'test-leaver-2', departure: { ...departure, date: '2099-07-01' } }],
     }).length,
     'A home keeps any number of past residents.',
   );
   assert.throws(
-    () => upsertRecord(next, 'people', without(leaver, 'departure')),
+    () => upsertRecord(held, 'people', without(leaver, 'departure')),
     /home no one else lives in/,
+    'Two people who are staying cannot share a home.',
   );
 }
 let removed = removeRecord(
@@ -528,7 +557,7 @@ async function siteOver(name, testCatalog) {
 // over this catalogue, files them there.
 {
   const visitor = (id, en, zh, order) => ({
-    ...structuredClone(catalog.people[1]),
+    ...stayer(catalog.people[1]),
     id,
     title: { en, zh },
     summary: text('Visiting test researcher'),
@@ -544,7 +573,7 @@ async function siteOver(name, testCatalog) {
   visits = upsertRecord(visits, 'people', visitor('bea-test', 'Bea Test', '测试乙', 31));
   for (const p of visits.people) assert.deepEqual(p.role, roleFor(p), 'Role label for ' + p.id);
   assert.throws(
-    () => upsertRecord(visits, 'people', { ...visitor('cy-test', 'Cy Test', '测试丙', 32), buildingId: 'qin-li' }),
+    () => upsertRecord(holding(visits, 'qin-li'), 'people', { ...visitor('cy-test', 'Cy Test', '测试丙', 32), buildingId: 'qin-li' }),
     /home no one else lives in/,
     'A home takes one person.',
   );
@@ -606,7 +635,7 @@ async function siteOver(name, testCatalog) {
   const EVE = on('2099-06-30'),
     DEPART = on('2099-07-01');
   const tester = (id, en, zh, order, buildingId, role = { en: 'PHD RESEARCHER', zh: '博士生' }) => ({
-    ...structuredClone(catalog.people[1]),
+    ...stayer(catalog.people[1]),
     id,
     title: { en, zh },
     summary: text(en + ' is a test person.'),
@@ -669,7 +698,7 @@ async function siteOver(name, testCatalog) {
     [DAY + 'T12:00:00Z', true],
   ])
     assert.equal(lrec.hasDeparted(find('test-past-visitor'), new Date(when)), gone, 'Gone by ' + when + '?');
-  assert(!lrec.hasDeparted(find('qin-li'), DEPART), 'Without a departure nobody leaves.');
+  assert(!lrec.hasDeparted(find('test-member'), DEPART), 'Without a departure nobody leaves.');
   // Members, the People chapter, the departures board and the name tags on each day, against the
   // rule stated independently above.
   for (const day of [DAY, '2026-08-30', '2099-06-30', '2099-07-01']) {
