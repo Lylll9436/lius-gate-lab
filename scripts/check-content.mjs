@@ -136,6 +136,86 @@ assert.throws(
 assert(
   validateCatalog({ ...next, people: [...next.people, next.people[0]] }).length,
 );
+// Leaving Liu’s Gate: the person stays published (their address and the events that name them
+// keep working) and gains a departure block. TEST-ONLY: content/lab.json holds no departure
+// until the owner confirms one and the person agrees.
+const departure = {
+  date: '2025-06-30',
+  city: { en: 'Testford, Scotland', zh: '测试福德' },
+  destination: { en: 'Test University', zh: '测试大学' },
+  role: { en: 'Postdoctoral researcher', zh: '博士后研究员' },
+  link: { label: text('Homepage'), url: 'https://example.org/past-member' },
+};
+const without = (record, key) => {
+  const copy = structuredClone(record);
+  delete copy[key];
+  return copy;
+};
+assert.deepEqual(
+  upsertRecord(next, 'people', { ...person, departure }).people.find(
+    (p) => p.id === 'test-member',
+  ).departure,
+  departure,
+  'A person named by an event can leave without being hidden or removed.',
+);
+for (const ok of [
+  { ...departure, role: null, link: null },
+  // Entered ahead: they move on that day.
+  { ...departure, date: '2099-07-01' },
+])
+  upsertRecord(next, 'people', { ...person, departure: ok });
+// A typo is an unknown field, not a silently ignored one.
+assert.throws(
+  () => upsertRecord(next, 'people', { ...person, depature: departure }),
+  /unknown field "depature"/,
+);
+for (const [bad, error] of [
+  ['2025-06-30', /departure must be an object/],
+  [null, /departure must be an object/],
+  [[], /departure must be an object/],
+  [{ ...departure, date: '2025-02-29' }, /departure\.date must be a real YYYY-MM-DD date/],
+  [{ ...departure, date: '2025-6-30' }, /departure\.date must be a real YYYY-MM-DD date/],
+  [{ ...departure, date: 'soon' }, /departure\.date must be a real YYYY-MM-DD date/],
+  [without(departure, 'date'), /departure\.date must be a real YYYY-MM-DD date/],
+  [{ ...departure, city: { en: 'Freiburg 弗莱堡', zh: '弗莱堡' } }, /departure\.city: supply en and zh/],
+  [{ ...departure, city: { en: 'Freiburg', zh: ' ' } }, /departure\.city: supply en and zh/],
+  [without(departure, 'destination'), /departure\.destination: supply en and zh/],
+  [{ ...departure, destination: 'Test University' }, /departure\.destination: supply en and zh/],
+  [{ ...departure, role: 'Lecturer' }, /departure\.role must be null or/],
+  [{ ...departure, role: { en: '讲师', zh: '讲师' } }, /departure\.role must be null or/],
+  [without(departure, 'role'), /departure\.role must be null or/],
+  [without(departure, 'link'), /departure\.link must be null or/],
+  [{ ...departure, link: 'https://example.org' }, /departure\.link must be null or/],
+  [{ ...departure, link: { url: 'https://example.org' } }, /departure\.link must be null or/],
+  [{ ...departure, link: { label: text('Homepage'), url: 'http://example.org' } }, /departure\.link must be null or/],
+  [{ ...departure, link: { label: text('Email'), url: 'mailto:a@example.org' } }, /departure\.link must be null or/],
+  [{ ...departure, link: { label: text('Bad'), url: 'javascript:alert(1)' } }, /departure\.link must be null or/],
+  [{ ...departure, link: { ...departure.link, note: text('Extra') } }, /departure\.link must be null or/],
+  // Status is derived from where they stayed (the residence: Returned), never stored.
+  [{ ...departure, status: 'returned' }, /departure: unknown field "status"/],
+])
+  assert.throws(
+    () => upsertRecord(next, 'people', { ...person, departure: bad }),
+    error,
+    'A malformed departure must fail: ' + JSON.stringify(bad),
+  );
+// Someone who has left keeps their home as history, and it is free for whoever moves in next,
+// even while their departure still lies ahead. Two people who are staying cannot share a home.
+{
+  const leaver = { ...person, id: 'test-leaver', buildingId: 'qin-li', departure };
+  assert(!validateCatalog({ ...next, people: [...next.people, leaver] }).length);
+  assert(
+    !validateCatalog({
+      ...next,
+      people: [...next.people, leaver, { ...leaver, id: 'test-leaver-2', departure: { ...departure, date: '2099-07-01' } }],
+    }).length,
+    'A home keeps any number of past residents.',
+  );
+  assert.throws(
+    () => upsertRecord(next, 'people', without(leaver, 'departure')),
+    /home no one else lives in/,
+  );
+}
 let removed = removeRecord(
   removeRecord(
     removeRecord(
@@ -393,7 +473,10 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
   // two test visitors; a name written only in Latin letters keeps its first name on the Chinese tag.
   const tagName = (p, locale) => (locale === 'zh' && /[\u3400-\u9fff]/.test(p.title.zh) ? p.title.zh : p.title.en.split(' ')[0]);
   const stayers = catalog.people.filter((p) => p.buildingId === 'visiting-phd');
-  for (const [locale, sep, tests] of [['en', ' · ', ['Ada', 'Bea']], ['zh', '、', ['测试甲', '测试乙']]])
+  for (const { locale, sep, tests } of [
+    { locale: 'en', sep: ' · ', tests: ['Ada', 'Bea'] },
+    { locale: 'zh', sep: '、', tests: ['测试甲', '测试乙'] },
+  ])
     assert.deepEqual(
       vnav.homeTags(locale).map((t) => [t.building, t.label]),
       [

@@ -10,11 +10,30 @@ export type RecordBase = {
   links: { label: Localized; url: string }[];
   properties: { key: string; label: Localized; value: Localized }[];
 };
+/**
+ * Where someone went when they left Liu’s Gate. Their record stays published, so its address and
+ * the events that name them keep working; role, affiliation and buildingId stay as they were, as
+ * history. On `date` they leave the members and go on the departures board.
+ */
+export type Departure = {
+  /** The UTC day they set off, YYYY-MM-DD. It may lie ahead: they move on that day. */
+  date: string;
+  /** The board's destination: the city, e.g. Edinburgh, UK / 英国爱丁堡. */
+  city: Localized;
+  /** Where they are now: the institution or employer. */
+  destination: Localized;
+  /** Their role there, or null. */
+  role: Localized | null;
+  /** A page of their own, or null. It replaces a student mailbox that closes when they leave. */
+  link: { label: Localized; url: string } | null;
+};
 export type PersonRecord = RecordBase & {
   role: Localized;
   affiliation: Localized;
   photo: string | null;
   buildingId: string | null;
+  /** Left out while they are at the Gate. */
+  departure?: Departure;
 };
 export type ResearchRecord = RecordBase & {
   status: 'active' | 'completed';
@@ -92,6 +111,71 @@ const asset = (v: unknown) =>
   (typeof v === 'string' &&
     /^\/(?:people|media)\/[a-zA-Z0-9/_-]+\.(?:png|jpg|jpeg|webp)$/.test(v) &&
     !v.includes('..'));
+/** A real day written YYYY-MM-DD (so never 2026-02-31): the rule for every date in the catalogue. */
+const realDate = (v: unknown) =>
+  typeof v === 'string' &&
+  /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+  Number.isFinite(Date.parse(v)) &&
+  new Date(v).toISOString().slice(0, 10) === v;
+/** A person's fields, so a typo such as `depature` fails instead of being ignored. */
+const personKeys = [
+  'id',
+  'title',
+  'summary',
+  'visibility',
+  'order',
+  'sections',
+  'links',
+  'properties',
+  'role',
+  'affiliation',
+  'photo',
+  'buildingId',
+  'departure',
+];
+const departureKeys = ['date', 'city', 'destination', 'role', 'link'];
+const unknownKeys = (at: string, v: Record<string, unknown>, known: string[]) =>
+  Object.keys(v)
+    .filter((key) => !known.includes(key))
+    .map((key) => at + ': unknown field "' + key + '".');
+/** What is wrong with a departure block, field by field. Its status is derived, never stored. */
+function departureErrors(at: string, v: unknown): string[] {
+  if (!object(v))
+    return [
+      at + ' must be an object with date, city, destination, role and link.',
+    ];
+  const errors = unknownKeys(at, v, departureKeys);
+  if (!realDate(v.date))
+    errors.push(at + '.date must be a real YYYY-MM-DD date.');
+  for (const field of ['city', 'destination'])
+    if (!localized(v[field]))
+      errors.push(
+        at +
+          '.' +
+          field +
+          ': supply en and zh (English must contain no Chinese).',
+      );
+  if (v.role !== null && !localized(v.role))
+    errors.push(
+      at + '.role must be null or en and zh (English must contain no Chinese).',
+    );
+  const link = v.link;
+  if (
+    link !== null &&
+    !(
+      object(link) &&
+      !unknownKeys('', link, ['label', 'url']).length &&
+      localized(link.label) &&
+      typeof link.url === 'string' &&
+      link.url.startsWith('https://') &&
+      safeLink(link.url)
+    )
+  )
+    errors.push(
+      at + '.link must be null or a label in en and zh with an HTTPS address.',
+    );
+  return errors;
+}
 export function validateCatalog(value: unknown): string[] {
   const errors: string[] = [];
   if (!object(value) || value.schemaVersion !== 2)
@@ -158,12 +242,18 @@ export function validateCatalog(value: unknown): string[] {
           else keys.add(p.key);
         }
       if (collection === 'people') {
+        errors.push(...unknownKeys(at, row, personKeys));
         if (
           !localized(row.role) ||
           !localized(row.affiliation) ||
           !asset(row.photo)
         )
           errors.push(at + ': invalid role, affiliation or photo.');
+        // Someone who has left (or is leaving: the date may lie ahead) keeps their home as
+        // history and frees it for whoever moves in next.
+        const leaving = row.departure !== undefined;
+        if (leaving)
+          errors.push(...departureErrors(at + '.departure', row.departure));
         if (row.buildingId !== null) {
           if (
             typeof row.buildingId !== 'string' ||
@@ -171,7 +261,7 @@ export function validateCatalog(value: unknown): string[] {
               homeIds.includes(row.buildingId) ||
               row.buildingId === RESIDENCE_ID
             ) ||
-            bound.has(row.buildingId)
+            (!leaving && bound.has(row.buildingId))
           )
             errors.push(
               at +
@@ -179,7 +269,8 @@ export function validateCatalog(value: unknown): string[] {
                 RESIDENCE_ID +
                 ' (shared) or null.',
             );
-          else if (row.buildingId !== RESIDENCE_ID) bound.add(row.buildingId);
+          else if (row.buildingId !== RESIDENCE_ID && !leaving)
+            bound.add(row.buildingId);
         }
       } else {
         if (
@@ -201,12 +292,7 @@ export function validateCatalog(value: unknown): string[] {
           )
             errors.push(at + '.buildingId is unknown.');
         } else {
-          if (
-            typeof row.date !== 'string' ||
-            !/^\d{4}-\d{2}-\d{2}$/.test(row.date) ||
-            !Number.isFinite(Date.parse(row.date)) ||
-            new Date(row.date).toISOString().slice(0, 10) !== row.date
-          )
+          if (!realDate(row.date))
             errors.push(at + '.date must be a real YYYY-MM-DD date.');
           if (
             collection === 'events' &&
