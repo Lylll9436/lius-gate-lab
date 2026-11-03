@@ -157,7 +157,7 @@ removed = removeRecord(removed, 'people', 'test-member');
 assert.deepEqual(removed, catalog);
 assert.equal(
   catalog.people.length,
-  3,
+  JSON.parse(original).people.length,
   'Pure operations must not mutate original catalog.',
 );
 await fs.writeFile(path.join(output, 'lab.json'), JSON.stringify(next));
@@ -208,7 +208,7 @@ const { SiteFooter, chapterMeta } = await import(
 const { buildings } = await import(
   pathToFileURL(path.join(output, 'city-data.mjs')).href
 );
-assert.equal(nav.people.length, 4);
+assert.equal(nav.people.length, catalog.people.length + 1); // the real people and the test member
 const moved = { ...catalog.people[2], buildingId: null };
 assert.equal(
   records.personContentId(moved),
@@ -312,24 +312,35 @@ const roleFor = (p) =>
       ? { en: 'VISITING PHD RESEARCHER', zh: '访问博士生' }
       : { en: 'PHD RESEARCHER', zh: '博士生' };
 for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label for ' + p.id);
-// The Visiting PhD Residence with no one in it: its file says who it is for, it opens its own
-// file (in the tour and the Directory too), the People chapter frames it, and it has no name tag.
+// The Visiting PhD Residence: its file shows the cards of whoever stays there (or, with no one in
+// it, says who it is for), it opens its own file (in the tour and the Directory too), the People
+// chapter frames it, and its name tag names its residents (none when it is empty).
 {
+  const residents = catalog.people.filter((p) => p.buildingId === 'visiting-phd');
   const residence = renderToStaticMarkup(
     React.createElement(LabContent, { id: 'visiting-phd', locale: 'en', onOpen() {} }),
   );
-  assert(
-    residence.includes('<h4>Visiting researchers</h4>') && !residence.includes('person-card'),
-    'The empty residence describes its visitors.',
-  );
+  if (residents.length)
+    assert(
+      residence.includes('person-card') && residents.every((p) => residence.includes(p.title.en)),
+      'The residence shows its residents.',
+    );
+  else
+    assert(
+      residence.includes('<h4>Visiting researchers</h4>') && !residence.includes('person-card'),
+      'The empty residence describes its visitors.',
+    );
   assert.equal(nav.contentForBuilding('visiting-phd'), 'visiting-phd');
   assert.equal(nav.chapterFor('visiting-phd'), 'people');
   assert.equal(nav.tourStops.filter((s) => s === 'visiting-phd').length, 1, 'The tour visits the residence once.');
+  const homes = [['pengyuan-liu', 'Pengyuan'], ['yunlong-liu', 'Yunlong'], ['qin-li', 'Qin']];
   assert.deepEqual(
     nav.homeTags('en').map((t) => [t.building, t.label]),
-    [['pengyuan-liu', 'Pengyuan'], ['yunlong-liu', 'Yunlong'], ['qin-li', 'Qin']],
-    'One name tag a home, none over the empty residence.',
+    residents.length ? [...homes, ['visiting-phd', residents.map((p) => p.title.en.split(' ')[0]).join(' · ')]] : homes,
+    'One name tag a home, and one over the residence naming whoever stays there.',
   );
+  // A name written only in Latin letters keeps its first name on the Chinese tag too.
+  for (const t of nav.homeTags('zh')) assert(t.label.length <= 12, `The Chinese tag over ${t.building} is too long: ${t.label}`);
 }
 // TEST-ONLY visiting researchers (never in content/lab.json): two people whose buildingId is
 // 'visiting-phd' share the residence (a home takes one), and the site's own code, compiled again
@@ -378,16 +389,23 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
   }
   assert.equal(vnav.contentForBuilding('visiting-phd'), 'visiting-phd', 'The residence opens its own file, listing its residents.');
   assert.deepEqual(vnav.selectionForContent('people'), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
-  for (const [locale, label] of [['en', 'Ada · Bea'], ['zh', '测试甲、测试乙']])
+  // The residence's tag names everyone staying there, the real residents first (by order), then the
+  // two test visitors; a name written only in Latin letters keeps its first name on the Chinese tag.
+  const tagName = (p, locale) => (locale === 'zh' && /[\u3400-\u9fff]/.test(p.title.zh) ? p.title.zh : p.title.en.split(' ')[0]);
+  const stayers = catalog.people.filter((p) => p.buildingId === 'visiting-phd');
+  for (const [locale, sep, tests] of [['en', ' · ', ['Ada', 'Bea']], ['zh', '、', ['测试甲', '测试乙']]])
     assert.deepEqual(
       vnav.homeTags(locale).map((t) => [t.building, t.label]),
-      [...catalog.people.map((p) => [p.buildingId, locale === 'zh' ? p.title.zh : p.title.en.split(' ')[0]]), ['visiting-phd', label]],
+      [
+        ...catalog.people.filter((p) => p.buildingId !== 'visiting-phd').map((p) => [p.buildingId, tagName(p, locale)]),
+        ['visiting-phd', [...stayers.map((p) => tagName(p, locale)), ...tests].join(sep)],
+      ],
       'The residence\'s tag names its residents; the homes\' stay as they were (' + locale + ').',
     );
   const file = renderToStaticMarkup(React.createElement(VisitLab, { id: 'visiting-phd', locale: 'en', onOpen() {} }));
   assert(
     file.includes('Ada Test') && file.includes('Bea Test') && file.includes('VISITING PHD RESEARCHER') &&
-      (file.match(/class="person-card"/g) || []).length === 2 && !file.includes('<h4>Visiting researchers</h4>'),
+      (file.match(/class="person-card"/g) || []).length === 2 + stayers.length && !file.includes('<h4>Visiting researchers</h4>'),
     'The residence\'s file shows each resident\'s card instead of the description.',
   );
   assert(!/[\u3400-\u9fff]/.test(file), 'English residence file contains Chinese.');

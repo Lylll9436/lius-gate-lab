@@ -50,7 +50,9 @@ export function homeTags(locale: Locale) {
     building,
     label: people
       .filter((p) => p.buildingId === building)
-      .map((p) => (locale === 'zh' ? p.name.zh : p.name.en.split(' ')[0]))
+      // A tag carries a first name in English; in Chinese the full Chinese name, or, for someone
+      // whose name is only written in Latin letters, the first name as in English.
+      .map((p) => (locale === 'zh' && /[\u3400-\u9fff]/.test(p.name.zh) ? p.name.zh : p.name.en.split(' ')[0]))
       .join(locale === 'zh' ? '、' : ' · '),
   }));
 }
