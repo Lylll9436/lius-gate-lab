@@ -130,8 +130,8 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
    * ground flat's floor-to-ceiling window (behind a low planter) and the recessed entrance (warm
    * lobby glass under a cantilevered canopy, its oak body under a limestone cap); the first floor
    * a projecting balcony with a glass balustrade and a slim champagne-brass handrail before full
-   * glazing, and a window behind oak fins. On the roof terrace: a glass balustrade, a light pergola
-   * (bronze frame, oak slats) and planters of clipped shrubs. The sides and back are clad in
+   * glazing, and a window behind oak fins. On the roof terrace: a glass balustrade, an oak pergola
+   * and planters of clipped shrubs. The sides and back are clad in
    * large-format limestone panels (V joints) with deep-set windows. In front, a paved forecourt
    * inside a low limestone wall: a bench, two cycle hoops and planters. No lettering or numbers.
    * Night: one light per flat (window groups `visiting-phd-<flat>`), the lobby lit late.
@@ -142,7 +142,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       { base: B, first: F1, terrace: TR, top: TOP, coping: COPE } = RESIDENCE_LEVELS;
     const stone: Piece[] = [], // the limestone cladding and dressings, each panel a shade of its own (batch tone)
       dress: Piece[] = [], // the paler copings and bands
-      bronze: Piece[] = [], // mullions, shoe rails, pergola frame: cast nothing
+      bronze: Piece[] = [], // mullions, the rooflight's kerb, the louvres: cast nothing
       brass: Piece[] = [],
       oak: Piece[] = [];
     const g = (id: string) => `${site.id}-${id}`;
@@ -231,8 +231,8 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
         cx = (x0 + x1) / 2,
         cy = (y0 + y1) / 2;
       bronzeFrame(shell, cx, cy, FZ, w - 0.02, y1 - y0 - 0.02, 0.09, 0.07);
-      for (let k = 0; k < 3; k++) pane(shell, x0 + (w * (k + 0.5)) / 3, cy, FZ + 0.03, w / 3, y1 - y0, g('ground'));
-      for (const k of [1, 2]) bronze.push(piece(x0 + (w * k) / 3 - 0.035, x0 + (w * k) / 3 + 0.035, y0, y1, FZ, FZ + 0.08));
+      for (let k = 0; k < 2; k++) pane(shell, x0 + (w * (k + 0.5)) / 2, cy, FZ + 0.03, w / 2, y1 - y0, g('ground'));
+      bronze.push(piece(cx - 0.04, cx + 0.04, y0, y1, FZ, FZ + 0.08));
     }
     // Ground floor, right bay: the recessed entrance. Its glass screen at ER: a door and a side
     // light in bronze, warm lobby glass lit late; a brass pull; the recess's jambs are the piers
@@ -262,7 +262,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       oak.push(piece(c0 + 0.02, c1 - 0.02, 1.78, 1.93, hd, hd + 0.6));
     }
     // First floor, left bay: full glazing (two doors) behind a projecting balcony with a glass
-    // balustrade on a bronze shoe and a champagne-brass handrail.
+    // balustrade on a limestone kerb and a champagne-brass handrail.
     {
       const x0 = -hw + 0.34,
         x1 = MX0,
@@ -274,7 +274,6 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       bronzeFrame(shell, cx, cy, FZ, w - 0.02, y1 - y0 - 0.02, 0.09, 0.07);
       for (let k = 0; k < 2; k++) pane(shell, x0 + (w * (k + 0.5)) / 2, cy, FZ + 0.03, w / 2, y1 - y0, g('balcony'));
       bronze.push(piece(cx - 0.04, cx + 0.04, y0, y1, FZ, FZ + 0.08));
-      bronze.push(piece(x0, x1, 3.0, 3.07, FZ, FZ + 0.08)); // a transom: doors under fanlights
       // The balcony: a limestone slab 0.62 out, a little wider than the bay.
       const b0 = x0 - 0.08,
         b1 = x1 + 0.08,
@@ -290,11 +289,12 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       };
       glass((b0 + b1) / 2, out - 0.07, b1 - b0 - 0.14, G);
       for (const x of [b0 + 0.07, b1 - 0.07]) glass(x, (hd + 0.2 + out - 0.07) / 2, G, out - 0.07 - hd - 0.2);
-      // The shoe (a bronze channel the glass stands in) and the handrail on the glass's top edge.
-      bronze.push(piece(b0 + 0.03, b1 - 0.03, F1, F1 + 0.08, out - 0.11, out - 0.03));
+      // The kerb the glass stands in (limestone, as the slab: a dark bronze channel drew a line that
+      // crawled when the camera panned) and the handrail on the glass's top edge.
+      dress.push(piece(b0 + 0.03, b1 - 0.03, F1 - 0.01, F1 + 0.08, out - 0.12, out - 0.02));
       brass.push(piece(b0 + 0.03, b1 - 0.03, top - 0.01, top + 0.06, out - 0.105, out - 0.035));
       for (const x of [b0 + 0.07, b1 - 0.07]) {
-        bronze.push(piece(x - 0.04, x + 0.04, F1, F1 + 0.08, hd + 0.2, out - 0.03));
+        dress.push(piece(x - 0.05, x + 0.05, F1 - 0.01, F1 + 0.08, hd + 0.2, out - 0.02));
         brass.push(piece(x - 0.035, x + 0.035, top - 0.01, top + 0.06, hd + 0.2, out - 0.035));
       }
     }
@@ -323,7 +323,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
     /* -------------------------------------------------------------- */
     {
       // Solid limestone parapets with crisp copings: along the whole south side (the terrace wraps
-      // round there) and at the front's north end; a glass balustrade on a bronze shoe with a
+      // round there) and at the front's north end; a glass balustrade on a limestone kerb with a
       // champagne-brass rail along the front between them.
       const p0 = TR + 0.12,
         p1 = TR + 0.6;
@@ -338,7 +338,7 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
       const glass = block(shell, gx0, gx1, p0 + 0.04, top, gz - 0.035, gz + 0.035, L.balustrade, 'glass', { bevel: 0 });
       glass.userData.window = 'clear';
       glass.userData.noShadow = true;
-      bronze.push(piece(gx0, gx1, TR + 0.1, TR + 0.18, gz - 0.04, gz + 0.04));
+      dress.push(piece(gx0, gx1, TR + 0.1, TR + 0.18, gz - 0.05, gz + 0.05));
       brass.push(piece(gx0, gx1, top - 0.01, top + 0.06, gz - 0.035, gz + 0.035));
       // The top floor's glazed front (four lights) between limestone end piers, under the roof's
       // deep eave; its sides each have one window (in the side group below).
@@ -349,27 +349,28 @@ export function createResidence(ctx: TownContext, kit: Kit, nature: Nature, prop
         cy = (TR + TOP) / 2;
       stone.push(piece(TXS, g0, TR, TOP, fz, TZ1), piece(g1, TXN, TR, TOP, fz, TZ1));
       bronzeFrame(shell, (g0 + g1) / 2, cy, fz, gw, TOP - TR, 0.09, 0.07);
-      for (let k = 0; k < 4; k++) pane(shell, g0 + (gw * (k + 0.5)) / 4, cy, fz + 0.03, gw / 4, TOP - TR, g('top'));
-      for (const k of [1, 2, 3]) bronze.push(piece(g0 + (gw * k) / 4 - 0.035, g0 + (gw * k) / 4 + 0.035, TR, TOP, fz, fz + 0.08));
+      for (let k = 0; k < 2; k++) pane(shell, g0 + (gw * (k + 0.5)) / 2, cy, fz + 0.03, gw / 2, TOP - TR, g('top'));
+      bronze.push(piece((g0 + g1) / 2 - 0.04, (g0 + g1) / 2 + 0.04, TR, TOP, fz, fz + 0.08));
       // Oak decking over the terrace: the front's strip and the south side's.
       oak.push(piece(-hw + 0.2, hw - 0.2, TR - 0.02, TR + 0.04, fz + 0.01, hd - 0.2));
       oak.push(piece(-hw + 0.2, TXS, TR - 0.02, TR + 0.04, -hd + 0.2, fz + 0.01));
-      // The pergola over the terrace's south-front corner: three slim bronze posts (the top floor's
-      // front carries its fourth corner), a bronze frame and oak slats across it, under the roof's
-      // eave where it reaches.
-      const px0 = -hw + 0.32,
+      // The pergola over the terrace's south-front corner, all oak and chunky: three square posts
+      // (the top floor's front carries its fourth corner), beams round the top and four broad slats
+      // across them, under the roof's eave where it reaches. In thin dark bronze, with seven slim
+      // slats, it was the part of the block that crawled most when the camera panned.
+      const px0 = -hw + 0.34,
         px1 = MX1,
         pz0 = fz,
-        pz1 = hd - 0.3,
-        ph = TR + 1.1;
-      for (const [x, z] of [[px0, pz1], [px1, pz1], [px0, pz0]] as const) bronze.push(piece(x - 0.04, x + 0.04, TR, ph, z - 0.04, z + 0.04));
-      bronze.push(piece(px0 - 0.04, px1 + 0.04, ph, ph + 0.09, pz1 - 0.05, pz1 + 0.05));
-      bronze.push(piece(px0 - 0.05, px0 + 0.05, ph, ph + 0.09, pz0 - 0.04, pz1));
-      bronze.push(piece(px1 - 0.04, px1 + 0.04, ph, ph + 0.09, fz, pz1));
-      bronze.push(piece(px0, TXS, ph, ph + 0.09, pz0 - 0.04, pz0 + 0.04));
-      for (let k = 0; k < 7; k++) {
-        const x = px0 + 0.12 + ((px1 - px0 - 0.24) * k) / 6;
-        oak.push(piece(x - 0.04, x + 0.04, ph + 0.09, ph + 0.17, x < TXS ? pz0 - 0.1 : fz, pz1 + 0.12));
+        pz1 = hd - 0.32,
+        ph = TR + 1.08;
+      for (const [x, z] of [[px0, pz1], [px1, pz1], [px0, pz0 + 0.06]] as const) oak.push(piece(x - 0.06, x + 0.06, TR, ph, z - 0.06, z + 0.06));
+      oak.push(piece(px0 - 0.07, px1 + 0.07, ph, ph + 0.13, pz1 - 0.07, pz1 + 0.07));
+      oak.push(piece(px0 - 0.07, px0 + 0.07, ph, ph + 0.13, pz0, pz1));
+      oak.push(piece(px1 - 0.07, px1 + 0.07, ph, ph + 0.13, fz, pz1));
+      oak.push(piece(px0, TXS + 0.02, ph, ph + 0.13, pz0, pz0 + 0.12));
+      for (let k = 0; k < 4; k++) {
+        const x = px0 + 0.3 + ((px1 - px0 - 0.6) * k) / 3;
+        oak.push(piece(x - 0.07, x + 0.07, ph + 0.13, ph + 0.24, x < TXS ? pz0 - 0.08 : fz, pz1 + 0.14));
       }
       // Planters: a long limestone trough along the front's north half with three clipped shrubs,
       // and a square one on the south strip with one.
