@@ -726,8 +726,11 @@ redrawn('A quality step');
 assert.equal(shadowSun.shadow.mapSize.x, 1024, 'A quality step does not halve the town\'s map.');
 focusing(new T.Vector3(6, 2, -4), 9);
 assert.equal(shadowSun.shadow.mapSize.x, 1536, 'A quality step does not halve Inspect\'s map.');
-// The box's depth runs from about 1.2 to 76 from the light: a near plane of 0.5 keeps all of it.
+// The box's depth runs from about 1.2 to 76 from the light: a near plane of 0.5 keeps all of it. The
+// sun's target starts on the home box, so no frame before the first framing call is shaded round
+// the origin.
 assert(/near: 0\.5,/.test(source), 'The sun\'s shadow camera lost its near plane.');
+assert(/sun\.target\.position\.copy\(SHADOW_HOME\.centre\);\s*scene\.add\(sun\.target\);/.test(source), 'The sun\'s shadow does not start on its home box.');
 // The frame loop draws nothing until the first sky has arrived, so a town opened at night
 // never shows a daylit frame first.
 let frameGuard;

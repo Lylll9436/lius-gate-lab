@@ -480,6 +480,9 @@ export async function createCity(
   sun.shadow.bias = -0.0001;
   sun.shadow.intensity = 1.0;
   scene.add(sun);
+  // From the first frame on the home box, not round the origin: the box no longer centres there,
+  // and frames drawn before the first framing call would leave the airport's far side unshaded.
+  sun.target.position.copy(SHADOW_HOME.centre);
   scene.add(sun.target);
   // The key light turns with the camera yaw, so the visible faces keep the same
   // top-bright / left-lit / right-shade read from every side.
