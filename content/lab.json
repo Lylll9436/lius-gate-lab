@@ -231,6 +231,55 @@
           "url": "mailto:3215468L@student.gla.ac.uk"
         }
       ]
+    },
+    {
+      "id": "luisa-lo-presti",
+      "title": {
+        "en": "Luisa Lo Presti",
+        "zh": "Luisa Lo Presti"
+      },
+      "summary": {
+        "en": "PhD student at Maynooth University and visiting postgraduate researcher at the University of Glasgow, working on urban region representation learning.",
+        "zh": "梅努斯大学博士生、格拉斯哥大学访问研究生，研究城市区域表征学习。"
+      },
+      "visibility": "published",
+      "order": 3,
+      "role": {
+        "en": "VISITING PHD RESEARCHER",
+        "zh": "访问博士生"
+      },
+      "affiliation": {
+        "en": "Maynooth University · Visiting postgraduate researcher, University of Glasgow",
+        "zh": "梅努斯大学 · 格拉斯哥大学访问研究生"
+      },
+      "photo": "/people/luisa-lo-presti.jpg",
+      "buildingId": "visiting-phd",
+      "sections": [
+        {
+          "heading": {
+            "en": "About",
+            "zh": "简介"
+          },
+          "body": {
+            "en": "I am a PhD student at Maynooth University and a visiting postgraduate researcher at the University of Glasgow. I previously studied at the University of Trento (Italy), where I obtained a master's in data science and worked on urban micro-mobility during my research placement. My current research focuses on urban region representation learning, with the aim of obtaining general-purpose spatial embeddings, suitable for different downstream tasks and cities.",
+            "zh": "我是梅努斯大学（Maynooth University）的博士生，目前在格拉斯哥大学做访问研究生。此前我在意大利特伦托大学（University of Trento）获得数据科学硕士学位，并在研究实习期间从事城市微出行研究。我目前的研究聚焦于城市区域表征学习，目标是得到通用的空间嵌入，适用于不同的下游任务和不同的城市。"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "key": "interests",
+          "label": {
+            "en": "Research interests",
+            "zh": "研究方向"
+          },
+          "value": {
+            "en": "Urban region representation learning, general-purpose spatial embeddings, urban micro-mobility",
+            "zh": "城市区域表征学习、通用空间嵌入、城市微出行"
+          }
+        }
+      ],
+      "links": []
     }
   ],
   "research": [],

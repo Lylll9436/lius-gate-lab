@@ -7,6 +7,7 @@
 - `pengyuan-liu.jpg`
 - `yunlong-liu.jpg`
 - `qin-li.jpg`
+- `luisa-lo-presti.jpg`（访问博士生，住在访问博士公寓）
 
 访问博士生的照片同样放在这里（例如 `名字-姓.jpg`），记录的 `buildingId` 填 `visiting-phd`，见 `MAINTENANCE.md`。
 
