@@ -1382,18 +1382,50 @@ for (const [x, z] of [
     ray.set(new T.Vector3(x, 40, z), new T.Vector3(0, -1, 0));
     assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the airport's deck at ${x}, ${z} finds no airport.`);
   }
-  // Its foam is the tide foam's (no mesh of its own): a line along both toes of the causeway and round the deck.
-  const foam = model.land.getObjectByName('tide-foam'),
-    fz = foam.geometry.getAttribute('position');
-  let toes = 0,
-    deck = 0;
-  for (let i = 0; i < fz.count; i++) {
-    const x = fz.getX(i),
-      z = fz.getZ(i);
-    if (z < AR.causeway && z > AR.island && Math.abs(Math.abs(x - AR.x) - 1.9) < 0.15) toes++;
-    if (Math.abs(plan.airportDistance(x, z) - 0.93) < 0.2) deck++;
+  // Its surf is the tide foam's (no mesh of its own), after the island's two bands: one strip, rows
+  // of AIRPORT_FOAM_ROW vertices inner edge first, from the beach's tide line up the causeway's west
+  // toe, round the deck and down the east toe. Its inner line lies under the stones (so no strip of
+  // open water shows between them and the surf), it turns no corner sharper than its fillets' 15
+  // degrees a row (no right-angled L where the causeway lands), its outer edge fades to nothing,
+  // and its strength wanders: strong in places, gone for a short stretch in a few.
+  {
+    const foam = model.land.getObjectByName('tide-foam'),
+      fz = foam.geometry.getAttribute('position'),
+      fa = foam.geometry.getAttribute('color'),
+      { AIRPORT_FOAM_ROW: row } = await load('town-ground'),
+      { WATER } = await load('town-shared'),
+      // Where the causeway's flank meets the sea, plus most of the stones' reach (they reach to 2.34);
+      // round the deck 0.66 out (the lower course reaches 0.95); the fillets' centres in the sea.
+      side = AR.top / 2 + (A.deck - 0.03 - WATER) * AR.flank + 0.18,
+      fillets = [-1, 1].map((s) => [AR.x + s * (side + 0.6), A.z + A.hd + 0.66 + 0.6]),
+      first = 2 * 2 * plan.OUTLINE_SAMPLES,
+      rows = (fz.count - first) / row,
+      inner = (r) => [fz.getX(first + r * row), fz.getZ(first + r * row)];
+    assert(fa.itemSize === 4 && Number.isInteger(rows) && rows > 300, `The airport's surf is missing (${rows} rows).`);
+    for (const r of [0, rows - 1]) assert(Math.abs(inner(r)[1] - (AR.beach - 2.95)) < 1e-4, 'The airport\'s surf does not start and end on the beach\'s tide line.');
+    let gone = 0,
+      strongest = 0,
+      sharpest = 0;
+    for (let r = 0; r < rows; r++) {
+      const [x, z] = inner(r),
+        alpha = fa.getW(first + r * row);
+      assert.equal(fa.getW(first + r * row + row - 1), 0, 'The airport\'s surf has a hard outer edge.');
+      if (alpha === 0) gone++;
+      strongest = Math.max(strongest, alpha);
+      const fillet = fillets.find(([cx, cz]) => (x - AR.x) * (cx - AR.x) > 0 && z <= cz + 1e-6 && z >= cz - 0.6 - 1e-6 && Math.abs(x - AR.x) >= side - 1e-6 && Math.abs(x - AR.x) <= Math.abs(cx - AR.x) + 1e-6);
+      if (z >= fillets[0][1] - 1e-6) assert(Math.abs(Math.abs(x - AR.x) - side) < 1e-3 && side < 2.2, `The surf on the causeway's toe is off the stones at ${z.toFixed(1)}.`);
+      else if (fillet) assert(Math.abs(Math.hypot(x - fillet[0], z - fillet[1]) - 0.6) < 1e-3, `The surf's fillet is off its arc at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      else assert(Math.abs(plan.airportDistance(x, z) - 0.66) < 1e-3, `The surf round the deck is off the stones at ${x.toFixed(1)}, ${z.toFixed(1)}.`);
+      if (r > 0 && r < rows - 1) {
+        const [px, pz] = inner(r - 1),
+          [nx, nz] = inner(r + 1),
+          turn = Math.abs(Math.atan2(Math.sin(Math.atan2(nz - z, nx - x) - Math.atan2(z - pz, x - px)), Math.cos(Math.atan2(nz - z, nx - x) - Math.atan2(z - pz, x - px))));
+        sharpest = Math.max(sharpest, turn);
+      }
+    }
+    assert(sharpest < (16 * Math.PI) / 180, `The airport's surf turns a corner of ${((sharpest * 180) / Math.PI).toFixed(0)} degrees.`);
+    assert(strongest > 0.6 && gone > 0 && gone < rows * 0.15, `The airport's surf is too even (${strongest.toFixed(2)} at most, ${gone} rows gone).`);
   }
-  assert(toes > 80 && deck > 200, `The airport's foam is missing (${toes} toe, ${deck} deck vertices).`);
   model.airportLand.traverse((o) => assert(!o.isMesh || !o.material.transparent, 'A see-through mesh on the airport.'));
   // Budgets: the airport's ground and building add at most 20 meshes and 60k triangles to the town.
   let landMeshes = 0,

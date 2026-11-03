@@ -25,6 +25,9 @@ type Point = [number, number, number];
 /* Shore profile                                                       */
 /* ------------------------------------------------------------------ */
 
+/** The airport's surf strip (see buildTerrain): its vertices across, inner edge first. */
+export const AIRPORT_FOAM_ROW = 3;
+
 /**
  * The shore by width out from the outline: a crisp darker turf lip, dry sand, wet sand, the
  * waterline, a pale shelf, the drop. The shelf colours sit under the sea's translucent turquoise
@@ -316,36 +319,54 @@ export function createGround(ctx: TownContext) {
         fi.push(a, c, c + 1, a, c + 1, a + 1);
       }
     });
-    // The airport's island and causeway (plan.AIRPORT, plan.AIRPORT_ROAD): one thin line where the
-    // rock armour meets the sea, round the deck and along both toes of the causeway, from the
-    // beach's tide line to the island's, open where the causeway lands. Clockwise from above, as
-    // the island's bands run, so it faces up.
+    // The airport's island and causeway (plan.AIRPORT, plan.AIRPORT_ROAD): surf against the rock
+    // armour, one strip from the beach's tide line up the causeway's west toe, round the deck and
+    // back down the east toe, turning each inside corner where the causeway lands on a 0.6 fillet.
+    // Its inner line lies under the stones' lower course (0.66 out from the deck's edge; on the
+    // causeway where the flank meets the sea plus most of the stones' reach), so it runs out from
+    // the stones with no strip of open water between. Across, it holds its strength to 45% of its
+    // width and fades to nothing at its outer edge; along it, its width (0.16 to 0.36) and strength
+    // (up to 0.72) wander slowly, gone here and there for a short stretch. Clockwise from above, as
+    // the island's bands run, so it faces up: three vertices a row (`AIRPORT_FOAM_ROW`).
     {
-      const strip = (points: { x: number; z: number; nx: number; nz: number }[], from: number, to: number, alpha: number) => {
-        const start = fp.length / 3;
-        points.forEach((p, i) => {
-          const wobble = 0.05 * Math.sin(i * 1.3) + 0.03 * Math.sin(i * 3.7);
-          fp.push(p.x + p.nx * (from + wobble), WATER + 0.006, p.z + p.nz * (from + wobble), p.x + p.nx * (to + wobble), WATER + 0.006, p.z + p.nz * (to + wobble));
-          for (let k = 0; k < 2; k++) fc.push(foamColour.r, foamColour.g, foamColour.b, alpha);
-        });
-        for (let i = 0; i + 1 < points.length; i++) {
-          const a = start + i * 2,
-            c = a + 2;
+      const A = plan.AIRPORT,
+        R = plan.AIRPORT_ROAD,
+        deckIn = 0.66,
+        side = R.top / 2 + (A.deck - 0.03 - WATER) * R.flank + 0.18,
+        fillet = 0.6,
+        edgeZ = A.z + A.hd + deckIn,
+        beachZ = R.beach - 2.95,
+        path: { x: number; z: number; nx: number; nz: number }[] = [],
+        arc = (cx: number, cz: number, from: number, to: number) => {
+          for (let k = 1; k < 6; k++) {
+            const a = from + ((to - from) * k) / 6;
+            path.push({ x: cx + Math.cos(a) * fillet, z: cz + Math.sin(a) * fillet, nx: -Math.cos(a), nz: -Math.sin(a) });
+          }
+        },
+        rows = (n: number) => Math.max(1, Math.ceil((beachZ - (edgeZ + fillet)) / n));
+      for (let i = 0, n = rows(0.25); i <= n; i++) path.push({ x: R.x - side, z: beachZ + ((edgeZ + fillet - beachZ) * i) / n, nx: -1, nz: 0 });
+      arc(R.x - side - fillet, edgeZ + fillet, 0, -Math.PI / 2);
+      path.push(...plan.airportOutlineRound(deckIn, 0.25, side + fillet));
+      arc(R.x + side + fillet, edgeZ + fillet, -Math.PI / 2, -Math.PI);
+      for (let i = 0, n = rows(0.25); i <= n; i++) path.push({ x: R.x + side, z: edgeZ + fillet + ((beachZ - edgeZ - fillet) * i) / n, nx: 1, nz: 0 });
+      const start = fp.length / 3;
+      let run = 0;
+      path.forEach((p, i) => {
+        if (i) run += Math.hypot(p.x - path[i - 1].x, p.z - path[i - 1].z);
+        const strength = noise2(run * 0.45 + 3.1, 7.7),
+          width = 0.16 + 0.2 * noise2(run * 1.3 + 11.3, 2.9),
+          alpha = 0.72 * T.MathUtils.smoothstep(strength, 0.12, 0.4) * (0.45 + 0.55 * strength);
+        for (const [o, a] of [[0, alpha], [0.45 * width, alpha], [width, 0]]) {
+          fp.push(p.x + p.nx * o, WATER + 0.006, p.z + p.nz * o);
+          fc.push(foamColour.r, foamColour.g, foamColour.b, a);
+        }
+      });
+      for (let i = 0; i + 1 < path.length; i++)
+        for (let k = 0; k < AIRPORT_FOAM_ROW - 1; k++) {
+          const a = start + i * AIRPORT_FOAM_ROW + k,
+            c = a + AIRPORT_FOAM_ROW;
           fi.push(a, c, c + 1, a, c + 1, a + 1);
         }
-      };
-      const R = plan.AIRPORT_ROAD,
-        // Where the causeway's flank meets the water, plus the boulders' reach over it.
-        toe = R.top / 2 + (plan.AIRPORT.deck - 0.03 - WATER) * R.flank + 0.24,
-        beach = R.beach - 2.95,
-        island = plan.AIRPORT.z + plan.AIRPORT.hd + 0.86,
-        line = (side: number) =>
-          Array.from({ length: Math.ceil((beach - island) / 0.5) + 1 }, (_, i) => {
-            const z = island + ((beach - island) * i) / Math.ceil((beach - island) / 0.5);
-            return { x: R.x, z: side > 0 ? z : beach + island - z, nx: side, nz: 0 };
-          });
-      strip(plan.airportOutlineRound(0, 0.5, toe), 0.86, 1.0, 0.7);
-      for (const side of [-1, 1]) strip(line(side), toe - 0.07, toe + 0.07, 0.7);
     }
     const foamGeometry = new T.BufferGeometry();
     foamGeometry.setAttribute('position', new T.Float32BufferAttribute(fp, 3));
