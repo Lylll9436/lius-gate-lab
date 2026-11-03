@@ -557,24 +557,41 @@ export async function createCity(
   controls.maxZoom = CITY_MAX_ZOOM;
   /**
    * Panning stops before the view leaves the town for open sea: the subject point (the view centre
-   * less the panel offset) stays in the island's disc or in a capsule out along the causeway to
-   * the airport's island. Each frame the controls clamp it to whichever region is nearest.
+   * less the panel offset) stays in the island's disc, in the airport's deck and 4 beyond its edge
+   * (as the disc reaches a few units past the island's coast), or in a capsule over the causeway
+   * between them. Each region is a core (the origin, the causeway's line, the deck's rectangle
+   * inset by its corner radius) and a reach round it, so OrbitControls' own clamp holds it: each
+   * frame `cursor` is the nearest point of the core of whichever region the subject is deepest in
+   * (or nearest to) and `maxTargetRadius` that region's reach.
    */
   const PAN = {
     disc: 30,
-    from: new T.Vector3(0, 0, -20),
-    to: new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z),
-    capsule: 15,
+    from: new T.Vector3(plan.AIRPORT_ROAD.x, 0, -20),
+    to: new T.Vector3(plan.AIRPORT_ROAD.x, 0, plan.AIRPORT.z + plan.AIRPORT.hd),
+    causeway: 8,
+    deck: {
+      x0: plan.AIRPORT.x - plan.AIRPORT.hw + plan.AIRPORT.radius,
+      x1: plan.AIRPORT.x + plan.AIRPORT.hw - plan.AIRPORT.radius,
+      z0: plan.AIRPORT.z - plan.AIRPORT.hd + plan.AIRPORT.radius,
+      z1: plan.AIRPORT.z + plan.AIRPORT.hd - plan.AIRPORT.radius,
+      reach: plan.AIRPORT.radius + 4,
+    },
   };
   const panSubject = new T.Vector3(),
+    panOrigin = new T.Vector3(),
     panOnLine = new T.Vector3(),
+    panOnDeck = new T.Vector3(),
     panLine = new T.Line3(PAN.from, PAN.to);
-  /** The pan region nearest the subject point p: its centre (for a capsule, the nearest point of its line) and radius. */
+  /** The pan region the subject point p is deepest in, or nearest to: the nearest point of its core and its reach. */
   function panRegion(p: T.Vector3) {
-    panLine.closestPointToPoint(panSubject.set(p.x, 0, p.z), true, panOnLine);
+    panSubject.set(p.x, 0, p.z);
+    panLine.closestPointToPoint(panSubject, true, panOnLine);
+    panOnDeck.set(T.MathUtils.clamp(p.x, PAN.deck.x0, PAN.deck.x1), 0, T.MathUtils.clamp(p.z, PAN.deck.z0, PAN.deck.z1));
     const disc = Math.hypot(p.x, p.z) - PAN.disc,
-      capsule = panSubject.distanceTo(panOnLine) - PAN.capsule;
-    return disc <= capsule ? { centre: panOnLine.set(0, 0, 0), radius: PAN.disc } : { centre: panOnLine, radius: PAN.capsule };
+      causeway = panSubject.distanceTo(panOnLine) - PAN.causeway,
+      deck = panSubject.distanceTo(panOnDeck) - PAN.deck.reach;
+    if (disc <= causeway && disc <= deck) return { centre: panOrigin, radius: PAN.disc };
+    return deck <= causeway ? { centre: panOnDeck, radius: PAN.deck.reach } : { centre: panOnLine, radius: PAN.causeway };
   }
   controls.maxTargetRadius = PAN.disc;
   controls.screenSpacePanning = true;

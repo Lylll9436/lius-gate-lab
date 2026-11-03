@@ -562,8 +562,9 @@ for (let frame = 0; frame < 120; frame++) {
 assert(Math.abs(studyCamera.zoom - townZoom) < 1e-3, 'The glide must reach the town framing.');
 assert.equal(studyControls.maxZoom, 4, 'Back in the town, its zoom limit holds again.');
 // The visitor's pan limit: the subject point (the view centre less the panel offset) stays in the
-// island's disc (30) or in a capsule (15) out along the causeway to the airport's island, clamped
-// each frame to whichever is nearer; and the overview and the airport's chapter fit their frames.
+// island's disc (30), a capsule (8) over the causeway, or the airport's deck and 4 past its edge,
+// clamped each frame to whichever it is deepest in or nearest to; and the overview and the
+// airport's chapter fit their frames.
 const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href);
 {
   const pieces = [];
@@ -605,14 +606,30 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         k = Math.min(1, r.radius / d);
       return [r.x + (x - r.x) * k, r.z + (z - r.z) * k];
     },
-    inside = (x, z) => Math.hypot(x, z) <= 30 + 1e-6 || new T.Line3(scene.PAN.from, scene.PAN.to).closestPointToPoint(new T.Vector3(x, 0, z), true, new T.Vector3()).distanceTo(new T.Vector3(x, 0, z)) <= 15 + 1e-6;
+    // The union, measured from the plan rather than from panRegion: the disc, the capsule round the
+    // causeway's line (x 0.5, from z -20 to the deck's south edge) and the deck's signed distance.
+    beyondDeck = (x, z) => plan.airportDistance(x, z),
+    inside = (x, z) => {
+      const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
+      return Math.hypot(x, z) <= 30 + 1e-6 || Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) <= 8 + 1e-6 || beyondDeck(x, z) <= 4 + 1e-6;
+    };
   assert.deepEqual(region(3, -4), { x: 0, z: 0, radius: 30 }, 'The island is not its own pan region.');
-  for (const [x, z] of [[plan.AIRPORT.x, plan.AIRPORT.z], [0.5, -36], [-17, -52], [6.5, -44], [0.5, -26]])
-    assert(region(x, z).radius === 15 && inside(x, z) && clamp(x, z).every((c, i) => Math.abs(c - [x, z][i]) < 1e-9), `The airport's pan region leaves out ${x}, ${z}.`);
-  for (const [x, z] of [[60, 0], [0, 60], [-40, -70], [25, -45], [-30, -40]]) {
+  for (const [x, z] of [[plan.AIRPORT.x, plan.AIRPORT.z], [0.5, -36], [-17, -52], [6.5, -44], [-5.5, -58.5], [-20.5, -49.2], [0.5, -26]])
+    assert((z < -30 ? region(x, z).radius !== 30 : true) && inside(x, z) && clamp(x, z).every((c, i) => Math.abs(c - [x, z][i]) < 1e-9), `The airport's pan region leaves out ${x}, ${z}.`);
+  for (const [x, z] of [[60, 0], [0, 60], [-40, -70], [25, -45], [-30, -40], [-5.5, -62], [-21, -40], [12, -40]]) {
     const [cx, cz] = clamp(x, z);
     assert(inside(cx, cz) && Math.hypot(cx - x, cz - z) > 1, `A pan to ${x}, ${z} is not held to the town.`);
   }
+  // Out past the airport (north of its middle, or past either end) the subject is held within 4 of
+  // its deck's edge, as the disc holds it a few units off the island's coast: a pan north of it no
+  // longer ends on two thirds of open sea (the capsule of 15 let it run 9 past the north edge).
+  for (let a = Math.PI; a <= 2 * Math.PI + 1e-9; a += Math.PI / 36)
+    for (const far of [5, 20, 40]) {
+      const x = plan.AIRPORT.x + Math.cos(a) * (plan.AIRPORT.hw + far),
+        z = plan.AIRPORT.z + Math.sin(a) * (plan.AIRPORT.hd + far),
+        [cx, cz] = clamp(x, z);
+      assert(inside(cx, cz) && beyondDeck(cx, cz) <= 4 + 1e-6, `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
+    }
   // The overview takes in the airport's island too (its armour's toe, the tower's mast, the hangar's
   // roof): at 1440 x 900 it zooms out about 16% from the island's 0.911, and beside the open file
   // (460 wide: a frame shift of about 0.17 at 1440, 0.19 at 1280) it still fits above the widest zoom.
@@ -639,7 +656,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     scene.fitGroup(scene.AIRPORT_FIT, 0.95, 2.6);
     assert(Math.abs(view.targetZoom - want) < 0.01 && view.targetZoom >= 0.95, `The airport's chapter fits at ${view.targetZoom.toFixed(3)} on ${w} x ${h} (${want} expected).`);
     const subject = view.target.clone().sub(view.shiftApplied);
-    assert(inside(subject.x, subject.z) && region(subject.x, subject.z).radius === 15, `The airport's chapter frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pan region.`);
+    assert(inside(subject.x, subject.z) && region(subject.x, subject.z).radius === scene.PAN.deck.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9), `The airport's chapter frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pan region.`);
   }
 }
 // A sun shadow map thrown away (Inspect's sharper map, the town's again, a quality step) or a
