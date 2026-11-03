@@ -145,12 +145,15 @@ export function followMovingParts(pairs: [T.Object3D, T.Object3D][]) {
 
 /**
  * Pointer picking's broad phase: one invisible box per building (its bounds in the town, which
- * stands untransformed under `parent`), set as the model's `hit`. See pickTarget.
+ * stands untransformed under `parent`), set as the model's `hit`. The airport's covers its whole
+ * deck (plan.AIRPORT): pointing at the runway or the apron finds it too. See pickTarget.
  */
 export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) {
+  const A = plan.AIRPORT;
   for (const [id, m] of models) {
-    const bounds = new T.Box3().setFromObject(m.root),
-      size = bounds.getSize(new T.Vector3()),
+    const bounds = new T.Box3().setFromObject(m.root);
+    if (id === 'airport') bounds.union(new T.Box3(new T.Vector3(A.x - A.hw, 0, A.z - A.hd), new T.Vector3(A.x + A.hw, A.deck + 0.1, A.z + A.hd)));
+    const size = bounds.getSize(new T.Vector3()),
       centre = bounds.getCenter(new T.Vector3());
     const hit = new T.Mesh(
       new T.BoxGeometry(size.x, size.y, size.z),

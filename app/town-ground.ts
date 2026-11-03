@@ -316,6 +316,37 @@ export function createGround(ctx: TownContext) {
         fi.push(a, c, c + 1, a, c + 1, a + 1);
       }
     });
+    // The airport's island and causeway (plan.AIRPORT, plan.AIRPORT_ROAD): one thin line where the
+    // rock armour meets the sea, round the deck and along both toes of the causeway, from the
+    // beach's tide line to the island's, open where the causeway lands. Clockwise from above, as
+    // the island's bands run, so it faces up.
+    {
+      const strip = (points: { x: number; z: number; nx: number; nz: number }[], from: number, to: number, alpha: number) => {
+        const start = fp.length / 3;
+        points.forEach((p, i) => {
+          const wobble = 0.05 * Math.sin(i * 1.3) + 0.03 * Math.sin(i * 3.7);
+          fp.push(p.x + p.nx * (from + wobble), WATER + 0.006, p.z + p.nz * (from + wobble), p.x + p.nx * (to + wobble), WATER + 0.006, p.z + p.nz * (to + wobble));
+          for (let k = 0; k < 2; k++) fc.push(foamColour.r, foamColour.g, foamColour.b, alpha);
+        });
+        for (let i = 0; i + 1 < points.length; i++) {
+          const a = start + i * 2,
+            c = a + 2;
+          fi.push(a, c, c + 1, a, c + 1, a + 1);
+        }
+      };
+      const R = plan.AIRPORT_ROAD,
+        // Where the causeway's flank meets the water, plus the boulders' reach over it.
+        toe = R.top / 2 + (plan.AIRPORT.deck - 0.03 - WATER) * R.flank + 0.24,
+        beach = R.beach - 2.95,
+        island = plan.AIRPORT.z + plan.AIRPORT.hd + 0.86,
+        line = (side: number) =>
+          Array.from({ length: Math.ceil((beach - island) / 0.5) + 1 }, (_, i) => {
+            const z = island + ((beach - island) * i) / Math.ceil((beach - island) / 0.5);
+            return { x: R.x, z: side > 0 ? z : beach + island - z, nx: side, nz: 0 };
+          });
+      strip(plan.airportOutlineRound(0, 0.5, toe), 0.86, 1.0, 0.7);
+      for (const side of [-1, 1]) strip(line(side), toe - 0.07, toe + 0.07, 0.7);
+    }
     const foamGeometry = new T.BufferGeometry();
     foamGeometry.setAttribute('position', new T.Float32BufferAttribute(fp, 3));
     foamGeometry.setAttribute('color', new T.Float32BufferAttribute(fc, 4));

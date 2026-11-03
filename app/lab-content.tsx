@@ -70,6 +70,7 @@ export type GlyphKind =
   | 'gate'
   | 'hall'
   | 'house'
+  | 'airport'
   | 'studio'
   | 'archive'
   | 'park'
@@ -78,6 +79,7 @@ export type GlyphKind =
 export function glyphFor(id: ContentId): GlyphKind {
   if (id === 'lius-gate' || id === 'overview') return 'gate';
   if (id === 'town-hall') return 'hall';
+  if (id === 'airport') return 'airport';
   if (id === 'research-studio') return 'studio';
   if (id === 'city-archive') return 'archive';
   if (id === 'corner-park') return 'park';
@@ -95,7 +97,7 @@ export function PlaceGlyph({
   size?: number;
 }) {
   const k = (
-    ['gate', 'hall', 'house', 'studio', 'archive', 'park', 'people'].includes(
+    ['gate', 'hall', 'house', 'airport', 'studio', 'archive', 'park', 'people'].includes(
       kind,
     )
       ? kind
@@ -105,6 +107,8 @@ export function PlaceGlyph({
     gate: 'M4 20V10a8 8 0 0 1 16 0v10M2 20h20M8 20v-9a4 4 0 0 1 8 0v9',
     hall: 'M3 21h18M5 21V10h14v11M12 10V4l3 2M9 14h2v7M13 14h2v7M8 7h8',
     house: 'M3 11l9-7 9 7M5 9.5V21h14V9.5M10 21v-6h4v6M14 5V3h2v4',
+    // The departures hall's barrel roof and open arch, and the control tower's raked cab and mast.
+    airport: 'M3 21h18M4 21v-6a5 3.5 0 0 1 10 0v6M7.5 21v-2.5a1.5 1.5 0 0 1 3 0V21M17 21V10.5M19.5 21V10.5M16.5 10.5h3.5l1-3.5h-5.5zM18.25 7V4',
     studio: 'M3 21h18M4 21V8h9v13M13 21V12h7v9M7 11h3M7 15h3M16 15h2',
     archive:
       'M3 21h18M4 21V9l4-3 4 3 4-3 4 3v12M7 13h2M11 13h2M15 13h2M9 21v-5h6v5',

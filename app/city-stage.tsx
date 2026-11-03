@@ -173,21 +173,25 @@ export function CityStage({
         </output>
       )}
       <div className="map-labels">
-        {buildings.map((item) => (
-          <div
-            key={item.id}
-            data-building-label={item.id}
-            className="building-hover-label"
-            style={{ visibility: 'hidden' }}
-            aria-hidden="true"
-          >
-            <strong>{item.name[locale]}</strong>
-            <span>
-              {item.category[locale]} ·{' '}
-              {districts.find((d) => d.buildings.includes(item.id))?.name[locale]}
-            </span>
-          </div>
-        ))}
+        {buildings.map((item) => {
+          // The airport stands in no district: its label ends at its category.
+          const district = districts.find((d) => d.buildings.includes(item.id));
+          return (
+            <div
+              key={item.id}
+              data-building-label={item.id}
+              className="building-hover-label"
+              style={{ visibility: 'hidden' }}
+              aria-hidden="true"
+            >
+              <strong>{item.name[locale]}</strong>
+              <span>
+                {item.category[locale]}
+                {district ? ` · ${district.name[locale]}` : null}
+              </span>
+            </div>
+          );
+        })}
         <div
           data-building-label="corner-park"
           className="building-hover-label"

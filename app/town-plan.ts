@@ -286,6 +286,9 @@ export const sites: Record<BuildingId, Site> = {
   'visiting-phd': residenceSite,
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
+  // On the airport's island (onAirport, not onIsland): the Departures Hall (x -1.6..2.6, centred on
+  // the causeway's axis), its link block (to 3.4) and the control tower (at 3.9, -47.4), front south.
+  airport: { id: 'airport', x: 1.6, z: -47.6, rotation: 0, w: 6.6, d: 3.8, height: 7 },
 };
 export const siteList = Object.values(sites);
 /**
@@ -312,6 +315,9 @@ export const chapterBearings: Record<string, number> = {
   // Facing the park's notice board (turned -0.6) rather than its edge.
   'corner-park': -0.35,
   'lius-gate': Math.PI / 4 - 0.18,
+  // The gate's bearing again (so no new bearing enters the per-bearing checks): the hall's front
+  // and its arch are seen 35 degrees off, the island and the causeway's far half whole.
+  airport: Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -320,6 +326,7 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
   'research-studio': ['research-studio'],
   'city-archive': ['city-archive'],
   'lius-gate': ['lius-gate'],
+  airport: ['airport'],
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
@@ -340,13 +347,14 @@ export const cottages: { n: number; x: number; z: number; rotation: number; colo
   { n: 4, x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8', nightLight: true },
 ];
 /**
- * Where the planting was first laid out round: the seven sites before the residence, and every
- * cottage's spot with the north cottage's among them. The tree and heather rules keep reading
- * these, and the trees on ground built on since (residencePlot) are dropped afterwards, by id, so
- * new building never moves, adds or re-species another tree (as the paddock's tree was dropped).
+ * Where the planting was first laid out round: the seven sites before the residence (and the
+ * airport, out at sea), and every cottage's spot with the north cottage's among them. The tree and
+ * heather rules keep reading these, and the trees on ground built on since (residencePlot) are
+ * dropped afterwards, by id, so new building never moves, adds or re-species another tree (as the
+ * paddock's tree was dropped).
  */
 const PLANTED = {
-  sites: () => siteList.filter((s) => s.id !== 'visiting-phd'),
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport'),
   cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
 };
 /**
@@ -390,6 +398,142 @@ export const stoneRing = { x: -23.75, z: -23.25, r: 1.15 };
  */
 export const statueSpot: XZ = [-10.4, -5.6];
 export const statueHeading = 1.8;
+
+/* ------------------------------------------------------------------ */
+/* Airport                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The airport, where people who have left Liu's Gate set off from: a small artificial island off
+ * the north shore, due north behind the Town Hall (about 6 degrees west of north), 14 out from the
+ * coast at its nearest. Its deck is a 24 x 12 rounded rectangle (half-sizes hw and hd, corner
+ * `radius`) centred at x, z and running east-west, like the coast and the ring's north straight;
+ * its grass lies at `deck`, and rock armour reaches `armour` beyond its edge, down into the sea.
+ * It lies past the ground masks' edge (±44): its grass has no lawn checker and no mask shade, and
+ * deep water runs right up to the armour, as round an artificial island it would.
+ */
+export const AIRPORT = { x: -5.5, z: -49.2, hw: 12, hd: 6, radius: 2.4, deck: 0.4, armour: 0.8 };
+/** Signed distance from the deck's edge: negative on the deck, positive out over the armour and the sea. */
+export function airportDistance(x: number, z: number) {
+  const { x: cx, z: cz, hw, hd, radius: r } = AIRPORT,
+    qx = Math.abs(x - cx) - hw + r,
+    qz = Math.abs(z - cz) - hd + r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - r;
+}
+/**
+ * On the airport's deck, inside the `margin` level of airportDistance. The margin is a signed
+ * distance (unlike onIsland's inset): onAirport(x, z, -0.3) keeps 0.3 in from the deck's edge, and
+ * a positive margin reaches out over the armour.
+ */
+export function onAirport(x: number, z: number, margin = 0) {
+  return airportDistance(x, z) <= margin;
+}
+/**
+ * Points round the deck's outline `offset` beyond its edge (negative inside), about `step` apart,
+ * clockwise seen from above as roundedRect's are: each with the outline's outward normal.
+ */
+export function airportOutline(offset = 0, step = 0.5) {
+  const { x: cx, z: cz, hw, hd, radius } = AIRPORT,
+    r = radius + offset,
+    out: { x: number; z: number; nx: number; nz: number }[] = [];
+  const corners: [number, number, number][] = [
+    [hw - radius, -hd + radius, -Math.PI / 2],
+    [hw - radius, hd - radius, 0],
+    [-hw + radius, hd - radius, Math.PI / 2],
+    [-hw + radius, -hd + radius, Math.PI],
+  ];
+  corners.forEach(([ox, oz, start], k) => {
+    const arc = Math.max(2, Math.ceil((r * Math.PI) / 2 / step));
+    for (let i = 0; i < arc; i++) {
+      const a = start + (i / arc) * (Math.PI / 2);
+      out.push({ x: cx + ox + Math.cos(a) * r, z: cz + oz + Math.sin(a) * r, nx: Math.cos(a), nz: Math.sin(a) });
+    }
+    // The straight side on to the next corner's arc.
+    const side = start + Math.PI / 2,
+      [px, pz] = [ox + Math.cos(side) * r, oz + Math.sin(side) * r],
+      [nx, nz, next] = corners[(k + 1) % 4],
+      [qx, qz] = [nx + Math.cos(next) * r, nz + Math.sin(next) * r],
+      n = Math.max(1, Math.ceil(Math.hypot(qx - px, qz - pz) / step));
+    for (let i = 0; i < n; i++)
+      out.push({ x: cx + px + ((qx - px) * i) / n, z: cz + pz + ((qz - pz) * i) / n, nx: Math.cos(side), nz: Math.sin(side) });
+  });
+  return out;
+}
+/**
+ * The outline (as airportOutline) as an open path round the deck from where the causeway lands
+ * on its south edge back to it: it starts and ends exactly `reach` either side of the road's axis.
+ */
+export function airportOutlineRound(offset: number, step: number, reach: number) {
+  const ring = airportOutline(offset, step),
+    n = ring.length,
+    gap = (p: { x: number; z: number }) => p.z > AIRPORT.z && Math.abs(p.x - AIRPORT_ROAD.x) < reach,
+    start = ring.findIndex((p, i) => gap(ring[(i + n - 1) % n]) && !gap(p)),
+    // Where the south edge (straight, along x) crosses |x - axis| = reach, between a and b.
+    cut = (a: (typeof ring)[number], b: (typeof ring)[number]) => {
+      const da = Math.abs(a.x - AIRPORT_ROAD.x),
+        t = (reach - da) / (Math.abs(b.x - AIRPORT_ROAD.x) - da);
+      return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, nx: b.nx, nz: b.nz };
+    };
+  const out = [cut(ring[(start + n - 1) % n], ring[start])];
+  for (let k = 0; k < n; k++) {
+    const p = ring[(start + k) % n];
+    if (gap(p)) {
+      out.push(cut(p, ring[(start + k + n - 1) % n]));
+      break;
+    }
+    out.push(p);
+  }
+  return out;
+}
+/**
+ * The road to the airport, on one axis with the Gate and the Town Hall (x 0.5), its stations along
+ * z: the `mouth` on the ring's north straight (unsignalled: the ring's outer kerb and pavement run
+ * on across it, so the signals, the tram's and the cyclist's timetables and the walkers keep to
+ * the ring as before); the hall lane from the pavement's edge (`lane`) to the coast (`beach`), 1.7 of
+ * asphalt with grass verges and no pavements, between cottages 3 and 4; the beach ramp up to the
+ * causeway's height; the causeway over the water (`causeway` to `island`), a rubble-mound
+ * embankment `top` wide with parapets `parapet` thick, its rock flanks running `flank` out for each
+ * unit they fall; then over the armour and the forecourt to the
+ * hall's arch. It is no street: the avenues and distanceToStreets leave it out (its own distance is
+ * distanceToAirportRoad), so the trees, lamps and signals laid out from the streets stay put.
+ */
+export const AIRPORT_ROAD = { x: 0.5, mouth: -13, lane: -14.95, beach: -26.86, causeway: -29.6, island: -42.4, arch: -45.8, top: 2.5, parapet: 0.16, flank: 1.05 };
+export const airportRoad: XZ[] = (['mouth', 'lane', 'beach', 'causeway', 'island', 'arch'] as const).map((k): XZ => [AIRPORT_ROAD.x, AIRPORT_ROAD[k]]);
+/** Distance from the airport road's carriageway (negative on it). */
+export function distanceToAirportRoad(x: number, z: number) {
+  return distanceToPolyline([x, z], airportRoad) - ROAD_WIDTH / 2;
+}
+/**
+ * The road's bed at z: the lane's ground (0), rising over the beach ramp (a smoothstep, level at
+ * both ends) to the deck's height on the causeway and beyond. The asphalt lies levels.road above it.
+ */
+export function airportRoadTop(z: number) {
+  const { beach, causeway } = AIRPORT_ROAD,
+    t = Math.min(1, Math.max(0, (beach - z) / (beach - causeway)));
+  return AIRPORT.deck * t * t * (3 - 2 * t);
+}
+/**
+ * The top of the airport's built ground at (x, z): the deck's grass inside its edge, the ramp's and
+ * the causeway's top across their width, otherwise the terrain. What stands on the airport stands
+ * on this, and batch() bakes the airport's contact shade from it.
+ */
+export function deckHeight(x: number, z: number) {
+  if (airportDistance(x, z) <= 0) return AIRPORT.deck;
+  if (z < AIRPORT_ROAD.beach && Math.abs(x - AIRPORT_ROAD.x) <= AIRPORT_ROAD.top / 2) return airportRoadTop(z);
+  return terrainHeight(x, z);
+}
+/**
+ * Airside: runway 09/27 along world x (centre line z, ends x0, x1), so departures on 27 head west
+ * into Glasgow's prevailing westerly; the taxiway parallel to it, with a stub north to the runway
+ * at each of its ends (`stubs`). The apron west of the hall (x0..x1, z0..z1) and its stand, where the
+ * plane parks nose east toward the hall (heading as rotation.y: the nose along (sin, cos)).
+ * Landside: the forecourt before the hall's arch, where the road ends.
+ */
+export const RUNWAY = { z: -53, x0: -15.5, x1: 4.5, width: 2.2 };
+export const TAXIWAY = { z: -50.6, x0: -12, x1: 4, width: 0.9, stubs: [-12, 4] };
+export const APRON = { x0: -13, x1: -2.2, z0: -49.9, z1: -44.2 };
+export const STAND = { x: -5.2, z: -47.2, heading: Math.PI / 2 };
+export const FORECOURT = { x0: -1.9, x1: 2.9, z0: -45.8, z1: -43.2 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
@@ -1278,14 +1422,16 @@ export const pavementTop = (x: number, z: number) => droppedFloor(x, z) ?? level
  * the tram runs; an avenue from its plaza end, `from`) and `across` it, positive to the right of
  * that direction (the ring's inner side; an avenue's inbound lane). The road ribbons carry the same
  * pair in their uv (an avenue's along plus 1000 × its place in ROADS), so the road shader's wear
- * lines up with these.
+ * lines up with these. The airport's road runs from the lane's start (AIRPORT_ROAD.lane) toward the
+ * island, its uv along from 4000.
  */
-export type RoadId = 'ring' | JunctionId;
-export const ROADS: RoadId[] = ['ring', 'south', 'west', 'east'];
+export type RoadId = 'ring' | JunctionId | 'airport';
+export const ROADS: RoadId[] = ['ring', 'south', 'west', 'east', 'airport'];
 export type RoadSpot = { road: RoadId; along: number; across: number; x: number; z: number; heading: number };
 export function roadSpot(road: RoadId, along: number, across: number): RoadSpot {
   let x: number, z: number, heading: number;
   if (road === 'ring') ({ x, z, heading } = samplePolyline(ringLine, along, true));
+  else if (road === 'airport') ({ x, z, heading } = samplePolyline(airportRoad.slice(1), along));
   else {
     const a = avenues.find((v) => v.id === road)!,
       length = Math.hypot(a.to[0] - a.from[0], a.to[1] - a.from[1]);
