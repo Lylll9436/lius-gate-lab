@@ -1134,6 +1134,18 @@ for (const reading of [true, false]) {
 // The chapter at the gate is about this site; the name story was removed at the owner's request.
 const gate = buildings.find((b) => b.id === 'lius-gate');
 assert.deepEqual(gate.sections.map((s) => s.heading.en), ['Layout', 'How to use the site']);
+// The Gate's layout and the Town Hall's note on this site each end on the causeway and the airport.
+for (const [where, body] of [
+  ['the Gate’s Layout', gate.sections.find((s) => s.heading.en === 'Layout').body],
+  ['the Town Hall’s This site', buildings.find((b) => b.id === 'town-hall').sections.find((s) => s.heading.en === 'This site').body],
+]) {
+  const last = (text, stop) => text.split(stop).filter((s) => s.trim()).pop();
+  assert(
+    /causeway/.test(last(body.en, '. ')) && /airport/.test(last(body.en, '. ')) &&
+      last(body.zh, '。').includes('堤道') && last(body.zh, '。').includes('机场'),
+    where + ' says where the causeway leads.',
+  );
+}
 assert.deepEqual(
   chapterMeta.find((c) => c.id === 'lius-gate').title,
   { en: 'About this site', zh: '关于本站' },

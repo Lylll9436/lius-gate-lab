@@ -57,8 +57,8 @@ const places: Building[] = [
       {
         heading: t('Layout', '布局'),
         body: t(
-          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south.',
-          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。',
+          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
+          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
         ),
       },
       {
@@ -110,8 +110,8 @@ const places: Building[] = [
       {
         heading: t('This site', '关于本站'),
         body: t(
-          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive.',
-          '本站按一座小城组织：每一章对应一栋建筑，完成的工作从工作室转入档案馆。',
+          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive. Those who move on take the causeway behind the hall to the airport, whose departures board shows where each of them went.',
+          '本站按一座小城组织：每一章对应一栋建筑，完成的工作从工作室转入档案馆。离开的人沿市政厅背后的堤道去往机场，出发屏上显示每个人去了哪里。',
         ),
       },
     ],
