@@ -16,8 +16,24 @@
 | properties | 可扩展的属性：唯一 key，加上双语 label 与 value |
 | links | 双语链接标题和 HTTPS / mailto 地址 |
 
-- 人员额外字段：`role`、`affiliation`、`photo`、`buildingId`。照片放在 `public/people/`，`photo` 填 `/people/文件名.jpg`，无照片用 `null`（页面显示姓名首字母的方块，颜色取自住所）。`buildingId` 只能是 `pengyuan-liu`、`yunlong-liu`、`qin-li` 三户之一（每户一人）、`visiting-phd`（访问博士公寓，可住多人）或 `null`；为 `null` 时人员仍出现在成员章节，在小城中定位到联排住宅。
-- 新增访问博士生：在 `content/lab.json` 的 `people` 里加一条记录，`buildingId` 填 `visiting-phd`，`role` 填 `{"en": "VISITING PHD RESEARCHER", "zh": "访问博士生"}`（`check-content` 只允许导师和住在公寓里的访问博士生与「PHD RESEARCHER / 博士生」不同），`affiliation` 写所在大学，照片放在 `public/people/`（4:5 竖版，800 × 1000 像素或更大，人物居中），`photo` 填 `/people/文件名.jpg`。不用改模型或代码：成员章节按 `order` 列出这张卡片，章节镜头本来就框住公寓，公寓屋顶上的名字标签写出所有住户（英文取名、中文全名，多人用「 · 」或「、」隔开），悬停卡片描边公寓；小城视图里点公寓打开它自己的资料，列出每位住户的卡片（没人住时是一段写给访客的说明）。访问结束后把记录改成 `draft` 或删除即可。
+- 人员额外字段：`role`、`affiliation`、`photo`、`buildingId`，离开时再加 `departure`（见下面「成员离开」）。照片放在 `public/people/`，`photo` 填 `/people/文件名.jpg`，无照片用 `null`（页面显示姓名首字母的方块，颜色取自住所）。`buildingId` 只能是 `pengyuan-liu`、`yunlong-liu`、`qin-li` 三户之一（每户一人；加了 `departure` 的人保留原来的 `buildingId`，但不再占这一户）、`visiting-phd`（访问博士公寓，可住多人）或 `null`；为 `null` 时人员仍出现在成员章节，在小城中定位到联排住宅。
+- 新增访问博士生：在 `content/lab.json` 的 `people` 里加一条记录，`buildingId` 填 `visiting-phd`，`role` 填 `{"en": "VISITING PHD RESEARCHER", "zh": "访问博士生"}`（`check-content` 只允许导师和住在公寓里的访问博士生与「PHD RESEARCHER / 博士生」不同），`affiliation` 写所在大学，照片放在 `public/people/`（4:5 竖版，800 × 1000 像素或更大，人物居中），`photo` 填 `/people/文件名.jpg`。不用改模型或代码：成员章节按 `order` 列出这张卡片，章节镜头本来就框住公寓，公寓屋顶上的名字标签写出所有住户（英文取名、中文全名，多人用「 · 」或「、」隔开），悬停卡片描边公寓；小城视图里点公寓打开它自己的资料，列出每位住户的卡片（没人住时是一段写给访客的说明）。访问结束时不要把记录改成 `draft` 或删除（欢迎活动等已发布的记录还提到这个人，校验会拒绝），而是按下一条加上 `departure`：从那天起，公寓的名字标签和资料不再列出这位访问者，出发屏把这一行显示为「已返程 / Returned」。
+- 成员离开（毕业、访问结束）：记录保持 `published`，在这个人的记录里加一个 `departure`，原来的地址、活动里的人员按钮和导师邮箱都照常可用。例如：
+
+  ```json
+  "departure": {
+    "date": "2027-09-30",
+    "city": { "en": "Edinburgh, UK", "zh": "英国爱丁堡" },
+    "destination": { "en": "University of Edinburgh", "zh": "爱丁堡大学" },
+    "role": { "en": "Research fellow", "zh": "研究员" },
+    "link": { "label": { "en": "Homepage", "zh": "个人主页" }, "url": "https://example.org/" }
+  }
+  ```
+
+  `date` 是出发那天（真实的 YYYY-MM-DD，规则与活动日期相同），可以提前填未来的日期，到那天才生效，按 UTC 日期计（与首屏快讯相同，`app/lab-records.ts` 的 `hasDeparted`）；`city` 是去向城市（出发屏上的目的地），`destination` 是现在所在的机构或单位，`role` 是在那里的身份，没有就填 `null`；`link` 是本人的主页，必须是 HTTPS 地址，没有就填 `null`。五个字段都要写，英文不得包含中文；拼错的字段名（例如 `depature`）会被拒绝，人员记录里也不能有其他多余的字段。不要写状态：住在访问博士公寓（`buildingId` 为 `visiting-phd`）的人显示「已返程 / Returned」，其余显示「已启程 / Departed」（`departureStatus`）。`role`、`affiliation`、`buildingId` 保持原样，作为在刘家门时的记录。
+  生效以后，这个人不再出现在「成员」一章、名字标签和公寓的住户里（`memberRecords`），按出发日期倒序列入离开的人（`alumniRecords`，供机场的出发屏使用）；他住过的那户显示为「联排住宅 · 目前无人居住」，直到有新成员住进来。新成员可以提前录入同一个 `buildingId`：离开日之前，那户显示 `order` 靠前的现住户，名字标签也只写这一位。
+  - 同意：只有本人同意后才写去向；`date` 只填已经确定的日期。去向城市、机构、身份和链接都会公开展示。
+  - 邮箱：学生邮箱（`@student.gla.ac.uk`、`@research.gla.ac.uk`）在离开后会停用。加 `departure` 的同时，把 `links` 里的学生邮箱删掉，改用 `departure.link`（本人愿意公开的主页）。
 - 研究额外字段：`status`（`active` / `completed`）、`people`、`buildingId`。`active` 进入研究工作室，`completed` 自动进入档案馆，并保留与成员和成果的关联。
 - 活动额外字段：`date`（真实 YYYY-MM-DD）、`category`（`group-photo` / `celebration` / `milestone`）、`people`、`image`（`public/media/` 下的图片或 `null`）。活动按日期倒序进入街角公园。
 - 成果（`outputs`）：`type` 为 `paper` / `dataset` / `software` / `report`，加 `date`、`people`、`researchId`、`buildingId`。研究记录（`notes`）同样有 `date`、`people`、`researchId`、`buildingId`。
@@ -40,7 +56,7 @@ pnpm content upsert notes content/examples/note.json
 pnpm content remove events example-event
 ```
 
-`upsert` 是整条替换，不是部分字段合并。删除或隐藏仍被已发布记录引用的人员会被拒绝。`content/examples/` 下是 draft 示例，不会进入网站。
+`upsert` 是整条替换，不是部分字段合并。删除或隐藏仍被已发布记录引用的人员会被拒绝；成员离开时加 `departure`，不要删除或隐藏。`content/examples/` 下是 draft 示例，不会进入网站。
 
 内容地址示例：`#read/person:example-person`、`#city/research:example-research`。创始成员沿用 `#read/pengyuan-liu` 等短地址。
 
@@ -118,7 +134,7 @@ pnpm check
 pnpm build:pages
 ```
 
-`check-town` 在 Node 中生成整座小城，验证建筑位置（含访问博士公寓的间距、地块与预算）、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器、夜间窗灯（每扇窗自己的灯、整夜逐扇熄灭、清晨逐扇亮起、不比原先亮）、热气球航线（含首屏不挡文字）、三户凸窗（不穿出屋檐、不碰门套、每户三角面预算）、港口缆绳与海滩小景的间距、街头小景（骑车人、遛狗路线、鸭子、自行车架）的路线与间距、围栏里的干草捆、季节树色、晨昏的低角度主光、手动白天的固定太阳、夜里平滑经过正北的主光、海鸥的渐隐、首屏视角下没有羊站在树顶上，以及近看模型跟随的钟表与风向标；`check-navigation`、`check-hover`、`check-content` 验证地址解析、镜头动作（连按旋转不回摆、过渡中缩放、离开近看时缓出、暂停或拖动时漂移停住、阴影贴图更换后立即重绘、帧率调节的回升、第一次天色之前不绘制、数小时没有帧后窗灯直接到位、转向中面板偏移的改变不横跳、GPU 上下文恢复后重新烘焙环境光、月光反光随视角转动）、悬停与点选（拖出又拖回的平移不算点选；离开页面的悬停标签不再被液态玻璃保留）和内容增删改。这些检查不代替在目标设备上的视觉验收。
+`check-town` 在 Node 中生成整座小城，验证建筑位置（含访问博士公寓的间距、地块与预算）、树木与街道的关系、船只航线、三角面预算、近看取景、可点击性、水面着色器、夜间窗灯（每扇窗自己的灯、整夜逐扇熄灭、清晨逐扇亮起、不比原先亮）、热气球航线（含首屏不挡文字）、三户凸窗（不穿出屋檐、不碰门套、每户三角面预算）、港口缆绳与海滩小景的间距、街头小景（骑车人、遛狗路线、鸭子、自行车架）的路线与间距、围栏里的干草捆、季节树色、晨昏的低角度主光、手动白天的固定太阳、夜里平滑经过正北的主光、海鸥的渐隐、首屏视角下没有羊站在树顶上，以及近看模型跟随的钟表与风向标；`check-navigation`、`check-hover`、`check-content` 验证地址解析、镜头动作（连按旋转不回摆、过渡中缩放、离开近看时缓出、暂停或拖动时漂移停住、阴影贴图更换后立即重绘、帧率调节的回升、第一次天色之前不绘制、数小时没有帧后窗灯直接到位、转向中面板偏移的改变不横跳、GPU 上下文恢复后重新烘焙环境光、月光反光随视角转动）、悬停与点选（拖出又拖回的平移不算点选；离开页面的悬停标签不再被液态玻璃保留）和内容增删改；谁还在刘家门取决于日期，所以 `check-content` 用固定的日期检查离开规则（测试用的离开者、返程的访问者和 2099 年才离开的人，都只在检查里，不写进 `content/lab.json`），结果不随运行那天变化，并检查网站文案里没有把刘家门叫作实验室（lab）。这些检查不代替在目标设备上的视觉验收。
 
 ## GitHub Pages 发布
 
