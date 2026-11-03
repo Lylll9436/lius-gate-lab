@@ -2533,6 +2533,21 @@ assert.equal(lowSun(rad(-10)), 0);
   assert(birds.object.children.every((bird) => Math.abs(bird.scale.x - 0.4) < 1e-9), 'The gulls shrink with their presence.');
   birds.dispose();
 }
+// The rain falls over the airport's island too (a square of ±58 round the town's centre, out past
+// the deck's far edge at -55.2), as dense as it was over ±50: the scene asks for 1.35 times the streaks.
+{
+  const { createRain } = await load('city-atmosphere'),
+    rain = createRain(),
+    p = rain.object.geometry.getAttribute('position'),
+    streaks = p.count / 2;
+  let reach = 0;
+  for (let i = 0; i < p.count; i++) reach = Math.max(reach, Math.abs(p.getX(i)), Math.abs(p.getZ(i)));
+  assert(reach > 57 && reach <= 58 && reach > -(plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour), `The rain reaches ${reach.toFixed(1)}, not over the airport.`);
+  assert(Math.abs(streaks / (2 * 58) ** 2 - 1700 / (2 * 50) ** 2) < 0.002, `The rain is thinner over ±58 (${streaks} streaks).`);
+  rain.dispose();
+  const scene = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8');
+  assert(scene.includes('createRain(Math.round((tier === \'low\' ? 900 : 1700) * 1.35))'), 'The scene\'s rain is no longer 1.35 times as many streaks.');
+}
 // Manual Day is plain daylight at every hour: never the real sun's golden hour or its warm low
 // light, the key light high. Auto and Night keep the real sun.
 {

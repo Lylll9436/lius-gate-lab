@@ -449,14 +449,22 @@ export async function createCity(
     targetGolden = 0;
   const sun = new T.DirectionalLight('#ffe3bd', 3.8);
   sun.castShadow = true;
+  /**
+   * The town's shadow box, its home focus: the island and the airport's island whole for every sun
+   * and yaw (their farthest corners are 45.7 and 45.0 from this centre), in a map that keeps about
+   * 22 texels a unit, as the old ±34 box at 1536 did. Inspect frames its building in a sharper map
+   * of its own: twice `shadowBase`, as it always was (twice the home map would be 4096).
+   */
+  const SHADOW_HOME = { centre: new T.Vector3(-3.5, 0, -13.5), radius: 46, map: tier === 'low' ? 1536 : 2048 };
   const shadowBase = tier === 'low' ? 1024 : 1536;
-  sun.shadow.mapSize.set(shadowBase, shadowBase);
+  sun.shadow.mapSize.set(SHADOW_HOME.map, SHADOW_HOME.map);
   Object.assign(sun.shadow.camera, {
-    left: -34,
-    right: 34,
-    top: 34,
-    bottom: -34,
-    near: 1,
+    left: -SHADOW_HOME.radius,
+    right: SHADOW_HOME.radius,
+    top: SHADOW_HOME.radius,
+    bottom: -SHADOW_HOME.radius,
+    // The depth from the light runs about 1.2 to 76 over the whole box.
+    near: 0.5,
     far: 90,
   });
   sun.shadow.normalBias = 0.02;
@@ -480,9 +488,16 @@ export async function createCity(
   // Quality ladder, climbed down by the frame-time governor and back up when frames are cheap:
   // 0 full, 1 fewer pixels, 2 smaller shadows and no lantern shadow, 3 and 4 fewer pixels still.
   let quality = 0,
-    qualityChanged = 0;
-  const shadowSizeFor = () =>
-    quality >= 2 ? Math.max(512, shadowBase / 2) : shadowBase;
+    qualityChanged = 0,
+    // The sun's shadow frames Inspect's building, not the town (said outright: the town's own focus
+    // is no longer the origin, so the target's distance from it cannot say so).
+    shadowInspect = false;
+  const shadowSizeFor = (inspecting: boolean) =>
+    inspecting
+      ? 2 * (quality >= 2 ? Math.max(512, shadowBase / 2) : shadowBase)
+      : quality >= 2
+        ? SHADOW_HOME.map / 2
+        : SHADOW_HOME.map;
   function applyQuality() {
     const ratio = Math.max(0.75, baseRatio - 0.25 * [0, 1, 1, 2, 3][quality]);
     if (Math.abs(renderer.getPixelRatio() - ratio) > 1e-3) {
@@ -492,12 +507,13 @@ export async function createCity(
     }
     for (const [i, light] of lighting.lights.entries())
       light.castShadow = i === 0 && tier !== 'low' && quality < 2;
-    shadowFocus(sun.target.position.length() ? sun.target.position.clone() : undefined, sun.shadow.camera.right);
+    shadowFocus(shadowInspect ? sun.target.position.clone() : undefined, sun.shadow.camera.right);
   }
-  function shadowFocus(center?: T.Vector3, radius = 34) {
-    const base = shadowSizeFor();
-    const resolution = center ? base * 2 : base,
-      focus = center || new T.Vector3();
+  /** The sun's shadow on Inspect's building (its centre and reach), or on the town (none given). */
+  function shadowFocus(center?: T.Vector3, radius = SHADOW_HOME.radius) {
+    shadowInspect = !!center;
+    const resolution = shadowSizeFor(shadowInspect),
+      focus = center || SHADOW_HOME.centre;
     // A new map (or a frustum moved elsewhere) is drawn before the next frame uses it, even
     // paused: until then three samples an empty map and puts everything in full shadow.
     if (
@@ -527,13 +543,31 @@ export async function createCity(
   controls.enableRotate = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.09;
-  // Far enough out for the whole island beside the file on a 1024-1280 px wide screen.
-  controls.minZoom = 0.5;
+  // Far enough out for the whole island and the airport beside the file on a 1024-1280 px wide screen.
+  controls.minZoom = 0.45;
   controls.maxZoom = CITY_MAX_ZOOM;
-  // Panning stops before the view leaves the island for open sea: the subject point (the
-  // view centre less the panel offset) stays within this radius of the island's centre.
-  const PAN_RADIUS = 30;
-  controls.maxTargetRadius = PAN_RADIUS;
+  /**
+   * Panning stops before the view leaves the town for open sea: the subject point (the view centre
+   * less the panel offset) stays in the island's disc or in a capsule out along the causeway to
+   * the airport's island. Each frame the controls clamp it to whichever region is nearest.
+   */
+  const PAN = {
+    disc: 30,
+    from: new T.Vector3(0, 0, -20),
+    to: new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z),
+    capsule: 15,
+  };
+  const panSubject = new T.Vector3(),
+    panOnLine = new T.Vector3(),
+    panLine = new T.Line3(PAN.from, PAN.to);
+  /** The pan region nearest the subject point p: its centre (for a capsule, the nearest point of its line) and radius. */
+  function panRegion(p: T.Vector3) {
+    panLine.closestPointToPoint(panSubject.set(p.x, 0, p.z), true, panOnLine);
+    const disc = Math.hypot(p.x, p.z) - PAN.disc,
+      capsule = panSubject.distanceTo(panOnLine) - PAN.capsule;
+    return disc <= capsule ? { centre: panOnLine.set(0, 0, 0), radius: PAN.disc } : { centre: panOnLine, radius: PAN.capsule };
+  }
+  controls.maxTargetRadius = PAN.disc;
   controls.screenSpacePanning = true;
   controls.mouseButtons.LEFT = T.MOUSE.PAN;
   controls.mouseButtons.RIGHT = T.MOUSE.PAN;
@@ -631,7 +665,8 @@ export async function createCity(
     fogGolden: new T.Color('#ecc9a4'),
   };
   const shiftApplied = new T.Vector3();
-  const weather = createRain(tier === 'low' ? 900 : 1700),
+  // Over the island and the airport (a square of ±58, city-atmosphere's): as dense as it was over ±50.
+  const weather = createRain(Math.round((tier === 'low' ? 900 : 1700) * 1.35)),
     gulls = createGulls();
   scene.add(weather.object, gulls.object);
   const target = new T.Vector3(),
@@ -694,7 +729,8 @@ export async function createCity(
     parkSelected = false,
     autoFocus = false;
   // What the overview must show: the sand out to the waterline (3.3 past the outline), the
-  // trees along the shore and the lighthouse on its rock.
+  // trees along the shore and the lighthouse on its rock; and the airport's island to the toe of
+  // its armour, the control tower's mast and the hangar's roof (x -16.8..-13.8, z -50..-45.6, 2.8 up).
   const [rockX, rockZ] = plan.lighthouseRock;
   const islandMarks = [
     ...plan.islandOutline.flatMap(([x, z]) => {
@@ -703,7 +739,19 @@ export async function createCity(
     }),
     new T.Vector3(rockX, 0, rockZ),
     new T.Vector3(rockX, 5.5, rockZ),
+    ...plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z)),
+    new T.Vector3(3.9, 7, -47.4),
+    ...[-16.8, -13.8].flatMap((x) => [-50, -45.6].map((z) => new T.Vector3(x, 2.8, z))),
   ];
+  /**
+   * The airport's frame: its island to the armour's toe and the causeway's far half, up to the
+   * tower's mast. Fitted like a group (fitGroup) between 0.95 and 2.6: the one-building rule's 1.3
+   * floor would push it under the reading panel on most screens.
+   */
+  const AIRPORT_FIT = new T.Box3(
+    new T.Vector3(plan.AIRPORT.x - plan.AIRPORT.hw - plan.AIRPORT.armour, 0, plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour),
+    new T.Vector3(plan.AIRPORT.x + plan.AIRPORT.hw + plan.AIRPORT.armour, 7, -35),
+  );
   /** The camera's offset from its target at a bearing: the same elevation from every side. */
   function viewOffset(bearing: number, out: T.Vector3) {
     return out.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
@@ -798,6 +846,10 @@ export async function createCity(
       fitOverview();
       return;
     }
+    if (focusedIds.length === 1 && focusedIds[0] === 'airport') {
+      fitGroup(AIRPORT_FIT, 0.95, 2.6);
+      return;
+    }
     const roots = focusedIds
       .map((id) => models.get(id)?.root)
       .filter((r): r is T.Group => !!r);
@@ -830,9 +882,10 @@ export async function createCity(
    * their bounds as seen from the bearing they are framed at, as the overview is, in the part of
    * the frame a side panel, a phone's sheet or bars, the masthead and the controls leave free. A
    * row seen along its length takes less of the frame than the one-building rule (which is blind
-   * to the bearing) allows for, and on a phone that crowded the roofs' name tags together.
+   * to the bearing) allows for, and on a phone that crowded the roofs' name tags together. The zoom
+   * stays within `near` and `far` (the airport's island takes 0.95 to 2.6).
    */
-  function fitGroup(bounds: T.Box3) {
+  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4) {
     const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
       right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
       up = new T.Vector3().crossVectors(back, right),
@@ -860,8 +913,8 @@ export async function createCity(
         ((freeWidth / width) * (camera.right - camera.left)) / (maxX - minX),
         ((freeHeight / height) * (camera.top - camera.bottom)) / (maxY - minY),
       ),
-      1.3,
-      3.4,
+      far,
+      near,
     );
     // Centre the group's outline (on the ground, as the overview does).
     target
@@ -1210,8 +1263,9 @@ export async function createCity(
     }
     // The limit is the visitor's; the camera's own moves (a panel offset can reach past it
     // on narrow wide screens) are never clamped.
-    controls.cursor.copy(shiftApplied);
-    controls.maxTargetRadius = tween ? Infinity : PAN_RADIUS;
+    const region = panRegion(panSubject.copy(controls.target).sub(shiftApplied));
+    controls.cursor.copy(shiftApplied).add(region.centre);
+    controls.maxTargetRadius = tween ? Infinity : region.radius;
     // Out of Inspect, the zoom limit follows the camera back down to the town's.
     if (!inspect)
       controls.maxZoom = Math.max(CITY_MAX_ZOOM, Math.min(controls.maxZoom, camera.zoom));
