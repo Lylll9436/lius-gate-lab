@@ -3162,6 +3162,82 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
         }
   });
 }
+// The Visiting PhD Residence (town-residence's buildResidence): the next spot up the terrace row,
+// beyond Pengyuan's home with the row's own gap (2.4, wall to wall), its front to the ring road as
+// the homes' are. As built nothing of it reaches into that gap further than its side windows' sills
+// (0.2 proud of the wall; the homes' own dressings reach 0.55 into theirs) or into the homes'
+// gardens, off its plot, onto the
+// pavement or the road (only its path runs on under the pavement's slab), toward the coast or onto
+// the hill; no tree, lamp, signal, heather drift, sheep, standing stone or the cyclist crowds it,
+// and no tree stands on its plot (the plan dropped tree-55 and tree-60 there, by id, and no other).
+// It costs at most 16k triangles in 7 meshes; each flat is one warm light, the lobby is lit late,
+// and its balustrades' glass is never lit.
+{
+  const site = plan.sites['visiting-phd'],
+    home = plan.sites['pengyuan-liu'],
+    plot = plan.residencePlot,
+    { shell } = models.get('visiting-phd'),
+    v = new T.Vector3(),
+    outOf = (x, z, r) => Math.hypot(Math.max(0, Math.abs(x - r.x) - r.w / 2), Math.max(0, Math.abs(z - r.z) - r.d / 2));
+  assert(site.rotation === Math.PI / 2 && site.x === plan.terraceRow.x, 'The residence does not face the ring road from the row’s line.');
+  assert(home.z - home.w / 2 - (site.z + site.w / 2) >= 2.4 - 1e-9, 'The residence crowds Pengyuan’s home.');
+  const missing = [];
+  for (let i = 0, ids = new Set(trees.map((t) => t.id)); i <= Math.max(...trees.map((t) => Number(t.id.slice(5)))); i++) if (!ids.has('tree-' + i)) missing.push(i);
+  assert(missing.includes(55) && missing.includes(60) && missing.length === 3, `Trees missing from the plan: ${missing}`);
+  shell.updateMatrixWorld(true);
+  let tris = 0,
+    count = 0;
+  const built = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (const o of shell.children) {
+    if (!o.isMesh) continue;
+    count++;
+    const p = o.geometry.attributes.position,
+      kind = o.material.userData.surfaceKind;
+    tris += (o.geometry.index?.count ?? p.count) / 3;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+      const at = v.toArray().map((n) => n.toFixed(2)).join(', ');
+      assert(v.z <= site.z + site.w / 2 + 0.21, `The residence reaches into the gap toward Pengyuan’s home at ${at}`);
+      assert(plan.onIsland(v.x, v.z, 2.5), `The residence by the shore at ${at}`);
+      assert(plan.terrainHeight(v.x, v.z) < 0.01, `The residence on the hill at ${at}`);
+      // Its path runs on under the pavement's raised slab (the road bends away, so its end is straight
+      // where the pavement's edge is not), but never as far as the kerb.
+      if (kind === 'paving') assert(plan.distanceToStreets(v.x, v.z) > 0.3, `The residence’s path reaches the kerb at ${at}`);
+      else {
+        assert(outOf(v.x, v.z, plot) < 1e-6, `The residence leaves its plot at ${at}`);
+        assert(plan.distanceToStreets(v.x, v.z) > plan.PAVEMENT_WIDTH + 0.15, `The residence crowds the pavement at ${at}`);
+        built.minX = Math.min(built.minX, v.x);
+        built.maxX = Math.max(built.maxX, v.x);
+        built.minZ = Math.min(built.minZ, v.z);
+        built.maxZ = Math.max(built.maxZ, v.z);
+      }
+    }
+  }
+  assert(tris <= 16000 && count <= 7, `The residence costs ${Math.round(tris)} triangles in ${count} meshes.`);
+  const footprint = { x: (built.minX + built.maxX) / 2, z: (built.minZ + built.maxZ) / 2, w: built.maxX - built.minX, d: built.maxZ - built.minZ };
+  for (const t of trees) {
+    assert(outOf(t.x, t.z, plot) > 0, `${t.id} stands on the residence’s plot.`);
+    assert(outOf(t.x, t.z, footprint) > 0.9 * t.size + 0.3, `${t.id}’s crown runs into the residence.`);
+  }
+  for (const l of plan.lampPlan()) assert(outOf(l.x, l.z, footprint) > 1.5, `${l.id} crowds the residence.`);
+  for (const sp of plan.signalPosts) assert(outOf(sp.x, sp.z, footprint) > 2, `A signal post crowds the residence.`);
+  for (const d of plan.heatherPlan(trees)) assert(outOf(d.x, d.z, plot) > plan.heatherReach(d) + 1, `${d.id} crowds the residence.`);
+  for (const sh of plan.flock) assert(Math.hypot(sh.x - site.x, sh.z - site.z) > 9.5, `${sh.id} by the residence.`);
+  assert(Math.hypot(plan.stoneRing.x - site.x, plan.stoneRing.z - site.z) > 8, 'The stone ring by the residence.');
+  for (let t = 0; t <= 3000; t += 0.5) {
+    const c = plan.cyclistPose(t);
+    assert(outOf(c.x, c.z, footprint) > 1.5, `The cyclist passes ${outOf(c.x, c.z, footprint).toFixed(2)} from the residence.`);
+  }
+  const own = panes.filter((p) => p.place === 'visiting-phd'),
+    flats = own.filter((p) => p.role === 'residence'),
+    clear = own.filter((p) => p.role === 'clear');
+  assert.equal(flats.length, 5, 'The residence is not one light a flat and one for its lobby.');
+  assert(flats.every((p) => Math.round(p.light[1] * 255) !== 255), 'A residence window is cool white.');
+  const lobby = flats.filter((p) => Math.round(p.light[0] * 255) === 255 && Math.round(p.light[1] * 255) === 128);
+  assert(lobby.length === 1 && lit(lobby, 23.5).length === 1 && lit(lobby, 1.25).length === 1, 'The residence’s lobby is not lit late.');
+  assert.equal(clear.length, 4, 'The residence’s balustrades are not four panes of clear glass.');
+  for (const h of [20, 23.5, 2.5, 6.5]) assert(clear.every((p) => windowLevel(p.light, at(h)) === 0), `A balustrade lights up at ${h}.`);
+}
 // The lighthouse (town-harbour's lighthouse), a Stevenson tower in a walled yard, built alone: it
 // stands on its rock no taller than 6.1 (the overview frames the rock to 5.5) and within 2.95 of
 // the rock's axis; its yard's landing stair comes down on the beach above the waterline and the
