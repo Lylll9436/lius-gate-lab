@@ -1016,6 +1016,67 @@ assert(
     !dossier.includes('person-profile'),
   'The dossier keeps the full record and shows the email address.',
 );
+// Liu’s Gate is a 师门 led by Pengyuan Liu, never a lab: no site copy calls it one, in English or in
+// Chinese. Site copy is every piece of text in the site's code (string literals, template text and
+// JSX text, but not module paths, object keys such as the old 'lab-life' address, or URLs such as
+// the repository's) and the page's own HTML. Two sources are not site copy and are not scanned: the
+// catalogue's validation messages in content-schema.ts, which only maintainers see (a catalogue
+// that fails them is never published), and content/lab.json, whose records are people's own words:
+// a bio may name a lab someone worked in.
+{
+  const lab = (text) => {
+    const words = text.replace(/\b(?:https?:\/\/|mailto:)\S+/g, ' ');
+    return /\blab(?:s|oratory|oratories)?\b/i.test(words) || /实验室/.test(words);
+  };
+  /** The text a source file carries. */
+  const copyIn = (file, source) => {
+    const found = [],
+      kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const visit = (node) => {
+      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return;
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) return;
+      const key =
+        !!node.parent &&
+        (ts.isPropertyAssignment(node.parent) || ts.isPropertySignature(node.parent)) &&
+        node.parent.name === node;
+      if (
+        !key &&
+        (ts.isStringLiteral(node) ||
+          ts.isNoSubstitutionTemplateLiteral(node) ||
+          ts.isTemplateHead(node) ||
+          ts.isTemplateMiddle(node) ||
+          ts.isTemplateTail(node) ||
+          ts.isJsxText(node))
+      )
+        found.push(node.text);
+      ts.forEachChild(node, visit);
+    };
+    visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind));
+    return found;
+  };
+  // The scan sees what it should: these are caught, and these are not.
+  for (const [source, caught] of [
+    ["const t = 'Our lab at Glasgow';", true],
+    ['const t = <p>The Liu Lab</p>;', true],
+    ['const t = `Laboratory ${x} notes`;', true],
+    ["const t = '刘家门实验室';", true],
+    ["const t = { label: 'Available', 'lab-life': 'corner-park' };", false],
+    ["const t = 'https://github.com/Lylll9436/lius-gate-lab';", false],
+    ["import raw from '../content/lab.json';", false],
+  ])
+    assert.equal(copyIn('probe.tsx', source).some(lab), caught, 'The copy scan reads ' + source);
+  let texts = 0;
+  for (const file of (await fs.readdir(path.join(root, 'app'))).filter(
+    (f) => /\.tsx?$/.test(f) && f !== 'content-schema.ts',
+  )) {
+    const copy = copyIn(file, await fs.readFile(path.join(root, 'app', file), 'utf8'));
+    texts += copy.length;
+    for (const text of copy) assert(!lab(text), 'app/' + file + ' calls Liu’s Gate a lab: ' + text);
+  }
+  const page = (await fs.readFile(path.join(root, 'index.html'), 'utf8')).replace(/\s(?:src|href)="[^"]*"/g, '');
+  assert(!lab(page), 'index.html calls Liu’s Gate a lab.');
+  assert(texts > 1000, 'The copy scan read the site’s text (' + texts + ' pieces).');
+}
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');
 for (const dir of ['app', 'scripts', 'content'])
@@ -1076,5 +1137,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
 );
