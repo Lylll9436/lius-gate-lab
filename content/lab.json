@@ -285,6 +285,29 @@
   "research": [],
   "events": [
     {
+      "id": "welcome-luisa-lo-presti-2026",
+      "title": {
+        "en": "Welcome, Luisa Lo Presti",
+        "zh": "欢迎 Luisa Lo Presti"
+      },
+      "summary": {
+        "en": "A warm welcome to Luisa Lo Presti, a visiting PhD student from Maynooth University, where she works with Dr Peter Mooney. She is spending seven weeks with the Urban Analytics Subject Group at the University of Glasgow and the Urban Big Data Centre, sharing research ideas and exploring new collaborations. Welcome to Glasgow, Luisa!",
+        "zh": "热烈欢迎来自梅努斯大学的访问博士生 Luisa Lo Presti！她在梅努斯与 Peter Mooney 博士一起开展研究，接下来七周将在格拉斯哥大学城市分析学科组和城市大数据中心访问，交流研究想法、探索新的合作。欢迎来到格拉斯哥，Luisa！"
+      },
+      "visibility": "published",
+      "order": 0,
+      "sections": [],
+      "properties": [],
+      "links": [],
+      "date": "2026-11-03",
+      "category": "celebration",
+      "people": [
+        "pengyuan-liu",
+        "luisa-lo-presti"
+      ],
+      "image": "/media/welcome-luisa-lo-presti-2026.jpg"
+    },
+    {
       "id": "pollok-highland-cows-2026",
       "title": {
         "en": "Highland cows in Pollokshaws",
