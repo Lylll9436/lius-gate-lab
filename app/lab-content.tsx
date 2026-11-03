@@ -8,11 +8,15 @@ import {
   titleFor,
   destinations,
   parseLocation,
+  departedOn,
   ADDRESS_EVENT,
   type ContentId,
 } from './lab-navigation';
 import {
+  departureStatus,
+  departureStatusLabel,
   getRecord,
+  hasDeparted,
   outputRecords,
   noteRecords,
   type RecordKind,
@@ -26,6 +30,7 @@ import {
   type NewsItem,
 } from './lab-records';
 import type {
+  Departure,
   LabRecord,
   PersonRecord,
   ResearchRecord,
@@ -147,10 +152,15 @@ export function PlaceGlyph({
 /* Portraits                                                           */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The place a person or home belongs to, for a portrait's colour and a card's ring: the home or the
+ * residence they live in, or for someone who has left the airport (not the home they lived in).
+ */
 export function houseFor(id: ContentId) {
   const entry = getRecord(id);
-  const buildingId =
-    entry?.kind === 'person'
+  const buildingId = departedOn(id)
+    ? 'airport'
+    : entry?.kind === 'person'
       ? (entry.record as PersonRecord).buildingId
       : id.replace(/^place:/, '');
   return buildings.find((b) => b.id === buildingId);
@@ -266,6 +276,29 @@ function newsDate(date: string, zh: boolean) {
     timeZone: 'UTC',
   }).format(new Date(date + 'T00:00:00Z'));
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/**
+ * A departure's month on the board: "Dec 2026" (set in capitals) / "2026年12月". The months are
+ * not Intl's: en-GB shortens September to "Sept", and a board's months are three letters.
+ */
+function boardMonth(date: string, zh: boolean) {
+  const [year, month] = date.split('-').map(Number);
+  return zh ? `${year}年${month}月` : `${MONTHS[month - 1]} ${year}`;
+}
+/** A departure's month in words, for a sentence or a file: "December 2026" / "2026年12月". */
+function monthInWords(date: string, zh: boolean) {
+  return zh
+    ? boardMonth(date, true)
+    : new Intl.DateTimeFormat('en-GB', {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(new Date(date + 'T00:00:00Z'));
+}
+/** Where someone is now: the institution, then their role there if there is one. */
+const nowParts = (d: Departure, locale: Locale) =>
+  [d.destination[locale], ...(d.role ? [d.role[locale]] : [])];
 
 function newsKindLabel(item: NewsItem, zh: boolean) {
   if (item.kind === 'event') return categoryLabel(item.record.category, zh);
@@ -451,9 +484,17 @@ function RecordView({
   const research = kind === 'research' ? (record as ResearchRecord) : null;
   const event = kind === 'event' ? (record as EventRecord) : null;
   const output = kind === 'output' ? (record as OutputRecord) : null;
-  const home = person?.buildingId
-    ? buildings.find((b) => b.id === person.buildingId)
-    : undefined;
+  // Someone who has left: their file is the airport's. It says where they are now, and its note
+  // is about the airport, not the home their record keeps as history.
+  const alumnus = person && hasDeparted(person) ? person : null;
+  const home = alumnus
+    ? buildings.find((b) => b.id === 'airport')
+    : person?.buildingId
+      ? buildings.find((b) => b.id === person.buildingId)
+      : undefined;
+  const links = alumnus?.departure.link
+    ? [...record.links, alumnus.departure.link]
+    : record.links;
   const contributions = person
     ? researchRecords.filter((r) => r.people.includes(person.id))
     : [];
@@ -466,12 +507,34 @@ function RecordView({
             <span className="eyebrow">{person.role[locale]}</span>
             <p className="record-lead">{record.summary[locale]}</p>
             <span className="institution">{person.affiliation[locale]}</span>
+            {alumnus && (
+              <p className="record-now">
+                <span className="eyebrow">{zh ? '现任' : 'Now'}</span>
+                <span>{nowParts(alumnus.departure, locale).join(' · ')}</span>
+              </p>
+            )}
           </div>
         </div>
       ) : (
         <p className="record-lead">{record.summary[locale]}</p>
       )}
       <div className="record-meta">
+        {alumnus && (
+          <>
+            <Pill>{departureStatusLabel[departureStatus(alumnus)][locale]}</Pill>
+            <span className="record-date">
+              <time dateTime={alumnus.departure.date}>
+                {monthInWords(alumnus.departure.date, zh)}
+              </time>
+              {' · '}
+              {alumnus.departure.city[locale]}
+            </span>
+            <button className="link-action" onClick={() => onOpen('airport')}>
+              {zh ? '出发屏' : 'Departures board'}
+              <ArrowUpRight size={14} />
+            </button>
+          </>
+        )}
         {research && (
           <Pill tone={research.status === 'completed' ? 'done' : 'active'}>
             {research.status === 'completed'
@@ -510,11 +573,11 @@ function RecordView({
         />
       )}
       <ProfileBody record={record} locale={locale} />
-      {!!record.links.length && (
+      {!!links.length && (
         <div className="record-links">
-          {record.links.map((link) => (
+          {links.map((link, i) => (
             <RecordLink
-              key={link.url}
+              key={`${i} ${link.url}`}
               link={link}
               locale={locale}
               iconSize={14}

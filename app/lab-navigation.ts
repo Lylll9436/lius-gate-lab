@@ -6,6 +6,7 @@ import {
   type Locale,
 } from './city-data';
 import {
+  hasDeparted,
   memberRecords,
   pageDay,
   personContentId,
@@ -96,7 +97,21 @@ export function titleFor(id: ContentId, locale: Locale) {
     (locale === 'zh' ? '内容已归档或移除' : 'Record unavailable')
   );
 }
-export function buildingForContent(id: ContentId) {
+/**
+ * Whether an address is someone who has left Liu’s Gate by `today` (the page's day unless given).
+ * Their record keeps the home they lived in as history, but their file is now the airport's: its
+ * departures board lists them, and the camera, the chapter and the file's place go there.
+ */
+export function departedOn(id: ContentId, today: Date = pageDay) {
+  const entry = getRecord(id);
+  return entry?.kind === 'person' && hasDeparted(entry.record as PersonRecord, today);
+}
+/**
+ * The building a content's file is about on `today` (the page's day unless given). Someone who has
+ * left is at the airport: that is decided before their record's buildingId (their old home) is read.
+ */
+export function buildingForContent(id: ContentId, today: Date = pageDay) {
+  if (departedOn(id, today)) return buildings.find((b) => b.id === 'airport');
   const entry = getRecord(id),
     target =
       entry && 'buildingId' in entry.record
@@ -104,12 +119,13 @@ export function buildingForContent(id: ContentId) {
         : id.replace(/^place:/, '');
   return buildings.find((b) => b.id === target);
 }
-export function sceneTarget(id: ContentId): {
+/** Where the camera goes for a content on `today` (the page's day unless given). */
+export function sceneTarget(id: ContentId, today: Date = pageDay): {
   building?: BuildingId;
   district?: 'residential' | 'research' | 'waterfront';
   park?: boolean;
 } {
-  const building = buildingForContent(id);
+  const building = buildingForContent(id, today);
   if (building) return { building: building.id };
   const entry = getRecord(id);
   if (id === 'people' || entry?.kind === 'person')
@@ -134,12 +150,16 @@ export function sceneTarget(id: ContentId): {
   return {};
 }
 /**
- * The place a City file is about, as the camera frames it: a building, the terrace ('people',
- * for the People chapter and anyone without a home), the corner park (its events too), or
- * null for the whole island. The file's eyebrow and glyph name it.
+ * The place a City file is about on `today` (the page's day unless given), as the camera frames
+ * it: a building (the airport for someone who has left), the terrace ('people', for the People
+ * chapter and anyone without a home), the corner park (its events too), or null for the whole
+ * island. The file's eyebrow and glyph name it.
  */
-export function placeFor(id: ContentId): BuildingId | 'people' | 'corner-park' | null {
-  const target = sceneTarget(id);
+export function placeFor(
+  id: ContentId,
+  today: Date = pageDay,
+): BuildingId | 'people' | 'corner-park' | null {
+  const target = sceneTarget(id, today);
   return target.building ?? (target.park ? 'corner-park' : target.district ? 'people' : null);
 }
 /**
@@ -191,9 +211,13 @@ export function parseLocation(hash: string): {
     return { mode: 'reading', content: legacy[prefix] };
   return { mode: 'city', content: isContentId(prefix) ? prefix : 'overview' };
 }
-export function chapterFor(id: ContentId) {
+/**
+ * The chapter an address belongs to on `today` (the page's day unless given): a member is in
+ * People, someone who has left in Departures (the airport's chapter, where the board lists them).
+ */
+export function chapterFor(id: ContentId, today: Date = pageDay) {
   const entry = getRecord(id);
-  if (entry?.kind === 'person') return 'people';
+  if (entry?.kind === 'person') return departedOn(id, today) ? 'airport' : 'people';
   if (entry?.kind === 'event') return 'corner-park';
   if (entry?.kind === 'output') return 'city-archive';
   if (entry?.kind === 'note') return 'research-studio';
@@ -201,7 +225,7 @@ export function chapterFor(id: ContentId) {
     return 'status' in entry.record && entry.record.status === 'completed'
       ? 'city-archive'
       : 'research-studio';
-  const place = buildingForContent(id);
+  const place = buildingForContent(id, today);
   return dwelling(place)
     ? 'people'
     : id === 'overview'
@@ -238,6 +262,6 @@ export function selectionForContent(
         ...buildings.filter((b) => b.model === 'residence').map((b) => b.id),
       ]),
     ];
-  const target = sceneTarget(id);
+  const target = sceneTarget(id, today);
   return target.building ? [target.building] : [];
 }

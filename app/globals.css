@@ -1578,6 +1578,16 @@ body:has(.mode-explore),
 .person-profile-body > :last-child {
   margin-bottom: 0;
 }
+/* A file of someone who has left: where they are now, under where they were. */
+.record-now {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.record-now .eyebrow {
+  margin-right: 8px;
+}
 
 /* ------------------------------------------------------------------ */
 /* Footer                                                              */

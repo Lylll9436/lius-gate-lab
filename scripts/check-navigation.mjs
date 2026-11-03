@@ -100,6 +100,14 @@ for (const b of buildings) assert.equal(nav.placeFor(nav.contentForBuilding(b.id
 assert.equal(nav.placeFor('people'), 'people');
 assert.equal(nav.placeFor('corner-park'), 'corner-park');
 assert.equal(nav.placeFor('overview'), null);
+// Everyone published reads in People while they are here, and in Departures once they have left,
+// their camera on the airport whatever home their record names (check-content tries test leavers).
+for (const p of peopleRecords) {
+  const id = personContentId(p),
+    gone = nav.departedOn(id);
+  assert.equal(nav.chapterFor(id), gone ? 'airport' : 'people', id + ' is in the wrong chapter.');
+  if (gone) assert.deepEqual(nav.sceneTarget(id), { building: 'airport' }, id + ' has left: the camera goes to the airport.');
+}
 for (const stop of nav.tourStops)
   assert.deepEqual(nav.parseLocation(`#city/${stop}`), { mode: 'city', content: stop });
 for (const [old, content] of Object.entries({

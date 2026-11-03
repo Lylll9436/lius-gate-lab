@@ -830,6 +830,65 @@ async function siteOver(name, testCatalog) {
       React.createElement(lcontent.LabContent, { id: 'place:qin-li', locale: 'en', onOpen() {} }),
     ).includes('Fay Future is a test person.'),
   );
+  // Someone who has left is filed at the airport: their chapter is Departures, their camera and
+  // their file's place the airport, decided before the home their record keeps (the member who left
+  // in 2025 still names Yunlong Liu's home). City mode turns to the airport's own bearing (page.tsx's
+  // facing reads the chapter of the scene target), and their portrait takes the airport's colour.
+  for (const id of ['person:test-past-member', 'person:test-past-visitor']) {
+    for (const day of [TODAY, undefined]) {
+      assert(lnav.departedOn(id, day), id + ' has left.');
+      assert.equal(lnav.chapterFor(id, day), 'airport', id + ' reads in Departures.');
+      assert.deepEqual(lnav.sceneTarget(id, day), { building: 'airport' }, id + ': the camera goes to the airport.');
+      assert.equal(lnav.buildingForContent(id, day)?.id, 'airport');
+      assert.equal(lnav.placeFor(id, day), 'airport');
+      assert.deepEqual(lnav.selectionForContent(id, day), ['airport']);
+    }
+    assert.equal(lnav.readingChapter(id), 'airport');
+    assert.equal(lnav.readingContent(id, 'airport'), id, 'Their address stays while Departures is read.');
+    assert.equal(lnav.readingContent(id, 'people'), 'people');
+    assert.equal(lnav.chapterFor(lnav.sceneTarget(id).building), 'airport');
+    assert.equal(lcontent.houseFor(id)?.id, 'airport');
+  }
+  // The 2099 leaver is in People and at Qin Li's home up to the day before, at the airport from it.
+  assert.equal(lnav.chapterFor('person:test-future-member', EVE), 'people');
+  assert.deepEqual(lnav.sceneTarget('person:test-future-member', EVE), { building: 'qin-li' });
+  assert.equal(lnav.placeFor('person:test-future-member', EVE), 'qin-li');
+  assert.equal(lnav.chapterFor('person:test-future-member', DEPART), 'airport');
+  assert.deepEqual(lnav.sceneTarget('person:test-future-member', DEPART), { building: 'airport' });
+  assert.equal(lnav.buildingForContent('person:test-future-member', DEPART)?.id, 'airport');
+  assert.equal(lnav.placeFor('person:test-future-member', DEPART), 'airport');
+  assert.deepEqual(lnav.selectionForContent('person:test-future-member', DEPART), ['airport']);
+  assert(!lnav.departedOn('person:test-member', DEPART) && lnav.chapterFor('person:test-member', DEPART) === 'people', 'Without a departure nobody is filed at the airport.');
+  assert(!lnav.departedOn('airport') && !lnav.departedOn('event:test-farewell'), 'Only a person can have left.');
+  // Their City file: a Now line, the status and the month they left, a way back to the board, their
+  // own link, and the airport's note rather than the home they left.
+  for (const [id, now, status, when, home] of [
+    ['person:test-past-member', 'Test University · Postdoctoral researcher', 'Departed', '<time dateTime="2025-06-30">June 2025</time> · Testford, Scotland', 'Red sandstone terrace'],
+    ['person:test-past-visitor', 'Test Institute', 'Returned', '<time dateTime="2026-08-31">August 2026</time> · Testburg, Ireland', 'Contemporary apartment house'],
+  ]) {
+    const file = renderToStaticMarkup(React.createElement(lcontent.LabContent, { id, locale: 'en', onOpen() {} }));
+    assert(
+      file.includes('<p class="record-now"><span class="eyebrow">Now</span><span>' + now + '</span></p>') &&
+        file.includes('<span class="pill pill-neutral">' + status + '</span>') &&
+        file.includes('<span class="record-date">' + when + '</span>') &&
+        file.includes('>Departures board<'),
+      'The file of ' + id + ' says where they are now.',
+    );
+    assert(file.includes('<em>Island airport</em>') && !file.includes('<em>' + home + '</em>'), id + '’s note is the airport’s.');
+    assert(file.includes('style="--tint:#a9b7a3"'), id + '’s portrait takes the airport’s colour.');
+  }
+  assert(
+    renderToStaticMarkup(React.createElement(lcontent.LabContent, { id: 'person:test-past-member', locale: 'en', onOpen() {} })).includes(
+      'href="https://example.org/past-member"',
+    ),
+    'Their own link replaces a student mailbox that has closed.',
+  );
+  assert(
+    !renderToStaticMarkup(React.createElement(lcontent.LabContent, { id: 'person:test-future-member', locale: 'en', onOpen() {} })).includes('record-now'),
+    'Someone still here has no Now line.',
+  );
+  const fileZh = renderToStaticMarkup(React.createElement(lcontent.LabContent, { id: 'person:test-past-member', locale: 'zh', onOpen() {} }));
+  assert(fileZh.includes('<span class="eyebrow">现任</span><span>测试大学 · 博士后研究员</span>') && fileZh.includes('>已启程<') && fileZh.includes('2025年6月') && fileZh.includes('>出发屏<'));
   // Someone moves into that home while the 2099 leaver still lives there: a home shows its first
   // current resident (by order), with one name on its tag, and the newcomer from the leaver's day.
   const { nav: snav, data: sdata } = await siteOver(
@@ -1217,5 +1276,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
 );
