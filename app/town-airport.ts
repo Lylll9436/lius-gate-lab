@@ -35,6 +35,8 @@ export const AIRPORT_LOOK = {
   amber: '#dcae52',
   frame: '#3d4a47',
 };
+/** The hall lane's kerb radii where it meets the ring's footway, and the width of its flush edging. */
+export const LANE_DRESSING = { radius: 0.5, edge: 0.1 };
 /** The hall's levels (y): its floor on the plinth, the walls' top (the eaves) and the barrel roof's apex. */
 export const HALL_LEVELS = { floor: 0.7, eave: 2.92, apex: 4.0 };
 /** The island's edge, out from the deck's edge: the coping's outer face, and the armour's bed from there to its toe (o, y). */
@@ -361,6 +363,73 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     solid(g, geometry, '#ffffff', 'asphalt', { shadow: false, ground: true, name: 'airport-road' });
   }
   /**
+   * The hall lane's dressing, flat on the ground: at its mouth the asphalt turns into the ring's
+   * footway on two kerb radii (`LANE_DRESSING.radius`), and an edging of the town's paving (its
+   * flags read as kerb stones) runs flush along both its edges, `edge` wide, from the footway round
+   * the radii to where the causeway's footways begin. The radii's asphalt carries the road's uv
+   * (across held at the carriageway's edge), so it batches into the road's one mesh.
+   */
+  function laneDressing(g: T.Object3D) {
+    const { radius, edge } = LANE_DRESSING,
+      half = plan.ROAD_WIDTH / 2,
+      y = plan.levels.road,
+      base = 1000 * plan.ROADS.indexOf('airport'),
+      end = R.beach - 0.15,
+      road = new T.Color(palette.road),
+      fill = { pos: [] as number[], col: [] as number[], uv: [] as number[] },
+      strip: number[] = [],
+      steps = 8;
+    for (const side of [-1, 1]) {
+      const cx = R.x + side * (half + radius),
+        cz = R.lane - radius,
+        at = (k: number, r: number) => {
+          const a = Math.PI / 2 + (side * Math.PI * k) / (2 * steps);
+          return [cx + Math.cos(a) * r, cz + Math.sin(a) * r];
+        };
+      // The radius: a fan from the corner of the lane's edge and the footway's to the arc.
+      const vertex = (x: number, z: number) => {
+        fill.pos.push(x, y, z);
+        fill.col.push(road.r, road.g, road.b);
+        fill.uv.push(side * half, base + (R.lane - z));
+      };
+      for (let k = 0; k < steps; k++) {
+        const [x0, z0] = at(k, radius),
+          [x1, z1] = at(k + 1, radius);
+        // Wound to face up from either side.
+        if (side > 0) [[R.x + half, R.lane], [x0, z0], [x1, z1]].forEach(([x, z]) => vertex(x, z));
+        else [[R.x - half, R.lane], [x1, z1], [x0, z0]].forEach(([x, z]) => vertex(x, z));
+      }
+      // The edging: round the radius on its grass side, then down the lane's edge to the causeway.
+      const inner: number[][] = [],
+        outer: number[][] = [];
+      for (let k = 0; k <= steps; k++) {
+        inner.push(at(k, radius));
+        outer.push(at(k, radius - edge));
+      }
+      for (let z = cz - 0.5; z > end + 1e-6; z -= 0.5) {
+        inner.push([R.x + side * half, z]);
+        outer.push([R.x + side * (half + edge), z]);
+      }
+      inner.push([R.x + side * half, end]);
+      outer.push([R.x + side * (half + edge), end]);
+      for (let k = 0; k + 1 < inner.length; k++) {
+        const quad = [inner[k], outer[k], outer[k + 1], inner[k], outer[k + 1], inner[k + 1]];
+        for (const [x, z] of side > 0 ? quad : [quad[0], quad[2], quad[1], quad[3], quad[5], quad[4]]) strip.push(x, y + 0.003, z);
+      }
+    }
+    const radii = new T.BufferGeometry();
+    radii.setAttribute('position', new T.Float32BufferAttribute(fill.pos, 3));
+    radii.setAttribute('color', new T.Float32BufferAttribute(fill.col, 3));
+    radii.setAttribute('uv', new T.Float32BufferAttribute(fill.uv, 2));
+    radii.userData.longitudinalUV = true;
+    radii.computeVertexNormals();
+    solid(g, radii, '#ffffff', 'asphalt', { shadow: false, ground: true, name: 'airport-lane-radii' });
+    const edging = new T.BufferGeometry();
+    edging.setAttribute('position', new T.Float32BufferAttribute(strip, 3));
+    edging.computeVertexNormals();
+    solid(g, edging, palette.pavement, 'paving', { shadow: false, ground: true, name: 'airport-lane-edging' });
+  }
+  /**
    * The ramp and the causeway: a rubble-mound embankment 2.5 wide on top, from the beach to the
    * island. Footways 0.24 wide either side of the road, a buff parapet 0.16 thick along each edge,
    * and rock flanks (plan.AIRPORT_ROAD.flank) down to the beach or the sea bed, faced with boulders.
@@ -437,6 +506,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     const rocks = deckEdge(g);
     surfaces(g);
     asphalt(g);
+    laneDressing(g);
     causeway(g, rocks);
     const merged = mergeGeometries(rocks, false)!;
     rocks.forEach((r) => r.dispose());

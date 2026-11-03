@@ -1493,6 +1493,66 @@ for (const [x, z] of [
   const lawn = named('airport-deck')[0].geometry.attributes.position;
   for (let i = 0; i < lawn.count; i++) assert(Math.abs(lawn.getY(i) - plan.AIRPORT.deck) < 1e-6 && plan.airportDistance(lawn.getX(i), lawn.getZ(i)) <= -0.3 + 1e-4, 'The deck\'s grass leaves the deck.');
   assert.equal(ctx.lamps.length, 4, 'The airport\'s ground has not four lamps.');
+  // The hall lane's dressing, flat on the ground and facing up: its kerb radii at the mouth (the
+  // road's asphalt, across held at the carriageway's edge) and its flush edging of the town's
+  // paving, from the ring's footway to the causeway's. It keeps a trunk's breadth from every tree
+  // (it is no carriageway, so the lane's 0.6 does not apply) and 1.5 from the cottages as built.
+  {
+    const { LANE_DRESSING } = await load('town-airport'),
+      AR = plan.AIRPORT_ROAD,
+      [radii, edging] = ['airport-lane-radii', 'airport-lane-edging'].map((name) => named(name)[0]?.geometry),
+      segment = (px, pz, ax, az, bx, bz) => {
+        const dx = bx - ax,
+          dz = bz - az,
+          t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1)));
+        return Math.hypot(px - ax - t * dx, pz - az - t * dz);
+      },
+      apart = (px, pz) => {
+        let best = Infinity;
+        for (const geometry of [radii, edging]) {
+          const p = geometry.getAttribute('position');
+          for (let i = 0; i < p.count; i += 3) {
+            const [ax, az, bx, bz, cx, cz] = [p.getX(i), p.getZ(i), p.getX(i + 1), p.getZ(i + 1), p.getX(i + 2), p.getZ(i + 2)],
+              s1 = (bx - ax) * (pz - az) - (bz - az) * (px - ax),
+              s2 = (cx - bx) * (pz - bz) - (cz - bz) * (px - bx),
+              s3 = (ax - cx) * (pz - cz) - (az - cz) * (px - cx);
+            if ((s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0)) return 0;
+            best = Math.min(best, segment(px, pz, ax, az, bx, bz), segment(px, pz, bx, bz, cx, cz), segment(px, pz, cx, cz, ax, az));
+          }
+        }
+        return best;
+      };
+    assert(radii && edging, 'The hall lane has no kerb radii or edging.');
+    for (const geometry of [radii, edging]) {
+      const p = geometry.getAttribute('position'),
+        n = geometry.getAttribute('normal');
+      for (let i = 0; i < p.count; i++) {
+        assert(n.getY(i) > 0.999 && Math.abs(p.getY(i) - plan.levels.road) < 0.01, 'The hall lane\'s dressing is not flat on the ground.');
+        assert(p.getZ(i) <= AR.lane + 1e-6 && p.getZ(i) >= AR.beach - 0.15 - 1e-6 && Math.abs(p.getX(i) - AR.x) <= plan.ROAD_WIDTH / 2 + LANE_DRESSING.radius + 1e-6, 'The hall lane\'s dressing strays.');
+      }
+    }
+    const uv = radii.getAttribute('uv'),
+      rp = radii.getAttribute('position');
+    for (let i = 0; i < uv.count; i++) assert(Math.abs(Math.abs(uv.getX(i)) - plan.ROAD_WIDTH / 2) < 1e-6 && Math.abs(uv.getY(i) - (4000 + AR.lane - rp.getZ(i))) < 1e-3, 'The kerb radii are off the road\'s uv.');
+    for (const t of plan.plantingPlan()) assert(apart(t.x, t.z) >= 0.5, `The hall lane's dressing runs ${apart(t.x, t.z).toFixed(2)} from ${t.id}.`);
+    const homes = (await load('town-homes')).createHomes(ctx, kit, (await load('town-nature')).createNature(ctx, kit)),
+      v = new T.Vector3();
+    for (const c of plan.cottages.filter((c) => Math.abs(c.x - AR.x) < 12 && c.z < AR.lane + 4)) {
+      const cottage = new T.Group();
+      homes.buildCottage(cottage, c);
+      cottage.updateMatrixWorld(true);
+      let near = Infinity;
+      cottage.traverse((o) => {
+        if (!o.isMesh) return;
+        const p = o.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+          if (Math.abs(v.x - AR.x) < 4.5) near = Math.min(near, apart(v.x, v.z));
+        }
+      });
+      assert(near >= 1.5, `The hall lane's dressing passes ${near.toFixed(2)} from cottage ${c.n}.`);
+    }
+  }
   library.dispose();
 }
 const shader = {
