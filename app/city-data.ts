@@ -1,4 +1,4 @@
-import { memberRecords } from './lab-records';
+import { memberRecords, pageDay } from './lab-records';
 export type Locale = 'en' | 'zh';
 export type BuildingId =
   | 'lius-gate'
@@ -321,22 +321,22 @@ const places: Building[] = [
   },
 ];
 /**
- * The people who live in a building on `today` (now unless given): the members whose buildingId
- * names it, in their order. Someone who has left keeps the home on their record as history but no
- * longer lives there. A home has one resident (two only while a newcomer moves in ahead of a
- * departure); the Visiting PhD Residence any number, none included.
+ * The people who live in a building on `today` (the page's day unless given): the members whose
+ * buildingId names it, in their order. Someone who has left keeps the home on their record as
+ * history but no longer lives there. A home has one resident (two only while a newcomer moves in
+ * ahead of a departure); the Visiting PhD Residence any number, none included.
  */
-export const residentsOf = (id: BuildingId, today: Date = new Date()) =>
+export const residentsOf = (id: BuildingId, today: Date = pageDay) =>
   memberRecords(today).filter((p) => p.buildingId === id);
 /** Where people live: the members' homes and the Visiting PhD Residence (the People chapter's places). */
 export const dwelling = (b: Building | undefined) => !!b && (!!b.variant || b.model === 'residence');
 /**
- * The places on `today`. Building slots are independent of their occupants: a home takes the name
- * and file of its first current resident, and reads as an unoccupied terrace house once its
- * resident has left, until someone moves in. The residence keeps its own and lists its residents
- * (lab-content).
+ * The places on `today` (the page's day unless given). Building slots are independent of their
+ * occupants: a home takes the name and file of its first current resident, and reads as an
+ * unoccupied terrace house once its resident has left, until someone moves in. The residence
+ * keeps its own and lists its residents (lab-content).
  */
-export function buildingsOn(today: Date = new Date()): Building[] {
+export function buildingsOn(today: Date = pageDay): Building[] {
   return places.map((building) => {
     if (!building.variant) return building;
     const resident = residentsOf(building.id, today)[0];
@@ -362,5 +362,5 @@ export function buildingsOn(today: Date = new Date()): Building[] {
         };
   });
 }
-/** The places as the page finds them: decided once, by the visitor's day, when it loads. */
+/** The places as the page finds them, on the visitor's day when it loaded (pageDay). */
 export const buildings: Building[] = buildingsOn();

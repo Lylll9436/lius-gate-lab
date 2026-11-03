@@ -29,8 +29,8 @@ for (const visibility of [['published'], { value: 'published' }, null]) {
 const text = (en) => ({ en, zh: '测试内容' });
 // Who is still at the Gate depends on the day: people leave on their departure's UTC day, the day
 // Gate's News counts by. Every helper that decides it takes that day, and these checks pass fixed
-// days, so they give the same answer whenever they run. The page decides when it renders, by the
-// visitor's UTC day; what it renders is checked against that day, read once here.
+// days, so they give the same answer whenever they run. The page decides by the visitor's UTC day
+// when it loads (pageDay); what it renders is checked against that day, read once here.
 const DAY = '2026-11-03',
   TODAY = new Date(DAY + 'T12:00:00Z'),
   NOW = new Date().toISOString().slice(0, 10);
@@ -844,6 +844,49 @@ async function siteOver(name, testCatalog) {
   assert.deepEqual(shown(TODAY), ['Fay Future', 'Fay', 'person:test-future-member']);
   assert.deepEqual(shown(DEPART), ['Sam Successor', 'Sam', 'person:test-successor']);
   assert(snav.peopleOn(TODAY).some((p) => p.id === 'person:test-successor'), 'A newcomer is a member as soon as they are entered.');
+  // A page left open past midnight UTC into someone's departure day goes on by the day it was
+  // loaded on (pageDay) until it is reloaded, so all it shows agrees: the People chapter and the
+  // homes, read once, and the name tags, what a home opens, the People framing and the tour, read
+  // on each render or click. The leaver here sets off two days from now, ahead of the 2099 leaver
+  // in Qin Li's home by order, and the clock is then moved on two days.
+  {
+    const RealDate = Date,
+      ahead = 2 * 86_400_000,
+      setOff = new RealDate(RealDate.now() + ahead).toISOString().slice(0, 10);
+    const { nav: mnav, records: mrec, data: mdata } = await siteOver(
+      'midnight',
+      upsertRecord(leaving, 'people', {
+        ...tester('test-soon', 'Sol Soon', '测试庚', 22.5, 'qin-li'),
+        departure: { ...departure, date: setOff },
+      }),
+    );
+    const view = () => [
+      mnav.people.map((p) => p.id),
+      mrec.memberRecords().map((p) => p.id),
+      mdata.residentsOf('qin-li').map((p) => p.id),
+      mdata.buildingsOn().find((b) => b.id === 'qin-li').name.en,
+      mnav.homeTags('en').map((t) => [t.building, t.label]),
+      mnav.contentForBuilding('qin-li'),
+      mnav.selectionForContent('people'),
+      mnav.tourOn(),
+    ];
+    const loaded = view();
+    assert.equal(loaded[5], 'person:test-soon', 'Until the day they set off, the home is theirs.');
+    globalThis.Date = class extends RealDate {
+      constructor(...args) {
+        super(...(args.length ? args : [RealDate.now() + ahead]));
+      }
+      static now() {
+        return RealDate.now() + ahead;
+      }
+    };
+    try {
+      assert(!mrec.memberRecords(new Date()).some((p) => p.id === 'test-soon'), 'On the moved clock they have left.');
+      assert.deepEqual(view(), loaded, 'An open page keeps the day it was loaded on.');
+    } finally {
+      globalThis.Date = RealDate;
+    }
+  }
 }
 // The chapter at the gate is about this site; the name story was removed at the owner's request.
 const gate = buildings.find((b) => b.id === 'lius-gate');

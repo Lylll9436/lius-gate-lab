@@ -28,26 +28,38 @@ export const peopleRecords = catalog.people
  */
 export const utcDay = (today: Date = new Date()) =>
   today.toISOString().slice(0, 10);
+/**
+ * The moment the page was loaded: the day it goes by for who is still here. The People chapter,
+ * the homes and their name tags, what a home opens, the People framing and the tour are all
+ * decided by it, those read once and those read on each render or click alike, so they agree
+ * until the visitor reloads, even if the page stays open past midnight UTC on someone's
+ * departure day. The checks pass fixed days instead.
+ */
+export const pageDay = new Date();
 export type Alumnus = PersonRecord & { departure: Departure };
 /**
- * Whether someone has left Liu’s Gate by `today` (now unless given; the checks pass fixed days).
- * A departure may be entered ahead: they leave on its date, from 00:00 UTC.
+ * Whether someone has left Liu’s Gate by `today` (the page's day unless given; the checks pass
+ * fixed days). A departure may be entered ahead: they leave on its date, from 00:00 UTC.
  */
 export function hasDeparted(
   p: PersonRecord,
-  today: Date = new Date(),
+  today: Date = pageDay,
 ): p is Alumnus {
   return !!p.departure && p.departure.date <= utcDay(today);
 }
 /**
- * The members on `today`: everyone published who has not left, in their order. They make up the
- * People chapter, the homes, the name tags and the residence's residents.
+ * The members on `today` (the page's day unless given): everyone published who has not left, in
+ * their order. They make up the People chapter, the homes, the name tags and the residence's
+ * residents.
  */
-export function memberRecords(today: Date = new Date()) {
+export function memberRecords(today: Date = pageDay) {
   return peopleRecords.filter((p) => !hasDeparted(p, today));
 }
-/** Everyone who has left by `today`, newest departure first: the departures board. */
-export function alumniRecords(today: Date = new Date()) {
+/**
+ * Everyone who has left by `today` (the page's day unless given), newest departure first: the
+ * departures board.
+ */
+export function alumniRecords(today: Date = pageDay) {
   return peopleRecords
     .filter((p): p is Alumnus => hasDeparted(p, today))
     .sort(

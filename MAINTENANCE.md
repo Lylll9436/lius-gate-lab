@@ -30,7 +30,7 @@
   }
   ```
 
-  `date` 是出发那天（真实的 YYYY-MM-DD，规则与活动日期相同），可以提前填未来的日期，到那天才生效，按 UTC 日期计（与首屏快讯相同，`app/lab-records.ts` 的 `hasDeparted`）；`city` 是去向城市（出发屏上的目的地），`destination` 是现在所在的机构或单位，`role` 是在那里的身份，没有就填 `null`；`link` 是本人的主页，必须是 HTTPS 地址，没有就填 `null`。五个字段都要写，英文不得包含中文；拼错的字段名（例如 `depature`）会被拒绝，人员记录里也不能有其他多余的字段。不要写状态：住在访问博士公寓（`buildingId` 为 `visiting-phd`）的人显示「已返程 / Returned」，其余显示「已启程 / Departed」（`departureStatus`）。`role`、`affiliation`、`buildingId` 保持原样，作为在刘家门时的记录。
+  `date` 是出发那天（真实的 YYYY-MM-DD，规则与活动日期相同），可以提前填未来的日期，到那天才生效，按 UTC 日期计（与首屏快讯相同，`app/lab-records.ts` 的 `hasDeparted`），访客打开页面时按当天决定一次（`pageDay`），页面开着跨过那天的零点也不变，刷新后才更新；`city` 是去向城市（出发屏上的目的地），`destination` 是现在所在的机构或单位，`role` 是在那里的身份，没有就填 `null`；`link` 是本人的主页，必须是 HTTPS 地址，没有就填 `null`。五个字段都要写，英文不得包含中文；拼错的字段名（例如 `depature`）会被拒绝，人员记录里也不能有其他多余的字段。不要写状态：住在访问博士公寓（`buildingId` 为 `visiting-phd`）的人显示「已返程 / Returned」，其余显示「已启程 / Departed」（`departureStatus`）。`role`、`affiliation`、`buildingId` 保持原样，作为在刘家门时的记录。
   生效以后，这个人不再出现在「成员」一章、名字标签和公寓的住户里（`memberRecords`），按出发日期倒序列入离开的人（`alumniRecords`，供机场的出发屏使用）；他住过的那户显示为「联排住宅 · 目前无人居住」，直到有新成员住进来。新成员可以提前录入同一个 `buildingId`：离开日之前，那户显示 `order` 靠前的现住户，名字标签也只写这一位。
   - 同意：只有本人同意后才写去向；`date` 只填已经确定的日期。去向城市、机构、身份和链接都会公开展示。
   - 邮箱：学生邮箱（`@student.gla.ac.uk`、`@research.gla.ac.uk`）在离开后会停用。加 `departure` 的同时，把 `links` 里的学生邮箱删掉，改用 `departure.link`（本人愿意公开的主页）。

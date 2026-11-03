@@ -7,6 +7,7 @@ import {
 } from './city-data';
 import {
   memberRecords,
+  pageDay,
   personContentId,
   getRecord,
   researchRecords,
@@ -35,21 +36,21 @@ const card = (p: PersonRecord) => ({
   name: p.title,
   category: p.role,
 });
-/** The People chapter on `today` (now unless given): the members, in their order. */
-export const peopleOn = (today: Date = new Date()) =>
+/** The People chapter on `today` (the page's day unless given): the members, in their order. */
+export const peopleOn = (today: Date = pageDay) =>
   memberRecords(today).map(card);
-/** The People chapter as the page finds it: decided once, by the visitor's day, when it loads. */
+/** The People chapter as the page finds it, on the visitor's day when it loaded (pageDay). */
 export const people = peopleOn();
 /** A member's home (not the residence, which everyone staying there shares). */
 const isHome = (id: BuildingId) =>
   !!buildings.find((b) => b.id === id)?.variant;
 /**
- * The People chapter's name tags over the roofs on `today`: one for each building someone lives
- * in (no tag while no one stays there), naming in the chapter's order a home's first current
- * resident, or everyone staying in the Visiting PhD Residence: first names in English, full names
- * in Chinese.
+ * The People chapter's name tags over the roofs on `today` (the page's day unless given): one for
+ * each building someone lives in (no tag while no one stays there), naming in the chapter's order
+ * a home's first current resident, or everyone staying in the Visiting PhD Residence: first names
+ * in English, full names in Chinese.
  */
-export function homeTags(locale: Locale, today: Date = new Date()) {
+export function homeTags(locale: Locale, today: Date = pageDay) {
   const members = peopleOn(today);
   return [
     ...new Set(
@@ -139,21 +140,24 @@ export function placeFor(id: ContentId): BuildingId | 'people' | 'corner-park' |
   return target.building ?? (target.park ? 'corner-park' : target.district ? 'people' : null);
 }
 /**
- * What a building opens on `today`: a member's home its first current resident's file (or, with
- * no one in it, its own); any other place its own file, the Visiting PhD Residence's listing
- * whoever lives there.
+ * What a building opens on `today` (the page's day unless given): a member's home its first
+ * current resident's file (or, with no one in it, its own); any other place its own file, the
+ * Visiting PhD Residence's listing whoever lives there.
  */
-export function contentForBuilding(id: BuildingId, today: Date = new Date()) {
+export function contentForBuilding(id: BuildingId, today: Date = pageDay) {
   if (!isHome(id)) return id;
   const resident = residentsOf(id, today)[0];
   return resident ? personContentId(resident) : 'place:' + id;
 }
-/** The City tour on `today`: every place in the Directory's order, ending in the corner park. */
-export const tourOn = (today: Date = new Date()): ContentId[] => [
+/**
+ * The City tour on `today` (the page's day unless given): every place in the Directory's order,
+ * ending in the corner park.
+ */
+export const tourOn = (today: Date = pageDay): ContentId[] => [
   ...buildings.map((b) => contentForBuilding(b.id, today)),
   'corner-park',
 ];
-/** The City tour as the page finds it: decided once, by the visitor's day, when it loads. */
+/** The City tour as the page finds it, on the visitor's day when it loaded (pageDay). */
 export const tourStops: ContentId[] = tourOn();
 /**
  * Fired on window when the app itself has moved to an address (pushState and replaceState
@@ -215,12 +219,12 @@ export const readingContent = (id: ContentId, chapter: ContentId) =>
   readingChapter(id) === chapter ? id : chapter;
 
 /**
- * The buildings a content's camera frames on `today`. People: every home a member lives in and
- * the Visiting PhD Residence, lived in or not (the chapter's places).
+ * The buildings a content's camera frames on `today` (the page's day unless given). People: every
+ * home a member lives in and the Visiting PhD Residence, lived in or not (the chapter's places).
  */
 export function selectionForContent(
   id: ContentId,
-  today: Date = new Date(),
+  today: Date = pageDay,
 ): BuildingId[] {
   if (id === 'people')
     return [
