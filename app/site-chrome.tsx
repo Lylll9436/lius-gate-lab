@@ -1,6 +1,6 @@
 import { ArrowUpRight, Map, BookOpen, Mail } from 'lucide-react';
 import type { Locale } from './city-data';
-import type { BrowseMode, ContentId } from './lab-navigation';
+import { readingChapter, type BrowseMode, type ContentId } from './lab-navigation';
 import { GateMark } from './lab-content';
 import { joinUsMailto, supervisorEmail } from './lab-records';
 
@@ -49,6 +49,17 @@ export const chapterMeta: ChapterMeta[] = [
     place: { en: 'LIU’S GATE · Plaza', zh: '刘家门 · 中央广场' },
   },
 ];
+
+/**
+ * Whether the reading page has a section for an address's chapter. A place can be filed under a
+ * chapter (lab-navigation's readingChapters) before that chapter is written, as the airport was:
+ * a reading address there opens the page at its top rather than leave the camera on the place
+ * behind the hero, and its City file offers no "Read on the page".
+ */
+export const onReadingPage = (id: ContentId) => {
+  const chapter = readingChapter(id);
+  return chapter === 'overview' || chapterMeta.some((c) => c.id === chapter);
+};
 
 export function Masthead({
   locale,

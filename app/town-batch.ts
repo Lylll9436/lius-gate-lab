@@ -248,11 +248,14 @@ export function createBatch(ctx: TownContext) {
   }
   /**
    * `windows` is the role of g's glass where a pane has no `userData.window` of its own (home by
-   * default), `place` the name its panes are listed under (g's name by default).
+   * default), `place` the name its panes are listed under (g's name by default). `floor` is the
+   * ground the 'terrain' contact is measured from (the terrain by default; the airport's own deck,
+   * plan.deckHeight, for the airport).
    */
-  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number; windows?: WindowRole; place?: string } = {}) {
+  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number; windows?: WindowRole; place?: string; floor?: (x: number, z: number) => number } = {}) {
     const mode = opts.contact ?? 'terrain',
-      localFloor = opts.localFloor ?? 0;
+      localFloor = opts.localFloor ?? 0,
+      floor = opts.floor ?? plan.terrainHeight;
     g.updateMatrixWorld(true);
     const inv = g.matrixWorld.clone().invert(),
       groups = new Map<string, { mat: T.Material; cast: boolean; list: T.BufferGeometry[] }>(),
@@ -440,7 +443,7 @@ export function createBatch(ctx: TownContext) {
           if (mode === 'local') above = py - localFloor;
           else if (mode === 'terrain') {
             world.set(px, py, pz).applyMatrix4(g.matrixWorld);
-            above = world.y - plan.terrainHeight(world.x, world.z);
+            above = world.y - floor(world.x, world.z);
           }
           heights[i] = above;
           if (corners && ny > -0.6) corner = cornerAt(o.id, px, py, pz, nx, ny, nz);

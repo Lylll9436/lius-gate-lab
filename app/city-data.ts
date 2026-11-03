@@ -7,6 +7,7 @@ export type BuildingId =
   | 'yunlong-liu'
   | 'qin-li'
   | 'visiting-phd'
+  | 'airport'
   | 'research-studio'
   | 'city-archive';
 type Text = Record<Locale, string>;
@@ -23,7 +24,7 @@ export type Building = {
   w: number;
   d: number;
   height: number;
-  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'studio' | 'archive';
+  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'airport' | 'studio' | 'archive';
   color: string;
   variant?: 'villa' | 'red-tenement' | 'gabled-house';
   sections: { heading: Text; body: Text }[];
@@ -247,6 +248,30 @@ const places: Building[] = [
       },
     ],
     related: ['town-hall', 'research-studio'],
+  },
+  {
+    id: 'airport',
+    name: t('Airport', '机场'),
+    short: t('Alumni', '去向'),
+    category: t('ALUMNI · DEPARTURES', '出发与去向'),
+    summary: t(
+      'An airport on a small island of its own off the north shore, joined to the town by a causeway. Its departures board shows where people from Liu’s Gate went next, and when they set off.',
+      '北岸外一座人工小岛上的机场，由一条堤道与小城相连。出发大屏显示从刘家门走出去的人去了哪里、何时启程。',
+    ),
+    style: t('Island airport', '离岛机场'),
+    architecture: t(
+      'A cream departures hall under a green barrel roof, its arch open to the causeway, beside a slim control tower, with a runway, a taxiway and an apron on an island of its own.',
+      '奶油色的出发大厅，绿色筒形拱顶，拱门正对堤道；旁边是细高的塔台，岛上还有跑道、滑行道和停机坪。',
+    ),
+    x: 1.6,
+    z: -47.6,
+    w: 6.6,
+    d: 3.8,
+    height: 7,
+    model: 'airport',
+    color: '#a9b7a3',
+    sections: [],
+    related: ['visiting-phd', 'town-hall'],
   },
   {
     id: 'research-studio',
