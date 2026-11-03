@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowUpRight, ChevronDown, PlaneTakeoff } from 'lucide-react';
 import { publicAsset } from './public-asset';
 import { buildings, type BuildingId, type Locale } from './city-data';
@@ -13,12 +13,15 @@ import {
   type ContentId,
 } from './lab-navigation';
 import {
+  alumniRecords,
   departureStatus,
   departureStatusLabel,
   getRecord,
   hasDeparted,
   outputRecords,
   noteRecords,
+  pageDay,
+  type Alumnus,
   type RecordKind,
   researchRecords,
   eventRecords,
@@ -687,6 +690,31 @@ function CatalogList({
 /* People                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A fold-out on the reading page that opens when an address names its record: on load,
+ * Back/Forward, a typed link or an in-app link (which uses pushState and so announces itself
+ * with ADDRESS_EVENT). A person's card and a row of the departures board use it.
+ */
+function useOpenedByAddress(id: ContentId) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      const { mode, content } = parseLocation(window.location.hash);
+      if (mode === 'reading' && content === id) setOpen(true);
+    };
+    sync();
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    window.addEventListener(ADDRESS_EVENT, sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+      window.removeEventListener(ADDRESS_EVENT, sync);
+    };
+  }, [id]);
+  return [open, setOpen] as const;
+}
+
 export function PersonCard({
   id,
   locale,
@@ -707,24 +735,8 @@ export function PersonCard({
   reading?: boolean;
 }) {
   const person = people.find((p) => p.id === id);
-  const [profileOpen, setProfileOpen] = useState(false);
-  // An address naming this person opens their profile: on load, Back/Forward, a typed link
-  // or an in-app link (which uses pushState and so announces itself with ADDRESS_EVENT).
-  useEffect(() => {
-    const sync = () => {
-      const { mode, content } = parseLocation(window.location.hash);
-      if (mode === 'reading' && content === id) setProfileOpen(true);
-    };
-    sync();
-    window.addEventListener('popstate', sync);
-    window.addEventListener('hashchange', sync);
-    window.addEventListener(ADDRESS_EVENT, sync);
-    return () => {
-      window.removeEventListener('popstate', sync);
-      window.removeEventListener('hashchange', sync);
-      window.removeEventListener(ADDRESS_EVENT, sync);
-    };
-  }, [id]);
+  // An address naming this person opens their profile.
+  const [profileOpen, setProfileOpen] = useOpenedByAddress(id);
   if (!person) return null;
   const zh = locale === 'zh',
     home = person.buildingId
@@ -830,6 +842,293 @@ export function PeopleCards({
 }
 
 /* ------------------------------------------------------------------ */
+/* Departures                                                          */
+/* ------------------------------------------------------------------ */
+
+/** The board's one settle-flip runs in this long, the last column included (see globals.css). */
+const FLIP_MS = 600;
+/** Whether the board has had its one flip on this visit, on the reading page and in the City file. */
+const boardFlipped = { reading: false, city: false };
+
+/** Read aloud for a row: who left, how and when, where to, and where they are now. */
+function departureSentence(person: Alumnus, locale: Locale) {
+  const d = person.departure,
+    returned = departureStatus(person) === 'returned';
+  if (locale === 'zh')
+    return `${person.title.zh}：${boardMonth(d.date, true)}${returned ? '返程，回到' : '启程，前往'}${d.city.zh}。现任：${nowParts(d, 'zh').join('，')}。`;
+  return `${person.title.en}: ${returned ? 'returned' : 'departed'} ${monthInWords(d.date, false)} ${returned ? 'to' : 'for'} ${d.city.en}. Now: ${nowParts(d, 'en').join(', ')}.`;
+}
+
+/** A row's cells in the board's order: date, name, destination, now and status. */
+function DepartureCells({
+  person,
+  locale,
+  reading,
+}: {
+  person: Alumnus;
+  locale: Locale;
+  reading: boolean;
+}) {
+  const d = person.departure;
+  return (
+    <>
+      <span className="board-cell board-date">
+        <time className="flap" dateTime={d.date}>
+          {boardMonth(d.date, locale === 'zh')}
+        </time>
+      </span>
+      {/* The reading page jumps to a person's row and focuses their name, as it does a card's. */}
+      {reading ? (
+        <h3 className="board-cell board-name" tabIndex={-1}>
+          {person.title[locale]}
+        </h3>
+      ) : (
+        <strong className="board-cell board-name">{person.title[locale]}</strong>
+      )}
+      <span className="board-cell board-destination">
+        <span className="flap">{d.city[locale]}</span>
+      </span>
+      <span className="board-cell board-now">
+        {nowParts(d, locale).map((part, i) => (
+          <span key={i}>
+            {i > 0 && ' '}
+            <span className="flap">{part}</span>
+          </span>
+        ))}
+      </span>
+      <span className="board-cell board-status">
+        <span className="flap">
+          {departureStatusLabel[departureStatus(person)][locale]}
+        </span>
+      </span>
+    </>
+  );
+}
+
+type Ring = {
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+  onFocus: () => void;
+  onBlur: () => void;
+};
+
+/** A reading-page row: it folds out the person's portrait, profile and links in place. */
+function DepartureRow({
+  person,
+  locale,
+  ring,
+}: {
+  person: Alumnus;
+  locale: Locale;
+  ring: Ring;
+}) {
+  const id = personContentId(person),
+    [open, setOpen] = useOpenedByAddress(id),
+    links = person.departure.link
+      ? [...person.links, person.departure.link]
+      : person.links;
+  return (
+    <details
+      className="board-entry"
+      id={`read-${id}`}
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary
+        className="board-row"
+        aria-label={departureSentence(person, locale)}
+        {...ring}
+      >
+        <DepartureCells person={person} locale={locale} reading />
+        <ChevronDown className="board-mark" size={15} aria-hidden="true" />
+      </summary>
+      <div className="board-profile">
+        <Portrait id={id} locale={locale} size="small" />
+        <div className="board-profile-body">
+          <span className="eyebrow">{person.role[locale]}</span>
+          <p>{person.summary[locale]}</p>
+          <ProfileBody record={person} locale={locale} />
+          {!!links.length && (
+            <div className="record-links compact">
+              {links.map((link, i) => (
+                <RecordLink
+                  key={`${i} ${link.url}`}
+                  link={link}
+                  locale={locale}
+                  iconSize={13}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * The departures board: everyone who has left Liu’s Gate by `today` (the page's day unless given),
+ * newest first, as a split-flap list. On the reading page each row folds out the person's profile;
+ * in the airport's City file a row opens their file, the camera staying on the airport. Pointing at
+ * a row rings the airport. While no one has left it shows one row still to be announced, and a
+ * note for visitors under it.
+ */
+export function DeparturesBoard({
+  locale,
+  onOpen,
+  onHover,
+  reading = false,
+  today = pageDay,
+}: {
+  locale: Locale;
+  onOpen: (id: ContentId) => void;
+  onHover?: (building: BuildingId | null) => void;
+  reading?: boolean;
+  today?: Date;
+}) {
+  const zh = locale === 'zh',
+    rows = alumniRecords(today),
+    board = useRef<HTMLDivElement>(null),
+    ringed = useRef(false),
+    [flipping, setFlipping] = useState(false),
+    where = reading ? 'reading' : 'city';
+  // One left-to-right settle-flip the first time the board comes into view: never in Chinese,
+  // whose characters do not sit on flaps, nor for a visitor who prefers reduced motion.
+  useEffect(() => {
+    const el = board.current;
+    if (
+      !el ||
+      zh ||
+      boardFlipped[where] ||
+      typeof IntersectionObserver === 'undefined' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+      return;
+    let settled = 0;
+    const watch = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting || boardFlipped[where]) return;
+        boardFlipped[where] = true;
+        watch.disconnect();
+        setFlipping(true);
+        settled = window.setTimeout(() => setFlipping(false), FLIP_MS + 60);
+      },
+      { threshold: 0.35 },
+    );
+    watch.observe(el);
+    return () => {
+      watch.disconnect();
+      window.clearTimeout(settled);
+    };
+  }, [zh, where]);
+  // Nothing stays ringed once the board goes: a row's click opens a file, and the board with it.
+  useEffect(
+    () => () => {
+      if (ringed.current) onHover?.(null);
+    },
+    [onHover],
+  );
+  const ring: Ring = {
+    onPointerEnter: () => {
+      ringed.current = true;
+      onHover?.('airport');
+    },
+    onPointerLeave: () => {
+      ringed.current = false;
+      onHover?.(null);
+    },
+    onFocus: () => {
+      ringed.current = true;
+      onHover?.('airport');
+    },
+    onBlur: () => {
+      ringed.current = false;
+      onHover?.(null);
+    },
+  };
+  const columns = zh
+    ? ['日期', '姓名', '目的地', '现任', '状态']
+    : ['Date', 'Name', 'Destination', 'Now', 'Status'];
+  return (
+    <>
+      <div
+        ref={board}
+        className={`departures${zh ? ' is-zh' : ''}${flipping ? ' is-flipping' : ''}`}
+      >
+        <div className="board-head" aria-hidden="true">
+          {['date', 'name', 'destination', 'now', 'status'].map((column, i) => (
+            <span key={column} className={`board-${column}`}>
+              {columns[i]}
+            </span>
+          ))}
+        </div>
+        <ol className="board-rows" aria-label={zh ? '出发' : 'Departures'}>
+          {rows.length ? (
+            rows.map((person) => (
+              <li key={person.id}>
+                {reading ? (
+                  <DepartureRow person={person} locale={locale} ring={ring} />
+                ) : (
+                  <button
+                    className="board-row"
+                    aria-label={departureSentence(person, locale)}
+                    onClick={() => {
+                      ringed.current = false;
+                      onHover?.(null);
+                      onOpen(personContentId(person));
+                    }}
+                    {...ring}
+                  >
+                    <DepartureCells person={person} locale={locale} reading={false} />
+                    <ArrowUpRight className="board-mark" size={14} aria-hidden="true" />
+                  </button>
+                )}
+              </li>
+            ))
+          ) : (
+            // The first departure is still to come: blank flaps for its date and where they are now.
+            <li
+              className="board-row is-tba"
+              aria-label={zh ? '首个航班：待定。' : 'First departure: to be announced.'}
+            >
+              <span className="board-cell board-date">
+                <span className="flap is-blank" aria-hidden="true">
+                  {' '.repeat(8)}
+                </span>
+              </span>
+              <span className="board-cell board-name">
+                {zh ? '首个航班' : 'First departure'}
+              </span>
+              <span className="board-cell board-destination">
+                <span className="flap">{zh ? '待定' : 'To be announced'}</span>
+              </span>
+              <span className="board-cell board-now">
+                <span className="flap is-blank" aria-hidden="true">
+                  {' '.repeat(10)}
+                </span>
+              </span>
+              <span className="board-cell board-status">
+                <span className="flap">{zh ? '待定' : 'TBA'}</span>
+              </span>
+            </li>
+          )}
+        </ol>
+      </div>
+      {!rows.length && (
+        <section className="record-section board-note">
+          <h4>{zh ? '首批启程' : 'First departures'}</h4>
+          <p>
+            {zh
+              ? '刘家门的成员都还在这里。等有人完成博士学业奔赴下一站，或访问学者回到自己的学校，这块屏会显示每个人去了哪里、何时启程。'
+              : 'Everyone at Liu’s Gate is still here. When members finish their PhDs and move on, or visiting researchers head home, this board will show where each of them went and when they set off.'}
+          </p>
+        </section>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Shared content for the dossier and the reading chapters             */
 /* ------------------------------------------------------------------ */
 
@@ -837,11 +1136,14 @@ export function LabContent({
   id,
   locale,
   onOpen,
+  onHover,
   reading = false,
 }: {
   id: ContentId;
   locale: Locale;
   onOpen: (id: ContentId) => void;
+  /** Ring a place on the model while something in the content points at it (the board's rows). */
+  onHover?: (building: BuildingId | null) => void;
   reading?: boolean;
 }) {
   const zh = locale === 'zh',
@@ -962,6 +1264,15 @@ export function LabContent({
           records={additional}
           locale={locale}
           onOpen={onOpen}
+        />
+      )}
+      {/* The airport's file and chapter: the departures board. */}
+      {b.model === 'airport' && (
+        <DeparturesBoard
+          locale={locale}
+          onOpen={onOpen}
+          onHover={onHover}
+          reading={reading}
         />
       )}
       {/* The residence's file: whoever stays there, each on their card. */}

@@ -1589,6 +1589,275 @@ body:has(.mode-explore),
   margin-right: 8px;
 }
 
+/* Departures: the airport's board, in its chapter and its City file. A split-flap list on a flat
+   ink tint: no border, no frost of its own, no glow, halo or shadow on the text. Latin text sits on
+   small flaps (IBM Plex Mono, capitals, tabular figures) cut by a dark hairline, never a white one;
+   names are in Fraunces; Chinese is set in the page's sans and never in capitals. A wide board
+   gives each row one line of five columns; below 640 px (every phone, the City file, a laptop's
+   reading panel) each row takes two lines, the date, name and status over where they went and
+   where they are now, so that each field keeps to one flap. */
+.departures {
+  container: departures / inline-size;
+  --flap: color-mix(in oklab, var(--ink) 7%, transparent);
+  --flap-split: color-mix(in oklab, var(--ink) 18%, transparent);
+  /* The date and status columns fit their widest flap ("DEC 2026", "RETURNED"; "2026年12月",
+     "已返程"), the same in the head and in every row so the columns line up. */
+  --board-date: 72px;
+  --board-status: 72px;
+  margin: 2px 0 18px;
+  padding: 8px 8px 4px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.departures.is-zh {
+  --board-date: 84px;
+  --board-status: 56px;
+}
+/* At night the page's ink is pale: the split stays dark. */
+:root[data-theme='night'] .departures {
+  --flap-split: rgba(0, 0, 0, 0.45);
+}
+.board-head,
+.board-row {
+  display: grid;
+  grid-template-columns:
+    var(--board-date) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr)
+    var(--board-status) 14px;
+  grid-template-areas: 'date name destination now status mark';
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 8px;
+}
+.board-date {
+  grid-area: date;
+}
+.board-name {
+  grid-area: name;
+}
+.board-destination {
+  grid-area: destination;
+}
+.board-now {
+  grid-area: now;
+}
+.board-status {
+  grid-area: status;
+}
+.board-mark {
+  grid-area: mark;
+  align-self: start;
+  margin-top: 4px;
+  color: var(--ink-3);
+  transition: transform 0.2s ease;
+}
+@container departures (max-width: 639.98px) {
+  .board-head,
+  .board-row {
+    grid-template-columns:
+      var(--board-date) minmax(0, 0.7fr) minmax(0, 1.5fr) var(--board-status)
+      14px;
+    grid-template-areas:
+      'date name name status mark'
+      'destination destination now now now';
+    row-gap: 6px;
+  }
+}
+/* A phone's board: closer columns and slightly smaller flaps, so a name keeps to one line. */
+@container departures (max-width: 400px) {
+  .board-head,
+  .board-row {
+    column-gap: 8px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .board-row .board-date,
+  .board-row .board-destination,
+  .board-row .board-now,
+  .board-row .board-status {
+    font-size: 11px;
+  }
+  .flap {
+    letter-spacing: 0.02em;
+  }
+}
+.board-head {
+  padding-top: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.board-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.board-rows > li + li {
+  border-top: 1px solid var(--line);
+}
+.board-row {
+  width: 100%;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--ink);
+}
+button.board-row,
+summary.board-row {
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.15s ease;
+}
+summary.board-row::-webkit-details-marker {
+  display: none;
+}
+/* A click anywhere on a row lands on the row itself, so it keeps the focus (the name can still
+   take it when an address jumps to the row). */
+summary.board-row > * {
+  pointer-events: none;
+}
+button.board-row:hover,
+summary.board-row:hover {
+  background: var(--accent-soft);
+}
+.board-entry[open] > summary .board-mark {
+  transform: rotate(180deg);
+}
+.board-entry {
+  scroll-margin-top: calc(var(--masthead) + 16px);
+}
+.board-row .board-name {
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.board-row h3:focus {
+  outline: none;
+}
+.board-row.is-tba .board-name {
+  color: var(--ink-2);
+}
+.board-row .board-date,
+.board-row .board-destination,
+.board-row .board-now,
+.board-row .board-status {
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 27px;
+}
+/* Each field is one flap that moves to the next line whole ("UNIVERSITY COLLEGE CORK", then "PHD
+   RESEARCHER"); only a field longer than its column breaks inside its flap. */
+.flap {
+  display: inline-block;
+  max-width: 100%;
+  /* Flaps line up by their tops: a flap that breaks over two lines would otherwise lift the
+     row's baseline to its last line, and the flaps beside it with it. */
+  vertical-align: top;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background:
+    linear-gradient(
+      transparent calc(50% - 0.5px),
+      var(--flap-split) calc(50% - 0.5px) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    ),
+    var(--flap);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  line-height: 17px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.board-date .flap,
+.board-status .flap {
+  white-space: nowrap;
+}
+/* The status in the amber of the hall's board rows: a tint on the flap, the text stays ink. */
+.board-status .flap {
+  --flap: color-mix(in oklab, var(--amber) 20%, transparent);
+}
+.departures.is-zh .board-head,
+.departures.is-zh .flap {
+  font-family: var(--font-sans);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.departures.is-zh .board-row .board-name {
+  font-family: 'Fraunces Variable', 'Fraunces', var(--font-sans);
+}
+.departures.is-zh .board-row .board-date,
+.departures.is-zh .board-row .board-destination,
+.departures.is-zh .board-row .board-now,
+.departures.is-zh .board-row .board-status {
+  font-size: 12.5px;
+}
+/* The one settle-flip as the board first comes into view, column by column from the left: each
+   cell turns over on its split and lands, 600 ms in all (FLIP_MS in lab-content.tsx). */
+.departures.is-flipping .board-row .board-cell {
+  animation: board-flip 360ms cubic-bezier(0.3, 0.75, 0.4, 1) both;
+}
+.departures.is-flipping .board-row .board-name {
+  animation-delay: 60ms;
+}
+.departures.is-flipping .board-row .board-destination {
+  animation-delay: 120ms;
+}
+.departures.is-flipping .board-row .board-now {
+  animation-delay: 180ms;
+}
+.departures.is-flipping .board-row .board-status {
+  animation-delay: 240ms;
+}
+@keyframes board-flip {
+  0% {
+    transform: perspective(400px) rotateX(0deg);
+  }
+  40% {
+    transform: perspective(400px) rotateX(-90deg);
+  }
+  40.1% {
+    transform: perspective(400px) rotateX(90deg);
+  }
+  80% {
+    transform: perspective(400px) rotateX(-7deg);
+  }
+  100% {
+    transform: perspective(400px) rotateX(0deg);
+  }
+}
+/* A row's fold-out on the reading page: the person's portrait, profile and links. */
+.board-profile {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 14px;
+  padding: 4px 8px 16px;
+}
+.board-profile-body > p {
+  margin: 6px 0 4px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.board-profile-body .record-props {
+  margin: 12px 0;
+}
+.board-profile-body > :last-child {
+  margin-bottom: 0;
+}
+.board-note {
+  margin-top: -2px;
+}
+
 /* ------------------------------------------------------------------ */
 /* Footer                                                              */
 /* ------------------------------------------------------------------ */
@@ -2059,6 +2328,10 @@ body:has(.mode-explore),
   .record-props > div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+  /* The departures board gives its rows the room its own margin took. */
+  .departures {
+    padding: 6px 2px 2px;
   }
 }
 /* City mode below the wide layout: the panels that come and go stack in rows under the sky

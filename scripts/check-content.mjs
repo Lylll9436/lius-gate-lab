@@ -310,8 +310,9 @@ for (const name of [
   'people-photos',
   'lab-content',
   'site-chrome',
+  'chapters',
 ]) {
-  const ext = ['lab-content', 'site-chrome'].includes(name) ? 'tsx' : 'ts';
+  const ext = ['lab-content', 'site-chrome', 'chapters'].includes(name) ? 'tsx' : 'ts';
   const source = await fs.readFile(
     path.join(root, 'app', name + '.' + ext),
     'utf8',
@@ -339,11 +340,14 @@ const nav = await import(
 const records = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
 );
-const { LabContent, NewsPreview, PeopleCards } = await import(
+const { LabContent, NewsPreview, PeopleCards, DeparturesBoard } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
 const { SiteFooter, chapterMeta, onReadingPage } = await import(
   pathToFileURL(path.join(output, 'site-chrome.mjs')).href
+);
+const { Chapters } = await import(
+  pathToFileURL(path.join(output, 'chapters.mjs')).href
 );
 const data = await import(
   pathToFileURL(path.join(output, 'city-data.mjs')).href
@@ -860,6 +864,95 @@ async function siteOver(name, testCatalog) {
   assert.deepEqual(lnav.selectionForContent('person:test-future-member', DEPART), ['airport']);
   assert(!lnav.departedOn('person:test-member', DEPART) && lnav.chapterFor('person:test-member', DEPART) === 'people', 'Without a departure nobody is filed at the airport.');
   assert(!lnav.departedOn('airport') && !lnav.departedOn('event:test-farewell'), 'Only a person can have left.');
+  // The departures board: who has left, newest first, each row a sentence read aloud. On the
+  // reading page a row is the <details> its address opens, folding out the portrait, profile and
+  // links; in the City file it is a button that opens the person's file. Dates to the month.
+  const sentences = {
+    en: [
+      'Val Visitor: returned August 2026 to Testburg, Ireland. Now: Test Institute.',
+      'Pat Former: departed June 2025 for Testford, Scotland. Now: Test University, Postdoctoral researcher.',
+    ],
+    zh: [
+      '测试丁：2026年8月返程，回到爱尔兰测试堡。现任：测试研究所。',
+      '测试丙：2025年6月启程，前往测试福德。现任：测试大学，博士后研究员。',
+    ],
+  };
+  const boardOn = (props) =>
+    renderToStaticMarkup(
+      React.createElement(lcontent.DeparturesBoard, { locale: 'en', onOpen() {}, reading: true, today: TODAY, ...props }),
+    );
+  /** Each row's flaps in one column, in the board's order: date, name, destination, now, status. */
+  const flaps = (html, column) => {
+    const order = ['date', 'name', 'destination', 'now', 'status'],
+      next = order[order.indexOf(column) + 1];
+    return [...html.matchAll(/<(summary|button) class="board-row"[\s\S]*?<\/\1>/g)].map(([row]) => {
+      const start = row.indexOf('board-cell board-' + column + '"'),
+        end = next ? row.indexOf('board-cell board-' + next + '"') : row.length;
+      return [...row.slice(start, end).matchAll(/class="flap"[^>]*>([^<]*)</g)].map((f) => f[1]);
+    });
+  };
+  for (const locale of ['en', 'zh']) {
+    const zh = locale === 'zh',
+      page = boardOn({ locale }),
+      city = boardOn({ locale, reading: false });
+    assert.deepEqual(
+      [...page.matchAll(/<details class="board-entry" id="read-([^"]+)"><summary class="board-row" aria-label="([^"]+)">/g)].map((m) => [m[1], m[2]]),
+      [
+        ['person:test-past-visitor', sentences[locale][0]],
+        ['person:test-past-member', sentences[locale][1]],
+      ],
+      'The board, newest first, each row the anchor of its address (' + locale + ').',
+    );
+    assert.deepEqual(
+      [...city.matchAll(/<button class="board-row" aria-label="([^"]+)">/g)].map((m) => m[1]),
+      sentences[locale],
+      'In the City file each row is a button (' + locale + ').',
+    );
+    assert(!city.includes('<details') && !city.includes('<h3') && page.includes('<h3 class="board-cell board-name" tabindex="-1">'));
+    for (const html of [page, city]) {
+      assert(
+        html.includes('<time class="flap" dateTime="2026-08-31">' + (zh ? '2026年8月' : 'Aug 2026') + '</time>') &&
+          html.includes('<time class="flap" dateTime="2025-06-30">' + (zh ? '2025年6月' : 'Jun 2025') + '</time>'),
+        'Departure dates to the month (' + locale + ').',
+      );
+      assert.deepEqual(flaps(html, 'destination'), zh ? [['爱尔兰测试堡'], ['测试福德']] : [['Testburg, Ireland'], ['Testford, Scotland']]);
+      assert.deepEqual(flaps(html, 'now'), zh ? [['测试研究所'], ['测试大学', '博士后研究员']] : [['Test Institute'], ['Test University', 'Postdoctoral researcher']]);
+      assert.deepEqual(flaps(html, 'status'), zh ? [['已返程'], ['已启程']] : [['Returned'], ['Departed']], 'A visitor has gone home, a member has set off.');
+      assert(
+        html.includes(
+          '<div class="board-head" aria-hidden="true">' +
+            (zh ? ['日期', '姓名', '目的地', '现任', '状态'] : ['Date', 'Name', 'Destination', 'Now', 'Status'])
+              .map((label, i) => '<span class="board-' + ['date', 'name', 'destination', 'now', 'status'][i] + '">' + label + '</span>')
+              .join('') +
+            '</div>',
+        ) &&
+          html.includes('<div class="departures' + (zh ? ' is-zh' : '') + '">') &&
+          html.includes('<ol class="board-rows" aria-label="' + (zh ? '出发' : 'Departures') + '">'),
+        'The board’s columns: date, name, destination, now and status (' + locale + ').',
+      );
+      assert(!html.includes('is-tba') && !html.includes(zh ? '首批启程' : 'First departures'), 'The empty state is gone once someone has left.');
+      if (!zh) assert(!/[㐀-鿿]/.test(html), 'The English board contains Chinese.');
+    }
+    // A row's fold-out: the person's portrait (in the airport's colour), their summary, profile and links.
+    if (!zh)
+      assert(
+        page.includes('<div class="board-profile"><div class="portrait portrait-small" style="--tint:#a9b7a3">') &&
+          page.includes('Pat Former is a test person.') &&
+          page.includes('href="https://example.org/past-member"'),
+        'A reading row folds out the portrait, profile and links.',
+      );
+  }
+  // A departure entered ahead joins the board on its day, at the top.
+  assert.deepEqual(
+    [...boardOn({ today: DEPART }).matchAll(/id="read-([^"]+)"/g)].map((m) => m[1]),
+    ['person:test-future-member', 'person:test-past-visitor', 'person:test-past-member'],
+  );
+  assert(
+    renderToStaticMarkup(
+      React.createElement(lcontent.LabContent, { id: 'airport', locale: 'en', onOpen() {}, reading: true }),
+    ).includes('id="read-person:test-past-member"'),
+    'The airport’s chapter shows the board on the visitor’s day.',
+  );
   // Their City file: a Now line, the status and the month they left, a way back to the board, their
   // own link, and the airport's note rather than the home they left.
   for (const [id, now, status, when, home] of [
@@ -947,14 +1040,84 @@ async function siteOver(name, testCatalog) {
     }
   }
 }
-// Every record, the hero and every written chapter read on the page; a place filed under a chapter
-// the page has no section for yet (the airport's, until its Departures chapter is written) does not,
-// so its reading address opens the page at its top and its City file offers no "Read on the page".
+// Every record, the hero and every chapter read on the page. A place filed under a chapter the page
+// had no section for (the airport's, until its Departures chapter was written) did not: its reading
+// address opened the page at its top and its City file offered no "Read on the page". Now every
+// reading chapter has its section, in order, Departures as chapter 03 right after People.
 for (const id of ['overview', ...chapterMeta.map((c) => c.id), 'person:test-member', 'research:test-study', 'event:test-event', 'output:test-output', 'note:test-note', ...buildings.map((b) => b.id)])
   assert.equal(onReadingPage(id), id === 'overview' || chapterMeta.some((c) => c.id === nav.readingChapter(id)), `${id} is read on the page wrongly.`);
-assert(['overview', 'person:test-member', 'event:test-event'].every(onReadingPage), 'A record or the hero is not on the reading page.');
-for (const id of nav.readingChapters.filter((c) => !chapterMeta.some((m) => m.id === c)))
-  assert(!onReadingPage(id) && buildings.some((b) => b.id === id), `${id} is a chapter with no section that is not a place.`);
+assert(['overview', 'person:test-member', 'event:test-event', 'airport'].every(onReadingPage), 'A record, a place or the hero is not on the reading page.');
+assert.deepEqual(chapterMeta.map((c) => c.id), nav.readingChapters, 'Every reading chapter has its section on the page, in order.');
+assert(buildings.every((b) => onReadingPage(b.id)), 'Every place reads on the page.');
+assert.deepEqual(chapterMeta[2], {
+  id: 'airport',
+  label: { en: 'Alumni', zh: '去向' },
+  title: { en: 'Departures', zh: '出发与去向' },
+  place: { en: 'Airport · Off the north shore', zh: '机场 · 北岸离岛' },
+});
+assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.');
+// The reading page numbers its seven chapters; the airport's is 03 and holds the departures board.
+for (const locale of ['en', 'zh']) {
+  const story = renderToStaticMarkup(
+    React.createElement(Chapters, { locale, onOpen() {}, onVisit() {}, onHoverBuilding() {}, onExplore() {} }),
+  );
+  assert.deepEqual(
+    [...story.matchAll(/<section class="chapter" id="read-([^"]+)" data-chapter="\1">[\s\S]*?<span class="chapter-no">(\d+)<\/span>/g)].map((m) => m[1] + ' ' + m[2]),
+    ['town-hall 01', 'people 02', 'airport 03', 'research-studio 04', 'city-archive 05', 'corner-park 06', 'lius-gate 07'],
+  );
+  const airport = story.slice(story.indexOf('id="read-airport"'), story.indexOf('id="read-research-studio"'));
+  assert(
+    airport.includes(locale === 'zh' ? '>出发与去向</h2>' : '>Departures</h2>') &&
+      airport.includes(locale === 'zh' ? '机场 · 北岸离岛' : 'Airport · Off the north shore') &&
+      airport.includes('<div class="departures'),
+    'The Departures chapter (' + locale + ') holds the board.',
+  );
+}
+// While nobody has left (on DAY) the board shows one row still to be announced, with blank flaps
+// for its date and where they are now, and under it a note for visitors.
+for (const reading of [true, false]) {
+  const empty = (locale) =>
+    renderToStaticMarkup(React.createElement(DeparturesBoard, { locale, onOpen() {}, reading, today: TODAY }));
+  const en = empty('en'),
+    zh = empty('zh');
+  assert(
+    en.includes('<li class="board-row is-tba" aria-label="First departure: to be announced.">') &&
+      en.includes('<span class="board-cell board-name">First departure</span>') &&
+      en.includes('<span class="board-cell board-destination"><span class="flap">To be announced</span></span>') &&
+      en.includes('<span class="board-cell board-status"><span class="flap">TBA</span></span>') &&
+      en.includes('<h4>First departures</h4>') &&
+      en.includes(
+        '<p>Everyone at Liu’s Gate is still here. When members finish their PhDs and move on, or visiting researchers head home, this board will show where each of them went and when they set off.</p>',
+      ) &&
+      (en.match(/<li/g) || []).length === 1 &&
+      (en.match(/class="flap is-blank" aria-hidden="true">/g) || []).length === 2 &&
+      !en.includes('<details') &&
+      !en.includes('<button'),
+    'The empty board (English).',
+  );
+  assert(!/[㐀-鿿]/.test(en), 'The English board contains Chinese.');
+  assert(
+    zh.includes('<li class="board-row is-tba" aria-label="首个航班：待定。">') &&
+      zh.includes('<span class="board-cell board-name">首个航班</span>') &&
+      zh.includes('<span class="board-cell board-destination"><span class="flap">待定</span></span>') &&
+      zh.includes('<span class="board-cell board-status"><span class="flap">待定</span></span>') &&
+      zh.includes('<h4>首批启程</h4>') &&
+      zh.includes(
+        '<p>刘家门的成员都还在这里。等有人完成博士学业奔赴下一站，或访问学者回到自己的学校，这块屏会显示每个人去了哪里、何时启程。</p>',
+      ),
+    'The empty board (Chinese).',
+  );
+}
+// The airport's file and chapter show the board as the visitor finds it: empty while nobody has left.
+for (const reading of [true, false]) {
+  const file = renderToStaticMarkup(React.createElement(LabContent, { id: 'airport', locale: 'en', onOpen() {}, reading }));
+  assert(
+    file.includes('<div class="departures">') &&
+      file.includes('is-tba') === !records.alumniRecords().length &&
+      file.includes('<em>Island airport</em>'),
+    'The airport shows its departures board.',
+  );
+}
 // The chapter at the gate is about this site; the name story was removed at the owner's request.
 const gate = buildings.find((b) => b.id === 'lius-gate');
 assert.deepEqual(gate.sections.map((s) => s.heading.en), ['Layout', 'How to use the site']);
@@ -1276,5 +1439,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file), the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
 );

@@ -85,6 +85,31 @@ assert.deepEqual(nav.tourStops, [
   'corner-park',
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
+// Ten stops: the gate, the hall, the three homes, the residence, then the airport, the studio, the
+// archive and the park.
+assert.equal(nav.tourStops.length, 10);
+assert.deepEqual(
+  nav.tourStops.slice(5),
+  ['visiting-phd', 'airport', 'research-studio', 'city-archive', 'corner-park'],
+);
+// The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
+// and the overview's list of places names it there too.
+assert.deepEqual(nav.readingChapters, [
+  'town-hall',
+  'people',
+  'airport',
+  'research-studio',
+  'city-archive',
+  'corner-park',
+  'lius-gate',
+]);
+assert.deepEqual(nav.destinations, nav.readingChapters.slice(0, -1));
+// Its address frames the airport: the chapter, the camera's subject and the file's place.
+assert.equal(nav.chapterFor('airport'), 'airport');
+assert.equal(nav.readingChapter('airport'), 'airport');
+assert.deepEqual(nav.sceneTarget('airport'), { building: 'airport' });
+assert.deepEqual(nav.selectionForContent('airport'), ['airport']);
+assert.equal(nav.placeFor('airport'), 'airport');
 // A City file's eyebrow names the place the camera frames, an event's park included.
 const { eventRecords, peopleRecords, personContentId } = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
@@ -669,6 +694,26 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     const subject = view.target.clone().sub(view.shiftApplied);
     assert(inside(subject.x, subject.z) && region(subject.x, subject.z).radius === scene.PAN.deck.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9), `The airport's chapter frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pan region.`);
   }
+  // That is the framing the Departures chapter gets: the reading camera turns to its chapter's
+  // bearing (the gate's) and selects its scene target, the airport, and the scene fits a selected
+  // airport alone to that box between 0.95 and 2.6. The City file of the airport, or of anyone who
+  // has left, turns and selects the same way (page.tsx's frameCity), so the camera stays put as a
+  // board row opens a person's file.
+  for (const chapter of nav.readingChapters)
+    assert(Number.isFinite(plan.chapterBearings[chapter]), `The ${chapter} chapter has no bearing.`);
+  assert.equal(plan.chapterBearings.airport, plan.chapterBearings['lius-gate']);
+  assert.equal(nav.sceneTarget('airport').building, 'airport');
+  let fitFocusedSource, selectSource;
+  (function findFit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'fitFocused') fitFocusedSource = node.getText(syntax);
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'select') selectSource = node.getText(syntax);
+    ts.forEachChild(node, findFit);
+  })(syntax);
+  assert(
+    /focusedIds\.length === 1 && focusedIds\[0\] === 'airport'\)\s*\{\s*fitGroup\(AIRPORT_FIT, 0\.95, 2\.6\);/.test(fitFocusedSource) &&
+      /focusedIds = \[id\];[\s\S]*fitFocused\(\);/.test(selectSource),
+    'Selecting the airport no longer fits its island and causeway.',
+  );
 }
 // A sun shadow map thrown away (Inspect's sharper map, the town's again, a quality step) or a
 // frustum moved elsewhere is drawn again before the next frame uses it, even paused: an empty
@@ -1112,5 +1157,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );

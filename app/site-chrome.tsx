@@ -24,6 +24,13 @@ export const chapterMeta: ChapterMeta[] = [
     title: { en: 'People', zh: '成员' },
     place: { en: 'Terrace row · Homes', zh: '联排住宅 · 住宅区' },
   },
+  // Where the people who have left went: the airport's departures board, right after People.
+  {
+    id: 'airport',
+    label: { en: 'Alumni', zh: '去向' },
+    title: { en: 'Departures', zh: '出发与去向' },
+    place: { en: 'Airport · Off the north shore', zh: '机场 · 北岸离岛' },
+  },
   {
     id: 'research-studio',
     label: { en: 'Research', zh: '研究' },
@@ -52,9 +59,9 @@ export const chapterMeta: ChapterMeta[] = [
 
 /**
  * Whether the reading page has a section for an address's chapter. A place can be filed under a
- * chapter (lab-navigation's readingChapters) before that chapter is written, as the airport was:
- * a reading address there opens the page at its top rather than leave the camera on the place
- * behind the hero, and its City file offers no "Read on the page".
+ * chapter (lab-navigation's readingChapters) before that chapter is written, as the airport was
+ * until its Departures chapter: a reading address there opens the page at its top rather than
+ * leave the camera on the place behind the hero, and its City file offers no "Read on the page".
  */
 export const onReadingPage = (id: ContentId) => {
   const chapter = readingChapter(id);
