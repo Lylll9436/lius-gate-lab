@@ -1,26 +1,31 @@
 import * as T from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
-import { palette, hash, noise2, type TownContext } from './town-shared';
+import { palette, hash, noise2, WATER, type TownContext } from './town-shared';
 import { shoreHeight } from './town-ground';
 import type { Kit, Piece } from './town-kit';
 import type { Props } from './town-props';
 
 /**
  * The airport's colours, each no more saturated than its palette family: the cool greys of the
- * quarried armour and the darker rubble under it, the coping's and the parapets' kerb stone, the
- * runway's and the taxiway's dark matte concrete, the apron's pale concrete, the cream threshold
+ * quarried armour (two of its six dark, so about a stone in three is), all a step under the
+ * coping's kerb stone, and the darker rubble under it; the coping's and the parapets' kerb stone,
+ * the runway's and the taxiway's dark matte concrete (the runway a step darker and cooler than the
+ * town's asphalt, so it never reads as another road), the apron's mid-grey concrete and its bay
+ * joints a step darker (the tones of the placement boxes the owner approved), the cream threshold
  * paint, the muted ochre lead-in line, the hall's cream render under a verdigris roof (the Town
  * Hall's copper), the board's dark slate and amber rows in a dark green-grey frame.
  */
 export const AIRPORT_LOOK = {
-  armour: ['#9c9b91', '#90938b', '#a6a395', '#898c84'],
-  rubble: '#84837a',
+  armour: ['#8b8c85', '#7f847f', '#97958a', '#868478', '#737874', '#6a6f6c'],
+  rubble: '#72736c',
   coping: palette.kerb,
-  runway: '#5b6064',
-  taxiway: '#676b6e',
-  apron: '#c4c1b7',
+  runway: '#4f5458',
+  taxiway: '#5f6367',
+  apron: '#aeaba3',
+  /** The apron's bay joints: its own concrete, this much darker. */
+  joint: 0.91,
   paint: palette.roadLine,
   leadIn: '#d4b25e',
   render: palette.tramCream,
@@ -97,26 +102,69 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     return m;
   }
   /**
-   * A boulder like the beach's (a smooth icosahedron, squashed and turned only about y, so its top
-   * stays flat, brightening upward), at (x, y, z), pushed onto `list` in world space with its tone
-   * baked in: a little darker, damp, below the waterline.
+   * The armour stones' shapes: an icosahedron with its corners merged, so a corner moved moves
+   * every face round it (no cracks); the capstones' one step finer.
    */
-  function boulder(list: T.BufferGeometry[], x: number, y: number, z: number, r: number, seed: number) {
-    const geometry = new T.IcosahedronGeometry(r, 1),
-      squash = new T.Vector3(1.22 + 0.22 * hash(seed * 3 + 1), 0.66 + 0.14 * hash(seed * 3 + 2), 0.98 + 0.14 * hash(seed * 3 + 3));
-    geometry.applyMatrix4(new T.Matrix4().compose(new T.Vector3(x, y, z), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), hash(seed * 7 + 5) * Math.PI * 2), squash));
-    const p = geometry.getAttribute('position'),
-      tint = new T.Color(L.armour[Math.floor(hash(seed * 11 + 7) * L.armour.length) % L.armour.length]),
-      tone = new Float32Array(p.count * 3),
-      top = y + r * squash.y;
+  const STONE = [1, 2].map((detail) => mergeVertices(new T.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv')));
+  /**
+   * An armour stone, quarried rather than rolled: the shape pushed part way toward a rounded block
+   * (each stone its own squareness), each corner in or out by up to 8%, squashed (longest across
+   * the slope's line, lowest upright), turned about y and tipped up to 0.25 either way. It shades
+   * as the smooth rounded block (its normals are the block's, not the corners'), so no facet
+   * shows. Pushed onto `list` at (x, y, z) in world space with its tone baked in: one of the
+   * armour's greys a little lighter or darker, lighter toward its top, damp below the waterline.
+   */
+  function boulder(list: T.BufferGeometry[], x: number, y: number, z: number, r: number, seed: number, big = false) {
+    const h = (k: number) => hash(seed * 7.31 + k * 1.913),
+      geometry = STONE[big ? 1 : 0].clone(),
+      p = geometry.getAttribute('position'),
+      normals = new Float32Array(p.count * 3),
+      n = new T.Vector3(),
+      square = 0.3 + 0.35 * h(1);
     for (let i = 0; i < p.count; i++) {
-      const py = p.getY(i),
-        v = (0.9 + 0.15 * T.MathUtils.smoothstep(py, top - 2 * r * squash.y, top)) * (1 - 0.16 * (1 - T.MathUtils.smoothstep(py, -0.12, 0.04)));
+      const ux = p.getX(i),
+        uy = p.getY(i),
+        uz = p.getZ(i),
+        block = (ux ** 4 + uy ** 4 + uz ** 4) ** -0.25,
+        k = (1 + square * (block - 1)) * (1 + 0.16 * (hash(seed * 31.7 + i * 3.17) - 0.5));
+      p.setXYZ(i, ux * k, uy * k, uz * k);
+      n.set(ux ** 3, uy ** 3, uz ** 3).normalize().multiplyScalar(square).add(new T.Vector3(ux, uy, uz).multiplyScalar(1 - square)).normalize().toArray(normals, i * 3);
+    }
+    geometry.setAttribute('normal', new T.BufferAttribute(normals, 3));
+    const squash = new T.Vector3(r * (1.15 + 0.3 * h(2)), r * (0.62 + 0.2 * h(3)), r * (0.9 + 0.25 * h(4)));
+    // (applyMatrix4 turns the normals with the stone, through its squash.)
+    geometry.applyMatrix4(new T.Matrix4().compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(0.5 * (h(5) - 0.5), h(6) * Math.PI * 2, 0.5 * (h(7) - 0.5), 'YXZ')), squash));
+    const plain = geometry.toNonIndexed(),
+      q = plain.getAttribute('position'),
+      tint = new T.Color(L.armour[Math.floor(h(8) * L.armour.length) % L.armour.length]).multiplyScalar(0.9 + 0.16 * h(9)),
+      tone = new Float32Array(q.count * 3);
+    geometry.dispose();
+    for (let i = 0; i < q.count; i++) {
+      const py = q.getY(i),
+        v = (0.88 + 0.16 * T.MathUtils.smoothstep(py, y - squash.y, y + squash.y)) * (1 - 0.18 * (1 - T.MathUtils.smoothstep(py, WATER - 0.09, WATER + 0.07)));
       tone.set([tint.r * v, tint.g * v, tint.b * v], i * 3);
     }
-    geometry.setAttribute('color', new T.BufferAttribute(tone, 3));
-    geometry.deleteAttribute('uv');
-    list.push(geometry);
+    plain.setAttribute('color', new T.BufferAttribute(tone, 3));
+    list.push(plain);
+    return plain;
+  }
+  /**
+   * A course of stones along `path` (stations about 0.1 apart): uneven spacings (`step` give or
+   * take 40%), the odd stone left out (`skip`) so the bed shows, each set a little up or down the
+   * slope round its course's line (`f` of the way down the bed, give or take `spread`), and sized
+   * 0.72 to 1.28 times `r`. `place` turns a station, a share down the bed and a size into a stone.
+   */
+  function course(path: Station[], step: number, skip: number, seed: number, place: (s: Station, f: number, size: number, seed: number) => void, f: number, spread: number, r: number) {
+    let next = step * hash(seed),
+      run = 0;
+    path.forEach((s, i) => {
+      if (i) run += Math.hypot(s.x - path[i - 1].x, s.z - path[i - 1].z);
+      if (run < next) return;
+      seed++;
+      next = run + step * (0.6 + 0.8 * hash(seed * 5 + 4));
+      if (hash(seed * 5 + 5) < skip) return;
+      place(s, f + spread * 2 * (hash(seed * 5 + 1) - 0.5), r * (0.72 + 0.56 * hash(seed * 5 + 3)), seed);
+    });
   }
   /** The beach or the sea bed under the causeway's line at z: the shore's profile out from the outline. */
   function bedAt(z: number) {
@@ -173,18 +221,36 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     // The armour's bed: dark rubble from under the coping down into the sea, so no gap between the
     // boulders shows the sea bed. It meets the causeway's flanks where the causeway lands.
     solid(g, sweep(round(0, 0.4, R.top / 2 + 0.9), () => EDGE.bed), L.rubble, 'stone', { shadow: false, band: true, name: 'airport-armour-bed' });
-    // The armour: two rows of rounded boulders on that bed, the lower one at the waterline.
+    // The armour: two courses of quarried stones on that bed, the upper set back under the coping,
+    // the lower at the waterline, overlapping, unevenly spaced and the odd one missing; and eight
+    // big capstones, at the four corners, either side of where the causeway lands and two along
+    // the north side, their tops about level with the coping.
     const rocks: T.BufferGeometry[] = [],
-      [[o0, y0], [o1, y1]] = EDGE.bed;
-    let seed = 1;
-    for (const [f, r, step] of [[0.2, 0.25, 0.6], [0.52, 0.3, 0.62]] as const)
-      for (const p of round(0, step, R.top / 2 + 0.75)) {
-        seed++;
-        const o = o0 + f * (o1 - o0) + 0.08 * (hash(seed * 5 + 1) - 0.5),
-          slide = 0.24 * (hash(seed * 5 + 2) - 0.5),
-          size = r * (0.78 + 0.46 * hash(seed * 5 + 3));
-        boulder(rocks, p.x + p.nx * o + slide * p.nz, y0 + f * (y1 - y0) + size * 0.3, p.z + p.nz * o - slide * p.nx, size, seed);
-      }
+      [[o0, y0], [o1, y1]] = EDGE.bed,
+      path = round(0, 0.1, R.top / 2 + 0.75),
+      put = (p: Station, f: number, size: number, seed: number, big = false) => {
+        const o = o0 + f * (o1 - o0),
+          slide = 0.1 * (hash(seed * 5 + 2) - 0.5),
+          stone = boulder(rocks, p.x + p.nx * o + slide * p.nz, y0 + f * (y1 - y0) + size * 0.3, p.z + p.nz * o - slide * p.nx, size, seed, big),
+          at = stone.getAttribute('position');
+        // A stone reaching past the armour's toe (A.armour, give or take 0.15) is drawn back up the slope.
+        let reach = -Infinity;
+        for (let i = 0; i < at.count; i++) reach = Math.max(reach, plan.airportDistance(at.getX(i), at.getZ(i)));
+        const excess = reach - (A.armour + 0.15);
+        if (excess > 0) stone.translate(-p.nx * excess, 0, -p.nz * excess);
+      };
+    course(path, 0.55, 0.1, 1, put, 0.2, 0.07, 0.25);
+    course(path, 0.6, 0.04, 500, put, 0.52, 0.07, 0.3);
+    const corner = (sx: number, sz: number): Station => {
+      const a = Math.atan2(sz, sx);
+      return { x: A.x + sx * (A.hw - A.radius) + Math.cos(a) * A.radius, z: A.z + sz * (A.hd - A.radius) + Math.sin(a) * A.radius, nx: Math.cos(a), nz: Math.sin(a), y: 0 };
+    };
+    const caps: Station[] = [
+      ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => corner(sx, sz)),
+      ...[-1, 1].map((s): Station => ({ x: R.x + s * (R.top / 2 + 0.95), z: A.z + A.hd, nx: 0, nz: 1, y: 0 })),
+      ...[-4.2, 3.6].map((dx): Station => ({ x: A.x + dx, z: A.z - A.hd, nx: 0, nz: -1, y: 0 })),
+    ];
+    caps.forEach((p, k) => put(p, 0.34, 0.47 + 0.08 * hash(k * 3 + 0.5), 800 + k * 3, true));
     return rocks;
   }
 
@@ -199,20 +265,36 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     slab(g, RW.x0, RW.x1, RW.z - RW.width / 2, RW.z + RW.width / 2, A.deck - 0.01, top, L.runway, 'stone');
     slab(g, TW.x0 - TW.width / 2, TW.x1 + TW.width / 2, TW.z - TW.width / 2, TW.z + TW.width / 2, A.deck - 0.01, top, L.taxiway, 'stone');
     for (const x of TW.stubs) slab(g, x - TW.width / 2, x + TW.width / 2, RW.z + RW.width / 2, TW.z - TW.width / 2, A.deck - 0.01, top, L.taxiway, 'stone');
-    // The apron in plain pale concrete out to the taxiway's edge (the paving's flags made it read as
-    // a town square), and the forecourt in the town's pavement, a kerb's height up, inside the coping.
-    slab(g, AP.x0, AP.x1, TW.z + TW.width / 2, AP.z1, A.deck - 0.01, top, L.apron, 'stone');
+    // The apron in plain concrete out to the taxiway's edge (the paving's flags made it read as a
+    // town square), cast in four bays along it and two across, their joints 0.08 wide and a step
+    // darker (the one across runs under the stand's lead-in line); the forecourt in the town's
+    // pavement, a kerb's height up, inside the coping. The joints and the paint are flat sheets
+    // laid on the concrete, with no sides to show as a dotted sliver at a slant.
+    const flat = (along: number, across: number) => new T.PlaneGeometry(along, across).rotateX(-Math.PI / 2),
+      apronZ0 = TW.z + TW.width / 2;
+    slab(g, AP.x0, AP.x1, apronZ0, AP.z1, A.deck - 0.01, top, L.apron, 'stone');
+    const joints: Piece[] = [],
+      bay = (AP.x1 - AP.x0) / 4;
+    for (let k = 1; k < 4; k++) joints.push({ geometry: flat(0.08, AP.z1 - apronZ0), at: [AP.x0 + k * bay, top + 0.002, (apronZ0 + AP.z1) / 2] });
+    joints.push({ geometry: flat(AP.x1 - AP.x0, 0.08), at: [(AP.x0 + AP.x1) / 2, top + 0.002, (apronZ0 + AP.z1) / 2] });
+    // In the apron's own material (so they batch with it), darkened by their vertex colour.
+    const jointMesh = cluster(g, joints, L.apron, 'stone', { shadow: false });
+    if (jointMesh) {
+      jointMesh.userData.ground = true;
+      const count = jointMesh.geometry.getAttribute('position').count;
+      jointMesh.geometry.setAttribute('color', new T.BufferAttribute(new Float32Array(count * 3).fill(L.joint), 3));
+    }
     slab(g, FC.x0, FC.x1, FC.z0, FC.z1 - 0.4, A.deck - 0.02, A.deck + 0.06, palette.pavement, 'paving');
     // Markings, never under 0.25 wide: at each threshold four bars along the runway either side of
     // its centre line, then a pair of broad aiming blocks; no centre-line dashes, no numbers. On the
-    // apron the stand's lead-in line, ending at the parked plane's nose. Paint 0.006 thick.
+    // apron the stand's lead-in line, ending at the parked plane's nose.
     const paint: Piece[] = [],
-      y = top + 0.003;
+      y = top + 0.004;
     for (const end of [-1, 1]) {
       const from = end < 0 ? RW.x0 : RW.x1,
         bar = (a: number, b: number, c: number, width: number) => {
           const [x0, x1] = [from - end * a, from - end * b].sort((p, q) => p - q);
-          paint.push({ geometry: chamfered(x1 - x0, 0.006, width), at: [(x0 + x1) / 2, y, RW.z + c] });
+          paint.push({ geometry: flat(x1 - x0, width), at: [(x0 + x1) / 2, y, RW.z + c] });
         };
       for (const c of [-0.675, -0.225, 0.225, 0.675]) bar(0.3, 1.5, c, 0.25);
       for (const c of [-0.5, 0.5]) bar(3.0, 4.4, c, 0.3);
@@ -221,11 +303,12 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       lead1 = STAND.x + 1.8;
     for (const [pieces, colour] of [
       [paint, L.paint],
-      [[{ geometry: chamfered(lead1 - lead0, 0.006, 0.25), at: [(lead0 + lead1) / 2, y, STAND.z] }], L.leadIn],
+      [[{ geometry: flat(lead1 - lead0, 0.25), at: [(lead0 + lead1) / 2, y, STAND.z] }], L.leadIn],
     ] as [Piece[], string][]) {
       const m = cluster(g, pieces, colour, 'paint', { shadow: false });
       if (m) m.userData.ground = true;
     }
+    [...joints, ...paint].forEach((p) => p.geometry.dispose());
   }
 
   /* ---------------------------------------------------------------- */
@@ -281,7 +364,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
    * The ramp and the causeway: a rubble-mound embankment 2.5 wide on top, from the beach to the
    * island. Footways 0.24 wide either side of the road, a buff parapet 0.16 thick along each edge,
    * and rock flanks (plan.AIRPORT_ROAD.flank) down to the beach or the sea bed, faced with boulders.
-   * Piers stand in the parapets at both ends and under the four lamps on the west side.
+   * Piers stand in the parapets at both ends and under the four lamps on the east side.
    */
   function causeway(g: T.Object3D, rocks: T.BufferGeometry[]) {
     const from = R.beach - 0.15,
@@ -310,11 +393,11 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       solid(g, sweep(path, prof), L.coping, 'stone', { band: true, name: 'airport-parapet' });
     }
     // Piers, square and a little proud of the parapet both ways, capped: at each end on both sides,
-    // and under the four lamps on the west side.
+    // and under the four lamps on the east side.
     const stone: Piece[] = [],
       caps: Piece[] = [],
       lampsAt = [-31.4, -35.2, -39.0, -42.0],
-      piers: [number, number][] = [...[-1, 1].flatMap((s): [number, number][] => [[s, from + 0.05], [s, landingZ + 0.12]]), ...lampsAt.map((z): [number, number] => [-1, z])];
+      piers: [number, number][] = [...[-1, 1].flatMap((s): [number, number][] => [[s, from + 0.05], [s, landingZ + 0.12]]), ...lampsAt.map((z): [number, number] => [1, z])];
     for (const [side, z] of piers) {
       const x = R.x + side * mid,
         y = plan.airportRoadTop(z);
@@ -323,24 +406,24 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     }
     cluster(g, stone, L.coping, 'stone', { band: false });
     cluster(g, caps, L.dressing, 'stone', { band: false });
-    // The causeway's lamps: the town's cast-iron standard, a little shorter, on the west piers.
-    for (const z of lampsAt) lamp(g, R.x - mid, z, 1.6, plan.airportRoadTop(z) + 0.5);
-    // Boulders on both flanks, smaller where the ramp is low, up to the island's own armour.
-    let seed = 900;
+    // The causeway's lamps: the town's cast-iron standard, a little shorter, on the east piers.
+    // The key light turns with the camera, so shadows always fall to the right of the frame: from
+    // the east parapet, seen from the opening view and the airport's chapter, the lanterns' shadows
+    // fall on the flank and the sea, not across the road as a row of painted arrows.
+    for (const z of lampsAt) lamp(g, R.x + mid, z, 1.6, plan.airportRoadTop(z) + 0.5);
+    // Stones on both flanks in two overlapping courses like the island's, smaller where the ramp is
+    // low, up to the island's own armour.
+    const flank: Station[] = [];
+    for (let z = from - 0.3; z > A.z + A.hd + 0.25; z -= 0.1) flank.push({ x: R.x, z, nx: 1, nz: 0, y: plan.airportRoadTop(z) });
     for (const side of [-1, 1])
-      for (let z = from - 0.3; z > A.z + A.hd + 0.25; z -= 0.58) {
-        seed++;
-        const zz = z + 0.16 * (hash(seed * 3 + 1) - 0.5),
-          s: Station = { x: R.x, z: zz, nx: 1, nz: 0, y: plan.airportRoadTop(zz) },
-          drop = s.y - 0.03 - toe(s),
-          span = reach(s) - half;
-        for (const [f, r0] of [[0.22, 0.24], [0.56, 0.29]] as const) {
-          if (drop * (1 - f) < 0.06) continue;
-          const r = r0 * T.MathUtils.clamp(drop / 0.9, 0.45, 1) * (0.78 + 0.46 * hash(seed * 5 + f * 10)),
-            o = half + f * span + 0.04 * (hash(seed * 7 + f * 10) - 0.5);
-          boulder(rocks, R.x + side * o, s.y - 0.03 - f * drop + r * 0.3, zz, r, seed * 2 + (f > 0.4 ? 1 : 0));
-        }
-      }
+      for (const [f0, r0, step, skip, seed] of [[0.22, 0.24, 0.55, 0.08, 1000 + side * 300], [0.56, 0.29, 0.6, 0.04, 2000 + side * 300]] as const)
+        course(flank, step, skip, seed, (s, f, size, k) => {
+          const drop = s.y - 0.03 - toe(s);
+          if (drop * (1 - f) < 0.06) return;
+          const r = size * T.MathUtils.clamp(drop / 0.9, 0.45, 1),
+            o = half + f * (reach(s) - half);
+          boulder(rocks, R.x + side * o, s.y - 0.03 - f * drop + r * 0.3, s.z + 0.08 * (hash(k * 7 + 3) - 0.5), r, k);
+        }, f0, 0.07, r0);
   }
 
   /**
@@ -357,6 +440,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     causeway(g, rocks);
     const merged = mergeGeometries(rocks, false)!;
     rocks.forEach((r) => r.dispose());
+    STONE.forEach((s) => s.dispose());
     solid(g, merged, '#ffffff', 'stone', { name: 'airport-armour' });
   }
 

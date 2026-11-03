@@ -1356,12 +1356,26 @@ for (const [x, z] of [
   for (const p of role('beacon')) assert(Math.abs(p.at.x - AR.x) < 0.01 && p.at.z > FC.z0 - 0.3, 'A board row is off the arch.');
   assert(role('civic').length >= 4 && role('civic').some((p) => Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128), 'The hall has no glass lit late.');
   assert.equal(own.length, role('civic').length + 4, 'An airport pane has a role of its own.');
-  // Its lamps: four on the causeway's west piers, lit with the town's.
+  // Its lamps: four on the causeway's east piers, lit with the town's (from the east parapet the
+  // lanterns' shadows fall off the road at the opening and chapter bearings: the key light turns
+  // with the camera and always throws them to the right of the frame).
   const causewayLamps = lamps.filter((l) => l.getWorldPosition(v).z < AR.beach);
   assert.equal(causewayLamps.length, 4, 'The causeway has not four lamps.');
   for (const l of causewayLamps) {
     l.getWorldPosition(v);
-    assert(Math.abs(v.x - (AR.x - (AR.top / 2 + plan.ROAD_WIDTH / 2 + 0.24) / 2)) < 0.01 && v.z > AR.island - 0.4 && v.y > A.deck + 2, 'A causeway lamp is off its pier.');
+    assert(Math.abs(v.x - (AR.x + (AR.top / 2 + plan.ROAD_WIDTH / 2 + 0.24) / 2)) < 0.01 && v.z > AR.island - 0.4 && v.y > A.deck + 2, 'A causeway lamp is off its pier.');
+    // For every sun the key light takes (sunOffsetFor, turned with the yaw as placeSun does), the
+    // lantern's shadow on the road's level stays a head's half-width clear of the carriageway.
+    const { sunOffsetFor } = await load('city-atmosphere'),
+      key = new T.Vector3();
+    for (const yaw of [Math.PI / 4, plan.chapterBearings.airport])
+      for (let elevation = -0.1; elevation <= 1.2; elevation += 0.1)
+        for (let azimuth = 0; azimuth < 2 * Math.PI; azimuth += Math.PI / 24) {
+          key.copy(sunOffsetFor(elevation, azimuth)).applyAxisAngle(new T.Vector3(0, 1, 0), yaw - Math.PI / 4);
+          const fall = (v.y - (A.deck + plan.levels.road)) / key.y,
+            x = v.x - key.x * fall;
+          assert(Math.abs(x - AR.x) > plan.ROAD_WIDTH / 2 + 0.2, `A causeway lantern's shadow falls on the road (sun ${elevation.toFixed(1)}, ${azimuth.toFixed(2)}).`);
+        }
   }
   // The pointer: the airport's box is the deck's, so a ray on the runway (or the apron) finds it.
   for (const [x, z] of [[RW.x0 + 1, RW.z], [AP.x0 + 1, AP.z1 - 1], [AR.x, AR.arch]]) {
@@ -1407,6 +1421,30 @@ for (const [x, z] of [
   for (const name of ['airport-armour', 'airport-deck', 'airport-coping', 'airport-road']) assert.equal(named(name).length, 1, `The airport's ${name} is not one mesh.`);
   const armour = named('airport-armour')[0].geometry;
   assert(armour.attributes.position.count / 3 <= 40000, `The airport's armour costs ${armour.attributes.position.count / 3} triangles.`);
+  // Its stones sit a clear step under the coping's kerb stone in value (they were near-white beads
+  // round the island), and their greys spread widely: a darker stone for about every three.
+  {
+    const colour = armour.getAttribute('color'),
+      luminance = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b,
+      tones = Array.from({ length: colour.count }, (_, i) => luminance(colour.getX(i), colour.getY(i), colour.getZ(i))).sort((a, b) => a - b),
+      kerb = new T.Color((await load('town-shared')).palette.kerb),
+      mean = tones.reduce((a, b) => a + b, 0) / tones.length,
+      spread = tones[Math.floor(tones.length * 0.9)] / tones[Math.floor(tones.length * 0.1)];
+    assert(mean < 0.45 * luminance(kerb.r, kerb.g, kerb.b) && spread > 1.75, `The airport's armour is too pale or too even (${(mean / luminance(kerb.r, kerb.g, kerb.b)).toFixed(2)} of the coping, spread ${spread.toFixed(2)}).`);
+    // The runway a clear step darker than the town's asphalt (never another road), the apron
+    // mid-grey concrete rather than a pale square, cast in bays: its four joints flat sheets (no
+    // sides to show as a dotted sliver at a slant), as the paint is.
+    const { AIRPORT_LOOK: look } = await load('town-airport'),
+      { palette } = await load('town-shared'),
+      tone = (hex) => {
+        const c = new T.Color(hex);
+        return luminance(c.r, c.g, c.b);
+      };
+    assert(tone(look.runway) < 0.6 * tone(palette.road) && tone(look.apron) < 0.85 * tone(palette.pavement), 'The runway reads as another road, or the apron as a pale square.');
+    const sheets = g.children.filter((o) => o.isMesh && o.geometry.getAttribute('normal').array.every((n, i) => Math.abs(n - (i % 3 === 1 ? 1 : 0)) < 1e-6));
+    assert(sheets.some((o) => o.geometry.getAttribute('position').count === 4 * 6 && o.geometry.getAttribute('color')?.array.every((c) => Math.abs(c - look.joint) < 1e-6)), 'The apron has not its four joints.');
+    assert(sheets.filter((o) => o.material.userData.surfaceKind === 'paint').length === 2, 'The airport\'s paint is not two flat sheets (the markings and the lead-in).');
+  }
   const lawn = named('airport-deck')[0].geometry.attributes.position;
   for (let i = 0; i < lawn.count; i++) assert(Math.abs(lawn.getY(i) - plan.AIRPORT.deck) < 1e-6 && plan.airportDistance(lawn.getX(i), lawn.getZ(i)) <= -0.3 + 1e-4, 'The deck\'s grass leaves the deck.');
   assert.equal(ctx.lamps.length, 4, 'The airport\'s ground has not four lamps.');
