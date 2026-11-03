@@ -67,9 +67,13 @@ const buildingIds = [
   'pengyuan-liu',
   'yunlong-liu',
   'qin-li',
+  'visiting-phd',
   'research-studio',
   'city-archive',
 ];
+/** A person lives in one of the members' homes (one each) or in the residence (shared). */
+const homeIds = ['pengyuan-liu', 'yunlong-liu', 'qin-li'];
+export const RESIDENCE_ID = 'visiting-phd';
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 const localized = (v: unknown) =>
@@ -163,15 +167,19 @@ export function validateCatalog(value: unknown): string[] {
         if (row.buildingId !== null) {
           if (
             typeof row.buildingId !== 'string' ||
-            !['pengyuan-liu', 'yunlong-liu', 'qin-li'].includes(
-              row.buildingId,
+            !(
+              homeIds.includes(row.buildingId) ||
+              row.buildingId === RESIDENCE_ID
             ) ||
             bound.has(row.buildingId)
           )
             errors.push(
-              at + ': choose a unique residential buildingId, or null.',
+              at +
+                ': choose a home no one else lives in, ' +
+                RESIDENCE_ID +
+                ' (shared) or null.',
             );
-          else bound.add(row.buildingId);
+          else if (row.buildingId !== RESIDENCE_ID) bound.add(row.buildingId);
         }
       } else {
         if (

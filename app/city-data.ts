@@ -6,6 +6,7 @@ export type BuildingId =
   | 'pengyuan-liu'
   | 'yunlong-liu'
   | 'qin-li'
+  | 'visiting-phd'
   | 'research-studio'
   | 'city-archive';
 type Text = Record<Locale, string>;
@@ -22,7 +23,7 @@ export type Building = {
   w: number;
   d: number;
   height: number;
-  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'studio' | 'archive';
+  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'studio' | 'archive';
   color: string;
   variant?: 'villa' | 'red-tenement' | 'gabled-house';
   sections: { heading: Text; body: Text }[];
@@ -215,6 +216,39 @@ const places: Building[] = [
     }),
   ),
   {
+    id: 'visiting-phd',
+    name: t('Visiting PhD Residence', '访问博士公寓'),
+    short: t('Residence', '公寓'),
+    // What it holds, as a home's category is its resident's role.
+    category: t('VISITING PHD RESEARCHERS', '访问博士生'),
+    summary: t(
+      'A small modern apartment house at the north end of the terrace, where PhD researchers visiting Liu’s Gate stay.',
+      '联排北端的一栋小型现代公寓楼，来访刘家门的博士研究者住在这里。',
+    ),
+    style: t('Contemporary apartment house', '当代公寓楼'),
+    architecture: t(
+      'Three storeys in pale limestone: floor-to-ceiling windows in slim bronze frames, a glass balcony, timber fins, a recessed entrance under a timber-lined canopy and a roof terrace with a pergola.',
+      '三层浅色石灰石公寓楼：青铜色细框落地窗、玻璃栏板阳台、木质竖向格栅、木饰面雨棚下的内凹入口，以及带花架的屋顶露台。',
+    ),
+    x: 1,
+    z: 2,
+    w: 1.2,
+    d: 1.2,
+    height: 5.2,
+    model: 'residence',
+    color: '#c2b394',
+    sections: [
+      {
+        heading: t('Visiting researchers', '访问研究者'),
+        body: t(
+          'The residence is for PhD researchers who come to Liu’s Gate from other universities. Visitors staying here are introduced in the People chapter.',
+          '这栋公寓供从其他大学来访刘家门的博士研究者居住。入住的访问者会在「成员」一章中介绍。',
+        ),
+      },
+    ],
+    related: ['town-hall', 'research-studio'],
+  },
+  {
     id: 'research-studio',
     name: t('Research Studio', '研究工作室'),
     short: t('Research', '研究'),
@@ -286,10 +320,18 @@ const places: Building[] = [
     related: ['research-studio', 'town-hall'],
   },
 ];
-// Building slots are independent of their current occupants.
+/**
+ * The people who live in a building: the published records whose buildingId names it, in their
+ * order. A member's home has at most one; the Visiting PhD Residence any number, none included.
+ */
+export const residentsOf = (id: BuildingId) => peopleRecords.filter((p) => p.buildingId === id);
+/** Where people live: the members' homes and the Visiting PhD Residence (the People chapter's places). */
+export const dwelling = (b: Building | undefined) => !!b && (!!b.variant || b.model === 'residence');
+// Building slots are independent of their current occupants. A home takes its resident's name and
+// file; the residence keeps its own and lists its residents (lab-content).
 export const buildings: Building[] = places.map((building) => {
   if (!building.variant) return building;
-  const resident = peopleRecords.find((p) => p.buildingId === building.id);
+  const resident = residentsOf(building.id)[0];
   return resident
     ? {
         ...building,

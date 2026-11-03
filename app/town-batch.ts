@@ -65,7 +65,7 @@ function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
  * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
  * reads them against the window clock (city-materials' setWindows).
  */
-type WindowRole = 'home' | 'civic' | 'studio' | 'kiosk' | 'beacon' | 'dial' | 'vehicle' | 'unlit';
+type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'beacon' | 'dial' | 'vehicle' | 'unlit' | 'clear';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
@@ -76,6 +76,8 @@ type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number
  */
 const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
   home: { lit: 0.7, dim: 0.25, cool: 0.1, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
+  // The Visiting PhD Residence: one light a flat, warm only and a calmer share lit (its lobby is lit late).
+  residence: { lit: 0.6, dim: 0.3, cool: 0, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
   civic: { lit: 0.65, dim: 0.25, cool: 0.1, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
   studio: { lit: 0.85, dim: 0, cool: 0.1, goes: 0.5, span: [0.6, 0.98], risers: 0 }, // 00:42-02:25
 };
@@ -86,6 +88,8 @@ const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
   dial: [1, 0.5, 1, 1],
   vehicle: [0.85, 0.25, 1, 1],
   unlit: [0, 0, 1, 1],
+  // Glass that is no window (the residence's balustrades): never lit.
+  clear: [0, 0, 1, 1],
 };
 type WindowPane = { role: WindowRole; place: string; at: T.Vector3; light: number[] };
 type Claimed = { off: Set<number>; wake: Set<number> };

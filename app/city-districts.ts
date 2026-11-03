@@ -35,17 +35,18 @@ export const districts: {
     id: 'residential',
     name: { en: 'The terrace', zh: '联排住宅' },
     description: {
-      en: 'The three members’ homes in a row, front gardens facing the ring road.',
-      zh: '三位成员的住宅排成一列，前花园面向环路。',
+      en: 'The three members’ homes in a row, and at its north end the Visiting PhD Residence.',
+      zh: '三位成员的住宅排成一列，北端是访问博士公寓。',
     },
     color: '#d98a92',
+    // North over the residence's lawn, short of the hill behind it.
     outline: [
-      [-25.2, -6.8],
-      [-18, -6.8],
+      [-25.2, -13.2],
+      [-18, -13.2],
       [-18, 8.8],
       [-25.2, 8.8],
     ],
-    buildings: ['pengyuan-liu', 'yunlong-liu', 'qin-li'],
+    buildings: ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd'],
   },
   {
     id: 'research',

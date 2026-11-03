@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import * as T from 'three';
 
-// Build the town in Node and check what a visitor relies on: seven places, finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
+// Build the town in Node and check what a visitor relies on: eight places, finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work', 'town-check');
 await fs.mkdir(output, { recursive: true });
@@ -55,7 +55,10 @@ const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
 
-assert.equal(new Set(buildings.map((b) => b.id)).size, 7);
+assert.equal(new Set(buildings.map((b) => b.id)).size, 8);
+// The People chapter's places: the three homes (the row's own checks below read plan.terraceHomes)
+// and the Visiting PhD Residence at the row's north end.
+assert.deepEqual(plan.chapterSubjects.people, [...plan.terraceHomes, 'visiting-phd']);
 // Every reading chapter sees its subject's front, not its back wall.
 for (const [chapter, ids] of Object.entries(plan.chapterSubjects))
   for (const id of ids) {
@@ -670,7 +673,7 @@ console.warn = originalWarn;
 console.error = originalError;
 assert.deepEqual(warnings, []);
 const { city, models, walkers, lamps, clocks } = model;
-assert.equal(models.size, 7);
+assert.equal(models.size, 8);
 assert.equal(walkers.length, 7);
 assert.equal(clocks.length, 4, 'The town hall keeps four clock faces.');
 assert(lamps.length >= 20, 'Lanterns light the town: ' + lamps.length);
@@ -820,7 +823,7 @@ for (const [id, m] of models) {
     q = new T.Vector3(),
     n = new T.Vector3(),
     tri = new T.Box3();
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { shell } = models.get(id),
       { w, d } = plan.sites[id],
       bodies = BODIES[id],
@@ -955,7 +958,7 @@ for (const [id, m] of models) {
       if (kind === 'foliage' || kind === 'paint') assert(!layer.intersectsBox(box), `${name}: the window box cuts the glass at ${box.min.toArray().map((n) => n.toFixed(3))}`);
   };
   const B = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(x0, y0, z0), new T.Vector3(x1, y1, z1));
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { shell, root } = models.get(id),
       { d } = plan.sites[id];
     shell.updateMatrixWorld(true);
@@ -1009,7 +1012,7 @@ for (const [id, m] of models) {
   // from the ground into the gable, off both corners and under the verge. Nothing else of the land's
   // foliage stands this close to the wall.
   const { IVY_COTTAGE } = await load('town-homes');
-  const c = plan.cottages[IVY_COTTAGE],
+  const c = plan.cottages.find((k) => k.n === IVY_COTTAGE),
     toCottage = new T.Matrix4().makeRotationY(c.rotation).setPosition(c.x, plan.terrainHeight(c.x, c.z), c.z).invert(),
     gable = [];
   model.land.traverse((o) => {
@@ -1034,7 +1037,7 @@ for (const [id, m] of models) {
   const { WASHING } = await load('town-homes');
   const trees = plan.plantingPlan(),
     v = new T.Vector3();
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { shell } = models.get(id),
       { w, d } = plan.sites[id],
       washing = shell.getObjectByName('washing'),
@@ -1210,7 +1213,7 @@ addHitBoxes(new T.Group(), models);
   assert(seen[1] > rack.length / 4, `The studio chapter sees only ${seen[1]} of the rack's ${rack.length} triangles.`);
   // The bays (BAY above), in front of each home's wall: from the People chapter (and its drift) and the Rotate stops.
   const people = plan.chapterBearings.people;
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { d } = plan.sites[id],
       bay = centres(id, (v) => Math.abs(v.x + 0.68) < 0.6 && v.z > d / 2 + 0.01 && v.z < d / 2 + 0.6 && v.y > 0.42 && v.y < 3.1);
     assert(bay.length > 20, `${id}: only ${bay.length} bay triangles found.`);
@@ -1268,7 +1271,7 @@ assert(windows > 5);
   assert(shader.uniforms.windowClock?.value?.isVector2, 'The glass shader follows the window clock.');
 }
 const panes = model.windows,
-  rooms = panes.filter((p) => ['home', 'civic', 'studio'].includes(p.role)),
+  rooms = panes.filter((p) => ['home', 'residence', 'civic', 'studio'].includes(p.role)),
   at = (h) => windowClock(h),
   lit = (list, h) => list.filter((p) => windowLevel(p.light, at(h)) > 0.1),
   Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
@@ -2036,7 +2039,8 @@ for (const season of ['summer', 'winter'])
     { createKit } = await load('town-kit'),
     { createCityMaterials } = await load('city-materials'),
     { palette } = await load('town-shared');
-  assert.equal(trees.length, 82, 'The birches and rowans change no tree count.');
+  // 82 as planted; the Visiting PhD Residence's ground took tree-55 and tree-60 (the plan drops them by id).
+  assert.equal(trees.length, 80, 'The birches and rowans change no tree count.');
   const birches = trees.filter((t) => t.kind === 'birch'),
     rowans = trees.filter((t) => t.kind === 'rowan');
   // Of the 46 outskirts and park trees, about 15-20% birch and 10-15% rowan.
@@ -2173,9 +2177,9 @@ for (const season of ['summer', 'winter'])
   plan.cottages.forEach((c, i) => {
     const frame = new T.Matrix4().makeRotationY(c.rotation).setPosition(c.x, plan.terrainHeight(c.x, c.z), c.z);
     details.push({ name: `cottage ${i}’s window box`, points: leaves(landMeshes, frame, B(-1.05, 0.45, 1.2, -0.25, 1.15, 1.7)), facing: face(frame, 0, 1) });
-    if (i === IVY_COTTAGE) details.push({ name: `cottage ${i}’s ivy`, points: leaves(landMeshes, frame, B(1.25, -1, -1.5, 1.75, 3.5, 1.5)), facing: face(frame, 1, 0) });
+    if (c.n === IVY_COTTAGE) details.push({ name: `cottage ${c.n}’s ivy`, points: leaves(landMeshes, frame, B(1.25, -1, -1.5, 1.75, 3.5, 1.5)), facing: face(frame, 1, 0) });
   });
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { shell } = models.get(id),
       { d } = plan.sites[id];
     shell.updateMatrixWorld(true);
@@ -2205,7 +2209,7 @@ for (const season of ['summer', 'winter'])
 // shows under the crown's rim (the crown leaves a gap toward the camera) and a birch's white trunk
 // shows under its crown, which hangs no lower than 1.15 x size; a rowan's berries and flower heads
 // sit on its sprays, not in the air; the ivy under the archive's cornice runs unbroken from the
-// middle pier of wall to the back one (its runner) instead of floating in tufts; and the 82 trees
+// middle pier of wall to the back one (its runner) instead of floating in tufts; and the 80 trees
 // together stay within 170k triangles in their fullest seasons.
 {
   const nature = await load('town-nature'),
@@ -2755,7 +2759,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     for (const p of wall) assert(Math.abs(p.w - (p.y - 0.45)) < 1e-3 && Math.abs(p.u - p.x) < 1e-3 && Math.abs(p.x) < w / 2, `The archive’s brick courses do not start at the wall’s foot (${p.x}, ${p.y}).`);
     footAndHead('The archive', wall, 0.57, 3.53);
   }
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { shell } = models.get(id),
       { d } = plan.sites[id];
     footAndHead(id, faceOf(shell, 2, d / 2), 0.54, 2.9);
@@ -3089,7 +3093,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 {
   const LIGHTS = { 'pengyuan-liu': 5, 'yunlong-liu': 6, 'qin-li': 5 },
     v = new T.Vector3();
-  for (const id of plan.chapterSubjects.people) {
+  for (const id of plan.terraceHomes) {
     const { shell } = models.get(id),
       { w, d } = plan.sites[id],
       gable = id === 'qin-li', // its eaves on the sides, the others' at the front and back
@@ -3130,8 +3134,10 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   const { PORCH, LEAN_TO } = await load('town-homes'),
     lampSpots = plan.lampPlan(),
     trees = plan.plantingPlan();
-  plan.cottages.forEach((c, i) => {
-    const toWorld = (x, z) => [c.x + x * Math.cos(c.rotation) + z * Math.sin(c.rotation), c.z - x * Math.sin(c.rotation) + z * Math.cos(c.rotation)];
+  // Each cottage by its own number (plan.cottages' n), which its porch and lean-to go by.
+  plan.cottages.forEach((c) => {
+    const i = c.n,
+      toWorld = (x, z) => [c.x + x * Math.cos(c.rotation) + z * Math.sin(c.rotation), c.z - x * Math.sin(c.rotation) + z * Math.cos(c.rotation)];
     assert.equal(panes.filter((p) => p.place === 'land' && Math.hypot(p.at.x - c.x, p.at.z - c.z) < 2).length, 1, `Cottage ${i}'s window is not one light.`);
     // Footprints in the cottage's frame (x along its front, z out of it): [x0, z0, x1, z1].
     const parts = [];
@@ -3478,5 +3484,5 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
 }
 console.log(
-  `Town checks passed: 7 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 8 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

@@ -26,9 +26,13 @@ export const WINDOW_BOX: Record<Season, { leaf: string; top: string; blooms: str
   autumn: { leaf: '#5a7634', top: '#8a9a3e', blooms: [PURPLE, YELLOW, PURPLE, WHITE].map((c) => muted(c, 0.3)), sprigs: 0 },
   winter: { leaf: '#3f6236', top: '#5e7f45', blooms: ['#b48aa2', '#b48aa2'], sprigs: 2 },
 };
-/** The cottage (plan.cottages index) with ivy on its blank +x gable. */
-export const IVY_COTTAGE = 0;
-/** The cottage with a gabled porch at its door, and the one with a lean-to store on its +x gable. */
+/**
+ * The cottage (its number, plan.cottages' `n`) with ivy on its blank +x gable: the harled cottage
+ * east of the ring, its gable to the south and the opening camera (the ivy moved there with cottage
+ * 0, which stood where the Visiting PhD Residence is now).
+ */
+export const IVY_COTTAGE = 2;
+/** The cottage with a gabled porch at its door, and the one with a lean-to store on its +x gable (by `n`). */
 export const PORCH = 1,
   LEAN_TO = 4;
 /** A small smooth blob (20 triangles): a window-box bloom, heather tuft or trailing leaf. */
@@ -591,7 +595,9 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     }
     if (y > 0.05) steps(g, x, y, z, o.landing, o.width, palette.trim);
   }
-  function buildCottage(g: T.Object3D, c: (typeof plan.cottages)[number], index: number) {
+  function buildCottage(g: T.Object3D, c: (typeof plan.cottages)[number]) {
+    // The cottage's own number seeds its look, so each keeps it whichever others stand.
+    const index = c.n;
     const root = new T.Group();
     root.position.set(c.x, plan.terrainHeight(c.x, c.z), c.z);
     root.rotation.y = c.rotation;
@@ -670,10 +676,9 @@ export function createHomes(ctx: TownContext, kit: Kit, nature: Nature) {
     stack(root, -(w / 2 - 0.35), 0, ridge - 0.8, ridge + 0.45, { colour: c.color, kind: wallKind, dress, heights: pan ? [1, 1.12] : [1.06], ridge: 'x', apex: ridge, pitch });
     // Skews and skewputts on both gables, an apex stone on the one without the stack.
     skews(stone, { edge: w / 2 + 0.27, width: 0.26, thick: 0.09, from: 0.1, to: 1.24, putt: 0.16, apex: ridge, pitch, apexAt: [1] });
-    // Ivy on one cottage's blank +x gable (the cottage south of the row, whose gable faces the
-    // People chapter): rooted in a narrow stem at the plinth, it spreads over the wall and up into
-    // the gable's peak, kept off both corners and inside the gable under the verge. Here the front
-    // is the face's -x.
+    // Ivy on one cottage's blank +x gable (IVY_COTTAGE, whose gable faces the opening camera):
+    // rooted in a narrow stem at the plinth, it spreads over the wall and up into the gable's peak,
+    // kept off both corners and inside the gable under the verge. Here the front is the face's -x.
     if (index === IVY_COTTAGE) {
       const face = new T.Group();
       face.position.x = w / 2;

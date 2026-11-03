@@ -768,7 +768,9 @@ export async function createCity(
       minY = Math.min(minY, sy);
       maxY = Math.max(maxY, sy);
     }
-    const freeWidth = Math.max(1, Math.max(0.3, 1 - 2 * Math.abs(frameShift)) * width - 48),
+    // Beside a side panel the group keeps a margin from it: the reading page's panel starts a
+    // little left of where the frame shift alone would put the free space's edge.
+    const freeWidth = Math.max(1, Math.max(0.3, 1 - 2.5 * Math.abs(frameShift)) * width - 48),
       shownHeight = Math.max(0.3, 1 - 2 * Math.abs(frameDrop)) * height,
       freeHeight = Math.max(shownHeight * 0.6, shownHeight - 152);
     targetZoom = T.MathUtils.clamp(
@@ -800,6 +802,10 @@ export async function createCity(
     city.updateMatrixWorld(true);
     const bounds = new T.Box3();
     roots.forEach((r) => bounds.union(new T.Box3().setFromObject(r)));
+    if (roots.length > 1) {
+      fitGroup(bounds);
+      return;
+    }
     target.copy(bounds.getCenter(new T.Vector3()));
     const size = bounds.getSize(new T.Vector3());
     const spanX = (size.x + size.z) * 0.707,
@@ -813,6 +819,53 @@ export async function createCity(
       1.3,
       3.4,
     );
+    offsetTarget();
+    tween = true;
+  }
+  /**
+   * A group of buildings (the People chapter's homes and the residence, a long row): fitted by
+   * their bounds as seen from the bearing they are framed at, as the overview is, in the part of
+   * the frame a side panel, a phone's sheet or bars, the masthead and the controls leave free. A
+   * row seen along its length takes less of the frame than the one-building rule (which is blind
+   * to the bearing) allows for, and on a phone that crowded the roofs' name tags together.
+   */
+  function fitGroup(bounds: T.Box3) {
+    const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
+      right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
+      up = new T.Vector3().crossVectors(back, right),
+      corner = new T.Vector3();
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z);
+      const sx = corner.dot(right),
+        sy = corner.dot(up);
+      minX = Math.min(minX, sx);
+      maxX = Math.max(maxX, sx);
+      minY = Math.min(minY, sy);
+      maxY = Math.max(maxY, sy);
+    }
+    // Beside a side panel the group keeps a margin from it: the reading page's panel starts a
+    // little left of where the frame shift alone would put the free space's edge.
+    const freeWidth = Math.max(1, Math.max(0.3, 1 - 2.5 * Math.abs(frameShift)) * width - 48),
+      shownHeight = Math.max(0.3, 1 - 2 * Math.abs(frameDrop)) * height,
+      freeHeight = Math.max(shownHeight * 0.6, shownHeight - 152);
+    targetZoom = T.MathUtils.clamp(
+      Math.min(
+        ((freeWidth / width) * (camera.right - camera.left)) / (maxX - minX),
+        ((freeHeight / height) * (camera.top - camera.bottom)) / (maxY - minY),
+      ),
+      1.3,
+      3.4,
+    );
+    // Centre the group's outline (on the ground, as the overview does).
+    target
+      .copy(right)
+      .multiplyScalar((minX + maxX) / 2)
+      .addScaledVector(up, (minY + maxY) / 2);
+    target.addScaledVector(back, -target.y / back.y);
     offsetTarget();
     tween = true;
   }
