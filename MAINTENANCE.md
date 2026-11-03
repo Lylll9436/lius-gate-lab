@@ -34,6 +34,7 @@
   生效以后，这个人不再出现在「成员」一章、名字标签和公寓的住户里（`memberRecords`），按出发日期倒序列入离开的人（`alumniRecords`，供机场的出发屏使用）；他住过的那户显示为「联排住宅 · 目前无人居住」，直到有新成员住进来。新成员可以提前录入同一个 `buildingId`：离开日之前，那户显示 `order` 靠前的现住户，名字标签也只写这一位。
   - 同意：只有本人同意后才写去向；`date` 只填已经确定的日期。去向城市、机构、身份和链接都会公开展示。
   - 邮箱：学生邮箱（`@student.gla.ac.uk`、`@research.gla.ac.uk`）在离开后会停用。加 `departure` 的同时，把 `links` 里的学生邮箱删掉，改用 `departure.link`（本人愿意公开的主页）。
+  - 固定文字：`index.html` 的页面描述和 `noscript`、`app/layout.tsx` 的页面描述按名字写着三位成员，不随日期变化；成员离开后要手动改掉这几处。
 - 研究额外字段：`status`（`active` / `completed`）、`people`、`buildingId`。`active` 进入研究工作室，`completed` 自动进入档案馆，并保留与成员和成果的关联。
 - 活动额外字段：`date`（真实 YYYY-MM-DD）、`category`（`group-photo` / `celebration` / `milestone`）、`people`、`image`（`public/media/` 下的图片或 `null`）。活动按日期倒序进入街角公园。
 - 成果（`outputs`）：`type` 为 `paper` / `dataset` / `software` / `report`，加 `date`、`people`、`researchId`、`buildingId`。研究记录（`notes`）同样有 `date`、`people`、`researchId`、`buildingId`。
