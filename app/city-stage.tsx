@@ -36,6 +36,7 @@ import {
 import type { HoverTarget } from './city-scene';
 import type { SkyState } from './glasgow-sun';
 import { LabContent, PlaceGlyph, glyphFor } from './lab-content';
+import { onReadingPage } from './site-chrome';
 import { skyCaption, type SkyMode } from './use-sky';
 
 export type StageController = {
@@ -506,10 +507,12 @@ export function CityStage({
                 </button>
               )}
               {people.some((p) => p.id === ctl.content) && null}
-              <button onClick={() => ctl.navigate('reading', ctl.content)}>
-                <BookOpen size={15} />
-                {tr('Read on the page', '在页面中阅读')}
-              </button>
+              {onReadingPage(ctl.content) && (
+                <button onClick={() => ctl.navigate('reading', ctl.content)}>
+                  <BookOpen size={15} />
+                  {tr('Read on the page', '在页面中阅读')}
+                </button>
+              )}
             </div>
           </aside>
         </>

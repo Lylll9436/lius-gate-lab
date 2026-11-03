@@ -202,7 +202,7 @@ const records = await import(
 const { LabContent, NewsPreview, PeopleCards } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
-const { SiteFooter, chapterMeta } = await import(
+const { SiteFooter, chapterMeta, onReadingPage } = await import(
   pathToFileURL(path.join(output, 'site-chrome.mjs')).href
 );
 const { buildings } = await import(
@@ -415,6 +415,14 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
     'The People chapter lists the residents.',
   );
 }
+// Every record, the hero and every written chapter read on the page; a place filed under a chapter
+// the page has no section for yet (the airport's, until its Departures chapter is written) does not,
+// so its reading address opens the page at its top and its City file offers no "Read on the page".
+for (const id of ['overview', ...chapterMeta.map((c) => c.id), 'person:test-member', 'research:test-study', 'event:test-event', 'output:test-output', 'note:test-note', ...buildings.map((b) => b.id)])
+  assert.equal(onReadingPage(id), id === 'overview' || chapterMeta.some((c) => c.id === nav.readingChapter(id)), `${id} is read on the page wrongly.`);
+assert(['overview', 'person:test-member', 'event:test-event'].every(onReadingPage), 'A record or the hero is not on the reading page.');
+for (const id of nav.readingChapters.filter((c) => !chapterMeta.some((m) => m.id === c)))
+  assert(!onReadingPage(id) && buildings.some((b) => b.id === id), `${id} is a chapter with no section that is not a place.`);
 // The chapter at the gate is about this site; the name story was removed at the owner's request.
 const gate = buildings.find((b) => b.id === 'lius-gate');
 assert.deepEqual(gate.sections.map((s) => s.heading.en), ['Layout', 'How to use the site']);
