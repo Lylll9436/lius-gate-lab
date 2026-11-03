@@ -1377,10 +1377,23 @@ for (const [x, z] of [
           assert(Math.abs(x - AR.x) > plan.ROAD_WIDTH / 2 + 0.2, `A causeway lantern's shadow falls on the road (sun ${elevation.toFixed(1)}, ${azimuth.toFixed(2)}).`);
         }
   }
-  // The pointer: the airport's box is the deck's, so a ray on the runway (or the apron) finds it.
+  // The pointer: the airport's deck is part of it, so a ray on the runway (or the apron) finds it;
+  // seen from the overview's four bearings, the open sea 2.5 past the deck's edge does not, west of
+  // the hall's own box and its slack (a box over the whole deck as tall as the tower found the
+  // airport up to 5 units out).
   for (const [x, z] of [[RW.x0 + 1, RW.z], [AP.x0 + 1, AP.z1 - 1], [AR.x, AR.arch]]) {
     ray.set(new T.Vector3(x, 40, z), new T.Vector3(0, -1, 0));
     assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the airport's deck at ${x}, ${z} finds no airport.`);
+  }
+  for (let k = 0; k < 4; k++) {
+    const bearing = Math.PI / 4 + (k * Math.PI) / 2,
+      back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize();
+    for (const [x, z] of [[A.x - 3, A.z - A.hd - 2.5], [A.x - A.hw - 2.5, A.z], [A.x + A.hw + 2.5, A.z - A.hd + 0.2], [A.x - 6, A.z + A.hd + 2.5]]) {
+      ray.set(new T.Vector3(x, 0, z).addScaledVector(back, 80), back.clone().negate());
+      assert.notEqual(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the sea at ${x}, ${z} from bearing ${bearing.toFixed(2)} finds the airport.`);
+    }
+    ray.set(new T.Vector3(RW.x0 + 3, A.deck, RW.z).addScaledVector(back, 80), back.clone().negate());
+    assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the runway from bearing ${bearing.toFixed(2)} finds no airport.`);
   }
   // Its surf is the tide foam's (no mesh of its own), after the island's two bands: one strip, rows
   // of AIRPORT_FOAM_ROW vertices inner edge first, from the beach's tide line up the causeway's west
