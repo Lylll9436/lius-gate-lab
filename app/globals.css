@@ -2157,6 +2157,15 @@ summary.board-row:hover {
     width: min(100%, clamp(380px, 50vw, 600px));
   }
 }
+/* Seven chapter chips: from the wide layout's first width to 1040 px they sit closer, so the nav
+   keeps clear of the wordmark and of the mode switch, which is wider in City mode ("Reading
+   view"). At full padding the gaps fell to the masthead's 16 px floor at 961 px and the chips
+   were squeezed. */
+@media (min-width: 961px) and (max-width: 1040px) {
+  .masthead-nav a {
+    padding: 7px 10px;
+  }
+}
 @media (max-width: 960px) {
   :root {
     --masthead: 58px;
