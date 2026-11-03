@@ -1340,6 +1340,13 @@ for (const [x, z] of [
   each(hall, (p) => assert(plan.onAirport(p.x, p.z, -0.3), `The airport's building leaves its deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
   assert(hallBounds.max.y <= plan.sites.airport.height + 1e-6 && hallBounds.max.y > plan.sites.airport.height - 0.05, `The airport's mast tops out at ${hallBounds.max.y.toFixed(2)}.`);
   assert(hallBounds.max.y < plan.sites['town-hall'].height, 'The airport outgrows the Town Hall.');
+  // Its front steps, like its plinth, stand on y 0 (the deck hides their foot), so Inspect's copy,
+  // standing on the study ground, has none hanging in the air.
+  let stepFoot = Infinity;
+  each(hall, (p) => {
+    if (Math.abs(p.x - AR.x) < 1.4 && p.z > AR.arch + 0.15 && p.z < AR.arch + 0.65) stepFoot = Math.min(stepFoot, p.y);
+  });
+  assert(stepFoot < 0.01, `The airport's front steps float ${stepFoot.toFixed(2)} over the ground.`);
   // Its window roles: the hall's glass civic (its doors lit late at 0.8, today's colour), the tower's
   // cab a kiosk lit all night, the board's three amber rows beacons, centred on the road.
   const own = model.windows.filter((p) => p.place === 'airport'),

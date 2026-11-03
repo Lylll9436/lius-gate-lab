@@ -502,9 +502,10 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       const soffit = spring + Math.sqrt((archW / 2) ** 2 - 0.8 ** 2);
       for (const s of [-1, 1]) iron.push(piece(hx + s * 0.8 - 0.035, hx + s * 0.8 + 0.035, y + 0.42, soffit + 0.03, z - 0.055, z + 0.015));
     }
-    /* Two steps up from the forecourt to the hall's floor, wider than the arch's band. */
+    /* Two steps up from the forecourt to the hall's floor, wider than the arch's band. Like the
+     * plinth they stand on y 0 (the deck hides their foot), so Inspect sees them on the ground. */
     for (let i = 0; i < 2; i++)
-      block(shell, hx - archW / 2 - 0.3 + i * 0.08, hx + archW / 2 + 0.3 - i * 0.08, A.deck, A.deck + 0.06 + 0.12 * (i + 1), z1 + 0.1, z1 + 0.1 + 0.3 * (2 - i), palette.plinth, 'stone');
+      block(shell, hx - archW / 2 - 0.3 + i * 0.08, hx + archW / 2 + 0.3 - i * 0.08, 0, A.deck + 0.06 + 0.12 * (i + 1), z1 + 0.1, z1 + 0.1 + 0.3 * (2 - i), palette.plinth, 'stone');
 
     /* Windows: two arched on the west wall, two on the back. */
     for (const [face, along] of [
