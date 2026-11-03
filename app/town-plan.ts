@@ -225,8 +225,8 @@ export function distanceToStreets(x: number, z: number) {
     d = Math.min(d, distanceToSegment(p, a.from, a.to) - ROAD_WIDTH / 2);
   return d;
 }
-/** 1 inside the ring, its pavements and the terrace gardens (the mown town lawn), fading to 0 over 2.5 units. */
-export function lawnCore(x:number,z:number){const rr=(cx:number,cz:number,hx:number,hz:number,r:number)=>{const qx=Math.abs(x-cx)-hx+r,qz=Math.abs(z-cz)-hz+r;return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-r;};const d=Math.min(rr(0,ring.cz,ring.hw+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.hd+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.radius+2),rr(-22,1,5,7,2.5));const t=Math.min(1,Math.max(0,d/2.5));return 1-t*t*(3-2*t);}
+/** 1 inside the ring, its pavements, the terrace gardens and the residence's (the mown town lawn), fading to 0 over 2.5 units. */
+export function lawnCore(x:number,z:number){const rr=(cx:number,cz:number,hx:number,hz:number,r:number)=>{const qx=Math.abs(x-cx)-hx+r,qz=Math.abs(z-cz)-hz+r;return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0)-r;};const d=Math.min(rr(0,ring.cz,ring.hw+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.hd+ROAD_WIDTH/2+PAVEMENT_WIDTH+1.2,ring.radius+2),rr(-22,1,5,7,2.5),rr(-21.6,-10,4.4,3.6,2));const t=Math.min(1,Math.max(0,d/2.5));return 1-t*t*(3-2*t);}
 
 /* ------------------------------------------------------------------ */
 /* Sites                                                               */
@@ -259,16 +259,41 @@ function rowUnit(id: BuildingId, slot: -1 | 0 | 1): Site {
     height: 3.3,
   };
 }
+/** The three members' homes, north to south: the row itself (the residence stands beyond its north end). */
+export const terraceHomes: BuildingId[] = ['pengyuan-liu', 'yunlong-liu', 'qin-li'];
+/**
+ * The Visiting PhD Residence: the next spot up the row, north of Pengyuan's home with the row's
+ * own gap (2.4, wall to wall) between them, its front to the ring road like the homes'. A small
+ * modern block, 4.6 along the row and 4.2 deep (the homes' depth, so its front and back walls run
+ * on in the homes' lines), about the studio's height (its top-floor parapet at 5.2).
+ */
+export const RESIDENCE = { gap: 2.4, w: 4.6, d: 4.2, height: 5.2 };
+export const residenceSite: Site = {
+  id: 'visiting-phd',
+  x: terraceRow.x,
+  z: terraceRow.z - terraceRow.spacing - terraceRow.w / 2 - RESIDENCE.gap - RESIDENCE.w / 2,
+  rotation: Math.PI / 2,
+  w: RESIDENCE.w,
+  d: RESIDENCE.d,
+  height: RESIDENCE.height,
+};
 export const sites: Record<BuildingId, Site> = {
   'lius-gate': { id: 'lius-gate', x: 0, z: 0, rotation: 0, w: 4.8, d: 1.9, height: 6 },
   'town-hall': { id: 'town-hall', x: 0, z: -8.6, rotation: 0, w: 7.4, d: 4.6, height: 9.5 },
   'pengyuan-liu': rowUnit('pengyuan-liu', -1),
   'yunlong-liu': rowUnit('yunlong-liu', 0),
   'qin-li': rowUnit('qin-li', 1),
+  'visiting-phd': residenceSite,
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
 };
 export const siteList = Object.values(sites);
+/**
+ * The residence's own ground (a world rectangle): the block, its forecourt out to where the ring
+ * road bends away north of it (x -17.3), 0.8 of lawn behind it and 1.2 to each side. No tree
+ * stands in it: from the People chapter one there would hide the entrance and the cycle hoops.
+ */
+export const residencePlot = { x: residenceSite.x + 0.9, z: residenceSite.z, w: 7.6, d: RESIDENCE.w + 2.4 };
 /** The red phone box on the east edge of the plaza (the plaza tree beside it is left out). */
 export const phoneBoxSpot: XZ = [4.65, -0.9];
 
@@ -291,7 +316,7 @@ export const chapterBearings: Record<string, number> = {
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
   'town-hall': ['town-hall'],
-  people: ['pengyuan-liu', 'yunlong-liu', 'qin-li'],
+  people: [...terraceHomes, 'visiting-phd'],
   'research-studio': ['research-studio'],
   'city-archive': ['city-archive'],
   'lius-gate': ['lius-gate'],
@@ -299,18 +324,31 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
 /**
- * Cottages around the town. The two by the terrace stand about 3 back from the row's line
- * (x -22), turned in toward it, so the row reads as the three members' homes and not five.
- * `nightLight` keeps a dim warm lamp in the window all night: the three whose fronts face the
+ * Cottages around the town. The one south of the terrace stands about 3 back from the row's line
+ * (x -22), turned in toward it, so the row reads as the members' homes and not one more. `n` is
+ * the cottage's own number: it seeds its look (door colour, slate or pantile, porch, lean-to, ivy)
+ * and names its window light, so it stays the same cottage whichever others there are. Cottage 0
+ * stood north of the row, where the Visiting PhD Residence is now: north-west of it the coast,
+ * the hill and the sheep (cottages keep 9.5 from them) leave no other level ground, so it went.
+ * `nightLight` keeps a dim warm lamp in the window all night: the two whose fronts face the
  * overview camera, so the island at 02:30 (09:30 in Beijing) still shows a few warm points.
  */
-export const cottages: { x: number; z: number; rotation: number; color: string; nightLight?: boolean }[] = [
-  { x: -24.6, z: -10.6, rotation: Math.PI / 2 - 0.55, color: '#e1cfa8', nightLight: true },
-  { x: -24.6, z: 11.6, rotation: Math.PI / 2 + 0.55, color: '#d9c39a' },
-  { x: 20.5, z: 1.5, rotation: -Math.PI / 2, color: '#e4d2ad' },
-  { x: 5, z: -17.5, rotation: 0, color: '#cdb48d', nightLight: true },
-  { x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8', nightLight: true },
+export const cottages: { n: number; x: number; z: number; rotation: number; color: string; nightLight?: boolean }[] = [
+  { n: 1, x: -24.6, z: 11.6, rotation: Math.PI / 2 + 0.55, color: '#d9c39a' },
+  { n: 2, x: 20.5, z: 1.5, rotation: -Math.PI / 2, color: '#e4d2ad' },
+  { n: 3, x: 5, z: -17.5, rotation: 0, color: '#cdb48d', nightLight: true },
+  { n: 4, x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8', nightLight: true },
 ];
+/**
+ * Where the planting was first laid out round: the seven sites before the residence, and every
+ * cottage's spot with the north cottage's among them. The tree and heather rules keep reading
+ * these, and the trees on ground built on since (residencePlot) are dropped afterwards, by id, so
+ * new building never moves, adds or re-species another tree (as the paddock's tree was dropped).
+ */
+const PLANTED = {
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd'),
+  cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
+};
 /**
  * A dry-stone paddock for a small Highland herd, in the south-west outskirts between the ring's
  * outer trees and the south shore: on flat ground, 3.35 from the road, about 3.9 inside the
@@ -491,11 +529,14 @@ function nearJunction(x: number, z: number, radius: number) {
 function insideRect(x: number, z: number, r: { x: number; z: number; w: number; d: number }, pad = 0) {
   return Math.abs(x - r.x) < r.w / 2 + pad && Math.abs(z - r.z) < r.d / 2 + pad;
 }
-function nearSite(x: number, z: number, pad: number) {
-  return siteList.some((s) => Math.hypot(s.x - x, s.z - z) < Math.max(s.w, s.d) / 2 + pad);
+function nearSite(x: number, z: number, pad: number, list = siteList) {
+  return list.some((s) => Math.hypot(s.x - x, s.z - z) < Math.max(s.w, s.d) / 2 + pad);
 }
+/** Within `reach` of a cottage's spot as the planting was laid out (PLANTED). */
+const byPlantedCottage = (x: number, z: number, reach: number) => PLANTED.cottages.some(([cx, cz]) => Math.hypot(cx - x, cz - z) < reach);
 export function plantingPlan(): TreeSpec[] {
-  const trees: TreeSpec[] = [];
+  const trees: TreeSpec[] = [],
+    laidOut = PLANTED.sites();
   const push = (x: number, z: number, size: number, kind: TreeSpec['kind']) =>
     trees.push({ x, z, size, kind, id: 'tree-' + trees.length });
   // Avenue trees: outside the ring and along the four avenues, never at a junction.
@@ -507,7 +548,7 @@ export function plantingPlan(): TreeSpec[] {
     if (nearJunction(p.x, p.z, 3.2)) continue;
     // Bigger canopies: keep clear of the crane hoarding and the cottages and their front gardens.
     if (insideRect(p.x, p.z, reservedPlot, 1.0)) continue;
-    if (cottages.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < 3.0)) continue;
+    if (byPlantedCottage(p.x, p.z, 3.0)) continue;
     push(p.x, p.z, 0.82 + hash(d * 3) * 0.12, 'round');
   }
   for (const avenue of avenues)
@@ -518,7 +559,7 @@ export function plantingPlan(): TreeSpec[] {
       for (let d = 2.4; d < length - 2.6; d += 3.4) {
         const x = avenue.from[0] + dx * d - dz * side * 2.7,
           z = avenue.from[1] + dz * d + dx * side * 2.7;
-        if (nearSite(x, z, 0.9) || insideRect(x, z, park, 0.4)) continue;
+        if (nearSite(x, z, 0.9, laidOut) || insideRect(x, z, park, 0.4)) continue;
         push(x, z, 0.78 + hash(d * 7 + side) * 0.1, 'round');
       }
     }
@@ -551,9 +592,9 @@ export function plantingPlan(): TreeSpec[] {
       z = (hash(i * 5 + 2) - 0.5) * 60;
     if (!onIsland(x, z, 3.4)) continue;
     if (distanceToStreets(x, z) < 2.3) continue;
-    if (nearSite(x, z, 2.2) || insideRect(x, z, park, 1.2)) continue;
+    if (nearSite(x, z, 2.2, laidOut) || insideRect(x, z, park, 1.2)) continue;
     if (insideRect(x, z, reservedPlot, 1.6)) continue;
-    if (cottages.some((c) => Math.hypot(c.x - x, c.z - z) < 3.2)) continue;
+    if (byPlantedCottage(x, z, 3.2)) continue;
     if (Math.hypot(x - pier.start[0], z - pier.start[1]) < 4.8) continue;
     if (x > -27.5 && x < -16.5 && Math.abs(z - terraceRow.z) < terraceRow.spacing + 4) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.9)) continue;
@@ -565,9 +606,11 @@ export function plantingPlan(): TreeSpec[] {
       hilly && hash(i + 9) < 0.55 ? 'pine' : hash(i + 17) < 0.14 ? 'autumn' : 'round',
     );
   }
-  // The paddock takes the one scatter tree that stood in it. Filtering afterwards (rather than
-  // in the scatter loop) leaves every other tree, and its id, where it was.
-  return scottishSpecies(trees.filter((t) => !insideRect(t.x, t.z, paddock, 1.2)), [parkFrom, parkFrom + 4], scatterFrom);
+  // The paddock takes the one scatter tree that stood in it, and the residence's ground the rowan
+  // by its north wall (tree-60, which stood by the north cottage). Filtering afterwards (rather
+  // than in the scatter loop) leaves every other tree, its id and its species where they were.
+  const species = scottishSpecies(trees.filter((t) => !insideRect(t.x, t.z, paddock, 1.2)), [parkFrom, parkFrom + 4], scatterFrom);
+  return species.filter((t) => !insideRect(t.x, t.z, residencePlot));
 }
 /**
  * Silver birch and rowan among the outskirts' and the park's round trees. Only `kind` changes:
@@ -599,7 +642,7 @@ function scottishSpecies(trees: TreeSpec[], parkIds: [number, number], scatterFr
       !insideRect(t.x, t.z, terraceClearing, 1.5),
   );
   const rowanSpot = (t: TreeSpec) =>
-    inPark(t) || gap(t, park) < 3 || gap(t, paddock) < 3 || cottages.some((c) => Math.hypot(c.x - t.x, c.z - t.z) < 5);
+    inPark(t) || gap(t, park) < 3 || gap(t, paddock) < 3 || byPlantedCottage(t.x, t.z, 5);
   const rowans: TreeSpec[] = [];
   for (const t of open.filter(rowanSpot).sort(byHash(5)))
     if (rowans.length < ROWANS && rowans.every((r) => Math.hypot(r.x - t.x, r.z - t.z) >= ROWAN_APART)) rowans.push(t);

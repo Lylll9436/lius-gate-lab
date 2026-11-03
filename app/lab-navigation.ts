@@ -1,4 +1,10 @@
-import { buildings, type BuildingId, type Locale } from './city-data';
+import {
+  buildings,
+  dwelling,
+  residentsOf,
+  type BuildingId,
+  type Locale,
+} from './city-data';
 import {
   peopleRecords,
   personContentId,
@@ -28,6 +34,26 @@ export const people = peopleRecords.map((p) => ({
   name: p.title,
   category: p.role,
 }));
+/**
+ * The People chapter's name tags over the roofs: one for each building someone lives in (a home
+ * has one resident, the Visiting PhD Residence any number, and no tag while no one stays there),
+ * naming its residents in the chapter's order: first names in English, full names in Chinese.
+ */
+export function homeTags(locale: Locale) {
+  return [
+    ...new Set(
+      people
+        .map((p) => p.buildingId)
+        .filter((id): id is BuildingId => buildings.some((b) => b.id === id)),
+    ),
+  ].map((building) => ({
+    building,
+    label: people
+      .filter((p) => p.buildingId === building)
+      .map((p) => (locale === 'zh' ? p.name.zh : p.name.en.split(' ')[0]))
+      .join(locale === 'zh' ? '、' : ' · '),
+  }));
+}
 export const isContentId = (id: string): id is ContentId =>
   ['overview', 'people', 'corner-park', ...buildings.map((b) => b.id)].includes(
     id,
@@ -97,13 +123,14 @@ export function placeFor(id: ContentId): BuildingId | 'people' | 'corner-park' |
   const target = sceneTarget(id);
   return target.building ?? (target.park ? 'corner-park' : target.district ? 'people' : null);
 }
+/**
+ * What a building opens: a member's home its resident's file (or, empty, its own); any other
+ * place its own file, the Visiting PhD Residence's listing whoever lives there.
+ */
 export function contentForBuilding(id: BuildingId) {
-  const resident = peopleRecords.find((p) => p.buildingId === id);
-  return resident
-    ? personContentId(resident)
-    : buildings.find((b) => b.id === id)?.variant
-      ? 'place:' + id
-      : id;
+  if (!buildings.find((b) => b.id === id)?.variant) return id;
+  const resident = residentsOf(id)[0];
+  return resident ? personContentId(resident) : 'place:' + id;
 }
 /** The City tour: every place in the Directory's order, ending in the corner park. */
 export const tourStops: ContentId[] = [
@@ -150,7 +177,7 @@ export function chapterFor(id: ContentId) {
       ? 'city-archive'
       : 'research-studio';
   const place = buildingForContent(id);
-  return place?.variant
+  return dwelling(place)
     ? 'people'
     : id === 'overview'
       ? 'town-hall'
@@ -169,14 +196,19 @@ export const readingChapter = (id: ContentId) =>
 export const readingContent = (id: ContentId, chapter: ContentId) =>
   readingChapter(id) === chapter ? id : chapter;
 
+/**
+ * The buildings a content's camera frames. People: every home with someone in it and the
+ * Visiting PhD Residence, lived in or not (the chapter's places).
+ */
 export function selectionForContent(id: ContentId): BuildingId[] {
   if (id === 'people')
     return [
-      ...new Set(
-        peopleRecords
+      ...new Set([
+        ...peopleRecords
           .map((p) => p.buildingId)
           .filter((id): id is BuildingId => buildings.some((b) => b.id === id)),
-      ),
+        ...buildings.filter((b) => b.model === 'residence').map((b) => b.id),
+      ]),
     ];
   const target = sceneTarget(id);
   return target.building ? [target.building] : [];

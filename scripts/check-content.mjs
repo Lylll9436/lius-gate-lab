@@ -247,7 +247,8 @@ assert.deepEqual(nav.sceneTarget('output:test-output'), {
 assert.deepEqual(nav.sceneTarget('note:test-note'), {
   building: 'research-studio',
 });
-assert.equal(nav.selectionForContent('people').length, 3);
+// The People chapter frames the three homes and the Visiting PhD Residence, lived in or not.
+assert.deepEqual(nav.selectionForContent('people'), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
 assert(!records.getRecord('person:missing'));
 const html = renderToStaticMarkup(
   React.createElement(LabContent, {
@@ -302,13 +303,100 @@ for (const b of buildings) {
   for (const { en } of texts)
     assert(!/[\u3400-\u9fff]/.test(en), 'English place text contains Chinese: ' + en);
 }
-// One role label for the PhD members; only the supervisor differs (owner's decision).
-for (const p of catalog.people)
-  assert.deepEqual(
-    p.role,
-    p.id === 'pengyuan-liu' ? { en: 'SUPERVISOR', zh: '导师' } : { en: 'PHD RESEARCHER', zh: '博士生' },
-    'Role label for ' + p.id,
+// One role label for the PhD members; only the supervisor differs (owner's decision), and the
+// visiting PhD researchers who stay in the Visiting PhD Residence, whose label says so.
+const roleFor = (p) =>
+  p.id === 'pengyuan-liu'
+    ? { en: 'SUPERVISOR', zh: '导师' }
+    : p.buildingId === 'visiting-phd'
+      ? { en: 'VISITING PHD RESEARCHER', zh: '访问博士生' }
+      : { en: 'PHD RESEARCHER', zh: '博士生' };
+for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label for ' + p.id);
+// The Visiting PhD Residence with no one in it: its file says who it is for, it opens its own
+// file (in the tour and the Directory too), the People chapter frames it, and it has no name tag.
+{
+  const residence = renderToStaticMarkup(
+    React.createElement(LabContent, { id: 'visiting-phd', locale: 'en', onOpen() {} }),
   );
+  assert(
+    residence.includes('<h4>Visiting researchers</h4>') && !residence.includes('person-card'),
+    'The empty residence describes its visitors.',
+  );
+  assert.equal(nav.contentForBuilding('visiting-phd'), 'visiting-phd');
+  assert.equal(nav.chapterFor('visiting-phd'), 'people');
+  assert.equal(nav.tourStops.filter((s) => s === 'visiting-phd').length, 1, 'The tour visits the residence once.');
+  assert.deepEqual(
+    nav.homeTags('en').map((t) => [t.building, t.label]),
+    [['pengyuan-liu', 'Pengyuan'], ['yunlong-liu', 'Yunlong'], ['qin-li', 'Qin']],
+    'One name tag a home, none over the empty residence.',
+  );
+}
+// TEST-ONLY visiting researchers (never in content/lab.json): two people whose buildingId is
+// 'visiting-phd' share the residence (a home takes one), and the site's own code, compiled again
+// over this catalogue, files them there.
+{
+  const visitor = (id, en, zh, order) => ({
+    ...structuredClone(catalog.people[1]),
+    id,
+    title: { en, zh },
+    summary: text('Visiting test researcher'),
+    role: { en: 'VISITING PHD RESEARCHER', zh: '访问博士生' },
+    buildingId: 'visiting-phd',
+    order,
+    photo: null,
+    links: [],
+    sections: [],
+    properties: [],
+  });
+  let visits = upsertRecord(next, 'people', visitor('ada-test', 'Ada Test', '测试甲', 30));
+  visits = upsertRecord(visits, 'people', visitor('bea-test', 'Bea Test', '测试乙', 31));
+  for (const p of visits.people) assert.deepEqual(p.role, roleFor(p), 'Role label for ' + p.id);
+  assert.throws(
+    () => upsertRecord(visits, 'people', { ...visitor('cy-test', 'Cy Test', '测试丙', 32), buildingId: 'qin-li' }),
+    /home no one else lives in/,
+    'A home takes one person.',
+  );
+  assert.throws(
+    () => upsertRecord(visits, 'people', { ...visitor('cy-test', 'Cy Test', '测试丙', 32), buildingId: 'town-hall' }),
+    /home no one else lives in/,
+    'People live in a home or the residence.',
+  );
+  const dir = path.join(output, 'visitors');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'lab.json'), JSON.stringify(visits));
+  for (const file of await fs.readdir(output))
+    if (file.endsWith('.mjs')) await fs.copyFile(path.join(output, file), path.join(dir, file));
+  const at = (name) => import(pathToFileURL(path.join(dir, name + '.mjs')).href);
+  const vnav = await at('lab-navigation'),
+    { LabContent: VisitLab, PeopleCards: VisitPeople, houseFor } = await at('lab-content');
+  for (const id of ['person:ada-test', 'person:bea-test']) {
+    assert.deepEqual(vnav.sceneTarget(id), { building: 'visiting-phd' });
+    assert.equal(vnav.placeFor(id), 'visiting-phd');
+    assert.equal(vnav.chapterFor(id), 'people');
+    // Hovering their card rings the residence (PersonCard hands the home's id to onHover).
+    assert.equal(houseFor(id)?.id, 'visiting-phd');
+  }
+  assert.equal(vnav.contentForBuilding('visiting-phd'), 'visiting-phd', 'The residence opens its own file, listing its residents.');
+  assert.deepEqual(vnav.selectionForContent('people'), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
+  for (const [locale, label] of [['en', 'Ada · Bea'], ['zh', '测试甲、测试乙']])
+    assert.deepEqual(
+      vnav.homeTags(locale).map((t) => [t.building, t.label]),
+      [...catalog.people.map((p) => [p.buildingId, locale === 'zh' ? p.title.zh : p.title.en.split(' ')[0]]), ['visiting-phd', label]],
+      'The residence\'s tag names its residents; the homes\' stay as they were (' + locale + ').',
+    );
+  const file = renderToStaticMarkup(React.createElement(VisitLab, { id: 'visiting-phd', locale: 'en', onOpen() {} }));
+  assert(
+    file.includes('Ada Test') && file.includes('Bea Test') && file.includes('VISITING PHD RESEARCHER') &&
+      (file.match(/class="person-card"/g) || []).length === 2 && !file.includes('<h4>Visiting researchers</h4>'),
+    'The residence\'s file shows each resident\'s card instead of the description.',
+  );
+  assert(!/[\u3400-\u9fff]/.test(file), 'English residence file contains Chinese.');
+  const chapter = renderToStaticMarkup(React.createElement(VisitPeople, { locale: 'en', onOpen() {}, reading: true }));
+  assert(
+    chapter.includes('id="read-person:ada-test"') && chapter.includes('id="read-person:bea-test"') && chapter.includes('VISITING PHD RESEARCHER'),
+    'The People chapter lists the residents.',
+  );
+}
 // The chapter at the gate is about this site; the name story was removed at the owner's request.
 const gate = buildings.find((b) => b.id === 'lius-gate');
 assert.deepEqual(gate.sections.map((s) => s.heading.en), ['Layout', 'How to use the site']);
@@ -554,5 +642,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
 );

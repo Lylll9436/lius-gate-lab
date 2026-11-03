@@ -20,6 +20,7 @@ import { buildGroundMasks, createGround } from './town-ground';
 import { createStreets } from './town-streets';
 import { createHarbour } from './town-harbour';
 import { createHomes } from './town-homes';
+import { createResidence } from './town-residence';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
@@ -29,7 +30,7 @@ export { MASK_EXTENT, MASK_SIZE, buildGroundMasks } from './town-ground';
 export { BALLOON, followDrift } from './town-movers';
 
 /**
- * The town itself: terrain, streets, seven buildings, trees,
+ * The town itself: terrain, streets, eight buildings, trees,
  * street furniture, the harbour, the lighthouse and the things that move.
  * Everything is procedural and merged into a few draw calls per surface family.
  *
@@ -49,6 +50,7 @@ export { BALLOON, followDrift } from './town-movers';
  *   bandstand, the notice board, the crane, the picnic and the Wellington statue;
  * - town-harbour.ts: the pier, the harbour with its moorings and beach details, and the lighthouse;
  * - town-homes.ts: the three members' homes in their terrace row, and the cottages;
+ * - town-residence.ts: the Visiting PhD Residence at the row's north end;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
  * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
@@ -112,6 +114,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildStreets } = createStreets(ctx, kit, nature);
   const { pierAndHarbour, lighthouse } = createHarbour(ctx, kit, props);
   const { buildTerrace, buildCottage } = createHomes(ctx, kit, nature);
+  const { buildResidence } = createResidence(ctx, kit, nature, props);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
@@ -198,7 +201,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // Terrace gardens: a flower bed in each gap between the three homes, standing on the lawn (y 0).
   for (const [side, seed] of [[-0.5, 41], [0.5, 43]] as const)
     flowerBed(land, plan.terraceRow.x + 0.4, 0, plan.terraceRow.z + side * plan.terraceRow.spacing, 1.4, 0.8, seed);
-  plan.cottages.forEach((c, i) => buildCottage(land, c, i));
+  plan.cottages.forEach((c) => buildCottage(land, c));
   crane(land, plan.reservedPlot.x, plan.reservedPlot.z);
   pierAndHarbour(land);
   lighthouse(land);
@@ -228,6 +231,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     else if (b.model === 'hall') buildHall(shell, site);
     else if (b.model === 'studio') buildStudio(shell, site);
     else if (b.model === 'archive') buildArchive(shell, site);
+    else if (b.model === 'residence') buildResidence(shell, site);
     else buildTerrace(shell, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
     models.set(b.id, { root, shell, fade: [], center: new T.Vector3(site.x, 0, site.z) });
   }
@@ -351,7 +355,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   yield 'batch park';
   // Each glass pane carries its own night light in aWindow (batch() draws it; see town-batch.ts).
   for (const [id, m] of models) {
-    batch(m.shell, { windows: id === 'town-hall' || id === 'city-archive' ? 'civic' : id === 'research-studio' ? 'studio' : 'home', place: id });
+    const windows = id === 'town-hall' || id === 'city-archive' ? 'civic' : id === 'research-studio' ? 'studio' : id === 'visiting-phd' ? 'residence' : 'home';
+    batch(m.shell, { windows, place: id });
     yield `batch ${id}`;
   }
   /** A figure batched part by part (the body, each hip and knee, each arm), so its joints still bend. */

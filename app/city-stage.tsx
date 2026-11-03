@@ -24,6 +24,7 @@ import {
 import { buildings, type Building, type BuildingId, type Locale } from './city-data';
 import { districts, type DistrictId } from './city-districts';
 import {
+  homeTags,
   people,
   placeFor,
   sceneTarget,
@@ -196,21 +197,19 @@ export function CityStage({
           <strong>{tr('Corner park', '街角公园')}</strong>
           <span>{tr('Life at the Gate · Harbour', '师门生活 · 港口')}</span>
         </div>
-        {/* The People chapter's name tags over the members' roofs, placed by the city. In
-            English the first name; in Chinese the full name, two or three characters. */}
-        {people.map(
-          (person) =>
-            person.buildingId && (
-              <span
-                key={person.id}
-                data-home-tag={person.buildingId}
-                className="home-tag"
-                aria-hidden="true"
-              >
-                {zh ? person.name.zh : person.name.en.split(' ')[0]}
-              </span>
-            ),
-        )}
+        {/* The People chapter's name tags over the roofs of the homes and the residence, placed
+            by the city: one a building, naming whoever lives there. In English first names; in
+            Chinese full names, two or three characters each. */}
+        {homeTags(locale).map(({ building, label }) => (
+          <span
+            key={building}
+            data-home-tag={building}
+            className="home-tag"
+            aria-hidden="true"
+          >
+            {label}
+          </span>
+        ))}
       </div>
 
       {/* Top-left: where you are, what you point at, what the sky is doing. */}

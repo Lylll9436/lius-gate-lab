@@ -848,7 +848,12 @@ export function LabContent({
     return (
       <p>{tr('This record is no longer available.', '这条记录已移除。')}</p>
     );
-  const person = people.some((p) => p.id === id);
+  const person = people.some((p) => p.id === id),
+    // The Visiting PhD Residence lists its residents; with none, it says who it is for.
+    residents =
+      b.model === 'residence'
+        ? people.filter((p) => p.buildingId === b.id)
+        : [];
   return (
     <div className={`record ${person ? 'record-person' : ''}`}>
       {person ? (
@@ -883,7 +888,25 @@ export function LabContent({
           onOpen={onOpen}
         />
       )}
-      {(!records.length && !additional.length ? b.sections : []).map(
+      {/* The residence's file: whoever stays there, each on their card. */}
+      {!!residents.length && (
+        <div className="people-cards">
+          {residents.map((resident) => (
+            <PersonCard
+              key={resident.id}
+              id={resident.id}
+              index={people.indexOf(resident)}
+              locale={locale}
+              onOpen={onOpen}
+              reading={reading}
+            />
+          ))}
+        </div>
+      )}
+      {(!records.length && !additional.length && !residents.length
+        ? b.sections
+        : []
+      ).map(
         (section, i) => (
           <section className="record-section" key={i}>
             <h4>{section.heading[locale]}</h4>
