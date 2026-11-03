@@ -905,11 +905,14 @@ function DepartureCells({
   );
 }
 
+/**
+ * A row rings the airport while the pointer is on it, as a person's card rings their home. Not on
+ * focus: an address that jumps to a row focuses its name, and the ring would then stay on the
+ * airport after the reader had scrolled on to another chapter.
+ */
 type Ring = {
   onPointerEnter: () => void;
   onPointerLeave: () => void;
-  onFocus: () => void;
-  onBlur: () => void;
 };
 
 /** A reading-page row: it folds out the person's portrait, profile and links in place. */
@@ -992,8 +995,8 @@ export function DeparturesBoard({
     ringed = useRef(false),
     [flipping, setFlipping] = useState(false),
     where = reading ? 'reading' : 'city';
-  // One left-to-right settle-flip the first time the board comes into view: never in Chinese,
-  // whose characters do not sit on flaps, nor for a visitor who prefers reduced motion.
+  // One left-to-right settle-flip the first time the board comes into view: never in Chinese, nor
+  // for a visitor who prefers reduced motion.
   useEffect(() => {
     const el = board.current;
     if (
@@ -1034,14 +1037,6 @@ export function DeparturesBoard({
       onHover?.('airport');
     },
     onPointerLeave: () => {
-      ringed.current = false;
-      onHover?.(null);
-    },
-    onFocus: () => {
-      ringed.current = true;
-      onHover?.('airport');
-    },
-    onBlur: () => {
       ringed.current = false;
       onHover?.(null);
     },
@@ -1093,7 +1088,7 @@ export function DeparturesBoard({
             >
               <span className="board-cell board-date">
                 <span className="flap is-blank" aria-hidden="true">
-                  {' '.repeat(8)}
+                  {'\u00a0'.repeat(8)}
                 </span>
               </span>
               <span className="board-cell board-name">
@@ -1104,7 +1099,7 @@ export function DeparturesBoard({
               </span>
               <span className="board-cell board-now">
                 <span className="flap is-blank" aria-hidden="true">
-                  {' '.repeat(10)}
+                  {'\u00a0'.repeat(10)}
                 </span>
               </span>
               <span className="board-cell board-status">
