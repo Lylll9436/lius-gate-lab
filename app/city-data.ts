@@ -1,4 +1,4 @@
-import { peopleRecords } from './lab-records';
+import { memberRecords } from './lab-records';
 export type Locale = 'en' | 'zh';
 export type BuildingId =
   | 'lius-gate'
@@ -321,35 +321,46 @@ const places: Building[] = [
   },
 ];
 /**
- * The people who live in a building: the published records whose buildingId names it, in their
- * order. A member's home has at most one; the Visiting PhD Residence any number, none included.
+ * The people who live in a building on `today` (now unless given): the members whose buildingId
+ * names it, in their order. Someone who has left keeps the home on their record as history but no
+ * longer lives there. A home has one resident (two only while a newcomer moves in ahead of a
+ * departure); the Visiting PhD Residence any number, none included.
  */
-export const residentsOf = (id: BuildingId) => peopleRecords.filter((p) => p.buildingId === id);
+export const residentsOf = (id: BuildingId, today: Date = new Date()) =>
+  memberRecords(today).filter((p) => p.buildingId === id);
 /** Where people live: the members' homes and the Visiting PhD Residence (the People chapter's places). */
 export const dwelling = (b: Building | undefined) => !!b && (!!b.variant || b.model === 'residence');
-// Building slots are independent of their current occupants. A home takes its resident's name and
-// file; the residence keeps its own and lists its residents (lab-content).
-export const buildings: Building[] = places.map((building) => {
-  if (!building.variant) return building;
-  const resident = residentsOf(building.id)[0];
-  return resident
-    ? {
-        ...building,
-        name: resident.title,
-        short: resident.title,
-        category: resident.role,
-        summary: resident.summary,
-        sections: resident.sections,
-      }
-    : {
-        ...building,
-        name: t('Terrace house', '联排住宅'),
-        short: t('Home', '住宅'),
-        category: t('THE TERRACE', '联排住宅'),
-        summary: t(
-          'A home in the terrace row, currently unoccupied.',
-          '联排中的一户住宅，目前无人居住。',
-        ),
-        sections: [],
-      };
-});
+/**
+ * The places on `today`. Building slots are independent of their occupants: a home takes the name
+ * and file of its first current resident, and reads as an unoccupied terrace house once its
+ * resident has left, until someone moves in. The residence keeps its own and lists its residents
+ * (lab-content).
+ */
+export function buildingsOn(today: Date = new Date()): Building[] {
+  return places.map((building) => {
+    if (!building.variant) return building;
+    const resident = residentsOf(building.id, today)[0];
+    return resident
+      ? {
+          ...building,
+          name: resident.title,
+          short: resident.title,
+          category: resident.role,
+          summary: resident.summary,
+          sections: resident.sections,
+        }
+      : {
+          ...building,
+          name: t('Terrace house', '联排住宅'),
+          short: t('Home', '住宅'),
+          category: t('THE TERRACE', '联排住宅'),
+          summary: t(
+            'A home in the terrace row, currently unoccupied.',
+            '联排中的一户住宅，目前无人居住。',
+          ),
+          sections: [],
+        };
+  });
+}
+/** The places as the page finds them: decided once, by the visitor's day, when it loads. */
+export const buildings: Building[] = buildingsOn();

@@ -2,9 +2,12 @@ import raw from '../content/lab.json' with { type: 'json' };
 import {
   assertCatalog,
   migrateCatalog,
+  RESIDENCE_ID,
+  type Departure,
   type EventRecord,
   type LabCatalog,
   type LabRecord,
+  type Localized,
   type NoteRecord,
   type OutputRecord,
   type PersonRecord,
@@ -12,9 +15,54 @@ import {
 const loaded = migrateCatalog(raw);
 assertCatalog(loaded);
 export const catalog: LabCatalog = loaded;
+/**
+ * Everyone published, those who have left included: their addresses, the events that name them
+ * and the supervisor's email go on working. Who is still here is memberRecords.
+ */
 export const peopleRecords = catalog.people
   .filter((p) => p.visibility === 'published')
   .sort((a, b) => a.order - b.order);
+/**
+ * The UTC day of `today`, YYYY-MM-DD: the day the site goes by, the same for every visitor
+ * whatever their time zone. Gate's News counts its year from it, and people leave on it.
+ */
+export const utcDay = (today: Date = new Date()) =>
+  today.toISOString().slice(0, 10);
+export type Alumnus = PersonRecord & { departure: Departure };
+/**
+ * Whether someone has left Liu’s Gate by `today` (now unless given; the checks pass fixed days).
+ * A departure may be entered ahead: they leave on its date, from 00:00 UTC.
+ */
+export function hasDeparted(
+  p: PersonRecord,
+  today: Date = new Date(),
+): p is Alumnus {
+  return !!p.departure && p.departure.date <= utcDay(today);
+}
+/**
+ * The members on `today`: everyone published who has not left, in their order. They make up the
+ * People chapter, the homes, the name tags and the residence's residents.
+ */
+export function memberRecords(today: Date = new Date()) {
+  return peopleRecords.filter((p) => !hasDeparted(p, today));
+}
+/** Everyone who has left by `today`, newest departure first: the departures board. */
+export function alumniRecords(today: Date = new Date()) {
+  return peopleRecords
+    .filter((p): p is Alumnus => hasDeparted(p, today))
+    .sort(
+      (a, b) =>
+        b.departure.date.localeCompare(a.departure.date) || a.order - b.order,
+    );
+}
+export type DepartureStatus = 'departed' | 'returned';
+/** A visiting researcher who stayed in the residence has gone home; anyone else has set off. */
+export const departureStatus = (p: PersonRecord): DepartureStatus =>
+  p.buildingId === RESIDENCE_ID ? 'returned' : 'departed';
+export const departureStatusLabel: Record<DepartureStatus, Localized> = {
+  departed: { en: 'Departed', zh: '已启程' },
+  returned: { en: 'Returned', zh: '已返程' },
+};
 export const researchRecords = catalog.research
   .filter((p) => p.visibility === 'published')
   .sort((a, b) => a.order - b.order);
@@ -55,7 +103,7 @@ export function recentNews(limit = 3, today: Date = new Date()): NewsItem[] {
   const rank = { output: 0, event: 1, note: 2 };
   const yearAgo = new Date(today.getTime());
   yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
-  const since = yearAgo.toISOString().slice(0, 10);
+  const since = utcDay(yearAgo);
   const items: NewsItem[] = [
     ...eventRecords.map((record) => ({
       id: 'event:' + record.id,

@@ -27,6 +27,37 @@ for (const visibility of [['published'], { value: 'published' }, null]) {
   );
 }
 const text = (en) => ({ en, zh: '测试内容' });
+// Who is still at the Gate depends on the day: people leave on their departure's UTC day, the day
+// Gate's News counts by. Every helper that decides it takes that day, and these checks pass fixed
+// days, so they give the same answer whenever they run. The page decides when it renders, by the
+// visitor's UTC day; what it renders is checked against that day, read once here.
+const DAY = '2026-11-03',
+  TODAY = new Date(DAY + 'T12:00:00Z'),
+  NOW = new Date().toISOString().slice(0, 10);
+const on = (day) => new Date(day + 'T12:00:00Z');
+/** The rule stated again, independently of the site's code: gone from their departure's day on. */
+const leftBy = (p, day) => !!p.departure && p.departure.date <= day;
+/** The members on a day: everyone published who has not left by then, in their order. */
+const membersOf = (cat, day) =>
+  cat.people
+    .filter((p) => p.visibility === 'published' && !leftBy(p, day))
+    .sort((a, b) => a.order - b.order);
+/** A name tag's name: the first name in English; in Chinese the full name, if it has one. */
+const tagName = (p, locale) =>
+  locale === 'zh' && /[\u3400-\u9fff]/.test(p.title.zh) ? p.title.zh : p.title.en.split(' ')[0];
+/** The name tags on a day: a home's first current resident, and everyone staying in the residence. */
+const tagsOf = (cat, day, locale) => {
+  const members = membersOf(cat, day);
+  return [...new Set(members.map((p) => p.buildingId).filter(Boolean))].map((home) => {
+    const here = members.filter((p) => p.buildingId === home);
+    return [
+      home,
+      (home === 'visiting-phd' ? here : here.slice(0, 1))
+        .map((p) => tagName(p, locale))
+        .join(locale === 'zh' ? '、' : ' · '),
+    ];
+  });
+};
 // Fixture news is dated a month before the run, so it stays inside Gate's News window
 // (the last 12 months) whatever day the checks run.
 const recent = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
@@ -285,10 +316,61 @@ const { LabContent, NewsPreview, PeopleCards } = await import(
 const { SiteFooter, chapterMeta } = await import(
   pathToFileURL(path.join(output, 'site-chrome.mjs')).href
 );
-const { buildings } = await import(
+const data = await import(
   pathToFileURL(path.join(output, 'city-data.mjs')).href
 );
-assert.equal(nav.people.length, catalog.people.length + 1); // the real people and the test member
+const { buildings } = data;
+// The People chapter lists the members: on DAY everyone published, and the test member. The
+// page's own list is the visitor's day's.
+assert.deepEqual(
+  nav.peopleOn(TODAY).map((p) => p.id),
+  membersOf(next, DAY).map(records.personContentId),
+);
+assert.equal(nav.peopleOn(TODAY).length, membersOf(catalog, DAY).length + 1); // the real members and the test member
+assert.deepEqual(
+  nav.people.map((p) => p.id),
+  membersOf(next, NOW).map(records.personContentId),
+);
+// On DAY nobody had left Liu’s Gate, so the rules for who is here give exactly the site as it
+// was: every published person a member, no one on the departures board, every home its one
+// resident, and the tour, the People framing and the name tags unchanged.
+assert.deepEqual(
+  catalog.people.filter((p) => leftBy(p, DAY)),
+  [],
+  'Nobody had left on ' + DAY + ', so the live site is as it was.',
+);
+assert.deepEqual(records.memberRecords(TODAY), records.peopleRecords);
+assert.deepEqual(records.alumniRecords(TODAY), []);
+{
+  const residentOf = (b) =>
+    b.variant ? records.peopleRecords.find((p) => p.buildingId === b.id) : null;
+  assert.deepEqual(
+    data.buildingsOn(TODAY).map((b) => [b.id, b.name]),
+    buildings.map((b) => [b.id, residentOf(b)?.title ?? b.name]),
+  );
+  assert.deepEqual(nav.tourOn(TODAY), [
+    ...buildings.map((b) =>
+      !b.variant
+        ? b.id
+        : residentOf(b)
+          ? records.personContentId(residentOf(b))
+          : 'place:' + b.id,
+    ),
+    'corner-park',
+  ]);
+  assert.deepEqual(nav.tourStops, nav.tourOn(), 'The page’s tour is the visitor’s day’s.');
+}
+for (const locale of ['en', 'zh']) {
+  assert.deepEqual(
+    nav.homeTags(locale, TODAY).map((t) => [t.building, t.label]),
+    tagsOf(next, DAY, locale),
+  );
+  // The page's tags are the visitor's day's.
+  assert.deepEqual(
+    nav.homeTags(locale).map((t) => [t.building, t.label]),
+    tagsOf(next, NOW, locale),
+  );
+}
 const moved = { ...catalog.people[2], buildingId: null };
 assert.equal(
   records.personContentId(moved),
@@ -296,7 +378,7 @@ assert.equal(
   'Moving home must preserve the person URL.',
 );
 assert(nav.isContentId('place:qin-li'));
-assert.equal(nav.contentForBuilding('qin-li'), 'qin-li');
+assert.equal(nav.contentForBuilding('qin-li', TODAY), 'qin-li');
 for (const id of [
   'person:test-member',
   'research:test-study',
@@ -327,8 +409,9 @@ assert.deepEqual(nav.sceneTarget('output:test-output'), {
 assert.deepEqual(nav.sceneTarget('note:test-note'), {
   building: 'research-studio',
 });
-// The People chapter frames the three homes and the Visiting PhD Residence, lived in or not.
-assert.deepEqual(nav.selectionForContent('people'), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
+// The People chapter frames the homes someone lives in (on DAY all three) and the Visiting PhD
+// Residence, lived in or not.
+assert.deepEqual(nav.selectionForContent('people', TODAY), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
 assert(!records.getRecord('person:missing'));
 const html = renderToStaticMarkup(
   React.createElement(LabContent, {
@@ -374,7 +457,8 @@ assert(
 // profile are their own words from their record, so a bio may say "records" or "维护".
 for (const b of buildings) {
   const texts = [b.summary, b.architecture, ...b.sections.flatMap((s) => [s.heading, s.body])];
-  const resident = records.peopleRecords.some((p) => p.buildingId === b.id);
+  // The page's places are the visitor's day's: a home someone has left speaks for itself again.
+  const resident = membersOf(next, NOW).some((p) => p.buildingId === b.id);
   for (const { en, zh } of resident ? [b.architecture] : texts)
     assert(
       !/catalog|repositor|\brecords?\b|maintain/i.test(en) && !/目录|记录|维护/.test(zh),
@@ -396,7 +480,9 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
 // it, says who it is for), it opens its own file (in the tour and the Directory too), the People
 // chapter frames it, and its name tag names its residents (none when it is empty).
 {
-  const residents = catalog.people.filter((p) => p.buildingId === 'visiting-phd');
+  // The rendered file is the visitor's day's; the tags are checked on DAY.
+  const residents = membersOf(catalog, NOW).filter((p) => p.buildingId === 'visiting-phd'),
+    staying = membersOf(catalog, DAY).filter((p) => p.buildingId === 'visiting-phd');
   const residence = renderToStaticMarkup(
     React.createElement(LabContent, { id: 'visiting-phd', locale: 'en', onOpen() {} }),
   );
@@ -410,17 +496,32 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
       residence.includes('<h4>Visiting researchers</h4>') && !residence.includes('person-card'),
       'The empty residence describes its visitors.',
     );
-  assert.equal(nav.contentForBuilding('visiting-phd'), 'visiting-phd');
+  assert.equal(nav.contentForBuilding('visiting-phd', TODAY), 'visiting-phd');
   assert.equal(nav.chapterFor('visiting-phd'), 'people');
   assert.equal(nav.tourStops.filter((s) => s === 'visiting-phd').length, 1, 'The tour visits the residence once.');
   const homes = [['pengyuan-liu', 'Pengyuan'], ['yunlong-liu', 'Yunlong'], ['qin-li', 'Qin']];
   assert.deepEqual(
-    nav.homeTags('en').map((t) => [t.building, t.label]),
-    residents.length ? [...homes, ['visiting-phd', residents.map((p) => p.title.en.split(' ')[0]).join(' · ')]] : homes,
+    nav.homeTags('en', TODAY).map((t) => [t.building, t.label]),
+    staying.length ? [...homes, ['visiting-phd', staying.map((p) => p.title.en.split(' ')[0]).join(' · ')]] : homes,
     'One name tag a home, and one over the residence naming whoever stays there.',
   );
   // A name written only in Latin letters keeps its first name on the Chinese tag too.
-  for (const t of nav.homeTags('zh')) assert(t.label.length <= 12, `The Chinese tag over ${t.building} is too long: ${t.label}`);
+  for (const t of nav.homeTags('zh', TODAY)) assert(t.label.length <= 12, `The Chinese tag over ${t.building} is too long: ${t.label}`);
+}
+/** The site's own code, compiled again over a test catalogue in a directory of its own. */
+async function siteOver(name, testCatalog) {
+  const dir = path.join(output, name);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'lab.json'), JSON.stringify(testCatalog));
+  for (const file of await fs.readdir(output))
+    if (file.endsWith('.mjs')) await fs.copyFile(path.join(output, file), path.join(dir, file));
+  const at = (module) => import(pathToFileURL(path.join(dir, module + '.mjs')).href);
+  return {
+    nav: await at('lab-navigation'),
+    records: await at('lab-records'),
+    data: await at('city-data'),
+    content: await at('lab-content'),
+  };
 }
 // TEST-ONLY visiting researchers (never in content/lab.json): two people whose buildingId is
 // 'visiting-phd' share the residence (a home takes one), and the site's own code, compiled again
@@ -452,14 +553,9 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
     /home no one else lives in/,
     'People live in a home or the residence.',
   );
-  const dir = path.join(output, 'visitors');
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, 'lab.json'), JSON.stringify(visits));
-  for (const file of await fs.readdir(output))
-    if (file.endsWith('.mjs')) await fs.copyFile(path.join(output, file), path.join(dir, file));
-  const at = (name) => import(pathToFileURL(path.join(dir, name + '.mjs')).href);
-  const vnav = await at('lab-navigation'),
-    { LabContent: VisitLab, PeopleCards: VisitPeople, houseFor } = await at('lab-content');
+  const site = await siteOver('visitors', visits),
+    vnav = site.nav,
+    { LabContent: VisitLab, PeopleCards: VisitPeople, houseFor } = site.content;
   for (const id of ['person:ada-test', 'person:bea-test']) {
     assert.deepEqual(vnav.sceneTarget(id), { building: 'visiting-phd' });
     assert.equal(vnav.placeFor(id), 'visiting-phd');
@@ -467,20 +563,23 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
     // Hovering their card rings the residence (PersonCard hands the home's id to onHover).
     assert.equal(houseFor(id)?.id, 'visiting-phd');
   }
-  assert.equal(vnav.contentForBuilding('visiting-phd'), 'visiting-phd', 'The residence opens its own file, listing its residents.');
-  assert.deepEqual(vnav.selectionForContent('people'), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
+  assert.equal(vnav.contentForBuilding('visiting-phd', TODAY), 'visiting-phd', 'The residence opens its own file, listing its residents.');
+  assert.deepEqual(vnav.selectionForContent('people', TODAY), ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd']);
   // The residence's tag names everyone staying there, the real residents first (by order), then the
   // two test visitors; a name written only in Latin letters keeps its first name on the Chinese tag.
-  const tagName = (p, locale) => (locale === 'zh' && /[\u3400-\u9fff]/.test(p.title.zh) ? p.title.zh : p.title.en.split(' ')[0]);
-  const stayers = catalog.people.filter((p) => p.buildingId === 'visiting-phd');
+  // The tags are checked on DAY, the rendered file on the visitor's day.
+  const stayers = membersOf(catalog, DAY).filter((p) => p.buildingId === 'visiting-phd'),
+    stayersNow = membersOf(catalog, NOW).filter((p) => p.buildingId === 'visiting-phd');
   for (const { locale, sep, tests } of [
     { locale: 'en', sep: ' · ', tests: ['Ada', 'Bea'] },
     { locale: 'zh', sep: '、', tests: ['测试甲', '测试乙'] },
   ])
     assert.deepEqual(
-      vnav.homeTags(locale).map((t) => [t.building, t.label]),
+      vnav.homeTags(locale, TODAY).map((t) => [t.building, t.label]),
       [
-        ...catalog.people.filter((p) => p.buildingId !== 'visiting-phd').map((p) => [p.buildingId, tagName(p, locale)]),
+        ...membersOf(catalog, DAY)
+          .filter((p) => p.buildingId && p.buildingId !== 'visiting-phd')
+          .map((p) => [p.buildingId, tagName(p, locale)]),
         ['visiting-phd', [...stayers.map((p) => tagName(p, locale)), ...tests].join(sep)],
       ],
       'The residence\'s tag names its residents; the homes\' stay as they were (' + locale + ').',
@@ -488,7 +587,7 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
   const file = renderToStaticMarkup(React.createElement(VisitLab, { id: 'visiting-phd', locale: 'en', onOpen() {} }));
   assert(
     file.includes('Ada Test') && file.includes('Bea Test') && file.includes('VISITING PHD RESEARCHER') &&
-      (file.match(/class="person-card"/g) || []).length === 2 + stayers.length && !file.includes('<h4>Visiting researchers</h4>'),
+      (file.match(/class="person-card"/g) || []).length === 2 + stayersNow.length && !file.includes('<h4>Visiting researchers</h4>'),
     'The residence\'s file shows each resident\'s card instead of the description.',
   );
   assert(!/[\u3400-\u9fff]/.test(file), 'English residence file contains Chinese.');
@@ -497,6 +596,225 @@ for (const p of catalog.people) assert.deepEqual(p.role, roleFor(p), 'Role label
     chapter.includes('id="read-person:ada-test"') && chapter.includes('id="read-person:bea-test"') && chapter.includes('VISITING PHD RESEARCHER'),
     'The People chapter lists the residents.',
   );
+}
+// TEST-ONLY departures (never in content/lab.json): a member who left in 2025, a visiting
+// researcher who went home in 2026 and a member who leaves in 2099, filed by the site's own code
+// compiled again over this catalogue. The test catalogue hands Qin Li's home to the 2099 leaver
+// (Qin stays a member, without a home), so the checks can watch a home empty on its resident's day
+// and fill again when someone moves in.
+{
+  const EVE = on('2099-06-30'),
+    DEPART = on('2099-07-01');
+  const tester = (id, en, zh, order, buildingId, role = { en: 'PHD RESEARCHER', zh: '博士生' }) => ({
+    ...structuredClone(catalog.people[1]),
+    id,
+    title: { en, zh },
+    summary: text(en + ' is a test person.'),
+    role,
+    buildingId,
+    order,
+    photo: null,
+    links: [],
+    sections: [],
+    properties: [],
+  });
+  const pastMember = { ...tester('test-past-member', 'Pat Former', '测试丙', 21, 'yunlong-liu'), departure };
+  const pastVisitor = {
+    ...tester('test-past-visitor', 'Val Visitor', '测试丁', 22, 'visiting-phd', {
+      en: 'VISITING PHD RESEARCHER',
+      zh: '访问博士生',
+    }),
+    departure: {
+      date: '2026-08-31',
+      city: { en: 'Testburg, Ireland', zh: '爱尔兰测试堡' },
+      destination: { en: 'Test Institute', zh: '测试研究所' },
+      role: null,
+      link: null,
+    },
+  };
+  const futureMember = {
+    ...tester('test-future-member', 'Fay Future', '测试戊', 23, 'qin-li'),
+    departure: {
+      date: '2099-07-01',
+      city: { en: 'Testport, Wales', zh: '威尔士测试港' },
+      destination: { en: 'Test Company', zh: '测试公司' },
+      role: { en: 'Data scientist', zh: '数据科学家' },
+      link: { label: text('Homepage'), url: 'https://example.org/future-member' },
+    },
+  };
+  let leaving = upsertRecord(next, 'people', {
+    ...catalog.people.find((p) => p.id === 'qin-li'),
+    buildingId: null,
+  });
+  for (const p of [pastMember, pastVisitor, futureMember]) leaving = upsertRecord(leaving, 'people', p);
+  // A farewell names the member who has left: they stay published, so it still opens their file.
+  leaving = upsertRecord(leaving, 'events', {
+    ...event,
+    id: 'test-farewell',
+    title: text('Test farewell'),
+    date: '2025-06-27',
+    people: ['test-past-member'],
+  });
+  for (const p of leaving.people) assert.deepEqual(p.role, roleFor(p), 'Role label for ' + p.id + ', kept as history.');
+  const { nav: lnav, records: lrec, data: ldata, content: lcontent } = await siteOver('departures', leaving);
+  const ids = (list) => list.map((p) => p.id);
+  const find = (id) => lrec.peopleRecords.find((p) => p.id === id);
+  // The day is the UTC day, as Gate's News counts days: the visitor who left on 31 Aug 2026 was
+  // still here at 23:59 UTC the day before, and at half past midnight in Glasgow (BST), still the
+  // 30th in UTC; she had gone from 00:00 UTC on the 31st.
+  for (const [when, gone] of [
+    ['2026-08-30T23:59:59Z', false],
+    ['2026-08-31T00:30:00+01:00', false],
+    ['2026-08-31T00:00:00Z', true],
+    [DAY + 'T12:00:00Z', true],
+  ])
+    assert.equal(lrec.hasDeparted(find('test-past-visitor'), new Date(when)), gone, 'Gone by ' + when + '?');
+  assert(!lrec.hasDeparted(find('qin-li'), DEPART), 'Without a departure nobody leaves.');
+  // Members, the People chapter, the departures board and the name tags on each day, against the
+  // rule stated independently above.
+  for (const day of [DAY, '2026-08-30', '2099-06-30', '2099-07-01']) {
+    assert.deepEqual(ids(lrec.memberRecords(on(day))), ids(membersOf(leaving, day)), 'Members on ' + day);
+    assert.deepEqual(
+      ids(lnav.peopleOn(on(day))),
+      membersOf(leaving, day).map(lrec.personContentId),
+      'The People chapter on ' + day,
+    );
+    assert.deepEqual(
+      ids(lrec.alumniRecords(on(day))),
+      ids(
+        leaving.people
+          .filter((p) => leftBy(p, day))
+          .sort((a, b) => b.departure.date.localeCompare(a.departure.date) || a.order - b.order),
+      ),
+      'The departures board on ' + day + ', newest first',
+    );
+    for (const locale of ['en', 'zh'])
+      assert.deepEqual(
+        lnav.homeTags(locale, on(day)).map((t) => [t.building, t.label]),
+        tagsOf(leaving, day, locale),
+        'Name tags on ' + day,
+      );
+  }
+  assert.deepEqual(ids(lrec.alumniRecords(TODAY)), ['test-past-visitor', 'test-past-member'], 'Newest departure first.');
+  assert(
+    ids(lrec.memberRecords(EVE)).includes('test-future-member') &&
+      !ids(lrec.memberRecords(DEPART)).includes('test-future-member') &&
+      ids(lrec.alumniRecords(DEPART))[0] === 'test-future-member',
+    'A departure entered ahead takes effect on its day.',
+  );
+  // The status is derived: the visiting researcher has gone home, the others have set off.
+  assert.deepEqual(
+    ['test-past-member', 'test-past-visitor', 'test-future-member'].map((id) => lrec.departureStatus(find(id))),
+    ['departed', 'returned', 'departed'],
+  );
+  assert.deepEqual(lrec.departureStatusLabel, {
+    departed: { en: 'Departed', zh: '已启程' },
+    returned: { en: 'Returned', zh: '已返程' },
+  });
+  // Nobody is dropped: peopleRecords keeps everyone published, so an old address, a farewell's
+  // People button and the supervisor's email keep working.
+  assert.deepEqual(
+    ids(lrec.peopleRecords),
+    ids(leaving.people.filter((p) => p.visibility === 'published').sort((a, b) => a.order - b.order)),
+  );
+  assert.equal(lrec.supervisorEmail(), records.supervisorEmail());
+  for (const [id, name] of [
+    ['person:test-past-member', 'Pat Former'],
+    ['person:test-past-visitor', 'Val Visitor'],
+  ]) {
+    assert(lnav.isContentId(id));
+    assert.deepEqual(lnav.parseLocation('#read/' + id), { mode: 'reading', content: id });
+    assert.equal(lnav.titleFor(id, 'en'), name);
+    const page = renderToStaticMarkup(React.createElement(lcontent.LabContent, { id, locale: 'en', onOpen() {} }));
+    assert(page.includes(name) && !/[\u3400-\u9fff]/.test(page), 'The file of someone who has left still opens: ' + id);
+  }
+  assert(
+    renderToStaticMarkup(
+      React.createElement(lcontent.LabContent, { id: 'event:test-farewell', locale: 'en', onOpen() {} }),
+    ).includes('Pat Former'),
+    'A farewell still names the member who left.',
+  );
+  // A home keeps its current resident whoever lived there before: Yunlong Liu's home is his,
+  // though the member who left in 2025 once lived there.
+  const home = (day, id) => ldata.buildingsOn(day).find((b) => b.id === id);
+  assert.deepEqual(home(TODAY, 'yunlong-liu').name, catalog.people.find((p) => p.id === 'yunlong-liu').title);
+  assert.deepEqual(ids(ldata.residentsOf('yunlong-liu', TODAY)), ['yunlong-liu']);
+  // The residence lists only who is staying: the visitor who went home is not among them.
+  assert(ids(ldata.residentsOf('visiting-phd', on('2026-08-30'))).includes('test-past-visitor'));
+  assert.deepEqual(
+    ids(ldata.residentsOf('visiting-phd', TODAY)),
+    ids(membersOf(leaving, DAY).filter((p) => p.buildingId === 'visiting-phd')),
+  );
+  // The 2099 leaver lives in Qin Li's home up to the day before they set off...
+  for (const day of [TODAY, EVE]) {
+    assert.deepEqual(home(day, 'qin-li').name, futureMember.title);
+    assert.equal(lnav.contentForBuilding('qin-li', day), 'person:test-future-member');
+    assert(lnav.tourOn(day).includes('person:test-future-member'));
+    assert(lnav.selectionForContent('people', day).includes('qin-li'));
+  }
+  // ...and from that day the home reads as an unoccupied terrace house that opens its own file, with
+  // no name tag and out of the People chapter's frame, until someone moves in.
+  const empty = home(DEPART, 'qin-li');
+  assert.deepEqual(
+    [empty.name, empty.short, empty.category, empty.summary, empty.sections],
+    [
+      { en: 'Terrace house', zh: '联排住宅' },
+      { en: 'Home', zh: '住宅' },
+      { en: 'THE TERRACE', zh: '联排住宅' },
+      { en: 'A home in the terrace row, currently unoccupied.', zh: '联排中的一户住宅，目前无人居住。' },
+      [],
+    ],
+  );
+  assert.equal(lnav.contentForBuilding('qin-li', DEPART), 'place:qin-li');
+  assert(lnav.tourOn(DEPART).includes('place:qin-li') && !lnav.tourOn(DEPART).includes('person:test-future-member'));
+  assert(!lnav.homeTags('en', DEPART).some((t) => t.building === 'qin-li'));
+  assert(!lnav.selectionForContent('people', DEPART).includes('qin-li'));
+  assert(lnav.selectionForContent('people', DEPART).includes('visiting-phd'), 'The residence stays in frame, lived in or not.');
+  // What the page renders is the visitor's day's (these fixtures are dated so that cannot change
+  // before 2099): the People chapter lists the members only, the residence who is staying, and Qin
+  // Li's home its 2099 leaver.
+  const chapter = renderToStaticMarkup(
+    React.createElement(lcontent.PeopleCards, { locale: 'en', onOpen() {}, reading: true }),
+  );
+  assert.deepEqual(
+    [...chapter.matchAll(/id="read-([^"]+)"/g)].map((m) => m[1]),
+    membersOf(leaving, NOW).map(lrec.personContentId),
+    'The People chapter lists the members, in order.',
+  );
+  assert(
+    chapter.includes('id="read-person:test-future-member"') &&
+      !chapter.includes('Pat Former') &&
+      !chapter.includes('Val Visitor'),
+    'Those who have left are not among the members.',
+  );
+  const residenceFile = renderToStaticMarkup(
+    React.createElement(lcontent.LabContent, { id: 'visiting-phd', locale: 'en', onOpen() {} }),
+  );
+  assert.equal(
+    (residenceFile.match(/class="person-card"/g) || []).length,
+    membersOf(leaving, NOW).filter((p) => p.buildingId === 'visiting-phd').length,
+    'The residence lists who is staying.',
+  );
+  assert(!residenceFile.includes('Val Visitor'), 'The visitor who went home is not listed.');
+  assert(
+    renderToStaticMarkup(
+      React.createElement(lcontent.LabContent, { id: 'place:qin-li', locale: 'en', onOpen() {} }),
+    ).includes('Fay Future is a test person.'),
+  );
+  // Someone moves into that home while the 2099 leaver still lives there: a home shows its first
+  // current resident (by order), with one name on its tag, and the newcomer from the leaver's day.
+  const { nav: snav, data: sdata } = await siteOver(
+    'successor',
+    upsertRecord(leaving, 'people', tester('test-successor', 'Sam Successor', '测试己', 24, 'qin-li')),
+  );
+  const shown = (day) => [
+    sdata.buildingsOn(day).find((b) => b.id === 'qin-li').name.en,
+    snav.homeTags('en', day).find((t) => t.building === 'qin-li')?.label,
+    snav.contentForBuilding('qin-li', day),
+  ];
+  assert.deepEqual(shown(TODAY), ['Fay Future', 'Fay', 'person:test-future-member']);
+  assert.deepEqual(shown(DEPART), ['Sam Successor', 'Sam', 'person:test-successor']);
+  assert(snav.peopleOn(TODAY).some((p) => p.id === 'person:test-successor'), 'A newcomer is a member as soon as they are entered.');
 }
 // The chapter at the gate is about this site; the name story was removed at the owner's request.
 const gate = buildings.find((b) => b.id === 'lius-gate');
@@ -653,7 +971,14 @@ for (const [locale, heading, summary, emailLabel] of [
     'The supervisor’s email address is visible link text (' + locale + ').',
   );
   const mailLinks = cards.match(/<a [^>]*href="mailto:[^>]*>.*?<\/a>/g) ?? [];
-  assert(mailLinks.length >= 3, 'Every member card keeps its email link.');
+  // The cards are the members on the visitor's day, each with its email link.
+  assert.equal(
+    mailLinks.length,
+    membersOf(next, NOW)
+      .flatMap((p) => p.links)
+      .filter((l) => l.url.startsWith('mailto:')).length,
+    'Every member card keeps its email link.',
+  );
   for (const link of mailLinks)
     assert(
       !link.includes('target=') && !link.includes('<svg'),
@@ -712,13 +1037,20 @@ for (const item of [...catalog.people, ...(catalog.events ?? [])]) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.copyFile(path.join(root, 'public', asset.slice(1)), target);
 }
-const file = path.join(sandbox, 'person.json');
+const file = path.join(sandbox, 'person.json'),
+  leaverFile = path.join(sandbox, 'leaver.json'),
+  typoFile = path.join(sandbox, 'typo.json');
 await fs.writeFile(file, JSON.stringify(person));
-for (const args of [
-  ['upsert', 'people', file],
-  ['list', 'people'],
-  ['remove', 'people', 'test-member'],
-  ['validate'],
+// The command takes a departure block, and refuses a misspelt one without saving anything.
+await fs.writeFile(leaverFile, JSON.stringify({ ...person, departure }));
+await fs.writeFile(typoFile, JSON.stringify({ ...person, depature: departure }));
+for (const { args, status = 0, message } of [
+  { args: ['upsert', 'people', file] },
+  { args: ['list', 'people'] },
+  { args: ['upsert', 'people', leaverFile] },
+  { args: ['upsert', 'people', typoFile], status: 1, message: /unknown field "depature"/ },
+  { args: ['remove', 'people', 'test-member'] },
+  { args: ['validate'] },
 ]) {
   const result = spawnSync(
     process.execPath,
@@ -729,7 +1061,8 @@ for (const args of [
     ],
     { encoding: 'utf8' },
   );
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, status, result.stderr);
+  if (message) assert.match(result.stderr, message);
 }
 assert.deepEqual(
   JSON.parse(await fs.readFile(path.join(sandbox, 'content/lab.json'), 'utf8')),
@@ -743,5 +1076,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets.',
 );

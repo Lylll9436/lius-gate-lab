@@ -85,7 +85,7 @@ assert.deepEqual(nav.tourStops, [
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
 // A City file's eyebrow names the place the camera frames, an event's park included.
-const { eventRecords } = await import(
+const { eventRecords, peopleRecords, personContentId } = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
 );
 assert(eventRecords.length, 'The place check needs an event to open.');
@@ -150,10 +150,13 @@ assert.notEqual(
   nav.parseLocation('#city/town-hall').content,
   'The gate story and lab introduction must stay distinct.',
 );
+// Every published person has a portrait slot, including anyone who has left (their file still
+// opens). The People chapter (nav.people) shows only the members on the visitor's day.
 assert.deepEqual(
   Object.keys(personPhotos).sort((a, b) => a.localeCompare(b)),
-  nav.people.map((p) => p.id).sort((a, b) => a.localeCompare(b)),
+  peopleRecords.map(personContentId).sort((a, b) => a.localeCompare(b)),
 );
+assert(nav.people.every((p) => Object.hasOwn(personPhotos, p.id)));
 for (const url of Object.values(personPhotos))
   if (url !== null) {
     assert(/^\/people\/[^/]+\.(jpg|jpeg|png|webp)$/i.test(url));
