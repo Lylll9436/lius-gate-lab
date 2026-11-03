@@ -1356,6 +1356,62 @@ for (const [x, z] of [
   for (const p of role('beacon')) assert(Math.abs(p.at.x - AR.x) < 0.01 && p.at.z > FC.z0 - 0.3, 'A board row is off the arch.');
   assert(role('civic').length >= 4 && role('civic').some((p) => Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128), 'The hall has no glass lit late.');
   assert.equal(own.length, role('civic').length + 4, 'An airport pane has a role of its own.');
+  // The cab's raked glass stands at y 5.2-6.3, under the mast's 7.0.
+  assert(role('kiosk').every((p) => p.at.y > 5.2 && p.at.y < 6.3), 'The control tower\'s cab is off its height.');
+  // The board: three rows of tiles that are dark by day and glow amber at night, never text. They are
+  // one glass of their own glow (amber: warm and saturated, unlike the windows' warm white), dark
+  // umber by day, each row one flat pane facing the causeway that covers its 1.7 x 0.16 strip whole
+  // (its tiles parted by shading alone: no gaps, no glyphs).
+  {
+    const { AIRPORT_LOOK: look } = await load('town-airport'),
+      glow = new T.Color(look.glow),
+      rows = [];
+    hall.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'glass' && o.material.emissive.getHex() === glow.getHex() && rows.push(o));
+    assert.equal(rows.length, 1, 'The board\'s rows are not a glass of their own glow.');
+    assert(glow.b < 0.25 * glow.r && glow.g > 0.3 * glow.r && glow.g < 0.8 * glow.r, 'The board\'s rows do not glow amber.');
+    const g = rows[0].geometry,
+      p = g.attributes.position,
+      n = g.attributes.normal,
+      c = g.attributes.color,
+      a = new T.Vector3(),
+      b = new T.Vector3(),
+      d = new T.Vector3();
+    let area = 0,
+      tone = 0;
+    for (let i = 0; i < p.count; i += 3) {
+      a.fromBufferAttribute(p, i);
+      b.fromBufferAttribute(p, i + 1).sub(a);
+      d.fromBufferAttribute(p, i + 2).sub(a);
+      area += b.cross(d).length() / 2;
+    }
+    for (let i = 0; i < p.count; i++) {
+      assert(n.getZ(i) > 0.999, 'A board row does not face the causeway.');
+      tone += 0.2126 * c.getX(i) + 0.7152 * c.getY(i) + 0.0722 * c.getZ(i);
+    }
+    assert(Math.abs(area - 3 * 1.7 * 0.16) < 1e-3, `The board's rows cover ${area.toFixed(3)}, not three whole strips.`);
+    assert(tone / p.count < 0.08, `The board's tiles are not dark by day (${(tone / p.count).toFixed(3)}).`);
+  }
+  // The jet bridge, from the hall's west wall toward the stand: below the plane's fin (y 2) and west
+  // of the hall it stays north of the parked fuselage (0.66 across on the stand's line) by at least
+  // 0.15, its bellows reaching that line's 0.19 (it docks), and east of the wing's root; its footing
+  // stands on y 0 like the plinth, so Inspect has it on the ground.
+  {
+    const J = plan.JET_BRIDGE;
+    let north = -Infinity,
+      west = Infinity,
+      foot = Infinity,
+      parts = 0;
+    each(hall, (q) => {
+      if (q.x > AR.x - 2.1 - 0.2 || q.y > 2) return;
+      parts++;
+      north = Math.max(north, q.z);
+      west = Math.min(west, q.x);
+      if (Math.abs(q.x - J.legs) < 0.25) foot = Math.min(foot, q.y);
+    });
+    assert(parts > 0 && north <= STAND.z - 0.33 - 0.15 + 1e-6 && north >= J.bellows - 0.01, `The jet bridge reaches ${north.toFixed(2)} by the parked plane (its bellows at ${J.bellows}).`);
+    assert(west > STAND.x + 1, `The jet bridge runs on to ${west.toFixed(2)}, over the plane's wing.`);
+    assert(foot < 0.01, `The jet bridge's footing stands ${foot.toFixed(2)} over the ground.`);
+  }
   // Its lamps: four on the causeway's east piers, lit with the town's (from the east parapet the
   // lanterns' shadows fall off the road at the opening and chapter bearings: the key light turns
   // with the camera and always throws them to the right of the frame).
@@ -1448,6 +1504,9 @@ for (const [x, z] of [
   model.airportLand.traverse((o) => o.isMesh && (landMeshes++, (landTris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3)));
   hall.traverse((o) => o.isMesh && (hallMeshes++, (hallTris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3)));
   assert(landMeshes <= 14 && hallMeshes <= 7 && landTris + hallTris <= 60000, `The airport costs ${landMeshes} + ${hallMeshes} meshes and ${Math.round(landTris + hallTris)} triangles.`);
+  // The building alone (the hall, the link, the tower and the jet bridge) stays under the residence's
+  // and the lighthouse's budgets combined, near the gate's.
+  assert(hallTris <= 20000, `The Departures Hall, its tower and its jet bridge cost ${Math.round(hallTris)} triangles.`);
 }
 // The airport's ground built on its own, before batching: its boulders (the armour and the causeway's
 // flanks) are one merged geometry under 40k triangles; the deck's grass, the coping and the road are

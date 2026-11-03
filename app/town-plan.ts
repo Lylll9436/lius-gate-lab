@@ -534,6 +534,15 @@ export const TAXIWAY = { z: -50.6, x0: -12, x1: 4, width: 0.9, stubs: [-12, 4] }
 export const APRON = { x0: -13, x1: -2.2, z0: -49.9, z1: -44.2 };
 export const STAND = { x: -5.2, z: -47.2, heading: Math.PI / 2 };
 export const FORECOURT = { x0: -1.9, x1: 2.9, z0: -45.8, z1: -43.2 };
+/**
+ * The jet bridge, from the Departures Hall's west wall (x -1.6) toward the stand, as a real one
+ * meets a plane parked nose in: on the fuselage's port side behind its cockpit. Its axis runs
+ * along x at z (north of the stand's line), its floor at `floor`; its inner and outer sections'
+ * widths and heights; its cab's middle at x `cab` (over the plane's forward door); the face of
+ * the cab's bellows at z `bellows`, 0.19 short of a fuselage 0.66 across on the stand's line; and
+ * its legs, on a footing, at x `legs`.
+ */
+export const JET_BRIDGE = { z: -48.2, floor: 0.8, width: [0.44, 0.5], height: [0.52, 0.58], cab: -3.71, bellows: -47.72, legs: -2.95 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */

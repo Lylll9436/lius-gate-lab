@@ -14,8 +14,11 @@ import type { Props } from './town-props';
  * the runway's and the taxiway's dark matte concrete (the runway a step darker and cooler than the
  * town's asphalt, so it never reads as another road), the apron's mid-grey concrete and its bay
  * joints a step darker (the tones of the placement boxes the owner approved), the cream threshold
- * paint, the muted ochre lead-in line, the hall's cream render under a verdigris roof (the Town
- * Hall's copper), the board's dark slate and amber rows in a dark green-grey frame.
+ * paint, the muted ochre lead-in line; the hall's cream render (the tram's) with blonde sandstone
+ * dressings and its render's rustication a shade deeper, under a verdigris roof (the Town Hall's
+ * copper) with ribs of the lighter copper; its paintwork in the tram's green; the board's dark
+ * slate and its tiles, dark umber glass that glows amber at night; dark iron; and the jet bridge's
+ * light steel, dark rubber bellows and concrete footing.
  */
 export const AIRPORT_LOOK = {
   armour: ['#8b8c85', '#7f847f', '#97958a', '#868478', '#737874', '#6a6f6c'],
@@ -29,16 +32,36 @@ export const AIRPORT_LOOK = {
   paint: palette.roadLine,
   leadIn: '#d4b25e',
   render: palette.tramCream,
-  dressing: palette.trim,
+  rustic: '#e6d6b2',
+  dressing: palette.blonde,
   roof: palette.copper,
-  slate: '#3b4146',
-  amber: '#dcae52',
-  frame: '#3d4a47',
+  rib: palette.copperLight,
+  green: palette.tram,
+  slate: '#2a2f32',
+  tile: '#3d3830',
+  /** The tiles' own night glow (city-materials' `glow`): with the beacon's warm tint, an amber. */
+  glow: '#ffc456',
+  iron: '#3d4547',
+  steel: '#8e938e',
+  rubber: '#727773',
+  footing: '#b9b4a6',
 };
 /** The hall lane's kerb radii where it meets the ring's footway, and the width of its flush edging. */
 export const LANE_DRESSING = { radius: 0.5, edge: 0.1 };
 /** The hall's levels (y): its floor on the plinth, the walls' top (the eaves) and the barrel roof's apex. */
 export const HALL_LEVELS = { floor: 0.7, eave: 2.92, apex: 4.0 };
+/**
+ * The hall's dressings (y from, to): the moulded plinth course, two courses of banded rustication
+ * over it, the sill band the windows stand on, the piers' capitals and the cornice under the
+ * eaves' rolls.
+ */
+export const HALL_DRESSING = {
+  course: [0.64, 0.78] as [number, number],
+  rustic: [0.78, 1.2] as [number, number],
+  sill: [1.2, 1.3] as [number, number],
+  capital: [2.32, 2.48] as [number, number],
+  cornice: [2.48, 2.66] as [number, number],
+};
 /** The island's edge, out from the deck's edge: the coping's outer face, and the armour's bed from there to its toe (o, y). */
 const EDGE = { coping: 0.05, bed: [[0.03, 0.31], [0.92, -0.58]] as [number, number][] };
 
@@ -50,10 +73,11 @@ type Station = { x: number; z: number; nx: number; nz: number; y: number };
 /* ------------------------------------------------------------------ */
 export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
   const { material } = ctx;
-  const { box, chamfered, cluster, frameRing, windowAt, rod } = kit;
+  const { box, chamfered, cluster, frameRing, prism } = kit;
   const { lamp } = props;
   const A = plan.AIRPORT,
     R = plan.AIRPORT_ROAD,
+    JET_BRIDGE = plan.JET_BRIDGE,
     L = AIRPORT_LOOK;
 
   /**
@@ -525,19 +549,101 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
   }
 
   /* ---------------------------------------------------------------- */
-  /* The Departures Hall, its link block and the control tower        */
+  /* The Departures Hall, its link block, the tower and the jet bridge */
   /* ---------------------------------------------------------------- */
+  /** A part for merge(): a shared geometry and where it goes in its mesh's space. */
+  type Part = { geometry: T.BufferGeometry; matrix: T.Matrix4 };
+  const ONE = new T.Vector3(1, 1, 1);
+  const placed = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) =>
+    new T.Matrix4().compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(rx, ry, rz)), ONE);
   /**
-   * The building 'airport' (site.w 6.6, site.d 3.8; front +z, toward the causeway): a first massing,
-   * already in the town's language. The Departures Hall (x -3.2..1.0 here, centred on the
-   * causeway's axis): a battered stone plinth, cream rendered walls 2.2 high between buff corner
-   * pilasters, a verdigris barrel roof with bull-nosed eaves, and in the south gable an open arch
-   * 2.4 wide in a buff voussoir band with a keystone: a glazed screen at the back of its porch, the
-   * blank board hung in its mouth (dark slate in a dark frame, three amber rows lit all night, no
-   * glyphs). East of it a low link block, then the control tower: a tapered cream shaft with
-   * verdigris bands, an octagonal cab of raked glass, a thick cap and a short mast to 7.0.
-   * Window roles: the hall's and the link's glass 'civic' (the batch's), the cab 'kiosk', the
-   * board's rows 'beacon'.
+   * Parts as one mesh in g's space, each a shade of its own within +-tone/2 (vertex colours the
+   * bake multiplies in), as separate dressed stones get. It casts unless `shadow` is false (a thin
+   * caster ghosts in the shadow map), and is a `band` unless told otherwise: dressings spread over
+   * a wall would otherwise read to batch() as an overhang and darken the wall under them.
+   */
+  function merge(g: T.Object3D, list: Part[], colour: string, kind: SurfaceKind, opts: { shadow?: boolean; tone?: number; band?: boolean } = {}) {
+    if (!list.length) return undefined;
+    const tone = opts.tone ?? 0,
+      mid = new T.Vector3();
+    const geometries = list.map(({ geometry, matrix }) => {
+      const p = (geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(matrix);
+      for (const name of Object.keys(p.attributes)) if (name !== 'position' && name !== 'normal') p.deleteAttribute(name);
+      if (tone) {
+        p.computeBoundingBox();
+        p.boundingBox!.getCenter(mid);
+        const k = 1 + tone * (hash(mid.x * 12.9898 + mid.y * 78.233 + mid.z * 37.719) - 0.5);
+        p.setAttribute('color', new T.Float32BufferAttribute(new Float32Array(p.getAttribute('position').count * 3).fill(k), 3));
+      }
+      return p;
+    });
+    const m = new T.Mesh(mergeGeometries(geometries)!, material(colour, kind));
+    geometries.forEach((p) => p.dispose());
+    const shadow = opts.shadow ?? true;
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    if (!shadow) m.userData.noShadow = true;
+    if (opts.band ?? true) m.userData.band = true;
+    g.add(m);
+    return m;
+  }
+  /** An outline of arc from angle a0 to a1 (from +x toward +y) between radii R0 and R1, in n steps. */
+  const arcBand = (R0: number, R1: number, a0: number, a1: number, n: number): [number, number][] => [
+    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [Math.cos(a0 + ((a1 - a0) * k) / n) * R1, Math.sin(a0 + ((a1 - a0) * k) / n) * R1]),
+    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [Math.cos(a1 - ((a1 - a0) * k) / n) * R0, Math.sin(a1 - ((a1 - a0) * k) / n) * R0]),
+  ];
+  /**
+   * An arch's voussoirs between radii R0 and R1 about its springing's middle, from 0.03 inside the
+   * wall's face to `deep` out of it, the crown left for a keystone (n odd). They butt, so each
+   * joint is the V of two chamfers.
+   */
+  const voussoirs = (R0: number, R1: number, deep: number, n: number) =>
+    Array.from({ length: n }, (_, i) => i)
+      .filter((i) => i !== (n - 1) / 2)
+      .map((i) => prism(arcBand(R0, R1, (i * Math.PI) / n, ((i + 1) * Math.PI) / n, 1), deep + 0.03, 0.018, -0.03));
+  /** A tapered keystone from radius r0 up to r1 over the springing's middle, `deep` out of the wall. */
+  const keystone = (r0: number, r1: number, foot: number, head: number, deep: number) =>
+    prism([[-foot / 2, r0], [foot / 2, r0], [head / 2, r1], [-head / 2, r1]], deep + 0.03, 0.022, -0.03);
+  /** A round rod of radius r from a to b (8 sides), as a part. */
+  const rodPart = (a: T.Vector3, b: T.Vector3, r: number): Part => {
+    const d = b.clone().sub(a);
+    return {
+      geometry: new T.CylinderGeometry(r, r, d.length(), 8),
+      matrix: new T.Matrix4().compose(a.clone().addScaledVector(d, 0.5), new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize()), ONE),
+    };
+  };
+  /** An upright octagon (rTop over rBottom, h tall about its middle), a face toward +z: flat facets. */
+  const octagon = (rTop: number, rBottom: number, h: number, open = false) => {
+    const g = new T.CylinderGeometry(rTop, rBottom, h, 8, 1, open).rotateY(Math.PI / 8).toNonIndexed();
+    g.computeVertexNormals();
+    return g;
+  };
+
+  /**
+   * The building 'airport' (site.w 6.6, site.d 3.8; front +z, down the causeway), in the town's
+   * Clash language at the Town Hall's and the residence's quality:
+   * - The Departures Hall (x -3.2..1.0 here, centred on the causeway's axis): a battered stone
+   *   plinth under a moulded plinth course; cream render walls 2.2 high, banded with two courses of
+   *   rustication up to a sill band, between chunky blonde piers at the corners and pilasters
+   *   between the bays (each a base, a shaft and a capital) under a cornice whose corona carries the
+   *   bull-nosed copper eaves and returns round the gables; a verdigris barrel roof (apex 4.0) ribbed
+   *   over its standing seams, end ribs on its verges; in each gable a blonde archivolt under the
+   *   roof. In the south gable the open arch, 2.4 wide on the causeway's axis: jambs in alternating
+   *   blocks, imposts, nine voussoirs and a keystone rising to the archivolt; in its porch a green
+   *   screen of glazed doors and a sunburst fanlight (lit late), and in its mouth the blank board: a
+   *   dark slate in a green frame on two iron hangers, three rows of tiles (dark umber glass by day,
+   *   amber at night: 'beacon', no glyphs). Arched windows in blonde surrounds, green frames and
+   *   glazing bars: one on the west wall, two on the back.
+   * - East of it the link block, low and cream under a blonde coping, a window to the south and the
+   *   north; then the control tower, echoing the lighthouse: a stone drum, a moulded base course, a
+   *   tapered cream shaft with two green bands, stair windows and a door case to the south, a
+   *   corbelled gallery with an iron railing, the octagonal cab of raked glass ('kiosk') on a green
+   *   sill between iron mullions, a thick copper cap, its roof and a short mast to 7.0.
+   * - West of it the jet bridge, toward the stand: a portal in the west wall, two telescoping
+   *   sections (cream, ribbed in steel, glazed along both sides over a green skirt) on a footing and
+   *   two legs, and a cab whose grey bellows meet the parked plane's port side (JET_BRIDGE).
+   * No text, numbers or logos anywhere. Window roles: the glass is 'civic' (the batch's) but for
+   * the cab ('kiosk') and the board's rows ('beacon').
    */
   function buildAirport(shell: T.Group, site: plan.Site) {
     const { floor, eave, apex } = HALL_LEVELS,
@@ -548,25 +654,54 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       porch = 0.7,
       archW = 2.4,
       spring = floor + 1.4,
-      dress: Piece[] = [],
-      iron: Piece[] = [];
-    /** A box between two corners (local x0..x1, y0..y1, za..zb). */
-    const block = (g: T.Object3D, x0: number, x1: number, y0: number, y1: number, za: number, zb: number, colour: string, kind: SurfaceKind, opts: { bevel?: number } = {}) =>
-      box(g, (x0 + x1) / 2, (y0 + y1) / 2, (za + zb) / 2, x1 - x0, y1 - y0, zb - za, colour, kind, opts);
-    const piece = (x0: number, x1: number, y0: number, y1: number, za: number, zb: number): Piece => ({ geometry: chamfered(x1 - x0, y1 - y0, zb - za), at: [(x0 + x1) / 2, (y0 + y1) / 2, (za + zb) / 2] });
+      { course: COURSE, rustic: RUSTIC, sill: SILL, capital: CAPITAL, cornice: CORNICE } = HALL_DRESSING;
+    const stone: Part[] = [], // the blonde dressings, each a shade of its own
+      courses: Part[] = [], // the render's rustication, a shade deeper than the walls
+      green: Part[] = [], // green paintwork that casts (the screen, the door, the bands, the cab's sill)
+      bars: Part[] = [], // slim green glazing bars: cast nothing
+      iron: Part[] = [], // dark iron (the hangers, the railing, the mullions, the mast): cast nothing
+      ribs: Part[] = [], // the roof's ribs
+      slate: Part[] = [],
+      steel: Part[] = [], // the jet bridge's roofs, collars and legs
+      rubber: Part[] = [],
+      footing: Part[] = [];
+    /** A box between two corners in the shell (the kit's rounded box). */
+    const solid = (x0: number, x1: number, y0: number, y1: number, za: number, zb: number, colour: string, kind: SurfaceKind, opts: { bevel?: number; taper?: number } = {}) =>
+      box(shell, (x0 + x1) / 2, (y0 + y1) / 2, (za + zb) / 2, x1 - x0, y1 - y0, zb - za, colour, kind, opts);
+    /** A face (x along it, y up, +z out of it) at (x, z) turned by ry. */
+    const faceAt = (x: number, z: number, ry: number) => {
+      const g = new T.Group();
+      g.position.set(x, 0, z);
+      g.rotation.y = ry;
+      g.updateMatrix();
+      shell.add(g);
+      return g;
+    };
+    const on = (g: T.Object3D | undefined, m: T.Matrix4) => (g ? g.matrix.clone().multiply(m) : m);
+    /** A chamfered block between two corners in g's plan (the shell's without g). */
+    const block = (x0: number, x1: number, y0: number, y1: number, za: number, zb: number, g?: T.Object3D): Part => ({
+      geometry: chamfered(x1 - x0, y1 - y0, zb - za),
+      matrix: on(g, placed((x0 + x1) / 2, (y0 + y1) / 2, (za + zb) / 2)),
+    });
     // The barrel: an arc through the apex and the eaves' edges (0.2 out from the walls), 0.14 thick.
     const chord = hw + 0.2,
       rise = apex - (eave - 0.02),
       Ro = (chord * chord + rise * rise) / (2 * rise),
       yc = apex - Ro,
       Ri = Ro - 0.14,
+      half = Math.asin(chord / Ro),
       under = (x: number) => yc + Math.sqrt(Math.max(0, Ri * Ri - x * x)); // the vault's underside over x
+    const front = faceAt(hx, z1, 0),
+      back = faceAt(hx, z0, Math.PI),
+      west = faceAt(hx - hw, 0, -Math.PI / 2); // x toward the front
 
-    /* Plinths: the hall's (battered), the link's a little lower, the tower's drum a little higher. */
+    /* -------------------------------------------------------------- */
+    /* The hall's masses                                               */
+    /* -------------------------------------------------------------- */
+    // The plinth, battered, from y 0 (the deck hides its foot, so Inspect sees it on the ground).
     box(shell, hx, floor / 2, (z0 + z1) / 2, 2 * hw + 0.24, floor, z1 - z0 + 0.24, palette.plinth, 'ashlar', { taper: floor * 0.105 });
-    block(shell, hx + hw + 0.12, hx + hw + 0.9, 0, floor - 0.04, -1.3, 1.3, palette.plinth, 'ashlar');
-
-    /* The walls: the back gable, the body, and the front gable round the arch's porch. */
+    // The walls: the back gable, the body, and the front gable round the arch's porch, sharp-edged
+    // so that their joints on the side walls show no seam.
     const gable = (open: boolean) => {
       const s = new T.Shape(),
         top = under(hw);
@@ -584,22 +719,18 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       return s;
     };
     for (const [open, za, depth] of [[false, z0, 0.3], [true, z1 - porch, porch]] as const) {
-      const m = new T.Mesh(
-        new T.ExtrudeGeometry(gable(open), { depth: depth - 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelOffset: -0.02, bevelSegments: 1, curveSegments: 24 }),
-        material(L.render, 'paint'),
-      );
-      m.position.set(hx, 0, za + 0.02);
+      const m = new T.Mesh(new T.ExtrudeGeometry(gable(open), { depth, bevelEnabled: false, curveSegments: 24 }), material(L.render, 'paint'));
+      m.position.set(hx, 0, za);
       m.castShadow = m.receiveShadow = true;
       shell.add(m);
     }
-    block(shell, hx - hw, hx + hw, floor, eave + 0.02, z0 + 0.3, z1 - porch, L.render, 'paint', { bevel: 0.02 });
+    solid(hx - hw, hx + hw, floor, eave + 0.02, z0 + 0.3, z1 - porch, L.render, 'paint', { bevel: 0 });
 
-    /* The roof: the barrel shell over both gables, and a bull-nosed roll along each eave. */
+    /* The roof: the barrel shell over both gables, a bull-nosed roll along each eave, and ribs. */
     {
-      const a = Math.asin(chord / Ro),
-        b = Math.asin(chord / Ri),
+      const b = Math.asin(chord / Ri),
         s = new T.Shape();
-      s.absarc(0, yc, Ro, Math.PI / 2 + a, Math.PI / 2 - a, true);
+      s.absarc(0, yc, Ro, Math.PI / 2 + half, Math.PI / 2 - half, true);
       s.absarc(0, yc, Ri, Math.PI / 2 - b, Math.PI / 2 + b, false);
       s.closePath();
       const len = z1 - z0 + 0.3,
@@ -613,7 +744,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
       roof.userData.eaveY = eave;
       shell.add(roof);
       const low = yc + Ri * Math.cos(b),
-        high = yc + Ro * Math.cos(a);
+        high = yc + Ro * Math.cos(half);
       for (const side of [-1, 1]) {
         const roll = new T.Mesh(new T.CylinderGeometry(0.13, 0.13, len, 16).rotateX(Math.PI / 2), material(L.roof, 'copper'));
         roll.position.set(hx + side * (chord - 0.04), (low + high) / 2, (z0 + z1) / 2);
@@ -621,119 +752,436 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
         roll.userData.band = true;
         shell.add(roll);
       }
+      // Ribs over the barrel from roll to roll, on every other standing seam of the copper (0.42
+      // apart along z), and a broader rib on each verge: chunky, few, and in the roof's lighter
+      // copper, so they read at the overview without crawling.
+      const rib = (z: number, wide: number) =>
+        ribs.push({ geometry: prism(arcBand(Ro - 0.03, Ro + 0.055, Math.PI / 2 - half + 0.04, Math.PI / 2 + half - 0.04, 24), wide, 0.02, -wide / 2), matrix: placed(hx, yc, z) });
+      for (const z of [-1.26, -0.42, 0.42, 1.26]) rib(z, 0.1);
+      for (const z of [z0 - 0.15 + 0.065, z1 + 0.15 - 0.065]) rib(z, 0.13);
     }
 
-    /* Pilasters: buff, at the four corners (0.42 square, 0.08 proud both ways) and between the west windows. */
-    for (const [x, z] of [[hx - hw, z1], [hx + hw, z1], [hx - hw, z0], [hx + hw, z0]]) {
-      const cx = x - Math.sign(x - hx) * 0.13,
-        cz = z - Math.sign(z) * 0.13;
-      dress.push(piece(cx - 0.21, cx + 0.21, floor - 0.02, eave - 0.14, cz - 0.21, cz + 0.21));
-      dress.push(piece(cx - 0.26, cx + 0.26, eave - 0.16, eave - 0.02, cz - 0.26, cz + 0.26));
-    }
-    dress.push(piece(hx - hw - 0.08, hx - hw + 0.12, floor - 0.02, eave - 0.14, -0.21, 0.21));
-    dress.push(piece(hx - hw - 0.12, hx - hw + 0.12, eave - 0.16, eave - 0.02, -0.26, 0.26));
-
-    /* The arch: its voussoir band and keystone on the gable's face, the porch's screen and the board. */
-    frameRing(shell, hx, (floor + spring) / 2, z1, archW, spring - floor, 0.22, 0.1, L.dressing, 'stone', true, true);
-    dress.push(piece(hx - 0.16, hx + 0.16, spring + archW / 2 + 0.02, spring + archW / 2 + 0.44, z1, z1 + 0.15));
+    /* -------------------------------------------------------------- */
+    /* The hall's dressings                                            */
+    /* -------------------------------------------------------------- */
+    // The moulded plinth course round the hall, 0.12 proud, stopped at the arch's jambs.
     {
-      // The glazed screen at the back of the porch: doors below, a fanlight in the arch's head; one
-      // light, kept on late (0.8, as the civic fronts are).
-      const back = z1 - porch,
-        doors = new T.Mesh(new T.PlaneGeometry(archW - 0.3, spring - floor - 0.05), material(palette.glass, 'glass')),
-        fan = new T.Shape();
-      doors.position.set(hx, (floor + spring) / 2, back + 0.03);
+      const p = 0.12,
+        jamb = archW / 2 + 0.24;
+      stone.push(block(hx - hw - p, hx + hw + p, COURSE[0], COURSE[1], z0 - p, z0 + 0.1));
+      for (const sx of [-1, 1]) {
+        const [a, b] = sx < 0 ? [hx - hw - p, hx - hw + 0.1] : [hx + hw - 0.1, hx + hw + p];
+        stone.push(block(a, b, COURSE[0], COURSE[1], z0 - p, z1 + p));
+        stone.push(block(sx < 0 ? hx - hw - p : hx + jamb, sx < 0 ? hx - jamb : hx + hw + p, COURSE[0], COURSE[1], z1 - 0.1, z1 + p));
+      }
+    }
+    /** A pier or a pilaster (a base, a shaft, a necking and a capital) on a w x d plan about (x, z) in g's plan. */
+    const pier = (x: number, z: number, w: number, d: number, g?: T.Object3D) =>
+      stone.push(
+        block(x - w / 2 - 0.05, x + w / 2 + 0.05, COURSE[1] - 0.01, COURSE[1] + 0.15, z - d / 2 - 0.05, z + d / 2 + 0.05, g),
+        block(x - w / 2, x + w / 2, COURSE[1] + 0.14, CAPITAL[0], z - d / 2, z + d / 2, g),
+        block(x - w / 2 - 0.03, x + w / 2 + 0.03, CAPITAL[0], CAPITAL[0] + 0.07, z - d / 2 - 0.03, z + d / 2 + 0.03, g),
+        block(x - w / 2 - 0.07, x + w / 2 + 0.07, CAPITAL[0] + 0.07, CAPITAL[1], z - d / 2 - 0.07, z + d / 2 + 0.07, g),
+      );
+    // Corner piers 0.46 square, 0.1 proud of both faces; a pilaster between the bays of the west
+    // wall and of the back (the east wall is the link's).
+    for (const sx of [-1, 1]) for (const cz of [z0 + 0.13, z1 - 0.13]) pier(hx + sx * (hw - 0.13), cz, 0.46, 0.46);
+    pier(0.1, 0.03, 0.42, 0.14, west);
+    pier(0, 0.03, 0.42, 0.14, back);
+    /** Two courses of banded rustication and the sill band on a face from a to b (none under 0.15 long). */
+    const banded = (g: T.Object3D, a: number, b: number) => {
+      if (b - a < 0.15) return;
+      const mid = (RUSTIC[0] + RUSTIC[1]) / 2;
+      for (const [y0, y1] of [[RUSTIC[0], mid], [mid, RUSTIC[1]]]) courses.push({ geometry: prism([[a, y0], [b, y0], [b, y1], [a, y1]], 0.09, 0.035, -0.04), matrix: g.matrix.clone() });
+      stone.push(block(a, b, SILL[0], SILL[1], -0.04, 0.07, g));
+    };
+    const cornerIn = hw - 0.36 - 0.05, // a corner pier's base, from a face's middle
+      bayIn = 0.26; // a pilaster's base, either side of it
+    banded(back, -cornerIn, -bayIn);
+    banded(back, bayIn, cornerIn);
+    // The west wall: the jet bridge's portal in its north bay, a window in the south bay.
+    const portal = { u: JET_BRIDGE.z - site.z, w: JET_BRIDGE.width[0], y0: JET_BRIDGE.floor, y1: JET_BRIDGE.floor + JET_BRIDGE.height[0] };
+    banded(west, z0 + 0.36 + 0.05, portal.u - portal.w / 2 - 0.14);
+    banded(west, 0.1 + bayIn, z1 - 0.36 - 0.05);
+    // The cornice under the eaves' rolls: a bed and a corona along both side walls, returned 0.5
+    // round each corner onto the gables.
+    for (const sx of [-1, 1]) {
+      const x = hx + sx * hw,
+        span = (inner: number, outer: number): [number, number] => (sx < 0 ? [x - outer, x + inner] : [x - inner, x + outer]),
+        [b0, b1] = span(0.04, 0.06),
+        [c0, c1] = span(0.04, 0.15),
+        [r0, r1] = span(0.5, 0.15),
+        [s0, s1] = span(0.5, 0.06),
+        bed = CORNICE[0] + 0.07;
+      stone.push(block(b0, b1, CORNICE[0], bed, z0 - 0.06, z1 + 0.06), block(c0, c1, bed, CORNICE[1], z0 - 0.15, z1 + 0.15));
+      for (const [za, zb, wa, wb] of [[z1 - 0.04, z1 + 0.06, z1 - 0.04, z1 + 0.15], [z0 - 0.06, z0 + 0.04, z0 - 0.15, z0 + 0.04]])
+        stone.push(block(s0, s1, CORNICE[0], bed, za, zb), block(r0, r1, bed, CORNICE[1], wa, wb));
+    }
+    // Each gable's archivolt: a blonde band under the roof's edge, from eave to eave.
+    {
+      const a0 = Math.atan2(under(hw) - yc, hw);
+      for (const g of [front, back]) stone.push({ geometry: prism(arcBand(Ri - 0.13, Ri - 0.005, a0, Math.PI - a0, 20), 0.11, 0.02, -0.03), matrix: on(g, placed(0, yc, 0)) });
+    }
+    /**
+     * An arched window on a face (local +z out of it), standing on the sill band: a green frame, the
+     * pane (0.06 out; its centre seeds its night light), green glazing bars (a mullion, a transom at
+     * the springing and two head bars), and a blonde surround: jambs, imposts, five voussoirs, a
+     * keystone and a sill on the band.
+     */
+    function archWindow(g: T.Object3D, u: number) {
+      const w = 0.56,
+        h = 0.52,
+        f = 0.07,
+        r = w / 2,
+        y = SILL[1] + 0.08 + h / 2,
+        s = y + h / 2,
+        R0 = r + f,
+        R1 = R0 + 0.13,
+        deep = 0.12;
+      const ring = frameRing(g, u, y, 0.02, w, h, f, 0.1, L.green, 'paint', true),
+        pane = new T.Mesh(new T.ShapeGeometry(ring(0.01), 8), material(palette.glass, 'glass'));
+      pane.position.set(u, y, 0.06);
+      g.add(pane);
+      const bar = (bw: number, bh: number) => new T.BoxGeometry(bw, bh, 0.04);
+      bars.push(
+        { geometry: bar(0.07, h + r), matrix: on(g, placed(u, y + r / 2, 0.09)) },
+        { geometry: bar(w, 0.07), matrix: on(g, placed(u, s, 0.09)) },
+        ...[-1, 1].map((k): Part => ({ geometry: bar(0.07, r), matrix: on(g, placed(u + (k * r * Math.SQRT1_2) / 2, s + (r * Math.SQRT1_2) / 2, 0.09, 0, 0, (-k * Math.PI) / 4)) })),
+      );
+      for (const v of voussoirs(R0, R1, deep, 5)) stone.push({ geometry: v, matrix: on(g, placed(u, s, 0)) });
+      stone.push({ geometry: keystone(R0 - 0.02, R1 + 0.08, 0.14, 0.22, deep + 0.03), matrix: on(g, placed(u, s, 0)) });
+      for (const k of [-1, 1]) {
+        const [j0, j1] = k < 0 ? [u - R1, u - R0] : [u + R0, u + R1];
+        stone.push(block(j0, j1, SILL[1], s - 0.08, -0.03, deep, g), block(j0 - 0.02, j1 + 0.02, s - 0.08, s, -0.03, deep + 0.03, g));
+      }
+      stone.push(block(u - R1 - 0.06, u + R1 + 0.06, SILL[1] - 0.05, SILL[1] + 0.05, -0.03, 0.17, g));
+      return pane;
+    }
+    archWindow(west, (0.1 + bayIn + z1 - 0.41) / 2);
+    for (const u of [-0.95, 0.95]) archWindow(back, u);
+
+    /* -------------------------------------------------------------- */
+    /* The arch, its porch's screen and the board                      */
+    /* -------------------------------------------------------------- */
+    {
+      const R0 = archW / 2,
+        R1 = R0 + 0.24,
+        deep = 0.14;
+      for (const v of voussoirs(R0, R1, deep, 9)) stone.push({ geometry: v, matrix: on(front, placed(0, spring, 0)) });
+      // The keystone rises to the archivolt.
+      stone.push({ geometry: keystone(R0 - 0.03, under(0) - spring - 0.12, 0.26, 0.4, deep + 0.05), matrix: on(front, placed(0, spring, 0)) });
+      // Jambs in three blocks, alternately long and short into the wall, and the imposts.
+      for (const k of [-1, 1])
+        for (let i = 0; i < 3; i++) {
+          const y0 = COURSE[1] + ((spring - 0.12 - COURSE[1]) * i) / 3,
+            y1 = COURSE[1] + ((spring - 0.12 - COURSE[1]) * (i + 1)) / 3,
+            reach = i % 2 ? R1 : R1 + 0.08;
+          stone.push(k < 0 ? block(-reach, -R0, y0, y1, -0.03, deep, front) : block(R0, reach, y0, y1, -0.03, deep, front));
+          if (i === 2) stone.push(k < 0 ? block(-R1 - 0.05, -R0 + 0.04, y1, spring, -0.03, deep + 0.05, front) : block(R0 - 0.04, R1 + 0.05, y1, spring, -0.03, deep + 0.05, front));
+        }
+      // The screen at the back of the porch: glazed doors under a transom at the springing and a
+      // fanlight in the arch's head, one light lit late (0.8, as the civic fronts are), in a green
+      // frame: the arch's edge, the transom, four mullions, a rail across the doors, kick panels and
+      // the fanlight's sunburst of five bars round a half-round hub.
+      const screen = z1 - porch,
+        inner = R0 - 0.08;
+      const doors = new T.Mesh(new T.PlaneGeometry(archW - 0.04, spring - floor), material(palette.glass, 'glass'));
+      doors.position.set(hx, (floor + spring) / 2, screen + 0.03);
       doors.userData.windowGroup = 'airport-doors';
       doors.userData.windowLit = 0.8;
       shell.add(doors);
-      fan.absarc(0, 0, archW / 2 - 0.15, 0, Math.PI, false);
+      const fan = new T.Shape();
+      fan.absarc(0, 0, R0 - 0.02, 0, Math.PI, false);
       fan.closePath();
-      const fanlight = new T.Mesh(new T.ShapeGeometry(fan, 12), material(palette.glass, 'glass'));
-      fanlight.position.set(hx, spring + 0.03, back + 0.03);
+      const fanlight = new T.Mesh(new T.ShapeGeometry(fan, 16), material(palette.glass, 'glass'));
+      fanlight.position.set(hx, spring, screen + 0.03);
       fanlight.userData.windowGroup = 'airport-doors';
       shell.add(fanlight);
-      iron.push(piece(hx - archW / 2 + 0.12, hx + archW / 2 - 0.12, spring - 0.03, spring + 0.05, back, back + 0.08));
-      iron.push(piece(hx - 0.04, hx + 0.04, floor, spring, back, back + 0.08));
+      frameRing(shell, hx, (floor + spring) / 2, screen, 2 * inner, spring - floor, 0.08, 0.09, L.green, 'paint', true, true);
+      green.push(block(hx - inner, hx + inner, spring - 0.05, spring + 0.05, screen, screen + 0.1));
+      for (const x of [-0.62, 0, 0.62]) green.push(block(hx + x - (x ? 0.04 : 0.05), hx + x + (x ? 0.04 : 0.05), floor, spring, screen, screen + 0.09));
+      green.push(block(hx - 0.62, hx + 0.62, 1.12, 1.19, screen, screen + 0.09));
+      green.push(block(hx - inner, hx + inner, floor, floor + 0.24, screen, screen + 0.07));
+      const hub = new T.Shape();
+      hub.absarc(0, 0, 0.24, 0, Math.PI, false);
+      hub.closePath();
+      green.push({ geometry: new T.ExtrudeGeometry(hub, { depth: 0.06, bevelEnabled: false, curveSegments: 8 }), matrix: placed(hx, spring + 0.05, screen + 0.03) });
+      for (let k = 1; k < 6; k++) {
+        const a = (k * Math.PI) / 6,
+          r = (0.24 + inner) / 2;
+        bars.push({ geometry: new T.BoxGeometry(0.07, inner - 0.24, 0.04), matrix: placed(hx + Math.cos(a) * r, spring + 0.05 + Math.sin(a) * r, screen + 0.06, 0, 0, a - Math.PI / 2) });
+      }
     }
     {
-      // The board, hung in the arch's mouth 0.14 behind the gable's face: a dark frame, a slate face
-      // and three amber rows, blank (no glyphs, no numbers), on two hangers from the arch's soffit.
-      const y = 1.975,
-        z = z1 - 0.2;
-      block(shell, hx - 1.05, hx + 1.05, y - 0.43, y + 0.43, z - 0.06, z + 0.02, L.frame, 'paint', { bevel: 0.025 });
-      block(shell, hx - 0.97, hx + 0.97, y - 0.35, y + 0.35, z + 0.02, z + 0.045, L.slate, 'stone', { bevel: 0 });
-      for (const dy of [0.26, 0, -0.26]) block(shell, hx - 0.85, hx + 0.85, y + dy - 0.08, y + dy + 0.08, z + 0.045, z + 0.06, L.amber, 'glass', { bevel: 0 }).userData.window = 'beacon';
-      const soffit = spring + Math.sqrt((archW / 2) ** 2 - 0.8 ** 2);
-      for (const s of [-1, 1]) iron.push(piece(hx + s * 0.8 - 0.035, hx + s * 0.8 + 0.035, y + 0.42, soffit + 0.03, z - 0.055, z + 0.015));
+      // The board, hung in the arch's mouth 0.15 behind the gable's face: a green frame round a dark
+      // slate and three rows of tiles. Each row is one pane of dark umber glass (its centre on the
+      // road's axis seeds its light), its tiles parted by shading alone (each darkens over its last
+      // 0.022 at either side; no gap, no glyph), so by day the rows are dark tiles and at night they
+      // glow amber all night ('beacon', in a glass of its own glow). Two iron hangers from the soffit.
+      const y = 1.99,
+        z = z1 - 0.15,
+        tiles = 12,
+        width = 1.7,
+        tall = 0.16;
+      frameRing(shell, hx, y, z - 0.1, 2.0, 0.76, 0.08, 0.1, L.green, 'paint');
+      slate.push(block(hx - 1.0, hx + 1.0, y - 0.38, y + 0.38, z - 0.1, z - 0.03));
+      const rowGlass = material(L.tile, 'glass', L.glow);
+      for (const dy of [0.26, 0, -0.26]) {
+        const pos: number[] = [],
+          col: number[] = [];
+        for (let k = 0; k < tiles; k++) {
+          const a = -width / 2 + (width * k) / tiles,
+            b = a + width / tiles,
+            xs = [a, a + 0.022, b - 0.022, b],
+            tone = [0.55, 1, 1, 0.55];
+          for (let i = 0; i < 3; i++) {
+            const quad = [[xs[i], -tall / 2, tone[i]], [xs[i + 1], -tall / 2, tone[i + 1]], [xs[i + 1], tall / 2, tone[i + 1]], [xs[i], -tall / 2, tone[i]], [xs[i + 1], tall / 2, tone[i + 1]], [xs[i], tall / 2, tone[i]]];
+            for (const [px, py, t] of quad) {
+              pos.push(px, py, 0);
+              col.push(t, t, t);
+            }
+          }
+        }
+        const geometry = new T.BufferGeometry();
+        geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+        geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+        geometry.computeVertexNormals();
+        const row = new T.Mesh(geometry, rowGlass);
+        row.position.set(hx, y + dy, z - 0.025);
+        row.userData.window = 'beacon';
+        shell.add(row);
+      }
+      for (const s of [-1, 1]) {
+        const x = hx + s * 0.72,
+          top = spring + Math.sqrt((archW / 2) ** 2 - 0.72 ** 2) + 0.03;
+        iron.push(block(x - 0.035, x + 0.035, y + 0.45, top, z - 0.085, z - 0.015));
+      }
     }
-    /* Two steps up from the forecourt to the hall's floor, wider than the arch's band. Like the
+    /* Two steps up from the forecourt to the hall's floor, wider than the arch's jambs. Like the
      * plinth they stand on y 0 (the deck hides their foot), so Inspect sees them on the ground. */
     for (let i = 0; i < 2; i++)
-      block(shell, hx - archW / 2 - 0.3 + i * 0.08, hx + archW / 2 + 0.3 - i * 0.08, 0, A.deck + 0.06 + 0.12 * (i + 1), z1 + 0.1, z1 + 0.1 + 0.3 * (2 - i), palette.plinth, 'stone');
+      solid(hx - archW / 2 - 0.3 + i * 0.08, hx + archW / 2 + 0.3 - i * 0.08, 0, A.deck + 0.06 + 0.12 * (i + 1), z1 + 0.1, z1 + 0.1 + 0.3 * (2 - i), palette.plinth, 'stone');
 
-    /* Windows: two arched on the west wall, two on the back. */
-    for (const [face, along] of [
-      [{ x: hx - hw, z: 0, ry: -Math.PI / 2 }, [-0.72, 0.72]],
-      [{ x: hx, z: z0, ry: Math.PI }, [-1.0, 1.0]],
-    ] as const) {
-      const f = new T.Group();
-      f.position.set(face.x, 0, face.z);
-      f.rotation.y = face.ry;
-      shell.add(f);
-      for (const u of along) windowAt(f, u, 1.65, 0, 0.62, 0.8, { arched: true, frame: palette.white, dress: L.dressing, lintel: false });
-    }
-
-    /* The link block: low and cream under a flat buff-capped roof, a window to the south. */
+    /* -------------------------------------------------------------- */
+    /* The link block                                                  */
+    /* -------------------------------------------------------------- */
     {
       const x0 = hx + hw,
-        x1 = hx + hw + 0.8;
-      block(shell, x0 - 0.05, x1, floor - 0.04, 2.05, -1.2, 1.2, L.render, 'paint', { bevel: 0.03 });
-      const cap = block(shell, x0 - 0.05, x1 + 0.08, 2.05, 2.17, -1.28, 1.28, L.dressing, 'stone', { bevel: 0.03 });
+        x1 = x0 + 0.8,
+        za = -1.2,
+        zb = 1.2,
+        top = 2.0;
+      solid(x0 - 0.05, x1 + 0.1, 0, floor - 0.04, za - 0.1, zb + 0.1, palette.plinth, 'ashlar');
+      solid(x0 - 0.05, x1, floor - 0.06, top, za, zb, L.render, 'paint', { bevel: 0.03 });
+      // The plinth course round it, a cornice band under a blonde coping (its roof, whose eave
+      // shades the walls), and a window to the south and to the north in a blonde surround.
+      stone.push(
+        block(x0, x1 + 0.12, COURSE[0], COURSE[1], zb - 0.1, zb + 0.12),
+        block(x0, x1 + 0.12, COURSE[0], COURSE[1], za - 0.12, za + 0.1),
+        block(x0, x1 + 0.06, top - 0.1, top, za - 0.06, zb + 0.06),
+      );
+      const cap = solid(x0 - 0.05, x1 + 0.1, top, top + 0.12, za - 0.1, zb + 0.1, L.dressing, 'stone', { bevel: 0.03 });
       cap.userData.roof = true;
-      cap.userData.eaveY = 2.05;
-      const cx = (x0 + x1) / 2 + 0.02,
-        glass = new T.Mesh(new T.PlaneGeometry(0.42, 0.62), material(palette.glass, 'glass'));
-      glass.position.set(cx, 1.35, 1.2 + 0.03);
-      shell.add(glass);
-      frameRing(shell, cx, 1.35, 1.2, 0.42, 0.62, 0.08, 0.08, palette.white, 'paint');
+      cap.userData.eaveY = top;
+      for (const [z, ry] of [[zb, 0], [za, Math.PI]] as const) {
+        const g = faceAt((x0 + x1) / 2, z, ry),
+          y = 1.46,
+          w = 0.34,
+          h = 0.5,
+          ring = frameRing(g, 0, y, 0.02, w, h, 0.07, 0.09, L.green, 'paint'),
+          pane = new T.Mesh(new T.ShapeGeometry(ring(0.01), 4), material(palette.glass, 'glass'));
+        pane.position.set(0, y, 0.06);
+        g.add(pane);
+        bars.push({ geometry: new T.BoxGeometry(w, 0.07, 0.04), matrix: on(g, placed(0, y + 0.06, 0.09)) });
+        stone.push(
+          block(-w / 2 - 0.16, w / 2 + 0.16, y + h / 2 + 0.06, y + h / 2 + 0.16, -0.03, 0.12, g),
+          block(-w / 2 - 0.14, w / 2 + 0.14, y - h / 2 - 0.13, y - h / 2 - 0.06, -0.03, 0.15, g),
+        );
+      }
     }
 
-    /* The control tower. */
+    /* -------------------------------------------------------------- */
+    /* The control tower                                               */
+    /* -------------------------------------------------------------- */
     {
       const tx = 3.9 - site.x,
         tz = -47.4 - site.z,
-        octagon = (rt: number, rb: number, h: number, open = false) => {
-          const g = new T.CylinderGeometry(rt, rb, h, 8, 1, open).toNonIndexed();
-          g.computeVertexNormals();
-          return g;
-        },
-        at = (geometry: T.BufferGeometry, colour: string, kind: SurfaceKind, y: number) => {
+        foot = 0.8, // the shaft, from the base course ...
+        neck = 4.6, // ... up behind the corbels to the gallery's cornice
+        shaftR = (y: number) => 0.54 + ((0.42 - 0.54) * (y - foot)) / (neck - foot),
+        turned = (profile: [number, number][], segments = 32): Part => ({ geometry: new T.LatheGeometry(profile.map(([r, y]) => new T.Vector2(r, y)), segments), matrix: placed(tx, 0, tz) }),
+        mesh = (geometry: T.BufferGeometry, colour: string, kind: SurfaceKind, y: number) => {
           const m = new T.Mesh(geometry, material(colour, kind));
           m.position.set(tx, y, tz);
           m.castShadow = m.receiveShadow = true;
           shell.add(m);
           return m;
+        },
+        /** A group on the tower's axis, its +z toward bearing a. */
+        facing = (a: number) => {
+          const g = new T.Group();
+          g.position.set(tx, 0, tz);
+          g.rotation.y = a;
+          g.updateMatrix();
+          shell.add(g);
+          return g;
         };
-      at(new T.CylinderGeometry(0.58, 0.62, 0.78, 24), palette.plinth, 'ashlar', 0.39);
-      at(new T.CylinderGeometry(0.36, 0.44, 4.37, 24), L.render, 'paint', 0.78 + 4.37 / 2);
-      for (const y of [2.3, 3.95]) {
-        const r = 0.44 - ((y - 0.78) / 4.37) * 0.08 + 0.03;
-        at(new T.CylinderGeometry(r - 0.004, r, 0.16, 24), L.roof, 'paint', y);
+      // The stone drum and its moulded base course (a torus and a cavetto into the shaft).
+      mesh(new T.CylinderGeometry(0.66, 0.7, 0.66, 32), palette.plinth, 'ashlar', 0.33);
+      stone.push(turned([[0.6, 0.6], [0.72, 0.6], [0.74, 0.63], [0.74, 0.67], [0.71, 0.7], [0.66, 0.72], [0.62, 0.75], [0.57, 0.78], [0.54, 0.82], [0.4, 0.82]]));
+      // The shaft, tapering, and its two green bands, 0.03 proud.
+      mesh(new T.CylinderGeometry(shaftR(neck), shaftR(foot), neck - foot, 32), L.render, 'paint', (foot + neck) / 2);
+      for (const [y0, y1] of [[1.95, 2.15], [3.05, 3.25]]) green.push({ geometry: new T.CylinderGeometry(shaftR(y1) + 0.03, shaftR(y0) + 0.03, y1 - y0, 32), matrix: placed(tx, (y0 + y1) / 2, tz) });
+      // Stair windows in blonde surrounds (a sill and a head), lit together.
+      for (const [a, y] of [[0, 2.62], [0.95, 1.55], [0.95, 3.62]]) {
+        const g = facing(a),
+          r = shaftR(y);
+        frameRing(g, 0, y, r - 0.05, 0.2, 0.3, 0.07, 0.12, L.dressing, 'stone');
+        const pane = new T.Mesh(new T.PlaneGeometry(0.22, 0.32), material(palette.glass, 'glass'));
+        pane.position.set(0, y, r + 0.012);
+        pane.userData.windowGroup = 'airport-tower';
+        g.add(pane);
+        stone.push(block(-0.19, 0.19, y - 0.26, y - 0.19, r - 0.06, r + 0.1, g), block(-0.17, 0.17, y + 0.22, y + 0.3, r - 0.06, r + 0.08, g));
       }
-      // The cab: a gallery floor, raked glass wider at the top, slim corner posts, the cap and the mast.
-      at(octagon(0.76, 0.66, 0.14), L.roof, 'paint', 5.22);
-      at(octagon(0.82, 0.68, 1.04, true), palette.glass, 'glass', 5.81).userData.window = 'kiosk';
+      // The door to the south: a green leaf in a blonde case (pilasters, a lintel and a low
+      // pediment), three steps down to the deck that, like the plinth, stand on y 0.
+      {
+        const g = facing(0),
+          sill = foot,
+          head = 1.62;
+        green.push(block(-0.18, 0.18, sill, head, 0.4, 0.56, g));
+        stone.push(
+          block(-0.29, -0.19, sill - 0.02, head + 0.04, 0.4, 0.62, g),
+          block(0.19, 0.29, sill - 0.02, head + 0.04, 0.4, 0.62, g),
+          block(-0.35, 0.35, head + 0.04, head + 0.14, 0.4, 0.66, g),
+          { geometry: prism([[-0.36, 0], [0.36, 0], [0, 0.15]], 0.2, 0.02, -0.1), matrix: on(g, placed(0, head + 0.14, 0.55)) },
+        );
+        for (let i = 0; i < 3; i++) solid(tx - 0.3 - i * 0.03, tx + 0.3 + i * 0.03, 0, sill - 0.133 * i, tz + 0.46, tz + 0.84 + 0.18 * i, palette.plinth, 'stone');
+      }
+      // The corbelled gallery: eight blonde consoles (an ogee each) under the cab's corners carry a
+      // moulded cornice whose top is the gallery's floor, an iron deck plate on it, and a railing:
+      // sixteen stanchions, a mid rail and a fat top rail.
+      {
+        const profile = new T.Shape(([[0.36, 3.95], [0.47, 3.95], [0.49, 4.07], [0.53, 4.2], [0.6, 4.33], [0.7, 4.43], [0.8, 4.5], [0.86, 4.53], [0.86, 4.6], [0.36, 4.6]] as [number, number][]).map(([r, y]) => new T.Vector2(r, y))),
+          one = new T.ExtrudeGeometry(profile, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelOffset: -0.015, bevelSegments: 1, curveSegments: 1 }).rotateY(-Math.PI / 2).translate(0.06, 0, 0);
+        for (let k = 0; k < 8; k++) stone.push({ geometry: one, matrix: placed(tx, 0, tz, 0, Math.PI / 8 + (k * Math.PI) / 4) });
+      }
+      const deck = 4.86;
+      stone.push(turned([[0.4, 4.58], [0.84, 4.58], [0.9, 4.62], [0.95, 4.68], [0.98, 4.75], [0.98, deck - 0.03], [0.95, deck], [0.4, deck]], 40));
+      iron.push({ geometry: new T.CylinderGeometry(0.93, 0.93, 0.07, 40), matrix: placed(tx, deck + 0.035, tz) });
+      for (let k = 0; k < 16; k++) {
+        const a = ((k + 0.5) * Math.PI) / 8;
+        iron.push({ geometry: new T.BoxGeometry(0.075, 0.38, 0.075), matrix: placed(tx + Math.sin(a) * 0.92, deck + 0.21, tz + Math.cos(a) * 0.92, 0, a) });
+      }
+      for (const [y, t] of [[deck + 0.21, 0.035], [deck + 0.4, 0.045]]) iron.push({ geometry: new T.TorusGeometry(0.92, t, 5, 40).rotateX(Math.PI / 2), matrix: placed(tx, y, tz) });
+      // The cab: a green sill, the raked glass (wider at its head; lit all night, a lamp in the
+      // town's sense, so it casts nothing), iron mullions on its eight corners, the thick copper cap
+      // (an eave over the glass), its low roof and the mast with a ball to 7.0.
+      const glass0 = deck + 0.26,
+        glass1 = 6.28;
+      green.push({ geometry: octagon(0.73, 0.73, glass0 - deck), matrix: placed(tx, (deck + glass0) / 2, tz) });
+      const cab = mesh(octagon(0.86, 0.72, glass1 - glass0, true), palette.glass, 'glass', (glass0 + glass1) / 2);
+      cab.castShadow = false;
+      cab.userData.noShadow = true;
+      cab.userData.window = 'kiosk';
       for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        iron.push(rod([tx + Math.sin(a) * 0.69, 5.29, tz + Math.cos(a) * 0.69], [tx + Math.sin(a) * 0.83, 6.33, tz + Math.cos(a) * 0.83], 0.04));
+        const a = Math.PI / 8 + (k * Math.PI) / 4;
+        iron.push(rodPart(new T.Vector3(tx + Math.sin(a) * 0.72, glass0, tz + Math.cos(a) * 0.72), new T.Vector3(tx + Math.sin(a) * 0.86, glass1, tz + Math.cos(a) * 0.86), 0.04));
       }
-      at(octagon(0.95, 0.9, 0.2), L.roof, 'paint', 6.43);
-      at(new T.CylinderGeometry(0.42, 0.5, 0.16, 24), L.roof, 'paint', 6.61);
-      iron.push(rod([tx, 6.6, tz], [tx, 7.0, tz], 0.045));
+      const cap = mesh(octagon(1.0, 0.95, 0.24), L.roof, 'copper', glass1 + 0.12);
+      cap.userData.roof = true;
+      cap.userData.eaveY = glass1;
+      mesh(octagon(0.22, 0.8, 0.22), L.roof, 'copper', glass1 + 0.35);
+      iron.push(
+        { geometry: new T.CylinderGeometry(0.1, 0.12, 0.08, 12), matrix: placed(tx, glass1 + 0.5, tz) },
+        rodPart(new T.Vector3(tx, glass1 + 0.5, tz), new T.Vector3(tx, 6.95, tz), 0.035),
+        { geometry: new T.IcosahedronGeometry(0.06, 1), matrix: placed(tx, 7.0 - 0.06, tz) },
+      );
     }
 
-    cluster(shell, dress, L.dressing, 'stone');
-    cluster(shell, iron, L.frame, 'iron', { shadow: false });
+    /* -------------------------------------------------------------- */
+    /* The jet bridge                                                  */
+    /* -------------------------------------------------------------- */
+    {
+      const J = JET_BRIDGE,
+        wx = hx - hw, // the west wall
+        bz = J.z - site.z,
+        cabX = J.cab - site.x,
+        // Two telescoping sections (x from, x to, width, height): the outer one a little larger.
+        sections: [number, number, number, number][] = [
+          [wx + 0.05, wx - 0.97, J.width[0], J.height[0]],
+          [wx - 0.9, cabX + 0.31, J.width[1], J.height[1]],
+        ];
+      // The portal in the west wall: blonde jambs and a lintel round the inner section.
+      stone.push(
+        block(portal.u - portal.w / 2 - 0.13, portal.u - portal.w / 2 - 0.01, COURSE[1], portal.y1 + 0.03, -0.03, 0.1, west),
+        block(portal.u + portal.w / 2 + 0.01, portal.u + portal.w / 2 + 0.13, COURSE[1], portal.y1 + 0.03, -0.03, 0.1, west),
+        block(portal.u - portal.w / 2 - 0.17, portal.u + portal.w / 2 + 0.17, portal.y1 + 0.03, portal.y1 + 0.17, -0.03, 0.13, west),
+      );
+      // Each section: a cream tube under a steel roof, a green skirt along its foot (the tram's and
+      // the plane's livery), two steel ribs round it and, on the outer one, a collar round its mouth
+      // where the inner one slides in.
+      sections.forEach(([xa, xb, w, h], i) => {
+        const y0 = J.floor - (w - J.width[0]) / 2,
+          y1 = y0 + h,
+          [x0, x1] = [Math.min(xa, xb), Math.max(xa, xb)];
+        solid(x0, x1, y0, y1, bz - w / 2, bz + w / 2, L.render, 'paint', { bevel: 0.03 });
+        steel.push(block(x0 - 0.02, x1 + (i ? 0.02 : 0), y1, y1 + 0.07, bz - w / 2 - 0.03, bz + w / 2 + 0.03));
+        green.push(block(x0 + 0.02, x1, y0 - 0.01, y0 + 0.13, bz - w / 2 - 0.015, bz + w / 2 + 0.015));
+        for (const t of [1 / 3, 2 / 3]) {
+          const x = x0 + (x1 - x0) * t;
+          steel.push(block(x - 0.04, x + 0.04, y0 - 0.025, y1 + 0.08, bz - w / 2 - 0.025, bz + w / 2 + 0.025));
+        }
+        if (i) steel.push(block(x1 - 0.08, x1 + 0.01, y0 - 0.025, y1 + 0.025, bz - w / 2 - 0.025, bz + w / 2 + 0.025));
+        // A glazed strip along each side, one light for the whole bridge.
+        for (const s of [-1, 1]) {
+          const pane = new T.Mesh(new T.PlaneGeometry(x1 - x0 - 0.2, 0.13), material(palette.glass, 'glass'));
+          pane.position.set((x0 + x1) / 2 - 0.04, y1 - 0.15, bz + s * (w / 2 + 0.005));
+          pane.rotation.y = s > 0 ? 0 : Math.PI;
+          pane.userData.windowGroup = 'airport-bridge';
+          shell.add(pane);
+        }
+      });
+      // The cab, turned to the plane: a cream box under a steel roof with the green skirt, windows
+      // ahead and to the north, and grey bellows on its south face in two folds, stopping short of
+      // the parked fuselage.
+      const c0 = cabX - 0.31,
+        c1 = cabX + 0.31,
+        cz0 = bz - 0.36,
+        cz1 = J.bellows - site.z - 0.1,
+        cy0 = J.floor - 0.06,
+        cy1 = cy0 + 0.66;
+      solid(c0, c1, cy0, cy1, cz0, cz1, L.render, 'paint', { bevel: 0.03 });
+      steel.push(block(c0 - 0.03, c1 + 0.03, cy1, cy1 + 0.07, cz0 - 0.03, cz1 + 0.03));
+      green.push(block(c0 - 0.015, c1 + 0.015, cy0 - 0.01, cy0 + 0.13, cz0 - 0.015, cz1 + 0.015));
+      rubber.push(
+        block(cabX - 0.26, cabX + 0.26, cy0 + 0.04, cy1 - 0.04, cz1 - 0.02, cz1 + 0.05),
+        block(cabX - 0.22, cabX + 0.22, cy0 + 0.08, cy1 - 0.08, cz1 + 0.03, cz1 + 0.1),
+      );
+      for (const [x, z, ry, wide] of [[c0 - 0.005, (cz0 + cz1) / 2, -Math.PI / 2, 0.44], [cabX, cz0 - 0.005, Math.PI, 0.38]] as const) {
+        const pane = new T.Mesh(new T.PlaneGeometry(wide, 0.2), material(palette.glass, 'glass'));
+        pane.position.set(x, cy1 - 0.17, z);
+        pane.rotation.y = ry;
+        pane.userData.windowGroup = 'airport-bridge';
+        shell.add(pane);
+      }
+      // Its footing (concrete, from y 0 like the plinth) and two steel legs under the outer section.
+      const lx = J.legs - site.x;
+      footing.push(block(lx - 0.2, lx + 0.2, 0, A.deck + 0.07, bz - 0.26, bz + 0.26));
+      for (const s of [-1, 1]) steel.push(block(lx - 0.05, lx + 0.05, A.deck + 0.06, J.floor - 0.02, bz + s * 0.16 - 0.05, bz + s * 0.16 + 0.05));
+      steel.push(block(lx - 0.07, lx + 0.07, J.floor - 0.12, J.floor - 0.02, bz - 0.24, bz + 0.24));
+    }
+
+    merge(shell, stone, L.dressing, 'stone', { tone: 0.05 });
+    merge(shell, courses, L.rustic, 'paint', { tone: 0.03 });
+    merge(shell, green, L.green, 'paint');
+    merge(shell, slate, L.slate, 'stone');
+    merge(shell, ribs, L.rib, 'copper');
+    merge(shell, steel, L.steel, 'paint');
+    merge(shell, rubber, L.rubber, 'paint');
+    merge(shell, footing, L.footing, 'stone');
+    merge(shell, bars, L.green, 'paint', { shadow: false });
+    merge(shell, iron, L.iron, 'iron', { shadow: false });
   }
   return { airportGround, buildAirport };
 }
