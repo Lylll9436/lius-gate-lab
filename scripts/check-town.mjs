@@ -1414,8 +1414,8 @@ for (const [x, z] of [
   }
   // Its lamps: four on the causeway's east piers, lit with the town's (from the east parapet the
   // lanterns' shadows fall off the road at the opening and chapter bearings: the key light turns
-  // with the camera and always throws them to the right of the frame); and two more, the town's
-  // standard, at the forecourt's front corners on its paving, either side of the road's axis.
+  // with the camera and always throws them to the right of the frame); and two more, globes on
+  // stone piers, at the forecourt's front corners on its paving, either side of the road's axis.
   const causewayLamps = lamps.filter((l) => l.getWorldPosition(v).z < AR.beach && v.z > AR.island - 0.4),
     forecourtLamps = lamps.filter((l) => l.getWorldPosition(v).z < FC.z1 && v.z > FC.z0 && v.x > FC.x0 && v.x < FC.x1);
   assert.equal(causewayLamps.length, 4, 'The causeway has not four lamps.');
@@ -1424,7 +1424,11 @@ for (const [x, z] of [
   {
     const [west, east] = forecourtLamps.map((l) => l.getWorldPosition(new T.Vector3())).sort((a, b) => a.x - b.x);
     assert(Math.abs(west.x + east.x - 2 * AR.x) < 1e-6 && Math.abs(west.z - east.z) < 1e-6 && west.z > FC.z1 - 0.4 - 0.6, 'The forecourt\'s lamps do not pair across the road at its front.');
-    assert(Math.abs(west.y - (A.deck + 0.06 + 1.8)) < 1e-6, 'A forecourt lamp is off the paving.');
+    for (const l of forecourtLamps) {
+      const foot = l.parent.getWorldPosition(new T.Vector3()).y - (A.deck + 0.06),
+        up = l.getWorldPosition(new T.Vector3()).y - (A.deck + 0.06);
+      assert(l.parent.name === 'forecourt-lamp' && Math.abs(foot) < 1e-6 && up > 1.1 && up < 1.6, `A forecourt lamp is off its pier on the paving (its pier's foot ${foot.toFixed(3)}, its globe ${up.toFixed(2)} up).`);
+    }
   }
   for (const l of causewayLamps) {
     l.getWorldPosition(v);
@@ -1586,6 +1590,25 @@ for (const [x, z] of [
       } else if (part.castShadow) posts++;
     }
     assert(heads >= 3 && posts >= 3, `A causeway lamp has ${heads} head parts and ${posts} casting post parts.`);
+  }
+  // The forecourt's two lamps are frosted globes on stone piers, not the town's cast-iron standard
+  // (its fine black ironwork against the pale paving was the forecourt's flicker as the view moved):
+  // under its globe each is stone but for the low iron cup that holds the globe, no part under 0.2
+  // across, and the globe casts nothing.
+  for (const lantern of ctx.lamps.filter((l) => !causewayLanterns.includes(l))) {
+    let stone = 0,
+      cups = 0,
+      thinnest = Infinity;
+    for (const part of lantern.parent.children) {
+      if (!part.isMesh || part === lantern) continue;
+      const kind = part.material.userData.surfaceKind,
+        size = new T.Box3().setFromObject(part).getSize(new T.Vector3());
+      thinnest = Math.min(thinnest, size.x, size.z);
+      if (kind === 'stone') stone++;
+      else assert(kind === 'iron' && size.y <= 0.2 && ++cups === 1, `A forecourt lamp has a ${kind} part ${size.y.toFixed(2)} tall.`);
+    }
+    lantern.geometry.computeBoundingSphere();
+    assert(stone >= 2 && cups === 1 && thinnest >= 0.2 - 1e-6 && lantern.geometry.boundingSphere.radius >= 0.15 && !lantern.castShadow, `A forecourt lamp is not a globe on a stone pier (${stone} stone parts, ${cups} cups, ${thinnest.toFixed(2)} at its thinnest).`);
   }
   /** Every vertex of o's meshes, in the world. */
   const vertices = (o, visit) => {

@@ -79,7 +79,7 @@ type Station = { x: number; z: number; nx: number; nz: number; y: number };
 /* ------------------------------------------------------------------ */
 export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: Nature) {
   const { material } = ctx;
-  const { box, chamfered, cluster, frameRing, prism } = kit;
+  const { box, chamfered, cluster, frameRing, prism, lampGlass } = kit;
   const { lamp } = props;
   const { topiary } = nature;
   const A = plan.AIRPORT,
@@ -462,10 +462,9 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
   }
   /**
    * A town lamp whose head (above the post's boss: the ladder bar and the lantern's tray, roof and
-   * cap, but for the brass finial) casts no shadow, only its post: the airport's lamps stand where
-   * the heads' shadows read as something else (four in a row along the causeway threw chevrons that
-   * read as arrows painted on the road; on the forecourt's pale paving their fine ironwork flickered
-   * as the view moved).
+   * cap, but for the brass finial) casts no shadow, only its post: the causeway's lamps stand where
+   * the heads' shadows read as something else (four in a row threw chevrons that read as arrows
+   * painted on the road).
    */
   function quietHead(post: T.Object3D) {
     post.traverse((o) => {
@@ -781,13 +780,47 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     merge(w, [{ geometry: new T.CylinderGeometry(0.06, 0.06, 0.12, 12), matrix: placed(0, mast + 0.02, 0) }], L.steel, 'paint', { shadow: false });
   }
   /**
+   * A forecourt lamp (local y 0 on the paving): a frosted globe, the gate's kind of lamp, lit with
+   * the town's lamps, in a short iron cup on a stone pier (a base course and a moulded cap in blonde
+   * sandstone round a shaft of the causeway piers' kerb stone). The town's cast-iron standard here,
+   * its fine black ironwork against the pale paving, was the forecourt's flicker as the view moved.
+   */
+  const PIER_LAMP = { base: 0.12, shaft: [0.12, 0.92] as [number, number], cap: 0.1, cup: 0.15, globe: 0.17 };
+  function pierLamp(g: T.Object3D, x: number, z: number, y: number) {
+    const P = PIER_LAMP,
+      top = P.shaft[1] + P.cap,
+      post = new T.Group();
+    post.name = 'forecourt-lamp';
+    post.position.set(x, y, z);
+    g.add(post);
+    merge(post, [{ geometry: chamfered(0.32, P.shaft[1] - P.shaft[0], 0.32), matrix: placed(0, (P.shaft[0] + P.shaft[1]) / 2, 0) }], L.coping, 'stone', { band: false });
+    merge(
+      post,
+      [
+        { geometry: chamfered(0.42, P.base, 0.42), matrix: placed(0, P.base / 2, 0) },
+        { geometry: chamfered(0.42, P.cap, 0.42), matrix: placed(0, P.shaft[1] + P.cap / 2, 0) },
+      ],
+      L.dressing,
+      'stone',
+      { band: false, tone: 0.05 },
+    );
+    merge(post, [{ geometry: new T.LatheGeometry([[0.075, 0], [0.075, 0.03], [0.05, 0.06], [0.05, 0.09], [0.1, 0.13], [0.1, P.cup], [0, P.cup]].map(([r, h]) => new T.Vector2(r, h)), 12), matrix: placed(0, top, 0) }], L.iron, 'iron', { band: false });
+    const globe = new T.Mesh(new T.SphereGeometry(P.globe, 18, 12), lampGlass());
+    globe.position.y = top + P.cup + P.globe - 0.03;
+    globe.castShadow = false;
+    post.add(globe);
+    ctx.lamps.push(globe);
+    return post;
+  }
+  /**
    * The forecourt's furniture, between the causeway's end and the hall's steps, chunky and calm (the
-   * town's slatted park benches and moulded cast-iron bollards, packed into this small square, made
-   * it the busiest patch of the overview): on the road's axis a round planter of blonde stone holding
-   * a clipped box ball; along the kerb either side of it two stone bollards each (0.14 across; the
-   * outer pair in line with the causeway's last piers); a town lamp at each front corner; and along
-   * each side, facing in, a bench of one thick timber seat on two blocks of the hall's stone. Each
-   * piece stands on the paving on its own, so each takes its own top-lit gradient in the batch.
+   * town's slatted park benches, moulded cast-iron bollards and lamp standards, packed into this
+   * small square, made it the busiest patch of the overview): on the road's axis a round planter of
+   * blonde stone holding a clipped box ball; along the kerb either side of it two stone bollards each
+   * (0.14 across; the outer pair in line with the causeway's last piers); a pier lamp at each front
+   * corner (pierLamp); and along each side, facing in, a bench of one thick timber seat on two blocks
+   * of the hall's stone. Each piece stands on the paving on its own, so each takes its own top-lit
+   * gradient in the batch.
    */
   function forecourt(g: T.Group) {
     const y = A.deck + 0.06,
@@ -806,7 +839,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     const bollards = cluster(g, [-1.05, -0.6, 0.6, 1.05].map((dx): Piece => ({ geometry: post, at: [ax + dx, y, kerb - 0.25] })), L.dressing, 'stone', { band: false });
     if (bollards) bollards.name = 'forecourt-bollards';
     for (const s of [-1, 1]) {
-      quietHead(lamp(g, ax + s * 2.0, kerb - 0.35, 1.8, y)).name = 'forecourt-lamp';
+      pierLamp(g, ax + s * 2.0, kerb - 0.35, y);
       // The bench (its seat along local x, its front +z), turned to face the axis.
       const bench = new T.Group();
       bench.name = 'forecourt-bench';
