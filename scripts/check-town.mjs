@@ -2137,16 +2137,18 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
   for (const q of brass.filter((p) => Math.abs(p.z) > 0.7 && p.y > 4.7 && p.y < 5.24))
     assert(Math.abs(q.x) <= 1.09 && Math.abs(q.y - 4.97) <= 0.16, `Bronze on the gate's attic off its blank tablet at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}.`);
 }
-// Always lit: the clock dials (exactly), the lighthouse and the board, the phone box, the control tower's cab and the tram, boat and plane; never: the crane cab.
+// Always lit: the clock dials (exactly), the lighthouse and the board, the phone box, the control tower's cab and the tram, boat and plane, and dim all night the plane's cockpit; never: the crane cab.
 {
   const role = (r) => panes.filter((p) => p.role === r);
   assert.equal(role('dial').length, 4, 'Four clock dials.');
   assert.equal(role('unlit').length, 1, 'One crane cab.');
+  assert.equal(role('cockpit').length, 1, 'One cockpit.');
   for (const r of ['beacon', 'kiosk', 'cab', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
   for (let minute = 0; minute < 24 * 60; minute += 15) {
     const clock = at(minute / 60);
     assert(role('dial').every((p) => windowLevel(p.light, clock) === 1), `A clock dial is dark at minute ${minute}.`);
     assert(['beacon', 'kiosk', 'cab', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
+    assert(role('cockpit').every((p) => windowLevel(p.light, clock) >= 0.2 && windowLevel(p.light, clock) <= 0.35), `The plane's cockpit is not a dim light at minute ${minute}.`);
     assert(role('unlit').every((p) => windowLevel(p.light, clock) === 0), `The crane cab is lit at minute ${minute}.`);
   }
   // The dials are exactly today's glow; no pane is brighter (luminance x the night's 0.72).
@@ -2694,7 +2696,10 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   library.dispose();
 }
 // The plane as the town has it, parked on its stand (plan.STAND, nose east) on the airside's slabs:
-// batched into its enamel and its glass (one 'vehicle' pane, lit all night) beside its three lights;
+// batched into its enamel and its glass beside its three lights, the glass one mesh of two panes:
+// the cabin's band and the doors' lights a 'vehicle' pane lit all night, and the cockpit's glazing,
+// ahead of them round the nose, on its own dim 'cockpit' light, lit all night at under half the
+// cabin's level (lit as the cabin is, the windscreen's wrap made the nose a pale headlight);
 // not following the idle drift, nor answering the pointer (a ray down on it finds the airport's
 // deck). Its forward door is at the jet bridge's cab and its port side 0.15-0.25 short of the
 // bridge's bellows (it docks); nothing of it reaches under or into the bridge, and its port wing and
@@ -2716,8 +2721,35 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   plane.traverse((o) => o.isMesh && meshes.push(o));
   const kinds = meshes.map((o) => `${o.material.userData.surfaceKind ?? o.material.name}${o.castShadow ? '' : '(n)'}`).sort();
   assert.deepEqual(kinds, ['enamel', 'glass(n)', 'nav-light(n)', 'nav-light(n)', 'nav-light(n)'], `The plane batches into ${kinds.join(', ')}.`);
-  const panes = model.windows.filter((w) => w.place === 'plane');
-  assert(panes.length === 1 && panes[0].role === 'vehicle', 'The plane\'s glass is not one pane lit all night.');
+  const panes = model.windows.filter((w) => w.place === 'plane'),
+    cabin = panes.find((w) => w.role === 'vehicle'),
+    cockpit = panes.find((w) => w.role === 'cockpit');
+  assert(panes.length === 2 && cabin && cockpit, `The plane's glass is not its cabin's pane and its cockpit's (${panes.map((w) => w.role).join(', ')}).`);
+  assert(cabin.light[0] > 0.8 && cockpit.light[0] >= 0.2 && cockpit.light[0] <= 0.4 * cabin.light[0] && [cabin, cockpit].every((w) => w.light[2] === 1 && w.light[3] === 1), `The plane's cabin (${cabin.light[0].toFixed(2)}) is not lit all night, or its cockpit (${cockpit.light[0].toFixed(2)}) is not a dim light under half the cabin's.`);
+  {
+    // In the one glass mesh, the cockpit's light is on the glazing round the nose (ahead of the
+    // cabin's band and the doors' lights) and nowhere else.
+    const { PLANE_GLAZING: G } = await load('town-movers'),
+      glass = meshes.filter((o) => o.material.userData.surfaceKind === 'glass'),
+      byte = (v) => Math.round(v * 255),
+      seen = { cabin: 0, cockpit: 0 };
+    assert.equal(glass.length, 1, 'The plane\'s glass is not one mesh.');
+    const pos = glass[0].geometry.attributes.position,
+      light = glass[0].geometry.attributes.aWindow;
+    for (let i = 0; i < pos.count; i++) {
+      const level = Math.round(light.getX(i) * 255),
+        z = pos.getZ(i);
+      if (level === byte(cockpit.light[0])) {
+        seen.cockpit++;
+        assert(z > G.cockpit[0] - 1e-3, `The cockpit's dim light reaches back to ${z.toFixed(2)}, off its glazing.`);
+      } else {
+        assert.equal(level, byte(cabin.light[0]), 'A pane of the plane\'s glass is neither its cabin\'s nor its cockpit\'s.');
+        seen.cabin++;
+        assert(z < G.cockpit[0] - 1e-3, `The cabin's light reaches the cockpit's glazing at ${z.toFixed(2)}.`);
+      }
+    }
+    assert(seen.cabin > 100 && seen.cockpit > 50, `The plane's glass has ${seen.cabin} cabin and ${seen.cockpit} cockpit vertices.`);
+  }
   assert(!plane.userData.followsDrift && !model.animated.some((e) => e.object === plane), 'The plane follows the drift or the animated list.');
   for (let o = plane; o; o = o.parent) assert(!o.userData.buildingId && !o.userData.placeId, 'The plane answers the pointer.');
   ray.set(new T.Vector3(S.x, 40, S.z), new T.Vector3(0, -1, 0));

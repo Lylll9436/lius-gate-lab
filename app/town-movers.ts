@@ -251,6 +251,8 @@ export function planeBelly(z: number) {
 export const PLANE_GLAZING = { cabin: [-0.85, 1.28], band: [0.21, 0.61], cockpit: [1.7, 1.93] };
 /** The forward doors' small lights: their stations about the door's middle and their angles up the port side (mirrored to starboard). */
 export const DOOR_LIGHT = { z: [-0.05, 0.05], keys: [0.26, 0.56] };
+/** The skin cells of the cockpit's glazing (buildPlane keeps them apart from the cabin's glass, for their own dim light). */
+const COCKPIT = 'cockpit-glass';
 /** The navigation lights' steady emissive, the traffic signals' own: no strobe, no blink, no boost at night. */
 export const PLANE_LIGHT = 0.95;
 /** The skin's point at station z and angle a (0 to port, a quarter turn up), `out` proud of it, with the smooth skin's normal there. */
@@ -887,9 +889,12 @@ export function createMovers(ctx: TownContext, kit: Kit) {
    * The plane: a toy regional twin-jet in the tram's livery (plan.PLANE's measures and units), with
    * no lettering, registration or logo. A smooth fuselage (planeSection): cream, its belly green
    * (planeBelly) up to a little under the axis and sweeping up the tail cone toward the fin; a band
-   * of cabin windows along both sides and the cockpit's glazing wrapped round the nose over the band's
-   * foot, all one 'vehicle' glass (lit all night); a forward door either side, raised a little off
-   * the skin with a small light at the windows' height (the port one where the jet bridge docks).
+   * of cabin windows along both sides and the doors' lights, one 'vehicle' glass (lit all night, the
+   * windows that show people), and the cockpit's glazing wrapped round the nose over the band's foot,
+   * a glass of its own on its dim 'cockpit' light (lit as brightly as the cabin, the windscreen's
+   * wrap turned the whole nose into a pale lamp at night, a headlight rather than a toy); a forward
+   * door either side, raised a little off the skin with a small light at the windows' height (the
+   * port one where the jet bridge docks).
    * Low swept wings with a little dihedral and the tailplane in cream, the swept fin in orange; two
    * nacelles under the wings (green, a cream intake lip, dark fan faces, no propellers) on cream
    * pylons; chunky fixed gear (a nose leg with twin wheels, a main leg under each wing root with two
@@ -897,7 +902,8 @@ export function createMovers(ctx: TownContext, kit: Kit) {
    * navigation lights, red to port and green to starboard at the wingtips and white at the tail:
    * small lenses lit by their own emissive (as the traffic signals' are), out of the lamps' night
    * loop, kept apart from the batch (`plane-lights`). Parts of a colour merge before batching, so
-   * it batches as two meshes (its enamel and its glass) besides the three lenses.
+   * it batches as two meshes (its enamel and its glass, the cabin's and the cockpit's panes in one)
+   * besides the three lenses.
    */
   function buildPlane() {
     const plane = new T.Group();
@@ -931,10 +937,11 @@ export function createMovers(ctx: TownContext, kit: Kit) {
       },
       glazed = (z: number, a: number) => {
         const s = Math.sin(a);
-        return (z > G.cabin[0] && z < G.cabin[1] && s > Math.sin(G.band[0]) && s < Math.sin(G.band[1])) || (z > G.cockpit[0] && z < G.cockpit[1] && s > Math.sin(G.band[0]));
+        if (z > G.cabin[0] && z < G.cabin[1] && s > Math.sin(G.band[0]) && s < Math.sin(G.band[1])) return 'glass';
+        return z > G.cockpit[0] && z < G.cockpit[1] && s > Math.sin(G.band[0]) ? COCKPIT : null;
       },
       livery = (z: number, a: number) => (Math.sin(a) < planeBelly(z) ? green : cream);
-    skinCells(zs, keys, 0, (z, a) => (glazed(z, a) ? 'glass' : livery(z, a)), skins);
+    skinCells(zs, keys, 0, (z, a) => glazed(z, a) ?? livery(z, a), skins);
     // The tail cone's end, closed (the white light sits on it).
     {
       const end = planeSection(-tip),
@@ -956,12 +963,14 @@ export function createMovers(ctx: TownContext, kit: Kit) {
       skinPanel([P.door - 0.11, ...DOOR_LIGHT.z.map((dz) => P.door + dz), P.door + 0.11], sorted([-0.66, (belly - 0.66) / 2, belly, G.band[0], ...DOOR_LIGHT.keys, 0.73]), 0.012, livery, skins);
       skinCells(DOOR_LIGHT.z.map((dz) => P.door + dz), () => sorted(DOOR_LIGHT.keys), 0.015, () => 'glass', skins);
     }
-    const glass: T.BufferGeometry[] = [];
+    const glass: T.BufferGeometry[] = [],
+      screen: T.BufferGeometry[] = [];
     for (const [name, list] of skins) {
       const g = new T.BufferGeometry();
       g.setAttribute('position', new T.Float32BufferAttribute(list.p, 3));
       g.setAttribute('normal', new T.Float32BufferAttribute(list.n, 3));
       if (name === 'glass') glass.push(g);
+      else if (name === COCKPIT) screen.push(g);
       else add(name, g);
     }
     // The wings: one low swept foil from tip to tip through the fuselage's belly, with a little
@@ -1011,6 +1020,8 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     for (const w of [-1, 1]) wheel(w * 0.075, 0.085, 0.06, P.nose);
     for (const [colour, list] of parts) part(plane, mergeParts(list), colour, 'enamel');
     part(plane, mergeParts(glass), palette.glass, 'glass');
+    // The cockpit's glazing: the same glass (it batches into the cabin's mesh) on a pane and a light of its own.
+    part(plane, mergeParts(screen), palette.glass, 'glass').userData.window = 'cockpit';
     // The navigation lights: steady lenses lit by their own emissive, kept apart from the batch.
     const lights = new T.Group();
     lights.name = 'plane-lights';

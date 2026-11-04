@@ -65,7 +65,7 @@ function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
  * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
  * reads them against the window clock (city-materials' setWindows).
  */
-type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'unlit' | 'clear';
+type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'cockpit' | 'unlit' | 'clear';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
@@ -91,6 +91,9 @@ const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
   beacon: [1, 0, 1, 1],
   dial: [1, 0.5, 1, 1],
   vehicle: [0.85, 0.25, 1, 1],
+  // The parked plane's cockpit: a dim warm glow all night, its instruments' and no more. Lit as its
+  // cabin is, the windscreen's wrap round the nose read as a headlight, the brightest thing near it.
+  cockpit: [0.3, 0.25, 1, 1],
   unlit: [0, 0, 1, 1],
   // Glass that is no window (the residence's balustrades): never lit.
   clear: [0, 0, 1, 1],
