@@ -963,13 +963,14 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
    * - East of it the link block, low and cream under a blonde coping, a window to the south and the
    *   north; then the control tower, echoing the lighthouse: a stone drum, a moulded base course, a
    *   tapered cream shaft with two green bands, stair windows and a door case to the south, a
-   *   corbelled gallery with an iron railing, the octagonal cab of raked glass ('kiosk') on a green
-   *   sill between iron mullions, a thick copper cap, its roof and a short mast to 7.0.
+   *   corbelled gallery with an iron railing, the octagonal cab of raked glass ('cab': dim and warm,
+   *   lit all night) on a green sill between iron mullions, a thick copper cap, its roof and a short
+   *   mast to 7.0.
    * - West of it the jet bridge, toward the stand: a portal in the west wall, two telescoping
    *   sections (cream, ribbed in steel, glazed along both sides over a green skirt) on a footing and
    *   two legs, and a cab whose grey bellows meet the parked plane's port side (JET_BRIDGE).
    * No text, numbers or logos anywhere. Window roles: the glass is 'civic' (the batch's) but for
-   * the cab ('kiosk') and the board's rows ('beacon').
+   * the cab ('cab') and the board's rows ('beacon').
    */
   function buildAirport(shell: T.Group, site: plan.Site) {
     const { floor, eave, apex } = HALL_LEVELS,
@@ -1402,8 +1403,8 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
         iron.push({ geometry: new T.BoxGeometry(0.075, 0.38, 0.075), matrix: placed(tx + Math.sin(a) * 0.92, deck + 0.21, tz + Math.cos(a) * 0.92, 0, a) });
       }
       for (const [y, t] of [[deck + 0.21, 0.035], [deck + 0.4, 0.045]]) iron.push({ geometry: new T.TorusGeometry(0.92, t, 5, 40).rotateX(Math.PI / 2), matrix: placed(tx, y, tz) });
-      // The cab: a green sill, the raked glass (wider at its head; lit all night, a lamp in the
-      // town's sense, so it casts nothing), iron mullions on its eight corners, the thick copper cap
+      // The cab: a green sill, the raked glass (wider at its head; lit all night, dim and warm, and
+      // like a lamp it casts nothing), iron mullions on its eight corners, the thick copper cap
       // (an eave over the glass), its low roof and the mast with a ball to 7.0.
       const glass0 = deck + 0.26,
         glass1 = 6.28;
@@ -1411,7 +1412,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
       const cab = mesh(octagon(0.86, 0.72, glass1 - glass0, true), palette.glass, 'glass', (glass0 + glass1) / 2);
       cab.castShadow = false;
       cab.userData.noShadow = true;
-      cab.userData.window = 'kiosk';
+      cab.userData.window = 'cab';
       for (let k = 0; k < 8; k++) {
         const a = Math.PI / 8 + (k * Math.PI) / 4;
         iron.push(rodPart(new T.Vector3(tx + Math.sin(a) * 0.72, glass0, tz + Math.cos(a) * 0.72), new T.Vector3(tx + Math.sin(a) * 0.86, glass1, tz + Math.cos(a) * 0.86), 0.04));

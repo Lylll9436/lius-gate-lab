@@ -65,7 +65,7 @@ function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
  * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
  * reads them against the window clock (city-materials' setWindows).
  */
-type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'beacon' | 'dial' | 'vehicle' | 'unlit' | 'clear';
+type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'unlit' | 'clear';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
@@ -84,6 +84,10 @@ const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
 /** [level, tint, off, wake] for panes that never change (1 = never). */
 const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
   kiosk: [0.8, 1, 1, 1],
+  // The control tower's cab: lit all night, dim and warm, a room kept low to see out of. The kiosk's
+  // pale cool white over its eight big panes read as a frosted acrylic lantern, the brightest and
+  // the only cool light at the airport.
+  cab: [0.55, 0.25, 1, 1],
   beacon: [1, 0, 1, 1],
   dial: [1, 0.5, 1, 1],
   vehicle: [0.85, 0.25, 1, 1],

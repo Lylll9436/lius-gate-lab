@@ -1348,16 +1348,27 @@ for (const [x, z] of [
   });
   assert(stepFoot < 0.01, `The airport's front steps float ${stepFoot.toFixed(2)} over the ground.`);
   // Its window roles: the hall's glass civic (its doors lit late at 0.8, today's colour), the tower's
-  // cab a kiosk lit all night, the board's three amber rows beacons, centred on the road.
+  // cab its own 'cab' light (lit all night, dim and warm), the board's three amber rows beacons,
+  // centred on the road.
   const own = model.windows.filter((p) => p.place === 'airport'),
     role = (r) => own.filter((p) => p.role === r);
-  assert.equal(role('kiosk').length, 1, 'The control tower has no cab.');
+  assert.equal(role('cab').length, 1, 'The control tower has no cab.');
   assert.equal(role('beacon').length, 3, 'The board has not three rows.');
   for (const p of role('beacon')) assert(Math.abs(p.at.x - AR.x) < 0.01 && p.at.z > FC.z0 - 0.3, 'A board row is off the arch.');
   assert(role('civic').length >= 4 && role('civic').some((p) => Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128), 'The hall has no glass lit late.');
   assert.equal(own.length, role('civic').length + 4, 'An airport pane has a role of its own.');
-  // The cab's raked glass stands at y 5.2-6.3, under the mast's 7.0.
-  assert(role('kiosk').every((p) => p.at.y > 5.2 && p.at.y < 6.3), 'The control tower\'s cab is off its height.');
+  // The cab's raked glass stands at y 5.2-6.3, under the mast's 7.0. It glows dim and warm all night:
+  // at most 0.6 of the dials' glow and warmer than today's (in the phone box's pale cool white its
+  // eight big panes read as a frosted lantern, the brightest and the only cool light at the airport).
+  assert(role('cab').every((p) => p.at.y > 5.2 && p.at.y < 6.3), 'The control tower\'s cab is off its height.');
+  {
+    const { windowGlow: glowOf } = await load('city-materials'),
+      clock = { out: 0, wake: 0 },
+      cab = glowOf(role('cab')[0].light, clock),
+      dial = glowOf([1, 0.5, 1, 1], clock),
+      lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    assert(lum(cab) <= 0.6 * lum(dial) && lum(cab) > 0.4 * lum(dial) && cab.b / cab.r < dial.b / dial.r, `The control tower's cab is not a dim warm light (${cab.toArray().map((n) => n.toFixed(3)).join(', ')}).`);
+  }
   // The board: three rows of tiles that are dark by day and glow amber at night, never text. They are
   // one glass of their own glow (amber: warm and saturated, unlike the windows' warm white), dark
   // umber by day, each row one flat pane facing the causeway that covers its 1.7 x 0.16 strip whole
@@ -1963,16 +1974,16 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
   for (const q of brass.filter((p) => Math.abs(p.z) > 0.7 && p.y > 4.7 && p.y < 5.24))
     assert(Math.abs(q.x) <= 1.09 && Math.abs(q.y - 4.97) <= 0.16, `Bronze on the gate's attic off its blank tablet at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}.`);
 }
-// Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
+// Always lit: the clock dials (exactly), the lighthouse and the board, the phone box, the control tower's cab and the tram, boat and plane; never: the crane cab.
 {
   const role = (r) => panes.filter((p) => p.role === r);
   assert.equal(role('dial').length, 4, 'Four clock dials.');
   assert.equal(role('unlit').length, 1, 'One crane cab.');
-  for (const r of ['beacon', 'kiosk', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
+  for (const r of ['beacon', 'kiosk', 'cab', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
   for (let minute = 0; minute < 24 * 60; minute += 15) {
     const clock = at(minute / 60);
     assert(role('dial').every((p) => windowLevel(p.light, clock) === 1), `A clock dial is dark at minute ${minute}.`);
-    assert(['beacon', 'kiosk', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
+    assert(['beacon', 'kiosk', 'cab', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
     assert(role('unlit').every((p) => windowLevel(p.light, clock) === 0), `The crane cab is lit at minute ${minute}.`);
   }
   // The dials are exactly today's glow; no pane is brighter (luminance x the night's 0.72).
