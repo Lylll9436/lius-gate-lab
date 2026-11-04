@@ -101,13 +101,18 @@ function createCreekMaterial() {
   return { material, uniforms, blankMasks };
 }
 
-const SEA_SIZE = 480;
+/**
+ * The sea and its bed: a square this wide round the origin, so no frame reaches its edge short of
+ * the fog or the camera's near plane. The bottom of a tall frame looks back toward the camera, where
+ * the fog never reaches: a phone pinched out to the widest zoom with the view at the far edge of the
+ * airport's pan region needs 350 to its bottom corners, and 430 above a file sheet, out to the near
+ * plane (check-navigation). At 480 the pale stage showed in both bottom corners.
+ */
+export const SEA_SIZE = 900;
 /** The sea: deep blue offshore, turquoise where the ground masks' G channel marks the shallows. */
 export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Texture) {
   const { material, uniforms, blankMasks } = createCreekMaterial();
   if (masks) uniforms.groundMasks.value = masks;
-  // Wide enough that a zoomed-out frame shifted beside a panel (or above the footer) never
-  // reaches the edge of the sea.
   const geometry = new T.PlaneGeometry(SEA_SIZE, SEA_SIZE, 1, 1);
   geometry.rotateX(-Math.PI / 2);
   // Wave shape is in the fragment normals; a flat ocean mesh avoids coarse waves at the horizon.

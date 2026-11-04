@@ -807,6 +807,83 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     for (let f = 0; f < 300; f++) drive.frame(0, 8);
     assert(drive.ground().distanceTo(before) < 0.6 && drive.worst.lift <= scene.PAN.lift + 1, 'A drag kept up against the pan limit moves the view on, or lifts the camera into the fog.');
   }
+  // The sea reaches past every frame's edge, short of the fog and the camera's near plane: the bottom
+  // of a tall frame looks back toward the camera, where the fog never reaches. Zoomed out to the
+  // widest, at every bearing, with the subject's ground point anywhere on the pan union's edge (and
+  // half a unit past it, as a drag can leave it), and the target lifted or lowered as far as
+  // PAN.lift lets it (which only moves the depths): phones with the file hidden or above its sheet,
+  // tablets upright and on their side, beside the file or not, and desktops beside a panel. At 480
+  // the pale stage showed in the bottom corners of phones (up to 155 px) and tablets.
+  {
+    const { SEA_SIZE } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
+      [near] = /new T\.OrthographicCamera\(-24, 24, 24, -24, (-?\d+), \d+\)/.exec(source).slice(1).map(Number),
+      [fogFar] = /new T\.Fog\('#[0-9a-f]+', \d+, (\d+)\)/.exec(source).slice(1).map(Number),
+      give = scene.PAN.lift / (35 / Math.hypot(38, 35)),
+      edge = [];
+    assert(near < 0 && fogFar > 0, 'The sea check cannot find the camera\'s near plane or the fog.');
+    for (let a = 0; a < 2 * Math.PI; a += Math.PI / 60) edge.push(new T.Vector3(Math.cos(a) * (DISC + 0.5), 0, Math.sin(a) * (DISC + 0.5)));
+    for (const o of plan.airportOutline(4.5, 1.5)) edge.push(new T.Vector3(o.x, 0, o.z));
+    for (let z = -20; z >= plan.AIRPORT.z + plan.AIRPORT.hd; z -= 2) edge.push(new T.Vector3(plan.AIRPORT_ROAD.x + 8.5, 0, z), new T.Vector3(plan.AIRPORT_ROAD.x - 8.5, 0, z));
+    const frames = [
+      ...[[360, 640], [360, 800], [375, 667], [390, 844], [412, 915], [430, 932]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0, -0.26]]),
+      ...[[768, 1024], [820, 1180]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0, -0.2]]),
+      ...[[1024, 1366], [1024, 768], [1366, 1024]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0.24, 0]]),
+      ...[[1280, 800], [1440, 900], [1920, 1080], [2560, 1080]].flatMap(([w, h]) => [[w, h, 0.21, 0], [w, h, 0.3, -0.2]]),
+    ];
+    let reach = 0;
+    for (const [w, h, shift, drop] of frames) {
+      const aspect = w / h,
+        vertical = Math.max(53, 76 / aspect),
+        halfW = (vertical * aspect) / 2 / 0.45,
+        halfH = vertical / 2 / 0.45;
+      for (let b = 0; b < 2 * Math.PI; b += Math.PI / 24) {
+        const back = new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38),
+          right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
+          up = new T.Vector3().crossVectors(back.clone().normalize(), right),
+          forward = back.clone().normalize().negate(),
+          // The scene's panel offset for the frame (panelOffset), at the widest zoom.
+          offset = right.clone().multiplyScalar(shift * 2 * halfW).addScaledVector(up, drop * 2 * halfH);
+        for (const subject of edge) {
+          const eye = subject.clone().add(offset).add(back),
+            // Where the frame's corner (u, v) looks at the water's level, and how deep that is.
+            look = (u, v, level) => {
+              const from = eye.clone().addScaledVector(right, u * halfW).addScaledVector(up, v * halfH),
+                t = (level - from.y) / forward.y;
+              return { x: from.x + forward.x * t, z: from.z + forward.z * t, depth: t };
+            };
+          // Along each edge of the frame the ground point and its depth run linearly, so the farthest
+          // point in view (short of the fog and the near plane) is at a corner or where the fog or the
+          // near plane cuts the edge.
+          for (const level of [0.07, -0.5])
+            for (const [[u0, v0], [u1, v1]] of [[[-1, -1], [1, -1]], [[1, -1], [1, 1]], [[1, 1], [-1, 1]], [[-1, 1], [-1, -1]]]) {
+              const a = look(u0, v0, level),
+                c = look(u1, v1, level),
+                lo = near - give,
+                hi = fogFar + give,
+                cut = (d) => (d - a.depth) / (c.depth - a.depth || 1e-9);
+              let s0 = 0,
+                s1 = 1;
+              if (Math.abs(c.depth - a.depth) < 1e-9) {
+                if (a.depth <= lo || a.depth >= hi) continue;
+              } else {
+                const [p, q] = [cut(lo), cut(hi)].sort((m, n) => m - n);
+                s0 = Math.max(0, p);
+                s1 = Math.min(1, q);
+                if (s0 >= s1) continue;
+              }
+              for (const k of [s0, s1]) {
+                const x = a.x + (c.x - a.x) * k,
+                  z = a.z + (c.z - a.z) * k,
+                  out = Math.max(Math.abs(x), Math.abs(z));
+                reach = Math.max(reach, out);
+                assert(out <= SEA_SIZE / 2, `The sea ends in view (${out.toFixed(0)} out, depth ${(a.depth + (c.depth - a.depth) * k).toFixed(0)}) on a ${w} x ${h} frame (shift ${shift}, drop ${drop}) at bearing ${b.toFixed(2)}, viewing ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)} at the widest zoom.`);
+              }
+            }
+        }
+      }
+    }
+    assert(reach > 380 && reach < SEA_SIZE / 2 - 10, `The sea check reaches ${reach.toFixed(0)} of the sea's ${SEA_SIZE / 2}.`);
+  }
   // The overview takes in the airport's island too (its armour's toe, the tower's mast, the hangar's
   // roof): at 1440 x 900 it zooms out about 16% from the island's 0.911, and beside the open file
   // (460 wide: a frame shift of about 0.17 at 1440, 0.19 at 1280) it still fits above the widest zoom.
