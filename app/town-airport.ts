@@ -85,6 +85,23 @@ export const THRESHOLD = {
   aims: [-0.5, 0.5],
   aimWidth: 0.3,
 };
+/**
+ * The windsock: its mast's height over the deck and the sock's mouth's radius; the way the sock
+ * streams on the prevailing westerly (its heading, radians from east toward the north) and how far
+ * it droops; how far it swings either way round the swivel and lifts and sags in the gusts.
+ */
+export const WINDSOCK_SWAY = { mast: 1.7, mouth: 0.13, heading: -0.5, droop: 0.3, swing: 0.17, lift: 0.07 };
+/**
+ * Where the windsock's sock points at `time` (town time): it swings slowly and unevenly round the
+ * swivel and lifts and sags a little, two slow waves each, as the washing sways on its line.
+ */
+export function windsockAim(time: number) {
+  const W = WINDSOCK_SWAY;
+  return {
+    heading: W.heading + W.swing * (0.7 * Math.sin(time * 0.9 + 0.4) + 0.3 * Math.sin(time * 2.3 + 1.1)),
+    droop: W.droop + W.lift * (0.7 * Math.sin(time * 1.3 + 2.0) + 0.3 * Math.sin(time * 3.1 + 0.3)),
+  };
+}
 /** The island's edge, out from the deck's edge: the coping's outer face, and the armour's bed from there to its toe (o, y). */
 const EDGE = { coping: 0.05, bed: [[0.03, 0.31], [0.92, -0.58]] as [number, number][] };
 
@@ -766,24 +783,23 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     slab(g, H.x1 - 0.3, plan.APRON.x0, h.position.z - door.half - 0.35, h.position.z + door.half + 0.35, A.deck - 0.01, plan.AIRSIDE, L.apron, 'stone');
   }
   /**
-   * The windsock (plan.WINDSOCK) on the grass by the runway's east end (its 27 threshold): a concrete
-   * footing, a white mast and a steel swivel at its head, the sock's steel hoop hung from it by its
-   * rim, and the sock in five bands (the tram's orange and cream, orange at either end) streaming
-   * east-north-east on the prevailing westerly, drooping a little. Its mouth is dark inside the
-   * hoop and its tail closed, so it never reads as an empty ring. Still for now: the sock hangs on
-   * a pivot of its own (`windsock-sock`) at the hoop's middle, its axis the pivot's +y.
+   * The windsock (plan.WINDSOCK) on the grass south of the runway's east end (its 27 threshold),
+   * clear of the plane's wings as it lands over that end and turns about there: a concrete footing, a
+   * white mast and a steel swivel at its head, the sock's steel hoop hung from it by its rim, and the
+   * sock in five bands (the tram's orange and cream, orange at either end) streaming east-north-east
+   * on the prevailing westerly, drooping a little. Its mouth is dark inside the hoop and its tail
+   * closed, so it never reads as an empty ring. It sways as the washing does: the sock hangs on a
+   * pivot of its own (`windsock-sock`, at the hoop's middle, its axis the pivot's +y) that the frame
+   * loop swings round the swivel and lifts and drops a little in the gusts (windsockAim), turning
+   * that one group and never a vertex; like the washing it is batched on its own and casts nothing.
    */
   function windsock(g: T.Group) {
     const W = plan.WINDSOCK,
       w = new T.Group(),
-      mast = 1.7,
-      heading = -0.5, // from east toward the north
-      droop = 0.3,
-      mouth = 0.13,
+      { mast, mouth } = WINDSOCK_SWAY,
       tail = 0.075,
       bands = 5,
-      band = 0.14,
-      d = new T.Vector3(Math.cos(droop) * Math.cos(heading), -Math.sin(droop), Math.cos(droop) * Math.sin(heading));
+      band = 0.14;
     w.name = 'airport-windsock';
     w.position.set(W.x, A.deck, W.z);
     g.add(w);
@@ -792,20 +808,28 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     // The sock on its pivot: the hoop's middle, out from the swivel by the hoop's radius.
     const sock = new T.Group();
     sock.name = 'windsock-sock';
-    sock.position.set(Math.cos(heading) * (mouth + 0.05), mast, Math.sin(heading) * (mouth + 0.05));
-    sock.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d);
+    sock.userData.keepSeparate = true;
     w.add(sock);
     const radius = (s: number) => mouth + ((tail - mouth) * s) / (bands * band),
       colours: Part[][] = [[], []];
     for (let k = 0; k < bands; k++)
       colours[k % 2].push({ geometry: new T.CylinderGeometry(radius((k + 1) * band), radius(k * band), band, 16, 1, true), matrix: placed(0, (k + 0.5) * band, 0) });
     colours[0].push({ geometry: new T.CylinderGeometry(tail, tail, 0.012, 16), matrix: placed(0, bands * band - 0.006, 0) });
-    merge(sock, colours[0], palette.tramOrange, 'paint', { band: false });
-    merge(sock, colours[1], palette.tramCream, 'paint', { band: false });
+    merge(sock, colours[0], palette.tramOrange, 'paint', { band: false, shadow: false });
+    merge(sock, colours[1], palette.tramCream, 'paint', { band: false, shadow: false });
     // The dark inside, a little in from the mouth; the hoop round the mouth; the swivel.
     merge(sock, [{ geometry: new T.CylinderGeometry(mouth - 0.01, mouth - 0.01, 0.012, 16), matrix: placed(0, 0.035, 0) }], L.iron, 'paint', { shadow: false });
     merge(sock, [{ geometry: new T.TorusGeometry(mouth, 0.035, 6, 20), matrix: placed(0, 0, 0, Math.PI / 2, 0, 0) }], L.steel, 'paint', { shadow: false });
     merge(w, [{ geometry: new T.CylinderGeometry(0.06, 0.06, 0.12, 12), matrix: placed(0, mast + 0.02, 0) }], L.steel, 'paint', { shadow: false });
+    const up = new T.Vector3(0, 1, 0),
+      along = new T.Vector3(),
+      update = (time: number) => {
+        const { heading, droop } = windsockAim(time);
+        sock.position.set(Math.cos(heading) * (mouth + 0.05), mast, Math.sin(heading) * (mouth + 0.05));
+        sock.quaternion.setFromUnitVectors(up, along.set(Math.cos(droop) * Math.cos(heading), -Math.sin(droop), Math.cos(droop) * Math.sin(heading)));
+      };
+    update(0);
+    ctx.animated.push({ object: sock, update });
   }
   /**
    * A forecourt lamp (local y 0 on the paving): a frosted globe, the gate's kind of lamp, lit with

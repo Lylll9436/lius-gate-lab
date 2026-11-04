@@ -2670,6 +2670,40 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   });
   assert(nose <= hallWest - 0.3 && tail >= plan.HANGAR.x1 + 0.3, `The plane (x ${tail.toFixed(2)} to ${nose.toFixed(2)}) crowds the hall (${hallWest.toFixed(2)}) or the hangar.`);
 }
+// The windsock sways as the washing does: the frame loop swings its sock (one group, batched on its
+// own into one mesh that casts nothing) round the swivel and lifts and drops it a little, turning
+// the group and never a vertex; at every moment the sock streams east, downwind, over the deck, high
+// over it and under 2.5; it never stops (its pose differs from moment to moment) and stays out in
+// the rain.
+{
+  const { WINDSOCK_SWAY: S, windsockAim } = await load('town-airport'),
+    entry = model.animated.find((e) => e.object.name === 'windsock-sock'),
+    sock = entry.object,
+    W = plan.WINDSOCK,
+    mesh = sock.children[0],
+    positions = mesh?.geometry.attributes.position.array.slice();
+  assert(sock.userData.keepSeparate && sock.children.length === 1 && mesh.isMesh && !mesh.castShadow, 'The windsock\'s sock is not one mesh of its own that casts nothing.');
+  const box = new T.Box3(),
+    seen = new Set();
+  for (let t = 0; t < 120; t += 0.37) {
+    entry.update(t, 0, t > 60 ? 1 : 0);
+    const aim = windsockAim(t);
+    assert(Math.abs(aim.heading - S.heading) <= S.swing + 1e-9 && Math.abs(aim.droop - S.droop) <= S.lift + 1e-9 && aim.droop > 0.15, `The windsock swings out of its sway at t=${t.toFixed(2)}.`);
+    sock.updateWorldMatrix(true, true);
+    box.setFromObject(sock);
+    assert(sock.visible && box.min.y > plan.AIRPORT.deck + 1.2 && box.max.y < 2.5 && box.max.x > W.x + 0.5, `The windsock's sock does not stream east in the air at t=${t.toFixed(2)}.`);
+    const pos = mesh.geometry.attributes.position,
+      p = new T.Vector3();
+    for (let i = 0; i < pos.count; i += 7) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      assert(plan.onAirport(p.x, p.z, -0.1), `The windsock's sock swings out over the edge at t=${t.toFixed(2)}.`);
+    }
+    seen.add(sock.quaternion.toArray().map((n) => n.toFixed(3)).join());
+  }
+  assert(seen.size > 100, 'The windsock holds still.');
+  assert.deepEqual(mesh.geometry.attributes.position.array, positions, 'The windsock\'s vertices move on the CPU.');
+  entry.update(0, 0, 0);
+}
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
 const nearPaddock = (x, z, margin) =>

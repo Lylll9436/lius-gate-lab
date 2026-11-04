@@ -560,10 +560,11 @@ export const PLANE = { length: 4.4, radius: 0.33, axis: 0.63, span: 3.8, fin: 1.
 /**
  * West of the apron, the hangar (its plan x0..x1, z0..z1 and its ribbed barrel roof's top `top` over
  * the deck), its doors to the apron (east) over a concrete pad that joins them to it; by the
- * runway's east end (its 27 threshold), the windsock (its mast's foot).
+ * runway's east end (its 27 threshold), on the grass south of it, the windsock (its mast's foot):
+ * 0.5 clear of the plane's wing as it lands over that end and turns about there, however it sways.
  */
 export const HANGAR = { x0: -16.8, x1: -13.8, z0: -50, z1: -45.6, top: 2.4 };
-export const WINDSOCK = { x: 5.6, z: -50.8 };
+export const WINDSOCK = { x: 5.4, z: -50.0 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
