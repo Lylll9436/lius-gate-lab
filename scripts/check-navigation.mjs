@@ -1030,6 +1030,74 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     }
     assert(crossing > 2 && handed > 2, `The glide check no longer leaves the pan regions (${crossing.toFixed(1)}, handed ${handed.toFixed(1)} out).`);
   }
+  // The plane never pops in or out of a standard frame: where it is lost on its climb out and where
+  // it comes back on its approach, it is off the frame (by its own length) or past the fog (even
+  // with the target lowered as far as the pan limit's lift lets it), in the site's own framings on
+  // phones, tablets and desktops (the City overview fitted with the file hidden, beside it or above
+  // its sheet, beside the reading panel, the airport's chapter and file, the opening view) at every
+  // Rotate stop and through the idle drift, and in all of them zoomed out to the widest on the
+  // island, the shadow's home or the airport. At 88 s it vanished in view on phones' fitted overview
+  // at 5pi/4, on a tablet beside the file and on phones pinched out; at 150 out it came back in
+  // view on upright tablets and phones zoomed out at 3pi/4.
+  {
+    const [fogFar] = /new T\.Fog\('#[0-9a-f]+', \d+, (\d+)\)/.exec(source).slice(1).map(Number),
+      give = scene.PAN.lift / (35 / Math.hypot(38, 35)),
+      times = plan.PLANE_TIMES,
+      edges = [
+        ['vanishes', plan.planePose(times.lost - 1e-6)],
+        ['comes back', plan.planePose(times.approach)],
+      ],
+      reach = (plan.PLANE.length / 2) * 1.05,
+      phones = [[360, 640], [360, 800], [375, 667], [375, 812], [390, 844], [393, 852], [412, 915], [414, 896], [430, 932]],
+      upright = [[768, 1024], [810, 1080], [820, 1180], [834, 1194]],
+      wide = [[1024, 1366], [1024, 768], [1180, 820], [1366, 1024], [1280, 720], [1280, 800], [1366, 768], [1440, 900], [1536, 864], [1600, 900], [1680, 1050], [1920, 1080], [2560, 1440]],
+      stops = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4],
+      // A frame by its camera's bearing (its own, with the drift) and its view centre.
+      seen = (w, h, zoom, bearing, centre, p) => {
+        const aspect = w / h,
+          vertical = Math.max(53, 76 / aspect),
+          back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38),
+          forward = back.clone().normalize().negate(),
+          right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+          up = new T.Vector3().crossVectors(right, forward),
+          rel = new T.Vector3(p.x, p.y, p.z).sub(centre).sub(back);
+        return !(Math.abs(rel.dot(right)) > (vertical * aspect) / 2 / zoom + reach || Math.abs(rel.dot(up)) > vertical / 2 / zoom + reach || rel.dot(forward) - give >= fogFar);
+      };
+    assert(edges.every(([, p]) => p.visible) && plan.planePose(times.lost).phase === 'away' && !plan.planePose(times.lost).visible, 'The check does not look at the last and the first moments the plane shows.');
+    let frames = 0;
+    const hold = (what, w, h, zoom, bearing, centre) => {
+      for (const [when, p] of edges)
+        for (const drift of [-0.16, -0.08, 0, 0.08, 0.16]) {
+          frames++;
+          assert(!seen(w, h, zoom, bearing + drift, centre, p), `The plane ${when} in view (${p.x.toFixed(0)}, ${p.z.toFixed(0)}) on ${what} at ${w} x ${h}, bearing ${bearing.toFixed(2)} drifted ${drift}.`);
+        }
+    };
+    for (const [w, h] of [...phones, ...upright, ...wide]) {
+      const narrow = w < 961;
+      for (const bearing of stops)
+        for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[0, 0], [(460 + 32) / (2 * w), 0], [0.21, 0]]) {
+          frame(w, h, shift, bearing);
+          view.frameDrop = drop;
+          scene.fitOverview();
+          hold(`the City overview (shift ${shift.toFixed(2)}, drop ${drop})`, w, h, view.targetZoom, bearing, view.target.clone());
+        }
+      for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[0.21, 0], [(460 + 32) / (2 * w), 0]]) {
+        frame(w, h, shift, plan.chapterBearings.airport);
+        view.frameDrop = drop;
+        scene.fitGroup(scene.AIRPORT_FIT, 0.95, 2.6);
+        hold('the airport’s framing', w, h, view.targetZoom, plan.chapterBearings.airport, view.target.clone());
+      }
+      view.frameDrop = 0;
+      if (!narrow) {
+        // The opening view: the island's centre at zoom 1, the hero's frame shift.
+        const shift = new T.Vector3(Math.cos(Math.PI / 4), 0, -Math.sin(Math.PI / 4)).multiplyScalar(-0.06 * ((Math.max(53, (76 * h) / w) * w) / h));
+        hold('the opening view', w, h, 1, Math.PI / 4, shift);
+      }
+      for (const centre of [new T.Vector3(), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z)])
+        for (const bearing of [...stops, plan.chapterBearings.airport]) hold('the widest zoom', w, h, 0.45, bearing, centre);
+    }
+    assert(frames > 6000, `The plane check looks at only ${frames} frames.`);
+  }
   // That is the framing the Departures chapter gets: the reading camera turns to its chapter's
   // bearing (the gate's) and selects its scene target, the airport, and the scene fits a selected
   // airport alone to that box between 0.95 and 2.6. The City file of the airport, or of anyone who
@@ -1493,5 +1561,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );

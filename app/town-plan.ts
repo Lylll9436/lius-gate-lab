@@ -1214,8 +1214,15 @@ export const PLANE_LOOP = 3 * LAP;
  * The loop's timetable (seconds into it): pushback, taxi, the turn onto 27, the take-off roll (it
  * lifts off at its end, its rotation starting a little before), the climb out until it is lost,
  * then back: the start of the approach, touchdown, the end of the roll-out (taxi speed) and the stand.
+ * It goes and comes back where no standard frame sees it (check-town): the site's own framings on
+ * phones, tablets and desktops at every Rotate stop and through the idle drift, and all of them
+ * zoomed out to the widest on the island, the shadow's home or the airport. A phone pinched out to
+ * 0.45 at 5pi/4 still saw it climbing toward the frame's bottom 330 out, so it is lost at 112 s, and
+ * comes back 240 out, out of the side of an upright tablet's widest frame at 3pi/4. To fly that far
+ * at its speeds it leaves 6 s earlier and lands 16 s later than it first did, so it stands 15 s on
+ * its stand.
  */
-export const PLANE_TIMES = { pushback: [18, 28], taxi: [30, 54], turn: [54, 58], roll: [58, 64], lost: 88, approach: 112, touchdown: 140, rollOut: 145, parked: 161 };
+export const PLANE_TIMES = { pushback: [12, 22], taxi: [24, 48], turn: [48, 52], roll: [52, 58], lost: 112, approach: 113, touchdown: 156, rollOut: 161, parked: 177 };
 /**
  * Where it goes. Its wings (3.8 across, their tips' lights 1.97 out) overhang the 0.9 taxiway by 1.5
  * either side, and the jet bridge's north side and the hall's north wall stand 2.15 and 1.4 off the
@@ -1231,8 +1238,8 @@ export const PLANE_TIMES = { pushback: [18, 28], taxi: [30, 54], turn: [54, 58],
  * wingtip's light stays 0.3 inside the deck's north edge even as it swings out turning off at the
  * stub; its main gear stops at x `pivot`, its nose wheel still on the runway's end, to turn about,
  * and touches down at x `touchdown`, just past the threshold. It comes back from `far` east along
- * the track, and on the way out is lost about as far west-north-west (`climb`: where it turns, over
- * how long and how far round).
+ * the track; on the way out it climbs west-north-west (`climb`: where it turns, over how long and
+ * how far round) until it is lost, farther out still (PLANE_TIMES).
  */
 export const PLANE_ROUTE = {
   pushback: -9.75,
@@ -1241,7 +1248,7 @@ export const PLANE_ROUTE = {
   stub: TAXIWAY.stubs[0] + (TAXIWAY.z - RUNWAY.z - 0.25) / 2,
   bend: -10.2,
   track: RUNWAY.z + 0.25,
-  far: 150,
+  far: 240,
   climb: { at: -40, over: 34, turn: 0.4 },
 };
 /**

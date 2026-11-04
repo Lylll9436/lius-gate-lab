@@ -2808,7 +2808,8 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
 // balloon's lap (turned either way with the idle drift), the gulls, the lighthouse beam's sweep and
 // the boat. It goes out of sight only beyond 150, outside the opening view at every common size and
 // drift, and outside the City overview and the airport's chapter even zoomed out to 0.45 at any of
-// the four Rotate stops, or else lost in the fog.
+// the four Rotate stops, or else lost in the fog. (check-navigation holds it out of every standard
+// frame, phones' and tablets' too, with the scene's own framings.)
 {
   const { WINDSOCK_SWAY } = await load('town-airport'),
     { createGulls } = await load('city-atmosphere'),
