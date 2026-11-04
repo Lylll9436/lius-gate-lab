@@ -543,6 +543,15 @@ export const FORECOURT = { x0: -1.9, x1: 2.9, z0: -45.8, z1: -43.2 };
  * its legs, on a footing, at x `legs`.
  */
 export const JET_BRIDGE = { z: -48.2, floor: 0.8, width: [0.44, 0.5], height: [0.52, 0.58], cab: -3.71, bellows: -47.72, legs: -2.95 };
+/** The airside's slabs (the runway, the taxiway, the apron) lie this far up, 0.03 over the deck's grass: the plane stands on them. */
+export const AIRSIDE = AIRPORT.deck + 0.03;
+/**
+ * West of the apron, the hangar (its plan x0..x1, z0..z1 and its ribbed barrel roof's top `top` over
+ * the deck), its doors to the apron (east) over a concrete pad that joins them to it; by the
+ * runway's east end (its 27 threshold), the windsock (its mast's foot).
+ */
+export const HANGAR = { x0: -16.8, x1: -13.8, z0: -50, z1: -45.6, top: 2.4 };
+export const WINDSOCK = { x: 5.6, z: -50.8 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */

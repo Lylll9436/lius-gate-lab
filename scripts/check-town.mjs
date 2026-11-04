@@ -1414,9 +1414,18 @@ for (const [x, z] of [
   }
   // Its lamps: four on the causeway's east piers, lit with the town's (from the east parapet the
   // lanterns' shadows fall off the road at the opening and chapter bearings: the key light turns
-  // with the camera and always throws them to the right of the frame).
-  const causewayLamps = lamps.filter((l) => l.getWorldPosition(v).z < AR.beach);
+  // with the camera and always throws them to the right of the frame); and two more, the town's
+  // standard, at the forecourt's front corners on its paving, either side of the road's axis.
+  const causewayLamps = lamps.filter((l) => l.getWorldPosition(v).z < AR.beach && v.z > AR.island - 0.4),
+    forecourtLamps = lamps.filter((l) => l.getWorldPosition(v).z < FC.z1 && v.z > FC.z0 && v.x > FC.x0 && v.x < FC.x1);
   assert.equal(causewayLamps.length, 4, 'The causeway has not four lamps.');
+  assert.equal(lamps.filter((l) => l.getWorldPosition(v).z < AR.beach).length, 6, 'The airport has lamps besides the causeway\'s and the forecourt\'s.');
+  assert.equal(forecourtLamps.length, 2, 'The forecourt has not two lamps.');
+  {
+    const [west, east] = forecourtLamps.map((l) => l.getWorldPosition(new T.Vector3())).sort((a, b) => a.x - b.x);
+    assert(Math.abs(west.x + east.x - 2 * AR.x) < 1e-6 && Math.abs(west.z - east.z) < 1e-6 && west.z > FC.z1 - 0.4 - 0.6, 'The forecourt\'s lamps do not pair across the road at its front.');
+    assert(Math.abs(west.y - (A.deck + 0.06 + 1.8)) < 1e-6, 'A forecourt lamp is off the paving.');
+  }
   for (const l of causewayLamps) {
     l.getWorldPosition(v);
     assert(Math.abs(v.x - (AR.x + (AR.top / 2 + plan.ROAD_WIDTH / 2 + 0.24) / 2)) < 0.01 && v.z > AR.island - 0.4 && v.y > A.deck + 2, 'A causeway lamp is off its pier.');
@@ -1496,14 +1505,17 @@ for (const [x, z] of [
     assert(strongest > 0.6 && gone > 0 && gone < rows * 0.15, `The airport's surf is too even (${strongest.toFixed(2)} at most, ${gone} rows gone).`);
   }
   model.airportLand.traverse((o) => assert(!o.isMesh || !o.material.transparent, 'A see-through mesh on the airport.'));
-  // Budgets: the airport's ground and building add at most 20 meshes and 60k triangles to the town.
+  // Budgets: the airport's ground (with its hangar, windsock and forecourt furniture, whose new
+  // families are the hangar's copper and paint, the benches' wood and the planter's box ball, and
+  // whose two lamps add their lanterns) and its building add at most 27 meshes and 70k triangles to
+  // the town.
   let landMeshes = 0,
     landTris = 0,
     hallMeshes = 0,
     hallTris = 0;
   model.airportLand.traverse((o) => o.isMesh && (landMeshes++, (landTris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3)));
   hall.traverse((o) => o.isMesh && (hallMeshes++, (hallTris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3)));
-  assert(landMeshes <= 14 && hallMeshes <= 7 && landTris + hallTris <= 60000, `The airport costs ${landMeshes} + ${hallMeshes} meshes and ${Math.round(landTris + hallTris)} triangles.`);
+  assert(landMeshes <= 20 && hallMeshes <= 7 && landTris + hallTris <= 70000, `The airport costs ${landMeshes} + ${hallMeshes} meshes and ${Math.round(landTris + hallTris)} triangles.`);
   // The building alone (the hall, the link, the tower and the jet bridge) stays under the residence's
   // and the lighthouse's budgets combined, near the gate's.
   assert(hallTris <= 20000, `The Departures Hall, its tower and its jet bridge cost ${Math.round(hallTris)} triangles.`);
@@ -1514,13 +1526,14 @@ for (const [x, z] of [
 {
   const { createAirport } = await load('town-airport'),
     { createProps } = await load('town-props'),
+    { createNature } = await load('town-nature'),
     { createKit } = await load('town-kit'),
     { createCityMaterials } = await load('city-materials'),
     library = createCityMaterials(),
     ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
     kit = createKit(ctx),
     g = new T.Group();
-  createAirport(ctx, kit, createProps(ctx, kit)).airportGround(g);
+  createAirport(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).airportGround(g);
   const named = (name) => g.children.filter((o) => o.name === name);
   for (const name of ['airport-armour', 'airport-deck', 'airport-coping', 'airport-road']) assert.equal(named(name).length, 1, `The airport's ${name} is not one mesh.`);
   const armour = named('airport-armour')[0].geometry;
@@ -1551,10 +1564,15 @@ for (const [x, z] of [
   }
   const lawn = named('airport-deck')[0].geometry.attributes.position;
   for (let i = 0; i < lawn.count; i++) assert(Math.abs(lawn.getY(i) - plan.AIRPORT.deck) < 1e-6 && plan.airportDistance(lawn.getX(i), lawn.getZ(i)) <= -0.3 + 1e-4, 'The deck\'s grass leaves the deck.');
-  assert.equal(ctx.lamps.length, 4, 'The airport\'s ground has not four lamps.');
+  // Six lamps: the causeway's four and the forecourt's two.
+  g.updateMatrixWorld(true);
+  const causewayLanterns = ctx.lamps.filter((l) => l.getWorldPosition(new T.Vector3()).z > plan.AIRPORT_ROAD.island - 0.4);
+  assert.equal(ctx.lamps.length, 6, 'The airport\'s ground has not six lamps.');
+  assert.equal(causewayLanterns.length, 4, 'The causeway has not four lamps.');
+  assert(ctx.lamps.every((l) => causewayLanterns.includes(l) || l.parent.name === 'forecourt-lamp'), 'A lamp off the causeway is not the forecourt\'s.');
   // The causeway lamps' heads (above the post's boss) cast no shadow, but for the brass finial: four
   // in a row threw chevrons along the road that read as painted arrows. Their posts still cast.
-  for (const lantern of ctx.lamps) {
+  for (const lantern of causewayLanterns) {
     let heads = 0,
       posts = 0;
     for (const part of lantern.parent.children) {
@@ -1568,6 +1586,106 @@ for (const [x, z] of [
       } else if (part.castShadow) posts++;
     }
     assert(heads >= 3 && posts >= 3, `A causeway lamp has ${heads} head parts and ${posts} casting post parts.`);
+  }
+  /** Every vertex of o's meshes, in the world. */
+  const vertices = (o, visit) => {
+    const p = new T.Vector3();
+    o.traverse((m) => {
+      if (!m.isMesh) return;
+      const q = m.geometry.attributes.position;
+      for (let i = 0; i < q.count; i++) visit(p.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld), m);
+    });
+  };
+  const { AIRPORT_LOOK: LOOK } = await load('town-airport'),
+    hex = (c) => new T.Color(c).getHex();
+  // The hangar (plan.HANGAR), west of the apron: inside its plan, which the overview frames (the
+  // roof's 2.4 over the deck included), standing on the deck like the hall's plinth, 0.3 in from the
+  // deck's edge at least; one barrel roof of copper, flagged as the roof (its eave shades the
+  // walls); its green doors in the east gable, to the apron, a doorway 3 wide under an arched head
+  // over 1.8; and a concrete pad at the airside's level from under them to the apron.
+  {
+    const H = plan.HANGAR,
+      hangar = g.getObjectByName('airport-hangar'),
+      box = new T.Box3().setFromObject(hangar);
+    assert(box.min.x >= H.x0 - 1e-6 && box.max.x <= H.x1 + 1e-6 && box.min.z >= H.z0 - 1e-6 && box.max.z <= H.z1 + 1e-6, `The hangar leaves its plan: ${box.min.toArray().map((n) => n.toFixed(2)).join(', ')} to ${box.max.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+    assert(Math.abs(box.max.y - (plan.AIRPORT.deck + H.top)) < 0.005 && Math.abs(box.min.y - plan.AIRPORT.deck) < 1e-6, `The hangar stands from ${box.min.y.toFixed(3)} to ${box.max.y.toFixed(3)}.`);
+    vertices(hangar, (p) => assert(plan.onAirport(p.x, p.z, -0.3), `The hangar leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
+    const roofs = [];
+    hangar.traverse((o) => o.isMesh && o.userData.roof && roofs.push(o));
+    assert(roofs.length === 1 && roofs[0].material.userData.surfaceKind === 'copper' && roofs[0].userData.eaveY > 1, 'The hangar has not its one copper barrel roof.');
+    let z0 = Infinity,
+      z1 = -Infinity,
+      head = 0,
+      shut = 0;
+    vertices(hangar, (p, m) => {
+      if (m.material.color.getHex() !== hex(LOOK.doors) || p.x < H.x1 - 0.3) return;
+      z0 = Math.min(z0, p.z);
+      z1 = Math.max(z1, p.z);
+      head = Math.max(head, p.y - plan.AIRPORT.deck);
+    });
+    // The leaves close the doorway: their faces to the apron cover its 3 x 1.54 and its arched head.
+    hangar.traverse((m) => {
+      if (!m.isMesh || m.material.color.getHex() !== hex(LOOK.doors)) return;
+      const q = m.geometry.attributes.position,
+        [a, b, c] = [0, 1, 2].map(() => new T.Vector3());
+      for (let i = 0; i + 2 < q.count; i += 3) {
+        a.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+        b.fromBufferAttribute(q, i + 1).applyMatrix4(m.matrixWorld);
+        c.fromBufferAttribute(q, i + 2).applyMatrix4(m.matrixWorld);
+        const n = b.sub(a).cross(c.sub(a));
+        if (a.x > H.x1 - 0.3 && n.x > 0.9 * n.length()) shut += n.length() / 2;
+      }
+    });
+    assert(z1 - z0 > 2.9 && head > 1.8 && shut > 5, `The hangar's doors to the apron span ${(z1 - z0).toFixed(2)}, rise ${head.toFixed(2)} and close ${shut.toFixed(2)} of the doorway.`);
+    const pad = g.children.find((o) => {
+      if (!o.isMesh || o.material.color.getHex() !== hex(LOOK.apron)) return false;
+      const b = new T.Box3().setFromObject(o);
+      return Math.abs(b.max.x - plan.APRON.x0) < 1e-6 && b.min.x < H.x1;
+    });
+    const padBox = pad && new T.Box3().setFromObject(pad);
+    assert(pad && padBox.min.x < H.x1 - 0.15 && Math.abs(padBox.max.y - plan.AIRSIDE) < 1e-6 && padBox.min.z < z0 && padBox.max.z > z1, 'No concrete pad joins the hangar\'s doors to the apron.');
+  }
+  // The windsock on its spot (plan.WINDSOCK): its footing on the deck 0.3 in from the edge at least;
+  // its sock on a pivot of its own (windsock-sock), up in the air over the deck and streaming east,
+  // downwind of the prevailing westerly; under 2.5 over the sea.
+  {
+    const W = plan.WINDSOCK,
+      w = g.getObjectByName('airport-windsock'),
+      sock = w?.getObjectByName('windsock-sock');
+    assert(w && sock && Math.abs(w.position.x - W.x) < 1e-9 && Math.abs(w.position.z - W.z) < 1e-9 && Math.abs(w.position.y - plan.AIRPORT.deck) < 1e-9, 'The windsock is off its spot.');
+    const all = new T.Box3().setFromObject(w),
+      streamer = new T.Box3().setFromObject(sock);
+    vertices(w, (p) => assert(plan.onAirport(p.x, p.z, 0) && (p.y > plan.AIRPORT.deck + 0.12 || plan.onAirport(p.x, p.z, -0.3)), `The windsock leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
+    assert(streamer.min.y > plan.AIRPORT.deck + 1.2 && streamer.max.x > W.x + 0.6 && all.max.y < 2.5, 'The windsock\'s sock does not stream east in the air.');
+  }
+  // The forecourt's furniture: the planter on the road's axis, four bollards 0.14 across along the
+  // kerb (two either side of it, in pairs about the axis), the two lamps and two benches facing in
+  // across the axis; all of it on the forecourt's paving, and clear of the hall's steps (0.3 in
+  // front of them across their width).
+  {
+    const FC = plan.FORECOURT,
+      AR = plan.AIRPORT_ROAD,
+      kerb = FC.z1 - 0.4,
+      steps = AR.arch + 0.7,
+      pieces = g.children.filter((o) => o.name.startsWith('forecourt-')),
+      count = (name) => pieces.filter((o) => o.name === name).length;
+    assert.deepEqual(['forecourt-planter', 'forecourt-bollards', 'forecourt-lamp', 'forecourt-bench'].map(count), [1, 1, 2, 2], 'The forecourt lacks its planter, bollards, lamps or benches.');
+    for (const o of pieces)
+      vertices(o, (p) => {
+        assert(p.x > FC.x0 && p.x < FC.x1 && p.z > FC.z0 && p.z < kerb, `The forecourt's ${o.name} leaves its paving at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+        assert(Math.abs(p.x - AR.x) > 1.5 || p.z > steps + 0.3, `The forecourt's ${o.name} crowds the hall's steps at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      });
+    assert(Math.abs(pieces.find((o) => o.name === 'forecourt-planter').position.x - AR.x) < 1e-9, 'The planter is off the road\'s axis.');
+    const posts = [];
+    vertices(pieces.find((o) => o.name === 'forecourt-bollards'), (p) => {
+      const near = posts.find((b) => Math.abs(b.x - p.x) < 0.2);
+      if (near) [near.lo, near.hi] = [Math.min(near.lo, p.x), Math.max(near.hi, p.x)];
+      else posts.push({ x: p.x, lo: p.x, hi: p.x });
+    });
+    const middles = posts.map((b) => (b.lo + b.hi) / 2).sort((a, b) => a - b);
+    assert(posts.length === 4 && posts.every((b) => Math.abs(b.hi - b.lo - 0.14) < 0.005) && Math.abs(middles[0] + middles[3] - 2 * AR.x) < 1e-6 && Math.abs(middles[1] + middles[2] - 2 * AR.x) < 1e-6, `The bollards are not four 0.14 across in pairs about the road's axis: ${posts.map((b) => (b.hi - b.lo).toFixed(3)).join(', ')}.`);
+    for (const bench of pieces.filter((o) => o.name === 'forecourt-bench'))
+      assert(Math.sin(bench.rotation.y) * (AR.x - bench.position.x) > 0 && Math.abs(Math.cos(bench.rotation.y)) < 1e-9, 'A forecourt bench turns its back on the axis.');
   }
   // The hall lane's dressing, flat on the ground and facing up: its kerb radii at the mouth (the
   // road's asphalt, across held at the carriageway's edge) and its flush edging of the town's
@@ -3989,5 +4107,5 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
 }
 console.log(
-  `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway and Departures Hall), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall and hangar), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

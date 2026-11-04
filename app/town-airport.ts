@@ -5,6 +5,7 @@ import * as plan from './town-plan';
 import { palette, hash, noise2, WATER, type TownContext } from './town-shared';
 import { shoreHeight } from './town-ground';
 import type { Kit, Piece } from './town-kit';
+import type { Nature } from './town-nature';
 import type { Props } from './town-props';
 
 /**
@@ -17,8 +18,9 @@ import type { Props } from './town-props';
  * paint, the muted ochre lead-in line; the hall's cream render (the tram's) with blonde sandstone
  * dressings and its render's rustication a shade deeper, under a verdigris roof (the Town Hall's
  * copper) with ribs of the lighter copper; its paintwork in the tram's green; the board's dark
- * slate and its tiles, dark umber glass that glows amber at night; dark iron; and the jet bridge's
- * light steel, dark rubber bellows and concrete footing.
+ * slate and its tiles, dark umber glass that glows amber at night; dark iron; the jet bridge's
+ * light steel, dark rubber bellows and concrete footing; the hangar's light grey cladding (the
+ * placement box's) and its doors' lighter green, and the windsock's white mast.
  */
 export const AIRPORT_LOOK = {
   armour: ['#8b8c85', '#7f847f', '#97958a', '#868478', '#737874', '#6a6f6c'],
@@ -45,6 +47,10 @@ export const AIRPORT_LOOK = {
   steel: '#8e938e',
   rubber: '#727773',
   footing: '#b9b4a6',
+  cladding: '#b9b6aa',
+  /** The hangar's doors: the paintwork's green a step lighter and greyer, so their panels read in the gable's shade. */
+  doors: '#46785c',
+  mast: palette.white,
 };
 /** The hall lane's kerb radii where it meets the ring's footway, and the width of its flush edging. */
 export const LANE_DRESSING = { radius: 0.5, edge: 0.1 };
@@ -71,10 +77,11 @@ type Station = { x: number; z: number; nx: number; nz: number; y: number };
 /* ------------------------------------------------------------------ */
 /* The airport                                                         */
 /* ------------------------------------------------------------------ */
-export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
+export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: Nature) {
   const { material } = ctx;
   const { box, chamfered, cluster, frameRing, prism } = kit;
   const { lamp } = props;
+  const { topiary } = nature;
   const A = plan.AIRPORT,
     R = plan.AIRPORT_ROAD,
     JET_BRIDGE = plan.JET_BRIDGE,
@@ -285,7 +292,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
   /* ---------------------------------------------------------------- */
   function surfaces(g: T.Object3D) {
     const { RUNWAY: RW, TAXIWAY: TW, APRON: AP, FORECOURT: FC, STAND } = plan,
-      top = A.deck + 0.03;
+      top = plan.AIRSIDE;
     // Runway 09/27, the taxiway and its two stubs: dark matte concrete slabs 0.03 proud of the grass,
     // ground-like (no contact bake) and never overlapping, so no two tops fight.
     slab(g, RW.x0, RW.x1, RW.z - RW.width / 2, RW.z + RW.width / 2, A.deck - 0.01, top, L.runway, 'stone');
@@ -454,6 +461,24 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     solid(g, edging, palette.pavement, 'paving', { shadow: false, ground: true, name: 'airport-lane-edging' });
   }
   /**
+   * A town lamp whose head (above the post's boss: the ladder bar and the lantern's tray, roof and
+   * cap, but for the brass finial) casts no shadow, only its post: the airport's lamps stand where
+   * the heads' shadows read as something else (four in a row along the causeway threw chevrons that
+   * read as arrows painted on the road; on the forecourt's pale paving their fine ironwork flickered
+   * as the view moved).
+   */
+  function quietHead(post: T.Object3D) {
+    post.traverse((o) => {
+      if (!(o instanceof T.Mesh) || !o.castShadow || (o.material as T.Material).userData.surfaceKind === 'brass') return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      if (o.geometry.boundingBox!.min.y > 1.0) {
+        o.castShadow = false;
+        o.userData.noShadow = true;
+      }
+    });
+    return post;
+  }
+  /**
    * The ramp and the causeway: a rubble-mound embankment 2.5 wide on top, from the beach to the
    * island. Footways 0.24 wide either side of the road, a buff parapet 0.16 thick along each edge,
    * and rock flanks (plan.AIRPORT_ROAD.flank) down to the beach or the sea bed, faced with boulders.
@@ -505,15 +530,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     // The key light turns with the camera and throws shadows to the right of the frame, so from the
     // east parapet even the posts' thin shadows fall on the flank and the sea in the opening view
     // and the airport's chapter.
-    for (const z of lampsAt)
-      lamp(g, R.x + mid, z, 1.6, plan.airportRoadTop(z) + 0.5).traverse((o) => {
-        if (!(o instanceof T.Mesh) || !o.castShadow || (o.material as T.Material).userData.surfaceKind === 'brass') return;
-        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-        if (o.geometry.boundingBox!.min.y > 1.0) {
-          o.castShadow = false;
-          o.userData.noShadow = true;
-        }
-      });
+    for (const z of lampsAt) quietHead(lamp(g, R.x + mid, z, 1.6, plan.airportRoadTop(z) + 0.5));
     // Stones on both flanks in two overlapping courses like the island's, smaller where the ramp is
     // low, up to the island's own armour.
     const flank: Station[] = [];
@@ -529,11 +546,277 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
         }, f0, 0.07, r0);
   }
 
+  /* ---------------------------------------------------------------- */
+  /* The hangar, the windsock and the forecourt's furniture            */
+  /* ---------------------------------------------------------------- */
+  /**
+   * The hangar west of the apron (plan.HANGAR: 3.0 along x, 4.4 across, its ribs' crowns 2.4 over
+   * the deck), the hall's working sibling: a stone plinth course; walls of light grey cladding
+   * between blonde piers (one at each corner and one under each rib), a blonde cornice under the
+   * eaves; a verdigris barrel roof (the hall's copper) with a bull-nosed roll along each eave,
+   * ribbed in the lighter copper (a broad rib on each verge). To the apron (east) the gable's
+   * arched doorway, 3.0 wide, framed by blonde jambs and imposts and an archivolt rising to just
+   * under the roof's edge, closed by four green leaves under an arched head (their stiles and rails
+   * proud, handles where the middle two meet); the west gable is plain. In the south wall a green
+   * door for people, on a step. A concrete pad runs from under the doors to the apron. All of it
+   * stands inside its plan (the overview frames the hangar by it) and on y 0, like the hall's
+   * plinth. No glass, no lettering.
+   */
+  function hangar(g: T.Group) {
+    const H = plan.HANGAR,
+      h = new T.Group(),
+      len = H.x1 - H.x0,
+      half = (H.z1 - H.z0) / 2,
+      wall = half - 0.2, // the side walls' faces (z), under the eaves
+      gable = len / 2 - 0.12, // the gables' faces (x), under the verges
+      roll = 0.09, // the eaves' rolls, out to the plan's edge
+      edge = half - roll + 0.03, // the barrel's edges (z)
+      eave = 1.22, // the barrel's outer edge (y)
+      crown = H.top - 0.055, // the barrel's crown, the ribs' under them
+      rise = crown - eave,
+      Ro = (edge * edge + rise * rise) / (2 * rise),
+      yc = crown - Ro,
+      Ri = Ro - 0.12,
+      spread = Math.asin(edge / Ro),
+      under = (z: number) => yc + Math.sqrt(Math.max(0, Ri * Ri - z * z)), // the vault's underside over z
+      // The doorway: straight jambs to its springing, then an arch about the vault's own axis, its
+      // archivolt between the arch and the roof's edge.
+      door = { half: 1.5, arch: Ri - 0.14 },
+      spring = yc + Math.sqrt(door.arch * door.arch - door.half * door.half),
+      springAngle = Math.atan2(spring - yc, door.half),
+      archY = (z: number) => yc + Math.sqrt(Math.max(0, door.arch * door.arch - z * z)),
+      foot = 0.18, // the plinth course's top
+      cornice = [0.92, 1.02];
+    h.name = 'airport-hangar';
+    h.position.set((H.x0 + H.x1) / 2, A.deck, (H.z0 + H.z1) / 2);
+    g.add(h);
+    const stone: Part[] = [], // blonde dressings
+      plinth: Part[] = [],
+      cladding: Part[] = [],
+      green: Part[] = [],
+      ribs: Part[] = [],
+      iron: Part[] = [];
+    /** A chamfered block between two corners in the hangar's plan. */
+    const block = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number): Part => ({
+      geometry: chamfered(x1 - x0, y1 - y0, z1 - z0),
+      matrix: placed((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2),
+    });
+    // The walls: the two gables (their heads under the vault, the east one open for the doors) and
+    // the side walls between them, up into the roof.
+    /** The doorway's outline from its foot at -door.half round its arch to door.half (z, y). */
+    const doorway = (s: T.Path) => {
+      s.lineTo(-door.half, spring);
+      s.absarc(0, yc, door.arch, Math.PI - springAngle, springAngle, true);
+      s.lineTo(door.half, 0);
+    };
+    const gableShape = (open: boolean) => {
+      const s = new T.Shape(),
+        head = under(wall);
+      s.moveTo(-wall, 0);
+      if (open) {
+        s.lineTo(-door.half, 0);
+        doorway(s);
+      }
+      s.lineTo(wall, 0);
+      s.lineTo(wall, head);
+      s.absarc(0, yc, Ri, Math.atan2(head - yc, wall), Math.atan2(head - yc, -wall), false);
+      s.closePath();
+      return s;
+    };
+    for (const [open, x] of [[true, gable - 0.2], [false, -gable]] as const)
+      cladding.push({ geometry: new T.ExtrudeGeometry(gableShape(open), { depth: 0.2, bevelEnabled: false, curveSegments: 24 }), matrix: placed(x, 0, 0, 0, Math.PI / 2, 0) });
+    for (const s of [-1, 1]) cladding.push(block(-gable + 0.2, gable - 0.2, 0, under(wall) + 0.02, s > 0 ? wall - 0.2 : -wall, s > 0 ? wall : -wall + 0.2));
+    // The plinth course, 0.08 proud, round the walls but for the doorway and the south door: the
+    // side walls' runs end to end, the gables' between them.
+    const p = 0.08,
+      jamb = 0.2, // the doorway's jambs, as wide as the archivolt at its springing
+      side = { x: 0.6, half: 0.22 }; // the south door's middle and its frame's half-width
+    plinth.push(
+      block(-gable - p, gable + p, 0, foot, -wall - p, -wall + 0.1),
+      block(-gable - p, side.x - side.half, 0, foot, wall - 0.1, wall + p),
+      block(side.x + side.half, gable + p, 0, foot, wall - 0.1, wall + p),
+      block(-gable - p, -gable + 0.1, 0, foot, -wall + 0.1, wall - 0.1),
+    );
+    for (const s of [-1, 1]) plinth.push(block(gable - 0.1, gable + p, 0, foot, s > 0 ? door.half + jamb : -wall + 0.1, s > 0 ? wall - 0.1 : -door.half - jamb));
+    // Piers: one at each corner (0.06 proud of both faces) and one under each rib along the side
+    // walls; a cornice along the side walls under the eaves' rolls.
+    const ribX = [-0.9, -0.3, 0.3, 0.9];
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        const [x0, x1] = sx > 0 ? [gable - 0.22, gable + 0.06] : [-gable - 0.06, -gable + 0.22],
+          [z0, z1] = sz > 0 ? [wall - 0.22, wall + 0.06] : [-wall - 0.06, -wall + 0.22];
+        stone.push(block(x0, x1, foot - 0.01, cornice[0], z0, z1));
+      }
+    for (const sz of [-1, 1]) {
+      const [z0, z1] = sz > 0 ? [wall - 0.02, wall + 0.06] : [-wall - 0.06, -wall + 0.02];
+      for (const x of ribX) stone.push(block(x - 0.08, x + 0.08, foot - 0.01, cornice[0], z0, z1));
+      stone.push(block(-gable - 0.06, gable + 0.06, cornice[0], cornice[1], sz > 0 ? wall - 0.02 : -wall - 0.07, sz > 0 ? wall + 0.07 : -wall + 0.02));
+    }
+    // The roof: the barrel shell from verge to verge, a bull-nosed roll along each eave, its ribs
+    // over the standing seams (one over each pier) and a broader one on each verge, all reaching
+    // the crown's 2.4 and no further.
+    {
+      const b = Math.asin(edge / Ri),
+        s = new T.Shape();
+      s.absarc(0, yc, Ro, Math.PI / 2 + spread, Math.PI / 2 - spread, true);
+      s.absarc(0, yc, Ri, Math.PI / 2 - b, Math.PI / 2 + b, false);
+      s.closePath();
+      const shell = new T.Mesh(
+        new T.ExtrudeGeometry(s, { depth: len - 0.06, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelOffset: -0.03, bevelSegments: 2, curveSegments: 24 })
+          .rotateY(Math.PI / 2)
+          .translate(-len / 2 + 0.03, 0, 0),
+        material(L.roof, 'copper'),
+      );
+      shell.castShadow = shell.receiveShadow = true;
+      shell.userData.roof = true;
+      shell.userData.eaveY = under(wall); // the side walls' head
+      h.add(shell);
+      const low = yc + Ri * Math.cos(b),
+        high = yc + Ro * Math.cos(spread);
+      for (const sz of [-1, 1]) {
+        const r = new T.Mesh(new T.CylinderGeometry(roll, roll, len, 16).rotateZ(Math.PI / 2), material(L.roof, 'copper'));
+        r.position.set(0, (low + high) / 2, sz * (edge - 0.03));
+        r.castShadow = r.receiveShadow = true;
+        r.userData.band = true;
+        h.add(r);
+      }
+      const rib = (x: number, wide: number) =>
+        ribs.push({ geometry: prism(arcBand(Ro - 0.03, Ro + 0.055, Math.PI / 2 - spread + 0.05, Math.PI / 2 + spread - 0.05, 24), wide, 0.02, -wide / 2), matrix: placed(x, yc, 0, 0, Math.PI / 2, 0) });
+      for (const x of ribX) rib(x, 0.1);
+      for (const sx of [-1, 1]) rib(sx * (len / 2 - 0.065), 0.13);
+    }
+    // The doorway: blonde jambs on the gable's face either side, an impost on each, and the
+    // archivolt from impost to impost round the arch, up to just under the roof's edge. In it four
+    // green leaves under the arched head, set 0.08 back from the face, their stiles (to the arch)
+    // and rails 0.03 proud of them, a rail round the head, and handles where the middle two meet.
+    {
+      for (const s of [-1, 1]) {
+        const [z0, z1] = s > 0 ? [door.half, door.half + jamb] : [-door.half - jamb, -door.half];
+        stone.push(block(gable, gable + 0.07, 0, spring - 0.08, z0, z1), block(gable, gable + 0.09, spring - 0.08, spring, z0 - 0.03, z1 + 0.03));
+      }
+      stone.push({ geometry: prism(arcBand(door.arch, Ri - 0.005, springAngle, Math.PI - springAngle, 24), 0.08, 0.02, 0), matrix: placed(gable, yc, 0, 0, Math.PI / 2, 0) });
+      const leaves = new T.Shape(),
+        face = gable - 0.08;
+      leaves.moveTo(-door.half, 0);
+      leaves.lineTo(door.half, 0);
+      leaves.lineTo(door.half, spring);
+      leaves.absarc(0, yc, door.arch, springAngle, Math.PI - springAngle, false);
+      leaves.closePath();
+      green.push({ geometry: new T.ExtrudeGeometry(leaves, { depth: 0.06, bevelEnabled: false, curveSegments: 24 }), matrix: placed(face - 0.06, 0, 0, 0, Math.PI / 2, 0) });
+      for (const z of [-door.half + 0.045, -door.half / 2, 0, door.half / 2, door.half - 0.045])
+        green.push(block(face - 0.01, face + 0.038, 0.02, archY(Math.abs(z) + 0.04) - 0.03, z - 0.04, z + 0.04));
+      for (const y of [0.07, 0.56, 1.02, spring - 0.05]) green.push(block(face - 0.01, face + 0.03, y - 0.045, y + 0.045, -door.half, door.half));
+      green.push({ geometry: prism(arcBand(door.arch - 0.09, door.arch - 0.01, springAngle + 0.01, Math.PI - springAngle - 0.01, 24), 0.03, 0.008, 0), matrix: placed(face, yc, 0, 0, Math.PI / 2, 0) });
+      for (const s of [-1, 1]) iron.push(block(face + 0.03, face + 0.06, 0.66, 0.86, s * 0.075 - 0.015, s * 0.075 + 0.015));
+    }
+    // The south door, for people: a green leaf in a blonde frame under a lintel, on a stone step.
+    {
+      const { x, half: f } = side,
+        z = wall;
+      green.push(block(x - f + 0.06, x + f - 0.06, 0.12, 0.78, z - 0.02, z + 0.03));
+      stone.push(
+        block(x - f, x - f + 0.06, 0.08, 0.8, z - 0.02, z + 0.07),
+        block(x + f - 0.06, x + f, 0.08, 0.8, z - 0.02, z + 0.07),
+        block(x - f - 0.03, x + f + 0.03, 0.78, 0.88, z - 0.02, z + 0.09),
+      );
+      plinth.push(block(x - f - 0.02, x + f + 0.02, 0, 0.12, z - 0.02, z + 0.18));
+      iron.push(block(x + f - 0.13, x + f - 0.1, 0.42, 0.5, z + 0.03, z + 0.06));
+    }
+    merge(h, stone, L.dressing, 'stone', { tone: 0.05 });
+    merge(h, plinth, palette.plinth, 'stone', { tone: 0.04 });
+    merge(h, cladding, L.cladding, 'paint');
+    merge(h, green, L.doors, 'paint', { tone: 0.06 });
+    merge(h, ribs, L.rib, 'copper');
+    merge(h, iron, L.iron, 'iron', { shadow: false });
+    // The pad: the apron's concrete from under the doors to the apron's west edge.
+    slab(g, H.x1 - 0.3, plan.APRON.x0, h.position.z - door.half - 0.35, h.position.z + door.half + 0.35, A.deck - 0.01, plan.AIRSIDE, L.apron, 'stone');
+  }
+  /**
+   * The windsock (plan.WINDSOCK) on the grass by the runway's east end (its 27 threshold): a concrete
+   * footing, a white mast and a steel swivel at its head, the sock's steel hoop hung from it by its
+   * rim, and the sock in five bands (the tram's orange and cream, orange at either end) streaming
+   * east-north-east on the prevailing westerly, drooping a little. Its mouth is dark inside the
+   * hoop and its tail closed, so it never reads as an empty ring. Still for now: the sock hangs on
+   * a pivot of its own (`windsock-sock`) at the hoop's middle, its axis the pivot's +y.
+   */
+  function windsock(g: T.Group) {
+    const W = plan.WINDSOCK,
+      w = new T.Group(),
+      mast = 1.7,
+      heading = -0.5, // from east toward the north
+      droop = 0.3,
+      mouth = 0.13,
+      tail = 0.075,
+      bands = 5,
+      band = 0.14,
+      d = new T.Vector3(Math.cos(droop) * Math.cos(heading), -Math.sin(droop), Math.cos(droop) * Math.sin(heading));
+    w.name = 'airport-windsock';
+    w.position.set(W.x, A.deck, W.z);
+    g.add(w);
+    merge(w, [{ geometry: new T.CylinderGeometry(0.15, 0.17, 0.1, 16), matrix: placed(0, 0.03, 0) }], L.footing, 'stone');
+    merge(w, [{ geometry: new T.CylinderGeometry(0.042, 0.05, mast, 10), matrix: placed(0, mast / 2, 0) }], L.mast, 'paint', { band: false });
+    // The sock on its pivot: the hoop's middle, out from the swivel by the hoop's radius.
+    const sock = new T.Group();
+    sock.name = 'windsock-sock';
+    sock.position.set(Math.cos(heading) * (mouth + 0.05), mast, Math.sin(heading) * (mouth + 0.05));
+    sock.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d);
+    w.add(sock);
+    const radius = (s: number) => mouth + ((tail - mouth) * s) / (bands * band),
+      colours: Part[][] = [[], []];
+    for (let k = 0; k < bands; k++)
+      colours[k % 2].push({ geometry: new T.CylinderGeometry(radius((k + 1) * band), radius(k * band), band, 16, 1, true), matrix: placed(0, (k + 0.5) * band, 0) });
+    colours[0].push({ geometry: new T.CylinderGeometry(tail, tail, 0.012, 16), matrix: placed(0, bands * band - 0.006, 0) });
+    merge(sock, colours[0], palette.tramOrange, 'paint', { band: false });
+    merge(sock, colours[1], palette.tramCream, 'paint', { band: false });
+    // The dark inside, a little in from the mouth; the hoop round the mouth; the swivel.
+    merge(sock, [{ geometry: new T.CylinderGeometry(mouth - 0.01, mouth - 0.01, 0.012, 16), matrix: placed(0, 0.035, 0) }], L.iron, 'paint', { shadow: false });
+    merge(sock, [{ geometry: new T.TorusGeometry(mouth, 0.035, 6, 20), matrix: placed(0, 0, 0, Math.PI / 2, 0, 0) }], L.steel, 'paint', { shadow: false });
+    merge(w, [{ geometry: new T.CylinderGeometry(0.06, 0.06, 0.12, 12), matrix: placed(0, mast + 0.02, 0) }], L.steel, 'paint', { shadow: false });
+  }
+  /**
+   * The forecourt's furniture, between the causeway's end and the hall's steps, chunky and calm (the
+   * town's slatted park benches and moulded cast-iron bollards, packed into this small square, made
+   * it the busiest patch of the overview): on the road's axis a round planter of blonde stone holding
+   * a clipped box ball; along the kerb either side of it two stone bollards each (0.14 across; the
+   * outer pair in line with the causeway's last piers); a town lamp at each front corner; and along
+   * each side, facing in, a bench of one thick timber seat on two blocks of the hall's stone. Each
+   * piece stands on the paving on its own, so each takes its own top-lit gradient in the batch.
+   */
+  function forecourt(g: T.Group) {
+    const y = A.deck + 0.06,
+      ax = R.x,
+      kerb = landingZ,
+      turned = (points: number[][], n: number) => new T.LatheGeometry(points.map(([r, h]) => new T.Vector2(r, h)), n),
+      planter = new T.Group();
+    planter.name = 'forecourt-planter';
+    planter.position.set(ax, y, kerb - 0.7);
+    g.add(planter);
+    merge(planter, [{ geometry: turned([[0.41, 0], [0.42, 0.02], [0.42, 0.08], [0.36, 0.12], [0.36, 0.28], [0.42, 0.32], [0.42, 0.38], [0.39, 0.41], [0.33, 0.41], [0.33, 0.37]], 24), matrix: placed(0, 0, 0) }], L.dressing, 'stone', { band: false });
+    merge(planter, [{ geometry: new T.CylinderGeometry(0.335, 0.335, 0.02, 20), matrix: placed(0, 0.38, 0) }], palette.soil, 'stone', { band: false, shadow: false });
+    topiary(planter, 0, 0.58, 0, 0.3, 1, 1, 0.85, 1);
+    // The bollards, as one cluster: a foot, a plain shaft and a domed head.
+    const post = turned([[0.07, 0], [0.07, 0.06], [0.06, 0.09], [0.06, 0.36], [0.055, 0.4], [0.04, 0.44], [0, 0.46]], 12);
+    const bollards = cluster(g, [-1.05, -0.6, 0.6, 1.05].map((dx): Piece => ({ geometry: post, at: [ax + dx, y, kerb - 0.25] })), L.dressing, 'stone', { band: false });
+    if (bollards) bollards.name = 'forecourt-bollards';
+    for (const s of [-1, 1]) {
+      quietHead(lamp(g, ax + s * 2.0, kerb - 0.35, 1.8, y)).name = 'forecourt-lamp';
+      // The bench (its seat along local x, its front +z), turned to face the axis.
+      const bench = new T.Group();
+      bench.name = 'forecourt-bench';
+      bench.position.set(ax + s * 2.0, y, kerb - 1.25);
+      bench.rotation.y = -s * (Math.PI / 2);
+      g.add(bench);
+      merge(bench, [-0.42, 0.42].map((x): Part => ({ geometry: chamfered(0.16, 0.3, 0.36), matrix: placed(x, 0.15, 0) })), L.dressing, 'stone', { band: false, tone: 0.05 });
+      merge(bench, [{ geometry: chamfered(1.14, 0.08, 0.42), matrix: placed(0, 0.34, 0.01) }], palette.wood, 'wood', { band: false });
+    }
+  }
+
   /**
    * The airport's ground, in its own group (the town's `airportLand`, batched on its own): the deck,
    * its coping and armour, the runway, taxiway, apron and forecourt with their markings, the road from
-   * the ring over the beach ramp and the causeway, its parapets and lamps. The boulders of the
-   * armour and the causeway's flanks are merged into one geometry before batching.
+   * the ring over the beach ramp and the causeway, its parapets and lamps; the hangar, the windsock
+   * and the forecourt's furniture. The boulders of the armour and the causeway's flanks are merged
+   * into one geometry before batching.
    */
   function airportGround(g: T.Group) {
     deckLawn(g);
@@ -542,6 +825,9 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props) {
     asphalt(g);
     laneDressing(g);
     causeway(g, rocks);
+    hangar(g);
+    windsock(g);
+    forecourt(g);
     const merged = mergeGeometries(rocks, false)!;
     rocks.forEach((r) => r.dispose());
     STONE.forEach((s) => s.dispose());

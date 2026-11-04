@@ -759,7 +759,7 @@ export async function createCity(
     autoFocus = false;
   // What the overview must show: the sand out to the waterline (3.3 past the outline), the
   // trees along the shore and the lighthouse on its rock; and the airport's island to the toe of
-  // its armour, the control tower's mast and the hangar's roof (x -16.8..-13.8, z -50..-45.6, 2.8 up).
+  // its armour, the control tower's mast and the hangar's roof (plan.HANGAR's corners at its top, 2.8 up).
   const [rockX, rockZ] = plan.lighthouseRock;
   const islandMarks = [
     ...plan.islandOutline.flatMap(([x, z]) => {
@@ -770,7 +770,7 @@ export async function createCity(
     new T.Vector3(rockX, 5.5, rockZ),
     ...plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z)),
     new T.Vector3(3.9, 7, -47.4),
-    ...[-16.8, -13.8].flatMap((x) => [-50, -45.6].map((z) => new T.Vector3(x, 2.8, z))),
+    ...[plan.HANGAR.x0, plan.HANGAR.x1].flatMap((x) => [plan.HANGAR.z0, plan.HANGAR.z1].map((z) => new T.Vector3(x, plan.AIRPORT.deck + plan.HANGAR.top, z))),
   ];
   /**
    * The airport's frame: its island to the armour's toe and the causeway's far half, up to the
