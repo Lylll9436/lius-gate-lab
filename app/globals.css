@@ -1598,8 +1598,15 @@ body:has(.mode-explore),
    where they are now, so that each field keeps to one flap. */
 .departures {
   container: departures / inline-size;
-  --flap: color-mix(in oklab, var(--ink) 7%, transparent);
+  /* A flap's two leaves, the lower a shade deeper, and the split between them. By day the split
+     shows only at the flap's ends, its hinges: run across dark capitals it reads as a
+     strikethrough, which on a departures board means cancelled. At night it cuts across the pale
+     text as on a real board, and across a blank tile always. */
+  --flap: color-mix(in oklab, var(--ink) 5%, transparent);
+  --flap-lower: color-mix(in oklab, var(--ink) 4.5%, transparent);
   --flap-split: color-mix(in oklab, var(--ink) 18%, transparent);
+  --flap-hinge: var(--flap-split);
+  --flap-cut: transparent;
   /* The date and status columns fit their widest flap ("DEC 2026", "RETURNED"; "2026年12月",
      "已返程"), the same in the head and in every row so the columns line up. */
   --board-date: 72px;
@@ -1613,9 +1620,13 @@ body:has(.mode-explore),
   --board-date: 84px;
   --board-status: 56px;
 }
-/* At night the page's ink is pale: the split stays dark. */
+/* At night the page's ink is pale: the split stays dark, and runs across the flap. */
 :root[data-theme='night'] .departures {
+  --flap: color-mix(in oklab, var(--ink) 7%, transparent);
+  --flap-lower: transparent;
   --flap-split: rgba(0, 0, 0, 0.45);
+  --flap-hinge: transparent;
+  --flap-cut: var(--flap-split);
 }
 .board-head,
 .board-row {
@@ -1744,12 +1755,17 @@ summary.board-row:hover {
   vertical-align: top;
   padding: 3px 6px;
   border-radius: 4px;
+  /* The split's hinges at the two ends (by day), the split across the flap (at night), the lower
+     leaf's shade, and the flap. */
   background:
+    linear-gradient(var(--flap-hinge), var(--flap-hinge)) left center / 2px 1px no-repeat,
+    linear-gradient(var(--flap-hinge), var(--flap-hinge)) right center / 2px 1px no-repeat,
     linear-gradient(
       transparent calc(50% - 0.5px),
-      var(--flap-split) calc(50% - 0.5px) calc(50% + 0.5px),
+      var(--flap-cut) calc(50% - 0.5px) calc(50% + 0.5px),
       transparent calc(50% + 0.5px)
     ),
+    linear-gradient(transparent 50%, var(--flap-lower) 50%),
     var(--flap);
   font-family: var(--font-mono);
   font-weight: 500;
@@ -1767,6 +1783,11 @@ summary.board-row:hover {
 /* The status in the amber of the hall's board rows: a tint on the flap, the text stays ink. */
 .board-status .flap {
   --flap: color-mix(in oklab, var(--amber) 20%, transparent);
+}
+/* A blank flap holds no text: its split runs across it, as on an unlit board. */
+.flap.is-blank {
+  --flap-hinge: transparent;
+  --flap-cut: var(--flap-split);
 }
 .departures.is-zh .board-head,
 .departures.is-zh .flap {

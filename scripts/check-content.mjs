@@ -1122,6 +1122,38 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
   );
   assert(chapterMeta.length <= 7, 'The masthead was measured with seven chapter chips: measure it again in a browser at 961-1040 px.');
 }
+// The departures board's flaps (globals.css).
+{
+  const css = await fs.readFile(path.join(root, 'app/globals.css'), 'utf8');
+  const block = (start) => {
+    const at = css.indexOf(start);
+    assert(at >= 0, start.trim() + ' is gone from globals.css.');
+    return css.slice(at, css.indexOf('\n}\n', at) + 2);
+  };
+  // By day a flap's split shows only at its two ends, its hinges: run across the dark capitals it
+  // read as a strikethrough, which on a departures board means cancelled. At night it runs across
+  // the flap and cuts the pale text, as on a real board, and across a blank tile always. It is dark,
+  // never white.
+  const day = block('\n.departures {'),
+    night = block(":root[data-theme='night'] .departures {"),
+    layers = block('\n.flap {').match(/background:([\s\S]*?);/)[1];
+  assert(
+    /--flap-split: color-mix\(in oklab, var\(--ink\) 18%, transparent\);/.test(day) &&
+      /--flap-hinge: var\(--flap-split\);/.test(day) &&
+      /--flap-cut: transparent;/.test(day) &&
+      /--flap-split: rgba\(0, 0, 0, 0\.45\);/.test(night) &&
+      /--flap-hinge: transparent;/.test(night) &&
+      /--flap-cut: var\(--flap-split\);/.test(night) &&
+      /--flap-cut: var\(--flap-split\);/.test(block('\n.flap.is-blank {')),
+    'By day the split shows only at a flap’s hinges; at night, and on a blank tile, it runs across.',
+  );
+  assert(
+    (layers.match(/linear-gradient\(var\(--flap-hinge\), var\(--flap-hinge\)\) (left|right) center \/ 2px 1px no-repeat/g) || []).length === 2 &&
+      /var\(--flap-cut\) calc\(50% - 0\.5px\) calc\(50% \+ 0\.5px\)/.test(layers) &&
+      !layers.includes('--flap-split'),
+    'A flap’s split by day runs across its text.',
+  );
+}
 // The reading page numbers its seven chapters; the airport's is 03 and holds the departures board.
 for (const locale of ['en', 'zh']) {
   const story = renderToStaticMarkup(
