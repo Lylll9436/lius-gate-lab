@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import * as T from 'three';
 
-// Build the town in Node and check what a visitor relies on: eight places, finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
+// Build the town in Node and check what a visitor relies on: nine places (eight on the island, the airport on its own), finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work', 'town-check');
 await fs.mkdir(output, { recursive: true });
@@ -55,7 +55,9 @@ const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
 
-assert.equal(new Set(buildings.map((b) => b.id)).size, 8);
+assert.equal(new Set(buildings.map((b) => b.id)).size, 9);
+// The Directory's (and the tour's) order: the airport comes after the residence, before the studio.
+assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'airport', 'research-studio', 'city-archive']);
 // The People chapter's places: the three homes (the row's own checks below read plan.terraceHomes)
 // and the Visiting PhD Residence at the row's north end.
 assert.deepEqual(plan.chapterSubjects.people, [...plan.terraceHomes, 'visiting-phd']);
@@ -77,9 +79,11 @@ for (const b of buildings) {
       assert(section.heading[locale] && section.body[locale]);
   }
 }
-// Sites sit on the island, off the streets, and never overlap one another.
+// Sites sit on the island (the airport's on its own island, inside its deck), off the streets, and
+// never overlap one another.
 for (const site of plan.siteList) {
-  assert(plan.onIsland(site.x, site.z, 2), 'Site in the sea: ' + site.id);
+  if (site.id === 'airport') assert(plan.onAirport(site.x, site.z, -2) && !plan.onIsland(site.x, site.z), 'The airport is not on its own island.');
+  else assert(plan.onIsland(site.x, site.z, 2), 'Site in the sea: ' + site.id);
   if (site.id !== 'lius-gate')
     for (const [sx, sz] of [
       [-1, -1],
@@ -673,7 +677,7 @@ console.warn = originalWarn;
 console.error = originalError;
 assert.deepEqual(warnings, []);
 const { city, models, walkers, lamps, clocks } = model;
-assert.equal(models.size, 8);
+assert.equal(models.size, 9);
 assert.equal(walkers.length, 7);
 assert.equal(clocks.length, 4, 'The town hall keeps four clock faces.');
 assert(lamps.length >= 20, 'Lanterns light the town: ' + lamps.length);
@@ -712,10 +716,12 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
     for (const v of varyings(s.vertexShader))
       assert(!new RegExp('\\b' + v + '\\b').test(s.fragmentShader) || fv.has(v), `${o.material.name}: ${v} read but not declared`);
   });
-  // The beach's wet band: the shore is the only sand, and its uv.x runs out to the profile's 7.2.
+  // The beach's wet band: the shore is the only sand (the airport's island has none), and its uv.x
+  // runs out to the profile's 7.2.
   const sands = [];
   city.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'sand' && sands.push(o));
   assert.equal(sands.length, 1, 'Only the shore is sand.');
+  model.airportLand.traverse((o) => assert(!o.isMesh || o.material.userData.surfaceKind !== 'sand', 'Sand on the airport.'));
   const uv = sands[0].geometry.getAttribute('uv');
   let widest = -Infinity;
   for (let i = 0; i < uv.count; i++) widest = Math.max(widest, uv.getX(i));
@@ -723,13 +729,14 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
   const sand = patchedShader(sands[0].material);
   assert(varyings(sand.vertexShader).has('vShoreW') && varyings(sand.fragmentShader).has('vShoreW') && sand.fragmentShader.includes('shoreWet'), 'The sand has no wet band.');
   // The drying net: gathered swags of solid netting, so it batches with the other cloth. Nothing on
-  // the land is two-sided (that costs a program of its own) or cuts holes (cut-out mesh twinkles
-  // once under a pixel), and the net is there: heaped over the bar, casting nothing.
-  model.land.traverse((o) => {
-    if (!o.isMesh) return;
-    assert.notEqual(o.material.side, T.DoubleSide, `${o.material.name} on the land is two-sided.`);
-    assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} cuts holes.`);
-  });
+  // the land (the airport's included) is two-sided (that costs a program of its own) or cuts holes
+  // (cut-out mesh twinkles once under a pixel), and the net is there: heaped over the bar, casting nothing.
+  for (const ground of [model.land, model.airportLand])
+    ground.traverse((o) => {
+      if (!o.isMesh) return;
+      assert.notEqual(o.material.side, T.DoubleSide, `${o.material.name} on the land is two-sided.`);
+      assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} cuts holes.`);
+    });
   const [nx, nz] = plan.shoreAt((plan.shoreProps.netFrame.from.i + plan.shoreProps.netFrame.to.i) / 2, plan.shoreProps.netFrame.from.w);
   let netVertices = 0;
   model.land.traverse((o) => {
@@ -745,21 +752,30 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
 }
 // The page builds the same town a phase at a time, handing the main thread back in between.
 const { buildTownInPhases } = await load('town-build');
-const phaseNames = [];
+const phaseNames = [],
+  phaseTimes = new Map();
 let longestPhase = 0,
   phased;
 for (const phases = buildTownInPhases(); ; ) {
   const begin = performance.now(),
-    step = phases.next();
-  longestPhase = Math.max(longestPhase, performance.now() - begin);
+    step = phases.next(),
+    took = performance.now() - begin;
+  longestPhase = Math.max(longestPhase, took);
   if (step.done) {
     phased = step.value;
     break;
   }
   phaseNames.push(step.value);
+  phaseTimes.set(step.value, took);
 }
 assert(phaseNames.length >= 10, 'The town is built in phases: ' + phaseNames.join(', '));
 assert.equal(new Set(phaseNames).size, phaseNames.length, 'Every phase has its own name.');
+// The airport's ground is built and batched in phases of its own (never in 'batch land', the
+// longest), each well under a fifth of a second, and its hall batches in its own phase too.
+assert.equal(phaseNames[phaseNames.indexOf('park, harbour and landmarks') + 1], 'airport ground', 'The airport ground is not built after the landmarks.');
+assert.equal(phaseNames[phaseNames.indexOf('batch land') + 1], 'batch airport', 'The airport is not batched right after the land.');
+for (const name of ['airport ground', 'batch airport', 'batch departures hall'])
+  assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
 let phasedMeshes = 0,
   phasedTriangles = 0;
 phased.city.traverse((o) => {
@@ -1224,14 +1240,639 @@ addHitBoxes(new T.Group(), models);
 const water = createIslandWater(model.waterLevel, -0.5);
 city.add(water.bottom, water.mesh);
 city.updateMatrixWorld(true);
+// The causeway runs over (0, -36), so that probe moved east of it; the water between the coast and
+// the airport's island west of the causeway, and the sea north of the airport, are open too.
 for (const [x, z] of [
-  [0, -36],
+  [8, -36],
+  [-8, -38],
+  [-5, -60],
   [-37, 0],
   [37, 24],
   [0, 36],
 ]) {
   ray.set(new T.Vector3(x, 1, z), new T.Vector3(0, -1, 0));
   assert.equal(ray.intersectObject(city, true)[0]?.object, water.mesh, 'Open sea expected at ' + x + ',' + z);
+}
+// The airport: a small island of its own off the north shore, the road out to it from the ring
+// (the hall lane, the beach ramp and the causeway) and its Departures Hall with the control tower.
+{
+  const A = plan.AIRPORT,
+    AR = plan.AIRPORT_ROAD,
+    { shell: hall, root: hallRoot } = models.get('airport'),
+    v = new T.Vector3(),
+    each = (group, visit) =>
+      group.traverse((o) => {
+        if (!o.isMesh) return;
+        const p = o.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) visit(v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld), o);
+      });
+  // The deck: a signed distance (negative on it) whose outlines lie on their level, at least 13.5
+  // off the coast and out in deep water; onAirport's margin is that distance's level.
+  assert(plan.airportDistance(A.x, A.z) < -5.99 && Math.abs(plan.airportDistance(A.x + A.hw, A.z)) < 1e-9, 'The deck has the wrong size.');
+  for (const offset of [-0.4, 0, A.armour])
+    for (const p of plan.airportOutline(offset, 0.5)) assert(Math.abs(plan.airportDistance(p.x, p.z) - offset) < 1e-6, `The deck's outline ${offset} out is off its level.`);
+  assert(plan.onAirport(A.x, A.z - A.hd + 0.301, -0.3) && !plan.onAirport(A.x, A.z - A.hd + 0.299, -0.3) && plan.onAirport(A.x, A.z - A.hd - 0.5, 0.6), 'onAirport\'s margin is not a level of the signed distance.');
+  const offshore = Math.min(...plan.airportOutline(0, 0.25).map((p) => plan.distanceToPolyline([p.x, p.z], plan.islandOutline, true)));
+  assert(offshore >= 13.5, `The airport is only ${offshore.toFixed(1)} off the coast.`);
+  for (const p of plan.airportOutline(A.armour + 0.2, 1)) assert(!plan.onIsland(p.x, p.z, -7.5), 'The airport island reaches the shallows.');
+  // On the deck, 0.3 in from its edge at least: the runway, the taxiway and its stubs, the apron out to
+  // the taxiway, the stand and the building's site; the forecourt is built inside the coping (0.4 in).
+  const { RUNWAY: RW, TAXIWAY: TW, APRON: AP, FORECOURT: FC, STAND } = plan,
+    rects = {
+      runway: [RW.x0, RW.x1, RW.z - RW.width / 2, RW.z + RW.width / 2],
+      taxiway: [TW.x0 - TW.width / 2, TW.x1 + TW.width / 2, TW.z - TW.width / 2, TW.z + TW.width / 2],
+      ...Object.fromEntries(TW.stubs.map((x, k) => ['stub ' + k, [x - TW.width / 2, x + TW.width / 2, RW.z + RW.width / 2, TW.z - TW.width / 2]])),
+      apron: [AP.x0, AP.x1, TW.z + TW.width / 2, AP.z1],
+      forecourt: [FC.x0, FC.x1, FC.z0, FC.z1 - 0.4],
+      site: [plan.sites.airport.x - plan.sites.airport.w / 2, plan.sites.airport.x + plan.sites.airport.w / 2, plan.sites.airport.z - plan.sites.airport.d / 2, plan.sites.airport.z + plan.sites.airport.d / 2],
+    };
+  for (const [name, [x0, x1, z0, z1]] of Object.entries(rects))
+    for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) assert(plan.onAirport(x, z, -0.3), `The airport's ${name} reaches its edge at ${x}, ${z}.`);
+  assert(plan.onAirport(STAND.x, STAND.z, -2) && STAND.x > AP.x0 && STAND.x < AP.x1 && STAND.z > AP.z0 && STAND.z < AP.z1, 'The stand is off the apron.');
+  assert(Math.abs(RW.z - RW.width / 2 - TW.z - TW.width / 2) > 0.5 && FC.x0 < AR.x && FC.x1 > AR.x, 'The taxiway runs on the runway, or the forecourt misses the road.');
+  // The road: its mouth on the ring's north straight (the outer pavement's edge is the lane's start), the
+  // beach where the lane meets the coast, the causeway's level on the water; never a street.
+  assert.equal(AR.mouth, plan.ring.cz - plan.ring.hd, 'The airport road leaves the ring off its north straight.');
+  assert(Math.abs(AR.lane - (AR.mouth - plan.ROAD_WIDTH / 2 - plan.PAVEMENT_WIDTH)) < 1e-9, 'The lane does not start at the pavement.');
+  assert(Math.abs(Math.hypot(AR.x, AR.beach) - plan.islandRadius(Math.atan2(AR.beach, AR.x))) < 0.05, 'The lane does not end at the coast.');
+  assert(plan.distanceToStreets(AR.x, (AR.lane + AR.beach) / 2) > 2 && plan.avenues.every((a) => a.id !== 'airport'), 'The airport road became a street.');
+  for (let z = AR.lane; z >= FC.z0; z -= 0.1) {
+    const top = plan.airportRoadTop(z);
+    assert(top >= 0 && top <= A.deck + 1e-9 && top <= plan.airportRoadTop(z - 0.1) + 1e-9, `The road's bed falls at ${z.toFixed(1)}.`);
+    if (z <= AR.causeway) assert(Math.abs(top - A.deck) < 1e-9, 'The causeway is off the deck\'s level.');
+    if (z >= AR.beach) assert.equal(top, 0, 'The lane leaves the ground.');
+  }
+  assert.equal(plan.deckHeight(A.x, A.z), A.deck);
+  assert.equal(plan.deckHeight(AR.x, (AR.causeway + AR.island) / 2), A.deck);
+  assert.equal(plan.deckHeight(AR.x + 5, -36), plan.terrainHeight(AR.x + 5, -36));
+  // The lane passes between cottages 3 and 4 behind the Town Hall, at least 0.6 from every trunk
+  // (no tree is moved or removed) and 1.5 from the cottages as built, their lean-to and gardens too.
+  for (const t of trees) assert(plan.distanceToAirportRoad(t.x, t.z) >= 0.6, `The airport road runs over ${t.id} (${plan.distanceToAirportRoad(t.x, t.z).toFixed(2)}).`);
+  {
+    const { createHomes } = await load('town-homes'),
+      { createNature } = await load('town-nature'),
+      { createKit } = await load('town-kit'),
+      { createCityMaterials } = await load('city-materials'),
+      library = createCityMaterials(),
+      ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+      kit = createKit(ctx),
+      homes = createHomes(ctx, kit, createNature(ctx, kit));
+    for (const c of plan.cottages) {
+      const g = new T.Group();
+      homes.buildCottage(g, c);
+      g.updateMatrixWorld(true);
+      let near = Infinity;
+      each(g, (p) => (near = Math.min(near, plan.distanceToAirportRoad(p.x, p.z))));
+      assert(near >= 1.5, `The airport road passes ${near.toFixed(2)} from cottage ${c.n}.`);
+    }
+    library.dispose();
+  }
+  // Its ground stays on the deck (and over the armour), or on the road's corridor: nothing strays.
+  each(model.airportLand, (p, o) => {
+    const onDeck = plan.airportDistance(p.x, p.z) <= A.armour + 0.2,
+      onRoad = Math.abs(p.x - AR.x) <= 2.75 && p.z <= AR.lane + 1e-3 && p.z >= A.z;
+    assert(onDeck || onRoad, `${o.material.name} strays off the airport to ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+    assert(p.y > -0.75 && p.y < 3.5, `${o.material.name} at height ${p.y.toFixed(2)} on the airport.`);
+  });
+  // The building: every part inside the deck 0.3 in from its edge, up to the mast at 7.0 (under the
+  // Town Hall's 9.5), its arch and board centred on the road's axis.
+  const hallBounds = new T.Box3().setFromObject(hallRoot);
+  each(hall, (p) => assert(plan.onAirport(p.x, p.z, -0.3), `The airport's building leaves its deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
+  assert(hallBounds.max.y <= plan.sites.airport.height + 1e-6 && hallBounds.max.y > plan.sites.airport.height - 0.05, `The airport's mast tops out at ${hallBounds.max.y.toFixed(2)}.`);
+  assert(hallBounds.max.y < plan.sites['town-hall'].height, 'The airport outgrows the Town Hall.');
+  // Its front steps, like its plinth, stand on y 0 (the deck hides their foot), so Inspect's copy,
+  // standing on the study ground, has none hanging in the air.
+  let stepFoot = Infinity;
+  each(hall, (p) => {
+    if (Math.abs(p.x - AR.x) < 1.4 && p.z > AR.arch + 0.15 && p.z < AR.arch + 0.65) stepFoot = Math.min(stepFoot, p.y);
+  });
+  assert(stepFoot < 0.01, `The airport's front steps float ${stepFoot.toFixed(2)} over the ground.`);
+  // Its window roles: the hall's glass civic (its doors lit late at 0.8, today's colour), the tower's
+  // cab its own 'cab' light (lit all night, dim and warm), the board's three amber rows beacons,
+  // centred on the road.
+  const own = model.windows.filter((p) => p.place === 'airport'),
+    role = (r) => own.filter((p) => p.role === r);
+  assert.equal(role('cab').length, 1, 'The control tower has no cab.');
+  assert.equal(role('beacon').length, 3, 'The board has not three rows.');
+  for (const p of role('beacon')) assert(Math.abs(p.at.x - AR.x) < 0.01 && p.at.z > FC.z0 - 0.3, 'A board row is off the arch.');
+  assert(role('civic').length >= 4 && role('civic').some((p) => Math.round(p.light[0] * 255) === 204 && Math.round(p.light[1] * 255) === 128), 'The hall has no glass lit late.');
+  assert.equal(own.length, role('civic').length + 4, 'An airport pane has a role of its own.');
+  // The cab's raked glass stands at y 5.2-6.3, under the mast's 7.0. It glows dim and warm all night:
+  // at most 0.6 of the dials' glow and warmer than today's (in the phone box's pale cool white its
+  // eight big panes read as a frosted lantern, the brightest and the only cool light at the airport).
+  assert(role('cab').every((p) => p.at.y > 5.2 && p.at.y < 6.3), 'The control tower\'s cab is off its height.');
+  {
+    const { windowGlow: glowOf } = await load('city-materials'),
+      clock = { out: 0, wake: 0 },
+      cab = glowOf(role('cab')[0].light, clock),
+      dial = glowOf([1, 0.5, 1, 1], clock),
+      lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    assert(lum(cab) <= 0.6 * lum(dial) && lum(cab) > 0.4 * lum(dial) && cab.b / cab.r < dial.b / dial.r, `The control tower's cab is not a dim warm light (${cab.toArray().map((n) => n.toFixed(3)).join(', ')}).`);
+  }
+  // The board: three rows of tiles that are dark by day and glow amber at night, never text. They are
+  // one glass of their own glow (amber: warm and saturated, unlike the windows' warm white), dark
+  // umber by day, each row one flat pane facing the causeway that covers its 1.7 x 0.16 strip whole
+  // (its tiles parted by shading alone: no gaps, no glyphs).
+  {
+    const { AIRPORT_LOOK: look } = await load('town-airport'),
+      glow = new T.Color(look.glow),
+      rows = [];
+    hall.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'glass' && o.material.emissive.getHex() === glow.getHex() && rows.push(o));
+    assert.equal(rows.length, 1, 'The board\'s rows are not a glass of their own glow.');
+    assert(glow.b < 0.25 * glow.r && glow.g > 0.3 * glow.r && glow.g < 0.8 * glow.r, 'The board\'s rows do not glow amber.');
+    const g = rows[0].geometry,
+      p = g.attributes.position,
+      n = g.attributes.normal,
+      c = g.attributes.color,
+      a = new T.Vector3(),
+      b = new T.Vector3(),
+      d = new T.Vector3();
+    let area = 0,
+      tone = 0;
+    for (let i = 0; i < p.count; i += 3) {
+      a.fromBufferAttribute(p, i);
+      b.fromBufferAttribute(p, i + 1).sub(a);
+      d.fromBufferAttribute(p, i + 2).sub(a);
+      area += b.cross(d).length() / 2;
+    }
+    for (let i = 0; i < p.count; i++) {
+      assert(n.getZ(i) > 0.999, 'A board row does not face the causeway.');
+      tone += 0.2126 * c.getX(i) + 0.7152 * c.getY(i) + 0.0722 * c.getZ(i);
+    }
+    assert(Math.abs(area - 3 * 1.7 * 0.16) < 1e-3, `The board's rows cover ${area.toFixed(3)}, not three whole strips.`);
+    assert(tone / p.count < 0.08, `The board's tiles are not dark by day (${(tone / p.count).toFixed(3)}).`);
+    // At night the joints dim the rows' glow as well (glowShade): 15-20% under the tiles' middles on
+    // a third of the vertices (each tile's two outer edges), so the rows read as blank lit tiles,
+    // not three solid amber bars.
+    const lit = g.attributes.aWindow,
+      levels = Array.from({ length: lit.count }, (_, i) => lit.getX(i)),
+      top = Math.max(...levels),
+      low = Math.min(...levels),
+      dim = levels.filter((l) => l < top - 1e-6).length / levels.length;
+    assert(top === 1 && low / top >= 0.8 && low / top <= 0.85 && Math.abs(dim - 1 / 3) < 0.01, `The board's joints dim its glow to ${(low / top).toFixed(3)} on ${(dim * 100).toFixed(1)}% of it.`);
+  }
+  // The jet bridge, from the hall's west wall toward the stand: below the plane's fin (y 2) and west
+  // of the hall it stays north of the parked fuselage (0.66 across on the stand's line) by at least
+  // 0.15, its bellows reaching that line's 0.19 (it docks), and east of the wing's root; its footing
+  // stands on y 0 like the plinth, so Inspect has it on the ground.
+  {
+    const J = plan.JET_BRIDGE;
+    let north = -Infinity,
+      west = Infinity,
+      foot = Infinity,
+      parts = 0;
+    each(hall, (q) => {
+      if (q.x > AR.x - 2.1 - 0.2 || q.y > 2) return;
+      parts++;
+      north = Math.max(north, q.z);
+      west = Math.min(west, q.x);
+      if (Math.abs(q.x - J.legs) < 0.25) foot = Math.min(foot, q.y);
+    });
+    assert(parts > 0 && north <= STAND.z - 0.33 - 0.15 + 1e-6 && north >= J.bellows - 0.01, `The jet bridge reaches ${north.toFixed(2)} by the parked plane (its bellows at ${J.bellows}).`);
+    assert(west > STAND.x + 1, `The jet bridge runs on to ${west.toFixed(2)}, over the plane's wing.`);
+    assert(foot < 0.01, `The jet bridge's footing stands ${foot.toFixed(2)} over the ground.`);
+  }
+  // Its lamps: four on the causeway's east piers, lit with the town's (from the east parapet the
+  // lanterns' shadows fall off the road at the opening and chapter bearings: the key light turns
+  // with the camera and always throws them to the right of the frame); and two more, globes on
+  // stone piers, at the forecourt's front corners on its paving, either side of the road's axis.
+  const causewayLamps = lamps.filter((l) => l.getWorldPosition(v).z < AR.beach && v.z > AR.island - 0.4),
+    forecourtLamps = lamps.filter((l) => l.getWorldPosition(v).z < FC.z1 && v.z > FC.z0 && v.x > FC.x0 && v.x < FC.x1);
+  assert.equal(causewayLamps.length, 4, 'The causeway has not four lamps.');
+  assert.equal(lamps.filter((l) => l.getWorldPosition(v).z < AR.beach).length, 6, 'The airport has lamps besides the causeway\'s and the forecourt\'s.');
+  assert.equal(forecourtLamps.length, 2, 'The forecourt has not two lamps.');
+  {
+    const [west, east] = forecourtLamps.map((l) => l.getWorldPosition(new T.Vector3())).sort((a, b) => a.x - b.x);
+    assert(Math.abs(west.x + east.x - 2 * AR.x) < 1e-6 && Math.abs(west.z - east.z) < 1e-6 && west.z > FC.z1 - 0.4 - 0.6, 'The forecourt\'s lamps do not pair across the road at its front.');
+    for (const l of forecourtLamps) {
+      const foot = l.parent.getWorldPosition(new T.Vector3()).y - (A.deck + 0.06),
+        up = l.getWorldPosition(new T.Vector3()).y - (A.deck + 0.06);
+      assert(l.parent.name === 'forecourt-lamp' && Math.abs(foot) < 1e-6 && up > 1.1 && up < 1.6, `A forecourt lamp is off its pier on the paving (its pier's foot ${foot.toFixed(3)}, its globe ${up.toFixed(2)} up).`);
+    }
+  }
+  for (const l of causewayLamps) {
+    l.getWorldPosition(v);
+    assert(Math.abs(v.x - (AR.x + (AR.top / 2 + plan.ROAD_WIDTH / 2 + 0.24) / 2)) < 0.01 && v.z > AR.island - 0.4 && v.y > A.deck + 2, 'A causeway lamp is off its pier.');
+    // For every sun the key light takes (sunOffsetFor, turned with the yaw as placeSun does), the
+    // lantern's shadow on the road's level stays a head's half-width clear of the carriageway.
+    const { sunOffsetFor } = await load('city-atmosphere'),
+      key = new T.Vector3();
+    for (const yaw of [Math.PI / 4, plan.chapterBearings.airport])
+      for (let elevation = -0.1; elevation <= 1.2; elevation += 0.1)
+        for (let azimuth = 0; azimuth < 2 * Math.PI; azimuth += Math.PI / 24) {
+          key.copy(sunOffsetFor(elevation, azimuth)).applyAxisAngle(new T.Vector3(0, 1, 0), yaw - Math.PI / 4);
+          const fall = (v.y - (A.deck + plan.levels.road)) / key.y,
+            x = v.x - key.x * fall;
+          assert(Math.abs(x - AR.x) > plan.ROAD_WIDTH / 2 + 0.2, `A causeway lantern's shadow falls on the road (sun ${elevation.toFixed(1)}, ${azimuth.toFixed(2)}).`);
+        }
+  }
+  // The pointer: the airport's deck is part of it, so a ray on the runway (or the apron) finds it;
+  // seen from the overview's four bearings, the open sea 2.5 past the deck's edge does not, west of
+  // the hall's own box and its slack (a box over the whole deck as tall as the tower found the
+  // airport up to 5 units out).
+  for (const [x, z] of [[RW.x0 + 1, RW.z], [AP.x0 + 1, AP.z1 - 1], [AR.x, AR.arch]]) {
+    ray.set(new T.Vector3(x, 40, z), new T.Vector3(0, -1, 0));
+    assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the airport's deck at ${x}, ${z} finds no airport.`);
+  }
+  for (let k = 0; k < 4; k++) {
+    const bearing = Math.PI / 4 + (k * Math.PI) / 2,
+      back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize();
+    for (const [x, z] of [[A.x - 3, A.z - A.hd - 2.5], [A.x - A.hw - 2.5, A.z], [A.x + A.hw + 2.5, A.z - A.hd + 0.2], [A.x - 6, A.z + A.hd + 2.5]]) {
+      ray.set(new T.Vector3(x, 0, z).addScaledVector(back, 80), back.clone().negate());
+      assert.notEqual(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the sea at ${x}, ${z} from bearing ${bearing.toFixed(2)} finds the airport.`);
+    }
+    ray.set(new T.Vector3(RW.x0 + 3, A.deck, RW.z).addScaledVector(back, 80), back.clone().negate());
+    assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the runway from bearing ${bearing.toFixed(2)} finds no airport.`);
+  }
+  // Its surf is the tide foam's (no mesh of its own), after the island's two bands: one strip, rows
+  // of AIRPORT_FOAM_ROW vertices inner edge first, from the beach's tide line up the causeway's west
+  // toe, round the deck and down the east toe. Its inner line lies under the stones (so no strip of
+  // open water shows between them and the surf), it turns no corner sharper than its fillets' 15
+  // degrees a row (no right-angled L where the causeway lands), its outer edge fades to nothing,
+  // and its strength wanders: strong in places, gone for a short stretch in a few.
+  {
+    const foam = model.land.getObjectByName('tide-foam'),
+      fz = foam.geometry.getAttribute('position'),
+      fa = foam.geometry.getAttribute('color'),
+      { AIRPORT_FOAM_ROW: row } = await load('town-ground'),
+      { WATER } = await load('town-shared'),
+      // Where the causeway's flank meets the sea, plus most of the stones' reach (they reach to 2.34);
+      // round the deck 0.66 out (the lower course reaches 0.95); the fillets' centres in the sea.
+      side = AR.top / 2 + (A.deck - 0.03 - WATER) * AR.flank + 0.18,
+      fillets = [-1, 1].map((s) => [AR.x + s * (side + 0.6), A.z + A.hd + 0.66 + 0.6]),
+      first = 2 * 2 * plan.OUTLINE_SAMPLES,
+      rows = (fz.count - first) / row,
+      inner = (r) => [fz.getX(first + r * row), fz.getZ(first + r * row)];
+    assert(fa.itemSize === 4 && Number.isInteger(rows) && rows > 300, `The airport's surf is missing (${rows} rows).`);
+    for (const r of [0, rows - 1]) assert(Math.abs(inner(r)[1] - (AR.beach - 2.95)) < 1e-4, 'The airport\'s surf does not start and end on the beach\'s tide line.');
+    let gone = 0,
+      strongest = 0,
+      sharpest = 0;
+    for (let r = 0; r < rows; r++) {
+      const [x, z] = inner(r),
+        alpha = fa.getW(first + r * row);
+      assert.equal(fa.getW(first + r * row + row - 1), 0, 'The airport\'s surf has a hard outer edge.');
+      if (alpha === 0) gone++;
+      strongest = Math.max(strongest, alpha);
+      const fillet = fillets.find(([cx, cz]) => (x - AR.x) * (cx - AR.x) > 0 && z <= cz + 1e-6 && z >= cz - 0.6 - 1e-6 && Math.abs(x - AR.x) >= side - 1e-6 && Math.abs(x - AR.x) <= Math.abs(cx - AR.x) + 1e-6);
+      if (z >= fillets[0][1] - 1e-6) assert(Math.abs(Math.abs(x - AR.x) - side) < 1e-3 && side < 2.2, `The surf on the causeway's toe is off the stones at ${z.toFixed(1)}.`);
+      else if (fillet) assert(Math.abs(Math.hypot(x - fillet[0], z - fillet[1]) - 0.6) < 1e-3, `The surf's fillet is off its arc at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      else assert(Math.abs(plan.airportDistance(x, z) - 0.66) < 1e-3, `The surf round the deck is off the stones at ${x.toFixed(1)}, ${z.toFixed(1)}.`);
+      if (r > 0 && r < rows - 1) {
+        const [px, pz] = inner(r - 1),
+          [nx, nz] = inner(r + 1),
+          turn = Math.abs(Math.atan2(Math.sin(Math.atan2(nz - z, nx - x) - Math.atan2(z - pz, x - px)), Math.cos(Math.atan2(nz - z, nx - x) - Math.atan2(z - pz, x - px))));
+        sharpest = Math.max(sharpest, turn);
+      }
+    }
+    assert(sharpest < (16 * Math.PI) / 180, `The airport's surf turns a corner of ${((sharpest * 180) / Math.PI).toFixed(0)} degrees.`);
+    assert(strongest > 0.6 && gone > 0 && gone < rows * 0.15, `The airport's surf is too even (${strongest.toFixed(2)} at most, ${gone} rows gone).`);
+  }
+  model.airportLand.traverse((o) => assert(!o.isMesh || !o.material.transparent, 'A see-through mesh on the airport.'));
+  // Budgets: the airport's ground (with its hangar, windsock and forecourt furniture, whose new
+  // families are the hangar's copper and paint, the benches' wood and the planter's box ball, and
+  // whose two lamps add their lanterns) and its building add at most 27 meshes and 70k triangles to
+  // the town.
+  let landMeshes = 0,
+    landTris = 0,
+    hallMeshes = 0,
+    hallTris = 0;
+  model.airportLand.traverse((o) => o.isMesh && (landMeshes++, (landTris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3)));
+  hall.traverse((o) => o.isMesh && (hallMeshes++, (hallTris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3)));
+  assert(landMeshes <= 20 && hallMeshes <= 7 && landTris + hallTris <= 70000, `The airport costs ${landMeshes} + ${hallMeshes} meshes and ${Math.round(landTris + hallTris)} triangles.`);
+  // The building alone (the hall, the link, the tower and the jet bridge) stays under the residence's
+  // and the lighthouse's budgets combined, near the gate's.
+  assert(hallTris <= 20000, `The Departures Hall, its tower and its jet bridge cost ${Math.round(hallTris)} triangles.`);
+}
+// The airport's ground built on its own, before batching: its boulders (the armour and the causeway's
+// flanks) are one merged geometry under 40k triangles; the deck's grass, the coping and the road are
+// one mesh each, and the deck's grass lies on the deck's level.
+{
+  const { createAirport } = await load('town-airport'),
+    { createProps } = await load('town-props'),
+    { createNature } = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    g = new T.Group();
+  createAirport(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).airportGround(g);
+  const named = (name) => g.children.filter((o) => o.name === name);
+  for (const name of ['airport-armour', 'airport-deck', 'airport-coping', 'airport-road']) assert.equal(named(name).length, 1, `The airport's ${name} is not one mesh.`);
+  const armour = named('airport-armour')[0].geometry;
+  assert(armour.attributes.position.count / 3 <= 40000, `The airport's armour costs ${armour.attributes.position.count / 3} triangles.`);
+  // Its stones sit a clear step under the coping's kerb stone in value (they were near-white beads
+  // round the island), and their greys spread widely: a darker stone for about every three.
+  {
+    const colour = armour.getAttribute('color'),
+      luminance = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b,
+      tones = Array.from({ length: colour.count }, (_, i) => luminance(colour.getX(i), colour.getY(i), colour.getZ(i))).sort((a, b) => a - b),
+      kerb = new T.Color((await load('town-shared')).palette.kerb),
+      mean = tones.reduce((a, b) => a + b, 0) / tones.length,
+      spread = tones[Math.floor(tones.length * 0.9)] / tones[Math.floor(tones.length * 0.1)];
+    assert(mean < 0.45 * luminance(kerb.r, kerb.g, kerb.b) && spread > 1.75, `The airport's armour is too pale or too even (${(mean / luminance(kerb.r, kerb.g, kerb.b)).toFixed(2)} of the coping, spread ${spread.toFixed(2)}).`);
+    // The runway a clear step darker than the town's asphalt (never another road), the apron
+    // mid-grey concrete rather than a pale square, cast in bays: its four joints flat sheets (no
+    // sides to show as a dotted sliver at a slant), as the paint is.
+    const { AIRPORT_LOOK: look } = await load('town-airport'),
+      { palette } = await load('town-shared'),
+      tone = (hex) => {
+        const c = new T.Color(hex);
+        return luminance(c.r, c.g, c.b);
+      };
+    assert(tone(look.runway) < 0.6 * tone(palette.road) && tone(look.apron) < 0.85 * tone(palette.pavement), 'The runway reads as another road, or the apron as a pale square.');
+    const sheets = g.children.filter((o) => o.isMesh && o.geometry.getAttribute('normal').array.every((n, i) => Math.abs(n - (i % 3 === 1 ? 1 : 0)) < 1e-6));
+    assert(sheets.some((o) => o.geometry.getAttribute('position').count === 4 * 6 && o.geometry.getAttribute('color')?.array.every((c) => Math.abs(c - look.joint) < 1e-6)), 'The apron has not its four joints.');
+    assert(sheets.filter((o) => o.material.userData.surfaceKind === 'paint').length === 2, 'The airport\'s paint is not two flat sheets (the markings and the lead-in).');
+    // Each runway threshold reads as one, not as another zebra crossing: a solid bar across the
+    // runway (1.9 of its 2.2 at least, 0.25 wide at least) 0.15 in from its end, then four keys along
+    // it, each unbroken for 1.7 at least, with bare concrete between them.
+    const { THRESHOLD: TH } = await load('town-airport'),
+      RW = plan.RUNWAY,
+      marks = sheets.find((o) => o.material.userData.surfaceKind === 'paint' && o.material.color.getHex() === new T.Color(look.paint).getHex()),
+      mq = marks.geometry.attributes.position,
+      tris = [],
+      side = (u, v, w) => (u.x - w.x) * (v.y - w.y) - (v.x - w.x) * (u.y - w.y);
+    for (let i = 0; i < mq.count; i += 3) tris.push([0, 1, 2].map((k) => new T.Vector2(mq.getX(i + k), mq.getZ(i + k))));
+    const painted = (x, z) => {
+      const p = new T.Vector2(x, z);
+      return tris.some(([a, b, c]) => {
+        const d = [side(p, a, b), side(p, b, c), side(p, c, a)];
+        return !(d.some((e) => e < 0) && d.some((e) => e > 0));
+      });
+    };
+    for (const end of [-1, 1]) {
+      const from = end < 0 ? RW.x0 : RW.x1,
+        at = (d) => from - end * d,
+        name = end < 0 ? 'west' : 'east';
+      for (let z = -0.95; z <= 0.95 + 1e-9; z += 0.05) assert(painted(at(0.3), RW.z + z), `The runway's ${name} threshold has no bar across it at ${z.toFixed(2)}.`);
+      assert(painted(at(0.18), RW.z) && painted(at(0.42), RW.z) && !painted(at(0.05), RW.z) && !painted(at(0.52), RW.z + 0.55), `The runway's ${name} threshold bar is off its 0.15-0.45 from the end.`);
+      for (const c of TH.keys) for (let d = 0.65; d <= 2.35 + 1e-9; d += 0.1) assert(painted(at(d), RW.z + c), `A ${name} threshold key is broken or short at ${d.toFixed(2)}.`);
+      for (const c of [-0.55, 0, 0.55]) assert(!painted(at(1.5), RW.z + c), `The ${name} threshold's keys run together.`);
+    }
+  }
+  const lawn = named('airport-deck')[0].geometry.attributes.position;
+  for (let i = 0; i < lawn.count; i++) assert(Math.abs(lawn.getY(i) - plan.AIRPORT.deck) < 1e-6 && plan.airportDistance(lawn.getX(i), lawn.getZ(i)) <= -0.3 + 1e-4, 'The deck\'s grass leaves the deck.');
+  // Six lamps: the causeway's four and the forecourt's two.
+  g.updateMatrixWorld(true);
+  const causewayLanterns = ctx.lamps.filter((l) => l.getWorldPosition(new T.Vector3()).z > plan.AIRPORT_ROAD.island - 0.4);
+  assert.equal(ctx.lamps.length, 6, 'The airport\'s ground has not six lamps.');
+  assert.equal(causewayLanterns.length, 4, 'The causeway has not four lamps.');
+  assert(ctx.lamps.every((l) => causewayLanterns.includes(l) || l.parent.name === 'forecourt-lamp'), 'A lamp off the causeway is not the forecourt\'s.');
+  // The causeway lamps' heads (above the post's boss) cast no shadow, but for the brass finial: four
+  // in a row threw chevrons along the road that read as painted arrows. Their posts still cast.
+  for (const lantern of causewayLanterns) {
+    let heads = 0,
+      posts = 0;
+    for (const part of lantern.parent.children) {
+      if (!part.isMesh || part === lantern) continue;
+      if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+      if (part.geometry.boundingBox.min.y > 1.0) {
+        if (part.material.userData.surfaceKind !== 'brass') {
+          heads++;
+          assert(!part.castShadow && part.userData.noShadow, 'A causeway lamp\'s head casts a shadow.');
+        }
+      } else if (part.castShadow) posts++;
+    }
+    assert(heads >= 3 && posts >= 3, `A causeway lamp has ${heads} head parts and ${posts} casting post parts.`);
+  }
+  // The forecourt's two lamps are frosted globes on stone piers, not the town's cast-iron standard
+  // (its fine black ironwork against the pale paving was the forecourt's flicker as the view moved):
+  // under its globe each is stone but for the low iron cup that holds the globe, no part under 0.2
+  // across, and the globe casts nothing.
+  for (const lantern of ctx.lamps.filter((l) => !causewayLanterns.includes(l))) {
+    let stone = 0,
+      cups = 0,
+      thinnest = Infinity;
+    for (const part of lantern.parent.children) {
+      if (!part.isMesh || part === lantern) continue;
+      const kind = part.material.userData.surfaceKind,
+        size = new T.Box3().setFromObject(part).getSize(new T.Vector3());
+      thinnest = Math.min(thinnest, size.x, size.z);
+      if (kind === 'stone') stone++;
+      else assert(kind === 'iron' && size.y <= 0.2 && ++cups === 1, `A forecourt lamp has a ${kind} part ${size.y.toFixed(2)} tall.`);
+    }
+    lantern.geometry.computeBoundingSphere();
+    assert(stone >= 2 && cups === 1 && thinnest >= 0.2 - 1e-6 && lantern.geometry.boundingSphere.radius >= 0.15 && !lantern.castShadow, `A forecourt lamp is not a globe on a stone pier (${stone} stone parts, ${cups} cups, ${thinnest.toFixed(2)} at its thinnest).`);
+  }
+  /** Every vertex of o's meshes, in the world. */
+  const vertices = (o, visit) => {
+    const p = new T.Vector3();
+    o.traverse((m) => {
+      if (!m.isMesh) return;
+      const q = m.geometry.attributes.position;
+      for (let i = 0; i < q.count; i++) visit(p.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld), m);
+    });
+  };
+  const { AIRPORT_LOOK: LOOK } = await load('town-airport'),
+    hex = (c) => new T.Color(c).getHex();
+  // The hangar (plan.HANGAR), west of the apron: inside its plan, which the overview frames (the
+  // roof's 2.4 over the deck included), standing on the deck like the hall's plinth, 0.3 in from the
+  // deck's edge at least; one barrel roof of copper, flagged as the roof (its eave shades the
+  // walls); its green doors in the east gable, to the apron, a doorway 3 wide under an arched head
+  // over 1.8; and a concrete pad at the airside's level from under them to the apron.
+  {
+    const H = plan.HANGAR,
+      hangar = g.getObjectByName('airport-hangar'),
+      box = new T.Box3().setFromObject(hangar);
+    assert(box.min.x >= H.x0 - 1e-6 && box.max.x <= H.x1 + 1e-6 && box.min.z >= H.z0 - 1e-6 && box.max.z <= H.z1 + 1e-6, `The hangar leaves its plan: ${box.min.toArray().map((n) => n.toFixed(2)).join(', ')} to ${box.max.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+    assert(Math.abs(box.max.y - (plan.AIRPORT.deck + H.top)) < 0.005 && Math.abs(box.min.y - plan.AIRPORT.deck) < 1e-6, `The hangar stands from ${box.min.y.toFixed(3)} to ${box.max.y.toFixed(3)}.`);
+    vertices(hangar, (p) => assert(plan.onAirport(p.x, p.z, -0.3), `The hangar leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
+    const roofs = [];
+    hangar.traverse((o) => o.isMesh && o.userData.roof && roofs.push(o));
+    assert(roofs.length === 1 && roofs[0].material.userData.surfaceKind === 'copper' && roofs[0].userData.eaveY > 1, 'The hangar has not its one copper barrel roof.');
+    let z0 = Infinity,
+      z1 = -Infinity,
+      head = 0,
+      shut = 0;
+    vertices(hangar, (p, m) => {
+      if (m.material.color.getHex() !== hex(LOOK.doors) || p.x < H.x1 - 0.3) return;
+      z0 = Math.min(z0, p.z);
+      z1 = Math.max(z1, p.z);
+      head = Math.max(head, p.y - plan.AIRPORT.deck);
+    });
+    // The leaves close the doorway: their faces to the apron cover its 3 x 1.54 and its arched head.
+    hangar.traverse((m) => {
+      if (!m.isMesh || m.material.color.getHex() !== hex(LOOK.doors)) return;
+      const q = m.geometry.attributes.position,
+        [a, b, c] = [0, 1, 2].map(() => new T.Vector3());
+      for (let i = 0; i + 2 < q.count; i += 3) {
+        a.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+        b.fromBufferAttribute(q, i + 1).applyMatrix4(m.matrixWorld);
+        c.fromBufferAttribute(q, i + 2).applyMatrix4(m.matrixWorld);
+        const n = b.sub(a).cross(c.sub(a));
+        if (a.x > H.x1 - 0.3 && n.x > 0.9 * n.length()) shut += n.length() / 2;
+      }
+    });
+    assert(z1 - z0 > 2.9 && head > 1.8 && shut > 5, `The hangar's doors to the apron span ${(z1 - z0).toFixed(2)}, rise ${head.toFixed(2)} and close ${shut.toFixed(2)} of the doorway.`);
+    // Its west gable, to the sea, is dressed and not one blank grey arch: besides the cornice carried
+    // across it and the archivolt, two blonde pilasters rise past the cornice either side of its middle.
+    {
+      const middle = (H.z0 + H.z1) / 2,
+        [a, b, c] = [0, 1, 2].map(() => new T.Vector3()),
+        n = new T.Vector3();
+      let pilasters = 0;
+      hangar.traverse((m) => {
+        if (!m.isMesh || m.material.color.getHex() !== hex(LOOK.dressing)) return;
+        const q = m.geometry.attributes.position;
+        for (let i = 0; i + 2 < q.count; i += 3) {
+          a.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+          b.fromBufferAttribute(q, i + 1).applyMatrix4(m.matrixWorld);
+          c.fromBufferAttribute(q, i + 2).applyMatrix4(m.matrixWorld);
+          n.subVectors(b, a).cross(new T.Vector3().subVectors(c, a));
+          const mid = a.clone().add(b).add(c).divideScalar(3),
+            up = mid.y - plan.AIRPORT.deck;
+          if (n.x < -0.9 * n.length() && mid.x < H.x0 + 0.2 && up > 1.1 && up < 1.85 && Math.abs(Math.abs(mid.z - middle) - 0.75) < 0.1) pilasters++;
+        }
+      });
+      assert(pilasters >= 4, `The hangar's west gable has ${pilasters} pilaster faces past its cornice.`);
+    }
+    // Its ironwork (the doors' handles and the south door's knob) is chunky: every piece at least
+    // 0.07 across every way (thinner ones twinkle as the view moves).
+    {
+      const iron = [];
+      hangar.traverse((m) => m.isMesh && m.material.color.getHex() === hex(LOOK.iron) && iron.push(m));
+      const pieces = [];
+      for (const m of iron) {
+        const q = m.geometry.attributes.position,
+          key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+          parent = new Map(),
+          find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+        for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+        for (let i = 0; i + 2 < q.count; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
+        const boxes = new Map();
+        for (let i = 0; i < q.count; i++) {
+          const root = find(key(i));
+          if (!boxes.has(root)) boxes.set(root, new T.Box3());
+          boxes.get(root).expandByPoint(new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld));
+        }
+        pieces.push(...boxes.values());
+      }
+      assert(pieces.length === 3, `The hangar has ${pieces.length} pieces of ironwork, not its two handles and a knob.`);
+      for (const b of pieces) {
+        const size = b.getSize(new T.Vector3());
+        assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `A piece of the hangar's ironwork is ${size.toArray().map((n) => n.toFixed(3)).join(' x ')}.`);
+      }
+    }
+    const pad = g.children.find((o) => {
+      if (!o.isMesh || o.material.color.getHex() !== hex(LOOK.apron)) return false;
+      const b = new T.Box3().setFromObject(o);
+      return Math.abs(b.max.x - plan.APRON.x0) < 1e-6 && b.min.x < H.x1;
+    });
+    const padBox = pad && new T.Box3().setFromObject(pad);
+    assert(pad && padBox.min.x < H.x1 - 0.15 && Math.abs(padBox.max.y - plan.AIRSIDE) < 1e-6 && padBox.min.z < z0 && padBox.max.z > z1, 'No concrete pad joins the hangar\'s doors to the apron.');
+  }
+  // The windsock on its spot (plan.WINDSOCK): its footing on the deck 0.3 in from the edge at least;
+  // its sock on a pivot of its own (windsock-sock), up in the air over the deck and streaming east,
+  // downwind of the prevailing westerly; under 2.5 over the sea.
+  {
+    const W = plan.WINDSOCK,
+      w = g.getObjectByName('airport-windsock'),
+      sock = w?.getObjectByName('windsock-sock');
+    assert(w && sock && Math.abs(w.position.x - W.x) < 1e-9 && Math.abs(w.position.z - W.z) < 1e-9 && Math.abs(w.position.y - plan.AIRPORT.deck) < 1e-9, 'The windsock is off its spot.');
+    const all = new T.Box3().setFromObject(w),
+      streamer = new T.Box3().setFromObject(sock);
+    vertices(w, (p) => assert(plan.onAirport(p.x, p.z, 0) && (p.y > plan.AIRPORT.deck + 0.12 || plan.onAirport(p.x, p.z, -0.3)), `The windsock leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
+    assert(streamer.min.y > plan.AIRPORT.deck + 1.2 && streamer.max.x > W.x + 0.6 && all.max.y < 2.5, 'The windsock\'s sock does not stream east in the air.');
+  }
+  // The forecourt's furniture: the planter on the road's axis, four bollards 0.14 across along the
+  // kerb (two either side of it, in pairs about the axis), the two lamps and two benches facing in
+  // across the axis; all of it on the forecourt's paving, and clear of the hall's steps (0.3 in
+  // front of them across their width).
+  {
+    const FC = plan.FORECOURT,
+      AR = plan.AIRPORT_ROAD,
+      kerb = FC.z1 - 0.4,
+      steps = AR.arch + 0.7,
+      pieces = g.children.filter((o) => o.name.startsWith('forecourt-')),
+      count = (name) => pieces.filter((o) => o.name === name).length;
+    assert.deepEqual(['forecourt-planter', 'forecourt-bollards', 'forecourt-lamp', 'forecourt-bench'].map(count), [1, 1, 2, 2], 'The forecourt lacks its planter, bollards, lamps or benches.');
+    for (const o of pieces)
+      vertices(o, (p) => {
+        assert(p.x > FC.x0 && p.x < FC.x1 && p.z > FC.z0 && p.z < kerb, `The forecourt's ${o.name} leaves its paving at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+        assert(Math.abs(p.x - AR.x) > 1.5 || p.z > steps + 0.3, `The forecourt's ${o.name} crowds the hall's steps at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      });
+    assert(Math.abs(pieces.find((o) => o.name === 'forecourt-planter').position.x - AR.x) < 1e-9, 'The planter is off the road\'s axis.');
+    const posts = [];
+    vertices(pieces.find((o) => o.name === 'forecourt-bollards'), (p) => {
+      const near = posts.find((b) => Math.abs(b.x - p.x) < 0.2);
+      if (near) [near.lo, near.hi] = [Math.min(near.lo, p.x), Math.max(near.hi, p.x)];
+      else posts.push({ x: p.x, lo: p.x, hi: p.x });
+    });
+    const middles = posts.map((b) => (b.lo + b.hi) / 2).sort((a, b) => a - b);
+    assert(posts.length === 4 && posts.every((b) => Math.abs(b.hi - b.lo - 0.14) < 0.005) && Math.abs(middles[0] + middles[3] - 2 * AR.x) < 1e-6 && Math.abs(middles[1] + middles[2] - 2 * AR.x) < 1e-6, `The bollards are not four 0.14 across in pairs about the road's axis: ${posts.map((b) => (b.hi - b.lo).toFixed(3)).join(', ')}.`);
+    for (const bench of pieces.filter((o) => o.name === 'forecourt-bench'))
+      assert(Math.sin(bench.rotation.y) * (AR.x - bench.position.x) > 0 && Math.abs(Math.cos(bench.rotation.y)) < 1e-9, 'A forecourt bench turns its back on the axis.');
+  }
+  // The stand's lead-in line ends just ahead of the parked plane's nose wheels.
+  {
+    const line = g.children.find((o) => o.isMesh && o.material.color.getHex() === hex(LOOK.leadIn)),
+      end = line && new T.Box3().setFromObject(line).max.x,
+      wheels = plan.STAND.x + plan.PLANE.nose;
+    assert(line && end - wheels > 0 && end - wheels <= 0.2, `The lead-in line ends ${(end - wheels).toFixed(2)} from the plane's nose wheels.`);
+  }
+  // The hall lane's dressing, flat on the ground and facing up: its kerb radii at the mouth (the
+  // road's asphalt, across held at the carriageway's edge) and its flush edging of the town's
+  // paving, from the ring's footway to the causeway's. It keeps a trunk's breadth from every tree
+  // (it is no carriageway, so the lane's 0.6 does not apply) and 1.5 from the cottages as built.
+  {
+    const { LANE_DRESSING } = await load('town-airport'),
+      AR = plan.AIRPORT_ROAD,
+      [radii, edging] = ['airport-lane-radii', 'airport-lane-edging'].map((name) => named(name)[0]?.geometry),
+      segment = (px, pz, ax, az, bx, bz) => {
+        const dx = bx - ax,
+          dz = bz - az,
+          t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1)));
+        return Math.hypot(px - ax - t * dx, pz - az - t * dz);
+      },
+      apart = (px, pz) => {
+        let best = Infinity;
+        for (const geometry of [radii, edging]) {
+          const p = geometry.getAttribute('position');
+          for (let i = 0; i < p.count; i += 3) {
+            const [ax, az, bx, bz, cx, cz] = [p.getX(i), p.getZ(i), p.getX(i + 1), p.getZ(i + 1), p.getX(i + 2), p.getZ(i + 2)],
+              s1 = (bx - ax) * (pz - az) - (bz - az) * (px - ax),
+              s2 = (cx - bx) * (pz - bz) - (cz - bz) * (px - bx),
+              s3 = (ax - cx) * (pz - cz) - (az - cz) * (px - cx);
+            if ((s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0)) return 0;
+            best = Math.min(best, segment(px, pz, ax, az, bx, bz), segment(px, pz, bx, bz, cx, cz), segment(px, pz, cx, cz, ax, az));
+          }
+        }
+        return best;
+      };
+    assert(radii && edging, 'The hall lane has no kerb radii or edging.');
+    for (const geometry of [radii, edging]) {
+      const p = geometry.getAttribute('position'),
+        n = geometry.getAttribute('normal');
+      for (let i = 0; i < p.count; i++) {
+        assert(n.getY(i) > 0.999 && Math.abs(p.getY(i) - plan.levels.road) < 0.01, 'The hall lane\'s dressing is not flat on the ground.');
+        assert(p.getZ(i) <= AR.lane + 1e-6 && p.getZ(i) >= AR.beach - 0.15 - 1e-6 && Math.abs(p.getX(i) - AR.x) <= plan.ROAD_WIDTH / 2 + LANE_DRESSING.radius + 1e-6, 'The hall lane\'s dressing strays.');
+      }
+    }
+    const uv = radii.getAttribute('uv'),
+      rp = radii.getAttribute('position');
+    for (let i = 0; i < uv.count; i++) assert(Math.abs(Math.abs(uv.getX(i)) - plan.ROAD_WIDTH / 2) < 1e-6 && Math.abs(uv.getY(i) - (4000 + AR.lane - rp.getZ(i))) < 1e-3, 'The kerb radii are off the road\'s uv.');
+    for (const t of plan.plantingPlan()) assert(apart(t.x, t.z) >= 0.5, `The hall lane's dressing runs ${apart(t.x, t.z).toFixed(2)} from ${t.id}.`);
+    const homes = (await load('town-homes')).createHomes(ctx, kit, (await load('town-nature')).createNature(ctx, kit)),
+      v = new T.Vector3();
+    for (const c of plan.cottages.filter((c) => Math.abs(c.x - AR.x) < 12 && c.z < AR.lane + 4)) {
+      const cottage = new T.Group();
+      homes.buildCottage(cottage, c);
+      cottage.updateMatrixWorld(true);
+      let near = Infinity;
+      cottage.traverse((o) => {
+        if (!o.isMesh) return;
+        const p = o.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+          if (Math.abs(v.x - AR.x) < 4.5) near = Math.min(near, apart(v.x, v.z));
+        }
+      });
+      assert(near >= 1.5, `The hall lane's dressing passes ${near.toFixed(2)} from cottage ${c.n}.`);
+    }
+  }
+  library.dispose();
 }
 const shader = {
   uniforms: {},
@@ -1417,16 +2058,16 @@ assert.deepEqual(phased.windows.map((p) => [p.place, p.light]), panes.map((p) =>
   for (const q of brass.filter((p) => Math.abs(p.z) > 0.7 && p.y > 4.7 && p.y < 5.24))
     assert(Math.abs(q.x) <= 1.09 && Math.abs(q.y - 4.97) <= 0.16, `Bronze on the gate's attic off its blank tablet at ${q.x.toFixed(2)}, ${q.y.toFixed(2)}.`);
 }
-// Always lit: the clock dials (exactly), the lighthouse, the phone box and the tram and boat; never: the crane cab.
+// Always lit: the clock dials (exactly), the lighthouse and the board, the phone box, the control tower's cab and the tram, boat and plane; never: the crane cab.
 {
   const role = (r) => panes.filter((p) => p.role === r);
   assert.equal(role('dial').length, 4, 'Four clock dials.');
   assert.equal(role('unlit').length, 1, 'One crane cab.');
-  for (const r of ['beacon', 'kiosk', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
+  for (const r of ['beacon', 'kiosk', 'cab', 'vehicle']) assert(role(r).length, `No ${r} panes.`);
   for (let minute = 0; minute < 24 * 60; minute += 15) {
     const clock = at(minute / 60);
     assert(role('dial').every((p) => windowLevel(p.light, clock) === 1), `A clock dial is dark at minute ${minute}.`);
-    assert(['beacon', 'kiosk', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
+    assert(['beacon', 'kiosk', 'cab', 'vehicle'].every((r) => role(r).every((p) => windowLevel(p.light, clock) > 0.5)), `A lamp that stays lit is dark at minute ${minute}.`);
     assert(role('unlit').every((p) => windowLevel(p.light, clock) === 0), `The crane cab is lit at minute ${minute}.`);
   }
   // The dials are exactly today's glow; no pane is brighter (luminance x the night's 0.72).
@@ -1880,6 +2521,610 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     tris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
   });
   assert(tris <= 9000 && count <= 6, `The boat costs ${Math.round(tris)} triangles in ${count} meshes.`);
+}
+// The plane (buildPlane, plan.PLANE's measures), built alone: inside its measures (the span, the
+// length, the fin's top), standing on its six tyres (the only parts within 0.02 of the ground, at
+// its nose and main gear), 0.66 across at its forward door, at most 7k triangles. It lights no lamp
+// of the town's: its three navigation lights stay out of the batch (plane-lights), red at the port
+// wingtip, green at the starboard one and white at the tail, each its own plain material on the
+// lanterns' program at the traffic signals' steady glow, casting nothing.
+{
+  const { createMovers, PLANE_LIGHT, planeSection, DOOR_LIGHT } = await load('town-movers'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    plane = createMovers(ctx, kit).buildPlane(),
+    P = plan.PLANE,
+    lights = plane.getObjectByName('plane-lights'),
+    gear = [...[-1, 1].map((s) => [s * 0.075, P.nose]), ...[-1, 1].flatMap((s) => [-1, 1].map((w) => [(s * P.track) / 2 + w * 0.085, P.main]))],
+    tyres = new Set(),
+    p = new T.Vector3();
+  plane.updateMatrixWorld(true);
+  assert.equal(ctx.lamps.length, 0, 'The plane lights a lamp of the town\'s.');
+  let tris = 0,
+    width = 0;
+  plane.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    tris += (o.geometry.index?.count ?? pos.count) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      assert(Math.abs(p.x) <= P.span / 2 + 0.07 && p.z <= P.length / 2 + 1e-6 && p.z >= -P.length / 2 - 0.08 && p.y >= -1e-6 && p.y <= P.fin + 1e-6, `The plane reaches out of its measures at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      if (p.y < 0.02) {
+        const k = gear.findIndex(([x, z]) => Math.abs(p.x - x) < 0.05 && Math.abs(p.z - z) < 0.12);
+        assert(k >= 0, `Something but a tyre touches the ground under the plane at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+        tyres.add(k);
+      }
+      if (o.parent !== lights && Math.abs(p.z - P.door) < 0.08 && Math.abs(p.y - P.axis) < 0.05) width = Math.max(width, Math.abs(p.x));
+    }
+  });
+  assert.equal(tyres.size, 6, `The plane stands on ${tyres.size} tyres.`);
+  assert(width >= P.radius - 1e-3 && width <= P.radius + 0.013, `The plane's fuselage is ${(2 * width).toFixed(3)} across at its door.`);
+  assert(tris <= 7000, `The plane costs ${Math.round(tris)} triangles.`);
+  // The forward doors' small lights: nothing of a door panel pokes through one (a facet's corner of
+  // the panel under the light showed as a small diamond in it). A ray from the fuselage's axis out
+  // through any corner or face middle of the parts round the door meets the light's glass (when it
+  // meets it at all) farther out.
+  {
+    const glassMesh = plane.children.find((o) => o.isMesh && o.material.userData.surfaceKind === 'glass'),
+      corners = (mesh, i) => [0, 1, 2].map((k) => new T.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, i + k).applyMatrix4(mesh.matrixWorld)),
+      lightsGlass = [],
+      ray = new T.Ray(),
+      hit = new T.Vector3();
+    for (let i = 0; i < glassMesh.geometry.attributes.position.count; i += 3) {
+      const tri = corners(glassMesh, i);
+      if (tri.every((q) => Math.abs(q.z - P.door) <= Math.max(...DOOR_LIGHT.z.map(Math.abs)) + 0.01)) lightsGlass.push(tri);
+    }
+    let met = 0;
+    plane.traverse((o) => {
+      if (!o.isMesh || o === glassMesh || o.parent === lights) return;
+      for (let i = 0; i + 2 < o.geometry.attributes.position.count; i += 3) {
+        const tri = corners(o, i);
+        if (!tri.every((q) => Math.abs(q.z - P.door) < 0.12)) continue;
+        for (const q of [...tri, tri[0].clone().add(tri[1]).add(tri[2]).divideScalar(3)]) {
+          const axis = new T.Vector3(0, planeSection(q.z).y, q.z),
+            reach = q.distanceTo(axis);
+          ray.set(axis, q.clone().sub(axis).normalize());
+          for (const [a, b, c] of lightsGlass)
+            if (ray.intersectTriangle(a, b, c, false, hit)) {
+              met++;
+              assert(hit.distanceTo(axis) > reach + 1e-4, `A door panel pokes through its light at ${q.toArray().map((n) => n.toFixed(3)).join(', ')}.`);
+            }
+        }
+      }
+    });
+    assert(lightsGlass.length === 4 && met > 0, `The doors' lights are ${lightsGlass.length} triangles over ${met} points of the panels.`);
+  }
+  const lens = lights?.children ?? [],
+    lantern = kit.lampGlass();
+  assert(lights?.userData.keepSeparate && lens.length === 3 && new Set(lens.map((l) => l.material)).size === 3, 'The plane\'s three navigation lights are not apart, each in its own material.');
+  for (const l of lens) {
+    const m = l.material;
+    assert(m.type === lantern.type && !m.vertexColors && !m.map && !m.transparent && m.onBeforeCompile === T.Material.prototype.onBeforeCompile && m.customProgramCacheKey() === lantern.customProgramCacheKey(), 'A navigation light has a program of its own.');
+    assert(m.emissiveIntensity === PLANE_LIGHT && PLANE_LIGHT <= 0.95 && !l.castShadow, 'A navigation light glows harder than the signals, or casts.');
+  }
+  const lit = (test) => lens.filter((l) => test(l.material.emissive, l.position));
+  assert(
+    lit((c, at) => c.r > 2 * c.g && c.r > 2 * c.b && at.x > P.span / 2 - 0.05).length === 1 &&
+      lit((c, at) => c.g > 2 * c.r && at.x < -P.span / 2 + 0.05).length === 1 &&
+      lit((c, at) => Math.min(c.r, c.g, c.b) > 0.6 && at.z < -P.length / 2 + 0.05 && Math.abs(at.x) < 1e-6).length === 1,
+    'The plane\'s lights are not red to port, green to starboard and white at the tail.',
+  );
+  library.dispose();
+}
+// The plane as the town has it, parked on its stand (plan.STAND, nose east) on the airside's slabs:
+// batched into its enamel and its glass (one 'vehicle' pane, lit all night) beside its three lights;
+// not following the idle drift, nor answering the pointer (a ray down on it finds the airport's
+// deck). Its forward door is at the jet bridge's cab and its port side 0.15-0.25 short of the
+// bridge's bellows (it docks); nothing of it reaches under or into the bridge, and its port wing and
+// engine keep 0.3 west of it. It stands on the apron, 0.3 in from the deck's edge, and keeps 0.3
+// from the hall's walls and the hangar.
+{
+  const plane = model.plane,
+    P = plan.PLANE,
+    S = plan.STAND,
+    J = plan.JET_BRIDGE,
+    AP = plan.APRON,
+    TW = plan.TAXIWAY,
+    bridgeWest = J.cab - 0.34,
+    { shell: hall } = models.get('airport'),
+    p = new T.Vector3();
+  assert(plane.position.x === S.x && plane.position.z === S.z && plane.position.y === plan.AIRSIDE && plane.rotation.y === S.heading, 'The plane is off its stand.');
+  assert(Math.abs(S.x + P.door - J.cab) < 0.005, 'The plane\'s forward door is off the jet bridge\'s cab.');
+  const meshes = [];
+  plane.traverse((o) => o.isMesh && meshes.push(o));
+  const kinds = meshes.map((o) => `${o.material.userData.surfaceKind ?? o.material.name}${o.castShadow ? '' : '(n)'}`).sort();
+  assert.deepEqual(kinds, ['enamel', 'glass(n)', 'nav-light(n)', 'nav-light(n)', 'nav-light(n)'], `The plane batches into ${kinds.join(', ')}.`);
+  const panes = model.windows.filter((w) => w.place === 'plane');
+  assert(panes.length === 1 && panes[0].role === 'vehicle', 'The plane\'s glass is not one pane lit all night.');
+  assert(!plane.userData.followsDrift && !model.animated.some((e) => e.object === plane), 'The plane follows the drift or the animated list.');
+  for (let o = plane; o; o = o.parent) assert(!o.userData.buildingId && !o.userData.placeId, 'The plane answers the pointer.');
+  ray.set(new T.Vector3(S.x, 40, S.z), new T.Vector3(0, -1, 0));
+  assert.equal(pickTarget(ray, models, model.parkHit), 'airport', 'Pointing at the parked plane finds no airport.');
+  let side = Infinity,
+    nose = -Infinity,
+    tail = Infinity,
+    hallWest = Infinity;
+  for (const o of meshes) {
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      nose = Math.max(nose, p.x);
+      tail = Math.min(tail, p.x);
+      if (Math.abs(p.x - J.cab) < 0.31 && p.y > J.floor && p.y < J.floor + 0.6) side = Math.min(side, p.z);
+      if (p.x >= bridgeWest - 0.3) assert(p.z >= J.bellows + 0.15, `The plane reaches under the jet bridge at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      assert(plan.onAirport(p.x, p.z, -0.3), `The plane leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      if (p.y < plan.AIRSIDE + 0.25) assert(p.x > AP.x0 && p.x < AP.x1 && p.z > TW.z + TW.width / 2 && p.z < AP.z1, `The plane's footprint leaves the apron at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+    }
+  }
+  assert(side - J.bellows >= 0.15 && side - J.bellows <= 0.25, `The plane's port side lies ${(side - J.bellows).toFixed(3)} from the jet bridge's bellows.`);
+  hall.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (p.x > plan.AIRPORT_ROAD.x - 2.1 - 0.2) hallWest = Math.min(hallWest, p.x);
+    }
+  });
+  assert(nose <= hallWest - 0.3 && tail >= plan.HANGAR.x1 + 0.3, `The plane (x ${tail.toFixed(2)} to ${nose.toFixed(2)}) crowds the hall (${hallWest.toFixed(2)}) or the hangar.`);
+}
+// The plane's loop (plan.planePose): 180 s, three of the tram's laps, a pure function of time like
+// the tram's timetable. Copied from the tram's and the cyclist's checks: periodic and the same far
+// into the day; its phases in order on their times; frame by frame at 60 fps never a jump while it
+// shows, never rolling back on a leg (pushback only ever back, everything else nose first), easing
+// its speed no harder than 0.75 v² / ramp, turning at most 1.2° a frame and banking at most 0.12.
+{
+  const P = plan.PLANE_LOOP,
+    T0 = plan.PLANE_TIMES,
+    dt = 1 / 60,
+    wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)),
+    deg = Math.PI / 180;
+  assert.equal(P, 3 * LAP, 'The plane\'s loop is not three of the tram\'s laps.');
+  assert.equal(P, 180, 'The plane\'s loop is not 180 s.');
+  const parked = plan.planePose(10);
+  assert(parked.phase === 'parked' && parked.x === plan.STAND.x && parked.z === plan.STAND.z && parked.y === plan.AIRSIDE && parked.heading === plan.STAND.heading && parked.y < 11 && parked.visible, 'At t=10 the plane is not parked on its stand (low, as the balloon\'s search needs).');
+  for (const t of [0, P - 1e-6]) assert.deepEqual(plan.planePose(t), parked, `The plane is not parked at t=${t}.`);
+  const order = ['parked', 'pushback', 'taxi', 'turn', 'take-off', 'climb', 'away', 'approach', 'roll-out', 'taxi-in', 'parked'],
+    phases = [];
+  let last = plan.planePose(0),
+    travel = plan.planeTravel(0),
+    speedBefore = 0,
+    farthest = 0;
+  for (let f = 1; f <= P * 60; f++) {
+    const t = f * dt,
+      p = plan.planePose(t),
+      q = plan.planePose(t + P);
+    if (phases.at(-1)?.phase !== p.phase) phases.push({ phase: p.phase, t });
+    assert(Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 1e-7 && Math.abs(wrap(p.heading - q.heading)) < 1e-7 && p.visible === q.visible, `The plane's loop from t=${t.toFixed(2)} differs from the next.`);
+    assert([p.x, p.y, p.z, p.heading, p.pitch, p.bank].every(Number.isFinite), `The plane's pose is not finite at t=${t.toFixed(2)}.`);
+    assert(Math.abs(p.bank) <= 0.12 + 1e-9 && (!p.ground || p.bank === 0), `The plane banks ${p.bank.toFixed(3)} at t=${t.toFixed(2)}.`);
+    assert(p.pitch >= -1e-9 && p.pitch <= 0.15, `The plane pitches ${p.pitch.toFixed(3)} at t=${t.toFixed(2)}.`);
+    assert(!p.ground || Math.abs(p.y - plan.AIRSIDE - plan.PLANE.main * -Math.sin(p.pitch)) < 1e-9, `The plane's wheels leave the airside at t=${t.toFixed(2)} without flying.`);
+    if (p.visible && last.visible) {
+      const step = Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z),
+        turn = Math.abs(wrap(p.heading - last.heading));
+      assert(step <= 6.2 * dt, `The plane jumps ${step.toFixed(3)} at t=${t.toFixed(2)}.`);
+      assert(turn <= 1.2 * deg, `The plane turns ${(turn / deg).toFixed(2)}° in one frame at t=${t.toFixed(2)}.`);
+      // Nose first, or (pushed back) tail first; sideways only as it pivots about its main gear (its
+      // middle swinging round on a circle 0.38 across, a few thousandths a frame off its heading).
+      const along = ((p.x - last.x) * Math.sin(last.heading) + (p.z - last.z) * Math.cos(last.heading)) / dt;
+      if (p.phase === 'pushback') assert(along <= 0.01, `The plane rolls forward on pushback at t=${t.toFixed(2)}.`);
+      else assert(along >= -0.01, `The plane rolls back at t=${t.toFixed(2)} (${p.phase}).`);
+    }
+    if (!p.visible) farthest = Math.max(farthest, Math.hypot(p.x, p.z));
+    // Each leg's distance only grows, eased no harder than 0.75 v² over its ramp's distance.
+    const now = plan.planeTravel(t);
+    if (now.leg && now.leg === travel.leg) {
+      const speed = (now.d - travel.d) / dt;
+      assert(speed >= -1e-9, `The plane's ${now.leg} runs backwards at t=${t.toFixed(2)}.`);
+      const knots = plan.PLANE_LEGS[now.leg],
+        k = knots.findIndex(([at], i) => i + 1 < knots.length && t <= knots[i + 1][0] && t >= at);
+      if (k >= 0 && f > 1 && Math.abs(t - knots[k][0]) > dt && Math.abs(t - knots[k + 1][0]) > dt) {
+        const [[t0, v0], [t1, v1]] = [knots[k], knots[k + 1]],
+          ramp = ((v0 + v1) / 2) * (t1 - t0),
+          most = ramp > 0 ? (0.75 * Math.max(v0, v1) ** 2) / ramp : 0;
+        assert(Math.abs(speed - speedBefore) / dt <= most * 1.02 + 1e-6, `The plane's speed changes by ${(Math.abs(speed - speedBefore) / dt).toFixed(2)} a second² at t=${t.toFixed(2)} (most ${most.toFixed(2)}).`);
+      }
+      speedBefore = speed;
+    } else speedBefore = now.speed;
+    last = p;
+    travel = now;
+  }
+  assert.deepEqual(phases.map((s) => s.phase), order, `The plane's loop runs ${phases.map((s) => s.phase).join(', ')}.`);
+  for (const [phase, at] of [['pushback', T0.pushback[0]], ['taxi', T0.taxi[0]], ['turn', T0.turn[0]], ['take-off', T0.roll[0]], ['away', T0.lost], ['approach', T0.approach], ['roll-out', T0.touchdown], ['taxi-in', T0.rollOut]])
+    assert(Math.abs(phases.find((s) => s.phase === phase).t - at) <= dt + 1e-9, `The plane's ${phase} starts at ${phases.find((s) => s.phase === phase).t.toFixed(2)} s, not ${at} s.`);
+  // It lifts off rotating near x -7, and touches down near x 3 on 27, its threshold the east end.
+  const lift = phases.find((s) => s.phase === 'climb').t,
+    down = phases.find((s) => s.phase === 'roll-out').t;
+  assert(Math.abs(plan.planePose(lift).x + 8) < 1.5 && Math.abs(plan.planePose(down).x - 2.5) < 1, `The plane lifts off at x ${plan.planePose(lift).x.toFixed(2)} and touches down at x ${plan.planePose(down).x.toFixed(2)}.`);
+  assert(farthest >= 150 && Math.hypot(plan.planePose(T0.lost - dt).x, plan.planePose(T0.lost - dt).z) >= 150 && Math.hypot(plan.planePose(T0.approach).x, plan.planePose(T0.approach).z) >= 150, 'The plane goes out of sight less than 150 from the island.');
+  for (const t of [86400 * 7 + 13.37, 3e6 + 41.2]) {
+    const a = plan.planePose(t),
+      b = plan.planePose(t % P);
+    assert(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-4 && Math.abs(wrap(a.heading - b.heading)) < 1e-4, `The plane drifts after ${t} s.`);
+  }
+}
+// Where the plane goes. Its routes keep its main gear on the airside's slabs (the runway, the
+// taxiway and its stubs, the apron); on the ground the whole of it stays 0.3 inside the deck's edge,
+// 0.3 from the hall, the tower and the hangar and 0.15 from the jet bridge (its docking gap) and
+// never under it, and near the deck, on the ground or in the air, 0.3 from the windsock however it
+// sways. It never crosses the main island (it keeps 12 off its coast), and keeps well clear of the
+// balloon's lap (turned either way with the idle drift), the gulls, the lighthouse beam's sweep and
+// the boat. It goes out of sight only beyond 150, outside the opening view at every common size and
+// drift, and outside the City overview and the airport's chapter even zoomed out to 0.45 at any of
+// the four Rotate stops, or else lost in the fog.
+{
+  const { WINDSOCK_SWAY } = await load('town-airport'),
+    { createGulls } = await load('city-atmosphere'),
+    RW = plan.RUNWAY,
+    TW = plan.TAXIWAY,
+    AP = plan.APRON,
+    H = plan.HANGAR,
+    slabs = [
+      [RW.x0, RW.x1, RW.z - RW.width / 2, RW.z + RW.width / 2],
+      [TW.x0 - TW.width / 2, TW.x1 + TW.width / 2, TW.z - TW.width / 2, TW.z + TW.width / 2],
+      ...TW.stubs.map((x) => [x - TW.width / 2, x + TW.width / 2, RW.z + RW.width / 2, TW.z - TW.width / 2]),
+      [AP.x0, AP.x1, TW.z + TW.width / 2, AP.z1],
+    ],
+    onSlabs = (x, z) => slabs.some(([x0, x1, z0, z1]) => x >= x0 - 1e-9 && x <= x1 + 1e-9 && z >= z0 - 1e-9 && z <= z1 + 1e-9);
+  for (const [name, route, from, to] of [['taxi out', plan.PLANE_PATHS.taxiOut, 0, plan.PLANE_PATHS.pivot], ['way in', plan.PLANE_PATHS.comeIn, plan.PLANE_PATHS.touchdown, plan.PLANE_PATHS.stand]])
+    for (let d = from; d <= to; d += 0.05) {
+      const [x, z] = route.at(d);
+      assert(onSlabs(x, z), `The plane's ${name} runs off the airside at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+    }
+  assert(onSlabs(plan.PLANE_ROUTE.pivot, plan.PLANE_ROUTE.track) && onSlabs(plan.PLANE_ROUTE.pivot + plan.PLANE.nose - plan.PLANE.main + 0.1, plan.PLANE_ROUTE.track), 'The plane turns onto 27 with a wheel off the runway.');
+  // The plane's points, in its own frame; its pose's matrix, as posePlane sets it.
+  const plane = model.plane,
+    local = [],
+    seen = new Set(),
+    v = new T.Vector3(),
+    inverse = plane.matrixWorld.clone().invert();
+  plane.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position,
+      m = inverse.clone().multiply(o.matrixWorld);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      const key = `${Math.round(v.x / 0.05)},${Math.round(v.y / 0.05)},${Math.round(v.z / 0.05)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      local.push(v.clone());
+    }
+  });
+  const matrix = (p) => new T.Matrix4().makeRotationFromEuler(new T.Euler(-p.pitch, p.heading, p.bank, 'YXZ')).setPosition(p.x, p.y, p.z);
+  // The hall itself (from its west wall: the hall, the link block and the tower) and the jet bridge
+  // as plan outlines (convex hulls) of their parts under 2.2; the hangar as its plan.
+  const hallVertices = [],
+    bridgeVertices = [];
+  let hallWest = Infinity;
+  models.get('airport').shell.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.x > plan.AIRPORT_ROAD.x - 2.3) hallWest = Math.min(hallWest, v.x);
+    }
+  });
+  models.get('airport').shell.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.y < 2.2) (v.x >= hallWest - 1e-6 ? hallVertices : bridgeVertices).push([v.x, v.z]);
+    }
+  });
+  const hull = (points) => {
+    const s = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+      cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]),
+      half = (list) => {
+        const out = [];
+        for (const p of list) {
+          while (out.length >= 2 && cross(out.at(-2), out.at(-1), p) <= 0) out.pop();
+          out.push(p);
+        }
+        return out;
+      },
+      lower = half(s),
+      upper = half(s.reverse());
+    return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+  };
+  // Signed distance from a convex outline (counter-clockwise from hull()): negative inside.
+  const outside = (outline, x, z) => {
+    let inside = true,
+      best = Infinity;
+    for (let i = 0; i < outline.length; i++) {
+      const a = outline[i],
+        b = outline[(i + 1) % outline.length];
+      if ((b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]) < 0) inside = false;
+      best = Math.min(best, plan.distanceToSegment([x, z], a, b));
+    }
+    return inside ? -best : best;
+  };
+  const obstacles = [
+    { name: 'hall', outline: hull(hallVertices), gap: 0.3 },
+    { name: 'jet bridge', outline: hull(bridgeVertices), gap: 0.15 },
+    { name: 'hangar', outline: [[H.x0, H.z0], [H.x1, H.z0], [H.x1, H.z1], [H.x0, H.z1]].reverse(), gap: 0.3 },
+  ].map((o) => {
+    const xs = o.outline.map(([x]) => x),
+      zs = o.outline.map(([, z]) => z);
+    return { ...o, box: [Math.min(...xs) - o.gap, Math.max(...xs) + o.gap, Math.min(...zs) - o.gap, Math.max(...zs) + o.gap] };
+  });
+  assert(outside(obstacles[0].outline, plan.AIRPORT_ROAD.x, -47.5) < 0 && outside(obstacles[1].outline, plan.JET_BRIDGE.cab, plan.JET_BRIDGE.z) < 0, 'The plane\'s obstacles are not where the hall and the jet bridge stand.');
+  // The windsock as the frame loop swings it: its mast, and its sock at twelve moments of the sway as
+  // a capsule round its axis, as wide as its mouth (its points all within it).
+  const sockEntry = model.animated.find((e) => e.object.name === 'windsock-sock'),
+    windsock = model.airportLand.getObjectByName('airport-windsock'),
+    W = plan.WINDSOCK,
+    socks = [],
+    S = WINDSOCK_SWAY;
+  assert(sockEntry && windsock, 'The windsock\'s sock is not in the animated list.');
+  for (let k = 0; k < 12; k++) {
+    sockEntry.update(k * 1.3, 0, 0);
+    windsock.updateMatrixWorld(true);
+    const from = new T.Vector3().setFromMatrixPosition(sockEntry.object.matrixWorld),
+      to = new T.Vector3(0, 0.7, 0).applyMatrix4(sockEntry.object.matrixWorld),
+      axis = new T.Line3(from, to),
+      near = new T.Vector3();
+    sockEntry.object.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position,
+        q = new T.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        q.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        axis.closestPointToPoint(q, true, near);
+        assert(near.distanceTo(q) <= S.mouth + 0.04, 'The windsock\'s sock reaches out of its capsule.');
+      }
+    });
+    socks.push(axis);
+  }
+  sockEntry.update(0, 0, 0);
+  const mastTop = plan.AIRPORT.deck + S.mast + 0.08,
+    closest = new T.Vector3(),
+    // The deck is convex, so the plane's points farthest out over its edge are corners of its plan.
+    rim = hull(local.map((q) => [q.x, q.z])).map(([x, z]) => new T.Vector3(x, 0, z)),
+    reach = Math.max(...local.map((q) => Math.hypot(q.x, q.z)));
+  const worst = { deck: Infinity, windsock: Infinity, ...Object.fromEntries(obstacles.map((o) => [o.name, Infinity])) },
+    world = new T.Vector3();
+  for (let f = 0; f < plan.PLANE_LOOP * 60; f++) {
+    const t = f / 60,
+      p = plan.planePose(t);
+    if (!p.visible || (!p.ground && (p.y > plan.AIRSIDE + 4 || plan.airportDistance(p.x, p.z) > 6)) || (p.phase === 'parked' && f)) continue;
+    const m = matrix(p);
+    if (p.ground)
+      for (const q of rim) {
+        const inside = -plan.airportDistance(world.copy(q).applyMatrix4(m).x, world.z);
+        worst.deck = Math.min(worst.deck, inside);
+        assert(inside >= 0.3, `The plane leaves the deck at ${world.x.toFixed(2)}, ${world.z.toFixed(2)} (t=${t.toFixed(2)}).`);
+      }
+    // Only what it comes within reach of (its parts are all within `reach` of its middle).
+    const near = obstacles.filter(({ box: [x0, x1, z0, z1] }) => p.x > x0 - reach - 1 && p.x < x1 + reach + 1 && p.z > z0 - reach - 1 && p.z < z1 + reach + 1),
+      nearSock = Math.hypot(p.x - W.x, p.z - W.z) < reach + 1.2;
+    if (!near.length && !nearSock) continue;
+    for (const q of local) {
+      world.copy(q).applyMatrix4(m);
+      for (const o of near) {
+        const [x0, x1, z0, z1] = o.box;
+        if (world.x < x0 - 1 || world.x > x1 + 1 || world.z < z0 - 1 || world.z > z1 + 1) continue;
+        const gap = outside(o.outline, world.x, world.z);
+        worst[o.name] = Math.min(worst[o.name], gap);
+        assert(gap >= o.gap, `The plane comes ${gap.toFixed(3)} from the ${o.name} at ${world.x.toFixed(2)}, ${world.z.toFixed(2)} (t=${t.toFixed(2)}).`);
+      }
+      if (nearSock) {
+        let gap = world.y < mastTop ? Math.hypot(world.x - W.x, world.z - W.z) - 0.06 : Infinity;
+        for (const axis of socks) gap = Math.min(gap, axis.closestPointToPoint(world, true, closest).distanceTo(world) - S.mouth - 0.04);
+        worst.windsock = Math.min(worst.windsock, gap);
+        assert(gap >= 0.3, `The plane comes ${gap.toFixed(3)} from the windsock at t=${t.toFixed(2)}.`);
+      }
+    }
+  }
+  assert(Object.values(worst).every(Number.isFinite), `The plane's clearances were not all measured: ${JSON.stringify(worst)}.`);
+  // Never over the main island, and nowhere near the balloon, the gulls, the beam or the boat. The
+  // plane keeps a clock of its own (city-scene's planeClock starts its loop again after every Pause,
+  // while town time stands still), so it is held clear of everywhere the others go at any moment of
+  // theirs, not only at the moment of its own loop that matches: its whole loop against each of
+  // theirs. The balloon also turns with the idle drift about the view's centre, on the island or
+  // out at the airport.
+  const birds = createGulls(),
+    [rockX, rockZ] = plan.lighthouseRock,
+    flown = [];
+  for (let t = 0; t < plan.PLANE_LOOP; t += 0.25) {
+    const p = plan.planePose(t);
+    if (p.visible) flown.push(p);
+  }
+  let island = Infinity;
+  for (const p of flown)
+    for (const [dx, dz] of [[0, 0], [2, 0], [-2, 0], [0, 2.3], [0, -2.3]]) {
+      const x = p.x + dx,
+        z = p.z + dz;
+      island = Math.min(island, plan.distanceToPolyline([x, z], plan.islandOutline, true) * (plan.onIsland(x, z) ? -1 : 1));
+    }
+  const others = { balloon: Infinity, gulls: Infinity, beam: Infinity, boat: Infinity },
+    nearest = (x, y, z) => {
+      let best = Infinity;
+      for (const p of flown) best = Math.min(best, Math.hypot(p.x - x, p.y - y, p.z - z));
+      return best;
+    };
+  for (let t = 0; t < 900; t += 0.25) {
+    balloon.update(t, 0);
+    const b = balloon.object.position;
+    for (const [cx, cz] of [[0, 0], [plan.AIRPORT.x, plan.AIRPORT.z]])
+      for (const drift of [-0.16, 0, 0.16]) {
+        const c = Math.cos(drift),
+          s = Math.sin(drift),
+          x = b.x - cx,
+          z = b.z - cz;
+        others.balloon = Math.min(others.balloon, nearest(cx + x * c + z * s, b.y + 2.5, cz - x * s + z * c));
+      }
+    birds.update(t, 1);
+    for (const g of birds.object.children) others.gulls = Math.min(others.gulls, nearest(g.position.x, g.position.y, g.position.z));
+    beam.update(t, 1);
+    const a = beam.object.rotation.y,
+      tip = [rockX + Math.cos(a) * 18, rockZ - Math.sin(a) * 18],
+      boat = plan.boatPose(t);
+    for (const p of flown) {
+      others.beam = Math.min(others.beam, plan.distanceToSegment([p.x, p.z], [rockX, rockZ], tip) - 3.6);
+      others.boat = Math.min(others.boat, Math.hypot(p.x - boat.x, p.z - boat.z));
+    }
+  }
+  balloon.update(0, 0);
+  beam.update(3, 0);
+  birds.dispose();
+  assert(island >= 12, `The plane comes within ${island.toFixed(1)} of the island's coast.`);
+  for (const [name, gap] of Object.entries(others)) assert(gap >= 30, `The plane comes within ${gap.toFixed(1)} of the ${name}.`);
+  assert(balloon.object !== sockEntry.object && beam.object !== sockEntry.object, 'The windsock is taken for the balloon or the beam.');
+  // Out of sight: off every standard frame, or lost in the fog, where it vanishes and where it comes back.
+  const fogFar = Number(/new T\.Fog\('#[0-9a-f]+', \d+, (\d+)\)/.exec(await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8'))[1]),
+    edges = [plan.planePose(plan.PLANE_TIMES.lost - 1e-6), plan.planePose(plan.PLANE_TIMES.approach)];
+  for (const p of edges)
+    for (const centre of [new T.Vector3(0, 0, 0), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z)])
+      for (const yaw of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings.airport]) {
+        const eye = centre.clone().add(new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38)),
+          forward = centre.clone().sub(eye).normalize(),
+          right = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
+          up = new T.Vector3().crossVectors(right, forward),
+          rel = new T.Vector3(p.x, p.y, p.z).sub(eye);
+        // The widest and the squarest common frames (city-scene's frustum for their shape) zoomed
+        // out to 0.45, with the plane's own size.
+        for (const [w, h] of [[1920, 1080], [1440, 900], [1024, 768]]) {
+          const tall = Math.max(53, (76 * h) / w),
+            offFrame = Math.abs(rel.dot(right)) > (tall * w) / h / 2 / 0.45 + 2.3 || Math.abs(rel.dot(up)) > tall / 2 / 0.45 + 2.3;
+          assert(offFrame || rel.dot(forward) >= fogFar, `The plane vanishes or comes back in view at ${p.x.toFixed(0)}, ${p.z.toFixed(0)} (bearing ${yaw.toFixed(2)}, ${w} x ${h}).`);
+        }
+      }
+}
+// On the opening view (bearing pi/4 swayed by the idle drift's +-0.16, zoom 1, the hero's frame
+// shift of -0.06) the plane keeps to the top right corner, where the airport shows: never behind
+// the hero copy or the News card (at its tallest), at every common size, with and without a
+// scrollbar, all through its loop, as the balloon is held there.
+{
+  const screens = [
+    { W: 1024, H: 768, copy: [41, 285, 721, 613], news: [693, 983] },
+    { W: 1280, H: 720, copy: [51, 219, 731, 590], news: [922, 1229] },
+    { W: 1280, H: 800, copy: [51, 288, 731, 670], news: [922, 1229] },
+    { W: 1366, H: 768, copy: [55, 251, 735, 638], news: [984, 1311] },
+    { W: 1440, H: 800, copy: [56, 271, 736, 670], news: [1038, 1384] },
+    { W: 1440, H: 900, copy: [56, 360, 736, 770], news: [1038, 1384] },
+    { W: 1536, H: 864, copy: [56, 322, 736, 734], news: [1120, 1480] },
+    { W: 1600, H: 900, copy: [56, 357, 736, 770], news: [1184, 1544] },
+    { W: 1680, H: 1050, copy: [56, 507, 736, 920], news: [1264, 1624] },
+    { W: 1920, H: 1080, copy: [56, 537, 736, 950], news: [1504, 1864] },
+  ].flatMap((s) => [s, { ...s, W: s.W - 15, news: s.news.map((x) => x - 15) }]);
+  const yaw = Math.PI / 4,
+    corner = new T.Vector3(),
+    P = plan.PLANE,
+    poses = [];
+  for (let t = 0; t < plan.PLANE_LOOP; t += 0.25) {
+    const p = plan.planePose(t);
+    if (p.visible) poses.push({ t, m: new T.Matrix4().makeRotationFromEuler(new T.Euler(-p.pitch, p.heading, p.bank, 'YXZ')).setPosition(p.x, p.y, p.z) });
+  }
+  let shown = 0;
+  for (const { W, H, copy: [cx0, cy0, cx1, cy1], news: [nx0, nx1] } of screens) {
+    const vertical = Math.max(53, (76 * H) / W),
+      view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
+      shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
+      boxes = { 'hero copy': [cx0 - 8, cy0 - 8, cx1 + 8, cy1 + 8], 'News card': [nx0 - 8, H / 2 - 0.42 * 400 - 8, nx1 + 8, H / 2 + 0.58 * 400 + 8] };
+    for (const drift of [-0.16, 0, 0.16]) {
+      view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
+      view.lookAt(shifted);
+      view.updateMatrixWorld();
+      for (const { t, m } of poses) {
+        let left = Infinity,
+          right = -Infinity,
+          top = Infinity,
+          bottom = -Infinity;
+        for (let i = 0; i < 8; i++) {
+          corner.set(i & 1 ? P.span / 2 + 0.07 : -P.span / 2 - 0.07, i & 2 ? P.fin : 0, i & 4 ? P.length / 2 : -P.length / 2 - 0.08).applyMatrix4(m).project(view);
+          const x = ((corner.x + 1) / 2) * W,
+            y = ((1 - corner.y) / 2) * H;
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
+        }
+        if (!(right > 0 && left < W && bottom > 0 && top < H)) continue;
+        shown++;
+        for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
+          assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the plane flies behind the ${name} on the ${W} x ${H} opening view.`);
+        assert(left > W / 2 && bottom < H / 3, `At t=${t} the plane shows outside the ${W} x ${H} opening view's top right corner.`);
+      }
+    }
+  }
+  assert(shown > 0, 'The opening view never shows the plane.');
+}
+// Reduced motion and Pause keep the plane on its stand: the scene's clock for it goes back to its
+// loop's start while either holds (a flight under way ends on the stand; Play picks the loop up from
+// there), and otherwise runs with town time; the frame loop drives it that way and poses it with
+// posePlane, which hides it while it is away and leaves its steady lights alone.
+{
+  const { planeClock, posePlane } = await load('city-scene'),
+    { PLANE_LIGHT } = await load('town-movers'),
+    P = plan.PLANE_LOOP,
+    stand = plan.planePose(0);
+  for (let t = 0; t < 3 * P; t += 0.7) {
+    const held = plan.planePose(planeClock(t, 1 / 60, true));
+    assert(held.phase === 'parked' && held.x === stand.x && held.z === stand.z && held.heading === stand.heading, `Paused at t=${t.toFixed(1)} the plane is not on its stand.`);
+    assert(Math.abs(planeClock(t, 1 / 60, false) - t - 1 / 60) < 1e-9, 'The plane\'s clock does not run with town time.');
+  }
+  // Held for a while and let go, it waits on its stand for its pushback.
+  let clock = 97.3;
+  for (let f = 0; f < 30; f++) clock = planeClock(clock, 1 / 60, true);
+  for (let f = 0; f < 60; f++) clock = planeClock(clock, 1 / 60, false);
+  assert.equal(plan.planePose(clock).phase, 'parked', 'Let go, the plane does not wait on its stand.');
+  // Held anywhere out of its loop's start, its clock goes back (the frame loop then redraws the
+  // shadows at once, so the plane on its stand never stands without its shadow, or leaves it on
+  // the runway, until the paused cadence comes round); held on its stand already, it stays put
+  // (no extra shadow pass, frame after paused frame).
+  for (let t = 0.05; t < P; t += 0.37) assert(planeClock(t, 1 / 60, true) < t && planeClock(P + t, 1 / 60, true) < P + t, `Held at t=${t.toFixed(2)} the plane's clock does not go back.`);
+  for (const t of [0, P, 7 * P]) assert.equal(planeClock(t, 1 / 60, true), t, 'Held on its stand, the plane\'s clock moves.');
+  const source = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8');
+  assert(/planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);\s*posePlane\(plane, planeTime\);/.test(source), 'The frame loop no longer holds the plane on its stand when paused or under reduced motion.');
+  assert(/const (\w+) = planeTime;\s*planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);\s*posePlane\(plane, planeTime\);(?:\s*\/\/[^\n]*)*\s*if \(planeTime < \1\) shadowDirty = true;/.test(source), 'Sent back to its stand mid-loop, the plane leaves its shadow behind until the paused shadow cadence comes round.');
+  const plane = model.plane,
+    lights = plane.getObjectByName('plane-lights').children;
+  for (const t of [10, 45, 75, 100, 125, 143]) {
+    const p = posePlane(plane, t);
+    assert(plane.position.x === p.x && plane.position.y === p.y && plane.position.z === p.z && plane.rotation.order === 'YXZ' && plane.rotation.y === p.heading && plane.rotation.x === -p.pitch && plane.rotation.z === p.bank && plane.visible === p.visible, `posePlane does not pose the plane as planePose has it at t=${t}.`);
+    assert(lights.every((l) => l.visible && l.material.emissiveIntensity === PLANE_LIGHT), 'The plane\'s lights flash.');
+  }
+  posePlane(plane, 0);
+  plane.rotation.order = 'XYZ';
+  plane.updateMatrixWorld(true);
+}
+// The windsock sways as the washing does: the frame loop swings its sock (one group, batched on its
+// own into one mesh that casts nothing) round the swivel and lifts and drops it a little, turning
+// the group and never a vertex; at every moment the sock streams east, downwind, over the deck, high
+// over it and under 2.5; it never stops (its pose differs from moment to moment) and stays out in
+// the rain.
+{
+  const { WINDSOCK_SWAY: S, windsockAim } = await load('town-airport'),
+    entry = model.animated.find((e) => e.object.name === 'windsock-sock'),
+    sock = entry.object,
+    W = plan.WINDSOCK,
+    mesh = sock.children[0],
+    positions = mesh?.geometry.attributes.position.array.slice();
+  assert(sock.userData.keepSeparate && sock.children.length === 1 && mesh.isMesh && !mesh.castShadow, 'The windsock\'s sock is not one mesh of its own that casts nothing.');
+  const box = new T.Box3(),
+    seen = new Set();
+  for (let t = 0; t < 120; t += 0.37) {
+    entry.update(t, 0, t > 60 ? 1 : 0);
+    const aim = windsockAim(t);
+    assert(Math.abs(aim.heading - S.heading) <= S.swing + 1e-9 && Math.abs(aim.droop - S.droop) <= S.lift + 1e-9 && aim.droop > 0.15, `The windsock swings out of its sway at t=${t.toFixed(2)}.`);
+    sock.updateWorldMatrix(true, true);
+    box.setFromObject(sock);
+    assert(sock.visible && box.min.y > plan.AIRPORT.deck + 1.2 && box.max.y < 2.5 && box.max.x > W.x + 0.5, `The windsock's sock does not stream east in the air at t=${t.toFixed(2)}.`);
+    const pos = mesh.geometry.attributes.position,
+      p = new T.Vector3();
+    for (let i = 0; i < pos.count; i += 7) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      assert(plan.onAirport(p.x, p.z, -0.1), `The windsock's sock swings out over the edge at t=${t.toFixed(2)}.`);
+    }
+    seen.add(sock.quaternion.toArray().map((n) => n.toFixed(3)).join());
+  }
+  assert(seen.size > 100, 'The windsock holds still.');
+  assert.deepEqual(mesh.geometry.attributes.position.array, positions, 'The windsock\'s vertices move on the CPU.');
+  entry.update(0, 0, 0);
 }
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
@@ -2361,6 +3606,21 @@ assert.equal(lowSun(rad(-10)), 0);
   assert(birds.object.children.every((bird) => Math.abs(bird.scale.x - 0.4) < 1e-9), 'The gulls shrink with their presence.');
   birds.dispose();
 }
+// The rain falls over the airport's island too (a square of ±58 round the town's centre, out past
+// the deck's far edge at -55.2), as dense as it was over ±50: the scene asks for 1.35 times the streaks.
+{
+  const { createRain } = await load('city-atmosphere'),
+    rain = createRain(),
+    p = rain.object.geometry.getAttribute('position'),
+    streaks = p.count / 2;
+  let reach = 0;
+  for (let i = 0; i < p.count; i++) reach = Math.max(reach, Math.abs(p.getX(i)), Math.abs(p.getZ(i)));
+  assert(reach > 57 && reach <= 58 && reach > -(plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour), `The rain reaches ${reach.toFixed(1)}, not over the airport.`);
+  assert(Math.abs(streaks / (2 * 58) ** 2 - 1700 / (2 * 50) ** 2) < 0.002, `The rain is thinner over ±58 (${streaks} streaks).`);
+  rain.dispose();
+  const scene = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8');
+  assert(scene.includes('createRain(Math.round((tier === \'low\' ? 900 : 1700) * 1.35))'), 'The scene\'s rain is no longer 1.35 times as many streaks.');
+}
 // Manual Day is plain daylight at every hour: never the real sun's golden hour or its warm low
 // light, the key light high. Auto and Night keep the real sun.
 {
@@ -2601,19 +3861,35 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     }
     if (p.road === 'ring') assert(Math.abs(plan.roadSpot('ring', p.along[0], 0).heading - plan.roadSpot('ring', p.along[1], 0).heading) < 1e-9, `A repair patch lies on a corner of the ring.`);
   }
-  // One road program draws them all: every road is one asphalt material, its uv the plan's (across, along).
+  // One road program draws them all: every road (the airport's too) is one asphalt material, its uv
+  // the plan's (across, along).
   const asphalt = [],
     paving = [];
-  model.land.traverse((o) => {
-    if (!o.isMesh) return;
-    if (o.material.userData.surfaceKind === 'asphalt') asphalt.push(o);
-    if (o.material.userData.surfaceKind === 'paving') paving.push(o);
-  });
+  for (const ground of [model.land, model.airportLand])
+    ground.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.material.userData.surfaceKind === 'asphalt') asphalt.push(o);
+      if (o.material.userData.surfaceKind === 'paving') paving.push(o);
+    });
   assert.equal(new Set(asphalt.map((o) => o.material)).size, 1, 'The roads take more than one material.');
   assert.equal(new Set(paving.map((o) => o.material)).size, 1, 'The paving takes more than one material.');
   for (const o of asphalt) {
     const uv = o.geometry.getAttribute('uv');
     for (let i = 0; i < uv.count; i++) assert(Math.abs(uv.getX(i)) <= R / 2 + 1e-4 && uv.getY(i) > -1 && uv.getY(i) < 1000 * plan.ROADS.length, 'An asphalt vertex has no road uv.');
+  }
+  // The airport's road: its own asphalt, along from 4000 (its place in ROADS) at the lane's start.
+  {
+    const own = [];
+    model.airportLand.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'asphalt' && own.push(o));
+    assert.equal(own.length, 1, 'The airport road is one asphalt mesh.');
+    const uv = own[0].geometry.getAttribute('uv'),
+      p = own[0].geometry.getAttribute('position'),
+      base = 1000 * plan.ROADS.indexOf('airport');
+    assert.equal(base, 4000);
+    for (let i = 0; i < uv.count; i++) {
+      assert(uv.getY(i) >= base - 1e-4 && uv.getY(i) < base + 1000, 'An airport road vertex is off its own road uv.');
+      assert(Math.abs(base + plan.AIRPORT_ROAD.lane - p.getZ(i) - uv.getY(i)) < 1e-3, 'The airport road uv does not run along the road.');
+    }
   }
   const road = patchedShader(asphalt[0].material).fragmentShader;
   assert(road.includes(`ROAD_COVER[${manholes.length}]`) && road.includes(`ROAD_GULLY[${gullies.length}]`) && road.includes(`ROAD_PATCH[${roadPatches.length}]`) && road.includes(`ROAD_STOP[${stopLines.length}]`), 'The road shader does not draw the plan’s covers, gullies, patches and stop lines.');
@@ -3560,5 +4836,5 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
 }
 console.log(
-  `Town checks passed: 8 sites on the island, ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

@@ -57,8 +57,8 @@ export function sunOffsetFor(elevation: number, azimuth: number, distance = 41) 
   return new T.Vector3(Math.cos(lifted) * Math.sin(bearing) * distance, Math.sin(lifted) * distance, Math.cos(lifted) * Math.cos(bearing) * distance);
 }
 
-/** West-coast rain: short falling streaks over the whole island. */
-export function createRain(count = 1700, radius = 50, ceiling = 30) {
+/** West-coast rain: short falling streaks over the whole island and the airport's (a square of ±radius). */
+export function createRain(count = 2295, radius = 58, ceiling = 30) {
   const positions = new Float32Array(count * 6),
     speeds = new Float32Array(count),
     seed = (i: number) => {

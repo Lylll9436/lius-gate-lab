@@ -16,13 +16,16 @@ export type BrowseMode = 'city' | 'reading';
 export const destinations = [
   'town-hall',
   'people',
+  'airport',
   'research-studio',
   'city-archive',
   'corner-park',
 ];
+/** The reading page's chapters, in order: the airport's (Departures) comes right after People. */
 export const readingChapters = [
   'town-hall',
   'people',
+  'airport',
   'research-studio',
   'city-archive',
   'corner-park',

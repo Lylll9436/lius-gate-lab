@@ -21,6 +21,7 @@ import { createStreets } from './town-streets';
 import { createHarbour } from './town-harbour';
 import { createHomes } from './town-homes';
 import { createResidence } from './town-residence';
+import { createAirport } from './town-airport';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
@@ -30,8 +31,8 @@ export { MASK_EXTENT, MASK_SIZE, buildGroundMasks } from './town-ground';
 export { BALLOON, followDrift } from './town-movers';
 
 /**
- * The town itself: terrain, streets, eight buildings, trees,
- * street furniture, the harbour, the lighthouse and the things that move.
+ * The town itself: terrain, streets, nine buildings, trees,
+ * street furniture, the harbour, the lighthouse, the airport's island and the things that move.
  * Everything is procedural and merged into a few draw calls per surface family.
  *
  * This file assembles the town; each part lives in its own module:
@@ -51,6 +52,8 @@ export { BALLOON, followDrift } from './town-movers';
  * - town-harbour.ts: the pier, the harbour with its moorings and beach details, and the lighthouse;
  * - town-homes.ts: the three members' homes in their terrace row, and the cottages;
  * - town-residence.ts: the Visiting PhD Residence at the row's north end;
+ * - town-airport.ts: the airport's island off the north shore (its deck, armour, runway, apron and
+ *   the road and causeway out to it, in its own group, `airportLand`) and its Departures Hall;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
  * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
@@ -101,10 +104,13 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const season = options.season ?? 'summer';
   const material = library.material;
   const city = new T.Group(),
-    land = new T.Group();
+    land = new T.Group(),
+    // The airport's ground: its own group, built and batched in its own phases, never in the land's.
+    airportLand = new T.Group();
   city.name = 'town';
   land.name = 'land';
-  city.add(land);
+  airportLand.name = 'airport-land';
+  city.add(land, airportLand);
   const lamps: T.Mesh[] = [],
     clocks: { hour: T.Object3D; minute: T.Object3D }[] = [],
     animated: { object: T.Object3D; update: (time: number, night: number, rain?: number) => void }[] = [];
@@ -115,8 +121,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { pierAndHarbour, lighthouse } = createHarbour(ctx, kit, props);
   const { buildTerrace, buildCottage } = createHomes(ctx, kit, nature);
   const { buildResidence } = createResidence(ctx, kit, nature, props);
+  const { airportGround, buildAirport } = createAirport(ctx, kit, props, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
-  const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
+  const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
   const { batch, windows } = createBatch(ctx);
   const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, trafficSignals, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
@@ -215,6 +222,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   hotAirBalloon(city);
   highlandPaddock(land);
   yield 'park, harbour and landmarks';
+  // The airport's island, its road and causeway (the Departures Hall is a building, below).
+  airportGround(airportLand);
+  yield 'airport ground';
 
   const models = new Map<BuildingId, Model>();
   for (const b of buildings) {
@@ -232,6 +242,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     else if (b.model === 'studio') buildStudio(shell, site);
     else if (b.model === 'archive') buildArchive(shell, site);
     else if (b.model === 'residence') buildResidence(shell, site);
+    else if (b.model === 'airport') buildAirport(shell, site);
     else buildTerrace(shell, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
     models.set(b.id, { root, shell, fade: [], center: new T.Vector3(site.x, 0, site.z) });
   }
@@ -343,6 +354,12 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   city.add(tram);
   const boat = buildBoat();
   city.add(boat);
+  // The plane, parked on its stand: nose east, its forward door at the jet bridge (the frame loop
+  // poses it there too, beside the tram and the boat).
+  const plane = buildPlane();
+  plane.position.set(plan.STAND.x, plan.AIRSIDE, plan.STAND.z);
+  plane.rotation.y = plan.STAND.heading;
+  city.add(plane);
   yield 'buildings and vehicles';
 
   /* ---------------------------------------------------------------- */
@@ -351,13 +368,18 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   city.updateMatrixWorld(true);
   batch(land);
   yield 'batch land';
+  // Contact shade from the airport's own deck and causeway, not the sea under them.
+  batch(airportLand, { floor: plan.deckHeight });
+  yield 'batch airport';
   batch(parkGroup);
   yield 'batch park';
   // Each glass pane carries its own night light in aWindow (batch() draws it; see town-batch.ts).
   for (const [id, m] of models) {
-    const windows = id === 'town-hall' || id === 'city-archive' ? 'civic' : id === 'research-studio' ? 'studio' : id === 'visiting-phd' ? 'residence' : 'home';
-    batch(m.shell, { windows, place: id });
-    yield `batch ${id}`;
+    const windows = id === 'town-hall' || id === 'city-archive' || id === 'airport' ? 'civic' : id === 'research-studio' ? 'studio' : id === 'visiting-phd' ? 'residence' : 'home';
+    // The airport stands on its deck (0.4 up), so its contact shade starts there.
+    batch(m.shell, { windows, place: id, floor: id === 'airport' ? plan.deckHeight : undefined });
+    // (Its ground's phase is 'batch airport'.)
+    yield id === 'airport' ? 'batch departures hall' : `batch ${id}`;
   }
   /** A figure batched part by part (the body, each hip and knee, each arm), so its joints still bend. */
   function batchFigure(root: T.Object3D) {
@@ -378,6 +400,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   batch(dog, { contact: 'none' });
   batch(tram, { contact: 'local', localFloor: 0, windows: 'vehicle' });
   batch(boat, { contact: 'none', windows: 'vehicle' });
+  batch(plane, { contact: 'none', windows: 'vehicle' });
   for (const entry of animated)
     if (!entry.object.userData.prebatched && (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)))
       batch(entry.object, { contact: 'none' });
@@ -392,10 +415,12 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   return {
     city,
     land,
+    airportLand,
     models,
     walkers,
     tram,
     boat,
+    plane,
     lamps,
     clocks,
     windows,

@@ -650,9 +650,15 @@ export function createCityMaterials() {
     const n = surfacePattern(kind);
     if (n) surfaceGain.value[n] = strength;
   }
-  function material(colour: string, kind: SurfaceKind = 'stone') {
+  /**
+   * The material for a colour and a surface kind, one per pair. A glass glows at night with the
+   * town's window light (GLASS_GLOW, tinted by each pane's aWindow) unless `glow` gives it a night
+   * colour of its own: the departures board's amber rows, which would otherwise light the warm
+   * white of every window behind them. Such a glass is a material (and a batch) of its own.
+   */
+  function material(colour: string, kind: SurfaceKind = 'stone', glow?: string) {
     if (kind === 'stone' && BRICK_COLOURS.has(colour.toLowerCase())) kind = 'brick';
-    const key = `${kind}:${colour}`;
+    const key = glow && kind === 'glass' ? `${kind}:${colour}:${glow}` : `${kind}:${colour}`;
     if (!cache.has(key)) {
       const look = finish[kind] ?? { roughness: 0.7 };
       const options = {
@@ -669,7 +675,7 @@ export function createCityMaterials() {
       m.name = `city-${kind}`;
       m.userData.surfaceKind = kind;
       if (kind === 'glass') {
-        m.emissive.set(GLASS_GLOW);
+        m.emissive.set(glow ?? GLASS_GLOW);
         m.emissiveIntensity = night * 0.72;
       } else if (kind === 'grass' || kind === 'soil') {
         if (!maps.has(kind)) maps.set(kind, surfaceMaps(kind));

@@ -18,7 +18,7 @@ import {
 } from './lab-navigation';
 import type { CityAPI, HoverTarget } from './city-scene';
 import { useGlasgowSky, effectiveNight, sceneSky, type SkyMode } from './use-sky';
-import { Masthead, SiteFooter, chapterMeta } from './site-chrome';
+import { Masthead, SiteFooter, chapterMeta, onReadingPage } from './site-chrome';
 import { CityStage, type StageController } from './city-stage';
 import { Hero, Chapters } from './chapters';
 import { chapterBearings } from './town-plan';
@@ -287,9 +287,12 @@ export default function Home() {
   );
   function navigate(
     nextMode: BrowseMode,
-    nextContent: ContentId,
+    asked: ContentId,
     options: { keepTour?: boolean; replace?: boolean } = {},
   ) {
+    // A chapter the page has no section for yet reads from the top.
+    const nextContent =
+      nextMode === 'reading' && !onReadingPage(asked) ? 'overview' : asked;
     applyView({ mode: nextMode, content: nextContent }, options.keepTour);
     if (nextMode === 'reading') scrollToContent(nextContent);
     const hash = `#${nextMode === 'city' ? 'city' : 'read'}/${nextContent}`;
@@ -392,9 +395,14 @@ export default function Home() {
       if (disposed) return;
       synced = window.location.href;
       const hash = window.location.hash;
-      const next = hash
-        ? parseLocation(hash)
-        : { mode: 'reading' as const, content: 'overview' };
+      const asked = hash
+          ? parseLocation(hash)
+          : { mode: 'reading' as const, content: 'overview' },
+        // A reading address to a chapter the page has no section for yet reads from the top.
+        next =
+          asked.mode === 'reading' && !onReadingPage(asked.content)
+            ? { mode: 'reading' as const, content: 'overview' }
+            : asked;
       applyView(next);
       if (next.mode === 'reading' && (hash || !first))
         scrollToContent(next.content, first, !first);

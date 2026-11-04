@@ -36,6 +36,7 @@ import {
 import type { HoverTarget } from './city-scene';
 import type { SkyState } from './glasgow-sun';
 import { LabContent, PlaceGlyph, glyphFor } from './lab-content';
+import { onReadingPage } from './site-chrome';
 import { skyCaption, type SkyMode } from './use-sky';
 
 export type StageController = {
@@ -173,21 +174,25 @@ export function CityStage({
         </output>
       )}
       <div className="map-labels">
-        {buildings.map((item) => (
-          <div
-            key={item.id}
-            data-building-label={item.id}
-            className="building-hover-label"
-            style={{ visibility: 'hidden' }}
-            aria-hidden="true"
-          >
-            <strong>{item.name[locale]}</strong>
-            <span>
-              {item.category[locale]} ·{' '}
-              {districts.find((d) => d.buildings.includes(item.id))?.name[locale]}
-            </span>
-          </div>
-        ))}
+        {buildings.map((item) => {
+          // The airport stands in no district: its label ends at its category.
+          const district = districts.find((d) => d.buildings.includes(item.id));
+          return (
+            <div
+              key={item.id}
+              data-building-label={item.id}
+              className="building-hover-label"
+              style={{ visibility: 'hidden' }}
+              aria-hidden="true"
+            >
+              <strong>{item.name[locale]}</strong>
+              <span>
+                {item.category[locale]}
+                {district ? ` · ${district.name[locale]}` : null}
+              </span>
+            </div>
+          );
+        })}
         <div
           data-building-label="corner-park"
           className="building-hover-label"
@@ -502,10 +507,12 @@ export function CityStage({
                 </button>
               )}
               {people.some((p) => p.id === ctl.content) && null}
-              <button onClick={() => ctl.navigate('reading', ctl.content)}>
-                <BookOpen size={15} />
-                {tr('Read on the page', '在页面中阅读')}
-              </button>
+              {onReadingPage(ctl.content) && (
+                <button onClick={() => ctl.navigate('reading', ctl.content)}>
+                  <BookOpen size={15} />
+                  {tr('Read on the page', '在页面中阅读')}
+                </button>
+              )}
             </div>
           </aside>
         </>

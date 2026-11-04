@@ -65,7 +65,7 @@ function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
  * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
  * reads them against the window clock (city-materials' setWindows).
  */
-type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'beacon' | 'dial' | 'vehicle' | 'unlit' | 'clear';
+type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'unlit' | 'clear';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
@@ -84,6 +84,10 @@ const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
 /** [level, tint, off, wake] for panes that never change (1 = never). */
 const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
   kiosk: [0.8, 1, 1, 1],
+  // The control tower's cab: lit all night, dim and warm, a room kept low to see out of. The kiosk's
+  // pale cool white over its eight big panes read as a frosted acrylic lantern, the brightest and
+  // the only cool light at the airport.
+  cab: [0.55, 0.25, 1, 1],
   beacon: [1, 0, 1, 1],
   dial: [1, 0.5, 1, 1],
   vehicle: [0.85, 0.25, 1, 1],
@@ -248,11 +252,14 @@ export function createBatch(ctx: TownContext) {
   }
   /**
    * `windows` is the role of g's glass where a pane has no `userData.window` of its own (home by
-   * default), `place` the name its panes are listed under (g's name by default).
+   * default), `place` the name its panes are listed under (g's name by default). `floor` is the
+   * ground the 'terrain' contact is measured from (the terrain by default; the airport's own deck,
+   * plan.deckHeight, for the airport).
    */
-  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number; windows?: WindowRole; place?: string } = {}) {
+  function batch(g: T.Object3D, opts: { contact?: 'terrain' | 'local' | 'none'; localFloor?: number; windows?: WindowRole; place?: string; floor?: (x: number, z: number) => number } = {}) {
     const mode = opts.contact ?? 'terrain',
-      localFloor = opts.localFloor ?? 0;
+      localFloor = opts.localFloor ?? 0,
+      floor = opts.floor ?? plan.terrainHeight;
     g.updateMatrixWorld(true);
     const inv = g.matrixWorld.clone().invert(),
       groups = new Map<string, { mat: T.Material; cast: boolean; list: T.BufferGeometry[] }>(),
@@ -440,7 +447,7 @@ export function createBatch(ctx: TownContext) {
           if (mode === 'local') above = py - localFloor;
           else if (mode === 'terrain') {
             world.set(px, py, pz).applyMatrix4(g.matrixWorld);
-            above = world.y - plan.terrainHeight(world.x, world.z);
+            above = world.y - floor(world.x, world.z);
           }
           heights[i] = above;
           if (corners && ny > -0.6) corner = cornerAt(o.id, px, py, pz, nx, ny, nz);
@@ -498,8 +505,18 @@ export function createBatch(ctx: TownContext) {
           if (group) groupLight.set(group, light);
           windows.push({ role, place: opts.place ?? g.name, at, light: light.map((v) => v / 255) });
         }
-        const bytes = light;
-        geometry.setAttribute('aWindow', new T.BufferAttribute(new Uint8Array(count * 4).map((_, i) => bytes[i % 4]), 4, true));
+        const bytes = light,
+          lights = new Uint8Array(count * 4).map((_, i) => bytes[i % 4]),
+          // A pane's own vertex shade may dim its light as well (`glowShade`: the share of the
+          // shade's darkening that carries into the glow), so the departures board's tile joints,
+          // drawn by shading alone, still part its tiles at night instead of three solid bars.
+          glowShade: number = o.userData.glowShade ?? 0;
+        if (glowShade > 0 && previous)
+          for (let i = 0; i < count; i++) {
+            const tone = (previous.getX(i) + previous.getY(i) + previous.getZ(i)) / 3;
+            lights[i * 4] = Math.round(bytes[0] * (1 - glowShade * T.MathUtils.clamp(1 - tone, 0, 1)));
+          }
+        geometry.setAttribute('aWindow', new T.BufferAttribute(lights, 4, true));
       }
       if (!groups.has(key)) groups.set(key, { mat, cast, list: [] });
       groups.get(key)!.list.push(geometry);

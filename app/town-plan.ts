@@ -286,6 +286,9 @@ export const sites: Record<BuildingId, Site> = {
   'visiting-phd': residenceSite,
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
+  // On the airport's island (onAirport, not onIsland): the Departures Hall (x -1.6..2.6, centred on
+  // the causeway's axis), its link block (to 3.4) and the control tower (at 3.9, -47.4), front south.
+  airport: { id: 'airport', x: 1.6, z: -47.6, rotation: 0, w: 6.6, d: 3.8, height: 7 },
 };
 export const siteList = Object.values(sites);
 /**
@@ -312,6 +315,9 @@ export const chapterBearings: Record<string, number> = {
   // Facing the park's notice board (turned -0.6) rather than its edge.
   'corner-park': -0.35,
   'lius-gate': Math.PI / 4 - 0.18,
+  // The gate's bearing again (so no new bearing enters the per-bearing checks): the hall's front
+  // and its arch are seen 35 degrees off, the island and the causeway's far half whole.
+  airport: Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -320,6 +326,7 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
   'research-studio': ['research-studio'],
   'city-archive': ['city-archive'],
   'lius-gate': ['lius-gate'],
+  airport: ['airport'],
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
@@ -340,13 +347,14 @@ export const cottages: { n: number; x: number; z: number; rotation: number; colo
   { n: 4, x: -6.5, z: -17.8, rotation: 0.15, color: '#e1cfa8', nightLight: true },
 ];
 /**
- * Where the planting was first laid out round: the seven sites before the residence, and every
- * cottage's spot with the north cottage's among them. The tree and heather rules keep reading
- * these, and the trees on ground built on since (residencePlot) are dropped afterwards, by id, so
- * new building never moves, adds or re-species another tree (as the paddock's tree was dropped).
+ * Where the planting was first laid out round: the seven sites before the residence (and the
+ * airport, out at sea), and every cottage's spot with the north cottage's among them. The tree and
+ * heather rules keep reading these, and the trees on ground built on since (residencePlot) are
+ * dropped afterwards, by id, so new building never moves, adds or re-species another tree (as the
+ * paddock's tree was dropped).
  */
 const PLANTED = {
-  sites: () => siteList.filter((s) => s.id !== 'visiting-phd'),
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport'),
   cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
 };
 /**
@@ -390,6 +398,173 @@ export const stoneRing = { x: -23.75, z: -23.25, r: 1.15 };
  */
 export const statueSpot: XZ = [-10.4, -5.6];
 export const statueHeading = 1.8;
+
+/* ------------------------------------------------------------------ */
+/* Airport                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The airport, where people who have left Liu's Gate set off from: a small artificial island off
+ * the north shore, due north behind the Town Hall (about 6 degrees west of north), 14 out from the
+ * coast at its nearest. Its deck is a 24 x 12 rounded rectangle (half-sizes hw and hd, corner
+ * `radius`) centred at x, z and running east-west, like the coast and the ring's north straight;
+ * its grass lies at `deck`, and rock armour reaches `armour` beyond its edge, down into the sea.
+ * It lies past the ground masks' edge (±44): its grass has no lawn checker and no mask shade, and
+ * deep water runs right up to the armour, as round an artificial island it would.
+ */
+export const AIRPORT = { x: -5.5, z: -49.2, hw: 12, hd: 6, radius: 2.4, deck: 0.4, armour: 0.8 };
+/** Signed distance from the deck's edge: negative on the deck, positive out over the armour and the sea. */
+export function airportDistance(x: number, z: number) {
+  const { x: cx, z: cz, hw, hd, radius: r } = AIRPORT,
+    qx = Math.abs(x - cx) - hw + r,
+    qz = Math.abs(z - cz) - hd + r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - r;
+}
+/**
+ * On the airport's deck, inside the `margin` level of airportDistance. The margin is a signed
+ * distance (unlike onIsland's inset): onAirport(x, z, -0.3) keeps 0.3 in from the deck's edge, and
+ * a positive margin reaches out over the armour.
+ */
+export function onAirport(x: number, z: number, margin = 0) {
+  return airportDistance(x, z) <= margin;
+}
+/**
+ * Points round the deck's outline `offset` beyond its edge (negative inside), about `step` apart,
+ * clockwise seen from above as roundedRect's are: each with the outline's outward normal.
+ */
+export function airportOutline(offset = 0, step = 0.5) {
+  const { x: cx, z: cz, hw, hd, radius } = AIRPORT,
+    r = radius + offset,
+    out: { x: number; z: number; nx: number; nz: number }[] = [];
+  const corners: [number, number, number][] = [
+    [hw - radius, -hd + radius, -Math.PI / 2],
+    [hw - radius, hd - radius, 0],
+    [-hw + radius, hd - radius, Math.PI / 2],
+    [-hw + radius, -hd + radius, Math.PI],
+  ];
+  corners.forEach(([ox, oz, start], k) => {
+    const arc = Math.max(2, Math.ceil((r * Math.PI) / 2 / step));
+    for (let i = 0; i < arc; i++) {
+      const a = start + (i / arc) * (Math.PI / 2);
+      out.push({ x: cx + ox + Math.cos(a) * r, z: cz + oz + Math.sin(a) * r, nx: Math.cos(a), nz: Math.sin(a) });
+    }
+    // The straight side on to the next corner's arc.
+    const side = start + Math.PI / 2,
+      [px, pz] = [ox + Math.cos(side) * r, oz + Math.sin(side) * r],
+      [nx, nz, next] = corners[(k + 1) % 4],
+      [qx, qz] = [nx + Math.cos(next) * r, nz + Math.sin(next) * r],
+      n = Math.max(1, Math.ceil(Math.hypot(qx - px, qz - pz) / step));
+    for (let i = 0; i < n; i++)
+      out.push({ x: cx + px + ((qx - px) * i) / n, z: cz + pz + ((qz - pz) * i) / n, nx: Math.cos(side), nz: Math.sin(side) });
+  });
+  return out;
+}
+/**
+ * The outline (as airportOutline) as an open path round the deck from where the causeway lands
+ * on its south edge back to it: it starts and ends exactly `reach` either side of the road's axis.
+ */
+export function airportOutlineRound(offset: number, step: number, reach: number) {
+  const ring = airportOutline(offset, step),
+    n = ring.length,
+    gap = (p: { x: number; z: number }) => p.z > AIRPORT.z && Math.abs(p.x - AIRPORT_ROAD.x) < reach,
+    start = ring.findIndex((p, i) => gap(ring[(i + n - 1) % n]) && !gap(p)),
+    // Where the south edge (straight, along x) crosses |x - axis| = reach, between a and b.
+    cut = (a: (typeof ring)[number], b: (typeof ring)[number]) => {
+      const da = Math.abs(a.x - AIRPORT_ROAD.x),
+        t = (reach - da) / (Math.abs(b.x - AIRPORT_ROAD.x) - da);
+      return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, nx: b.nx, nz: b.nz };
+    };
+  const out = [cut(ring[(start + n - 1) % n], ring[start])];
+  for (let k = 0; k < n; k++) {
+    const p = ring[(start + k) % n];
+    if (gap(p)) {
+      out.push(cut(p, ring[(start + k + n - 1) % n]));
+      break;
+    }
+    out.push(p);
+  }
+  return out;
+}
+/**
+ * The road to the airport, on one axis with the Gate and the Town Hall (x 0.5), its stations along
+ * z: the `mouth` on the ring's north straight (unsignalled: the ring's outer kerb and pavement run
+ * on across it, so the signals, the tram's and the cyclist's timetables and the walkers keep to
+ * the ring as before); the hall lane from the pavement's edge (`lane`) to the coast (`beach`), 1.7 of
+ * asphalt with grass verges and no pavements, between cottages 3 and 4; the beach ramp up to the
+ * causeway's height; the causeway over the water (`causeway` to `island`), a rubble-mound
+ * embankment `top` wide with parapets `parapet` thick, its rock flanks running `flank` out for each
+ * unit they fall; then over the armour and the forecourt to the
+ * hall's arch. It is no street: the avenues and distanceToStreets leave it out (its own distance is
+ * distanceToAirportRoad), so the trees, lamps and signals laid out from the streets stay put.
+ */
+export const AIRPORT_ROAD = { x: 0.5, mouth: -13, lane: -14.95, beach: -26.86, causeway: -29.6, island: -42.4, arch: -45.8, top: 2.5, parapet: 0.16, flank: 1.05 };
+export const airportRoad: XZ[] = (['mouth', 'lane', 'beach', 'causeway', 'island', 'arch'] as const).map((k): XZ => [AIRPORT_ROAD.x, AIRPORT_ROAD[k]]);
+/** Distance from the airport road's carriageway (negative on it). */
+export function distanceToAirportRoad(x: number, z: number) {
+  return distanceToPolyline([x, z], airportRoad) - ROAD_WIDTH / 2;
+}
+/**
+ * The road's bed at z: the lane's ground (0), rising over the beach ramp (a smoothstep, level at
+ * both ends) to the deck's height on the causeway and beyond. The asphalt lies levels.road above it.
+ */
+export function airportRoadTop(z: number) {
+  const { beach, causeway } = AIRPORT_ROAD,
+    t = Math.min(1, Math.max(0, (beach - z) / (beach - causeway)));
+  return AIRPORT.deck * t * t * (3 - 2 * t);
+}
+/**
+ * The top of the airport's built ground at (x, z): the deck's grass inside its edge, the ramp's and
+ * the causeway's top across their width, otherwise the terrain. What stands on the airport stands
+ * on this, and batch() bakes the airport's contact shade from it.
+ */
+export function deckHeight(x: number, z: number) {
+  if (airportDistance(x, z) <= 0) return AIRPORT.deck;
+  if (z < AIRPORT_ROAD.beach && Math.abs(x - AIRPORT_ROAD.x) <= AIRPORT_ROAD.top / 2) return airportRoadTop(z);
+  return terrainHeight(x, z);
+}
+/**
+ * Airside: runway 09/27 along world x (centre line z, ends x0, x1), so departures on 27 head west
+ * into Glasgow's prevailing westerly; the taxiway parallel to it, with a stub north to the runway
+ * at each of its ends (`stubs`). The apron west of the hall (x0..x1, z0..z1) and its stand, where the
+ * plane parks nose east toward the hall (heading as rotation.y: the nose along (sin, cos)).
+ * Landside: the forecourt before the hall's arch, where the road ends.
+ */
+export const RUNWAY = { z: -53, x0: -15.5, x1: 4.5, width: 2.2 };
+export const TAXIWAY = { z: -50.6, x0: -12, x1: 4, width: 0.9, stubs: [-12, 4] };
+export const APRON = { x0: -13, x1: -2.2, z0: -49.9, z1: -44.2 };
+export const STAND = { x: -5.2, z: -47.2, heading: Math.PI / 2 };
+export const FORECOURT = { x0: -1.9, x1: 2.9, z0: -45.8, z1: -43.2 };
+/**
+ * The jet bridge, from the Departures Hall's west wall (x -1.6) toward the stand, as a real one
+ * meets a plane parked nose in: on the fuselage's port side behind its cockpit. Its axis runs
+ * along x at z (north of the stand's line), its floor at `floor`; its inner and outer sections'
+ * widths and heights; its cab's middle at x `cab` (over the plane's forward door); the face of
+ * the cab's bellows at z `bellows`, 0.19 short of a fuselage 0.66 across on the stand's line; and
+ * its legs, on a footing, at x `legs`.
+ */
+export const JET_BRIDGE = { z: -48.2, floor: 0.8, width: [0.44, 0.5], height: [0.52, 0.58], cab: -3.71, bellows: -47.72, legs: -2.95 };
+/** The airside's slabs (the runway, the taxiway, the apron) lie this far up, 0.03 over the deck's grass: the plane stands on them. */
+export const AIRSIDE = AIRPORT.deck + 0.03;
+/**
+ * The plane (town-movers' buildPlane), a toy regional twin-jet in the tram's livery, in its own
+ * units: +z forward to the nose, +x to port (its left), y 0 the slabs it stands on, x 0 and z 0
+ * under the middle of its fuselage. The fuselage is `length` long and `radius` round about an axis
+ * `axis` up (in its constant section, from the tail cone to the nose); the wings `span` across;
+ * the fin's top at `fin`. Its forward door's middle, on the port side, is `door` ahead of the
+ * middle; its nose wheels are at `nose` and its main wheels at `main`, `track` apart. Parked on the
+ * stand (STAND, nose east), its fuselage lies on the stand's line and its door at JET_BRIDGE.cab,
+ * where the bridge's bellows stop 0.19 off its port side; the stand's lead-in line ends just ahead
+ * of its nose wheels.
+ */
+export const PLANE = { length: 4.4, radius: 0.33, axis: 0.63, span: 3.8, fin: 1.55, door: 1.49, nose: 1.7, main: -0.38, track: 1.0 };
+/**
+ * West of the apron, the hangar (its plan x0..x1, z0..z1 and its ribbed barrel roof's top `top` over
+ * the deck), its doors to the apron (east) over a concrete pad that joins them to it; by the
+ * runway's east end (its 27 threshold), on the grass south of it, the windsock (its mast's foot):
+ * 0.5 clear of the plane's wing as it lands over that end and turns about there, however it sways.
+ */
+export const HANGAR = { x0: -16.8, x1: -13.8, z0: -50, z1: -45.6, top: 2.4 };
+export const WINDSOCK = { x: 5.4, z: -50.0 };
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
@@ -1022,6 +1197,325 @@ export function cyclistPose(time: number) {
     t = Math.min(1, Math.max(0, k + 0.6));
   return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * (d - CYCLIST_START) + Math.PI / 2 };
 }
+
+/* ------------------------------------------------------------------ */
+/* The plane's loop                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The plane's loop, in seconds: three of the tram's laps. It stands on its stand, pushes back,
+ * taxis out, turns onto runway 27 at its east end and takes off westbound, climbing out west and
+ * then west-north-west over the sea until it is lost in the haze; it comes back from the east, lands
+ * on 27, rolls out, taxis back and parks. Like the tram's timetable it is a pure function of time
+ * and the same every loop; reduced motion and Pause keep it on its stand (city-scene).
+ */
+export const PLANE_LOOP = 3 * LAP;
+/**
+ * The loop's timetable (seconds into it): pushback, taxi, the turn onto 27, the take-off roll (it
+ * lifts off at its end, its rotation starting a little before), the climb out until it is lost,
+ * then back: the start of the approach, touchdown, the end of the roll-out (taxi speed) and the stand.
+ */
+export const PLANE_TIMES = { pushback: [18, 28], taxi: [30, 54], turn: [54, 58], roll: [58, 64], lost: 88, approach: 112, touchdown: 140, rollOut: 145, parked: 161 };
+/**
+ * Where it goes. Its wings (3.8 across, their tips' lights 1.97 out) overhang the 0.9 taxiway by 1.5
+ * either side, and the jet bridge's north side and the hall's north wall stand 2.15 and 1.4 off the
+ * taxiway's centre line: taxiing past them it would run its starboard wing into both. So it uses the
+ * taxiway only west of them, as at a small airfield with no taxiway to the threshold: it pushes back
+ * along the lead-in line to `pushback` (its middle), turns out onto the taxiway, taxis west and
+ * through the west stub onto the runway, backtracks east to the runway's end and turns about there on
+ * its main gear (at x `pivot`) to line up on 27; landing, it rolls out to the west stub, turns off
+ * through it onto the taxiway and taxis back east along it and the lead-in line to the stand. Its
+ * turns through the stub are centred at x `stub`, so its main gear runs down the stub's centre line
+ * (its wingtip swings round 0.3 clear of the hangar), and the S-bend onto the lead-in line starts at
+ * x `bend`. On the runway it keeps to `track`, a quarter south of the centre line, so its starboard
+ * wingtip's light stays 0.3 inside the deck's north edge even as it swings out turning off at the
+ * stub; its main gear stops at x `pivot`, its nose wheel still on the runway's end, to turn about,
+ * and touches down at x `touchdown`, just past the threshold. It comes back from `far` east along
+ * the track, and on the way out is lost about as far west-north-west (`climb`: where it turns, over
+ * how long and how far round).
+ */
+export const PLANE_ROUTE = {
+  pushback: -9.75,
+  pivot: 2.3,
+  touchdown: 2.8,
+  stub: TAXIWAY.stubs[0] + (TAXIWAY.z - RUNWAY.z - 0.25) / 2,
+  bend: -10.2,
+  track: RUNWAY.z + 0.25,
+  far: 150,
+  climb: { at: -40, over: 34, turn: 0.4 },
+};
+/**
+ * Speeds (units per second): taxiing through the turns and along the runway, at lift-off and on
+ * the climb, on the approach and at touchdown; the climb's and the approach's gradients; the
+ * heights it climbs to and comes in at; its pitch at rotation and in the flare; and how far it
+ * banks for each radian a second it turns (never past `bank`).
+ */
+export const PLANE_FLIGHT = {
+  turning: 1.0,
+  liftOff: 3.6,
+  climbing: 6.0,
+  approach: 6.0,
+  touchdown: 3.2,
+  climb: 0.16,
+  glide: 0.09,
+  cruise: 12,
+  inbound: 7,
+  rotate: 0.14,
+  flare: 0.09,
+  bankRate: 0.95,
+  bank: 0.12,
+};
+/** The plane's nose wheels' distance ahead of its main wheels, and its middle's ahead of them (plan.PLANE). */
+const PLANE_WHEELBASE = PLANE.nose - PLANE.main,
+  PLANE_BACK = -PLANE.main;
+/** A polyline the plane's main gear follows, sampled by distance (past either end, straight on). */
+function planeRoute(points: XZ[]) {
+  const along = [0];
+  for (let i = 1; i < points.length; i++) along.push(along[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]));
+  const length = along[along.length - 1];
+  return {
+    length,
+    /** The distance along it of point `i`. */
+    along: (i: number) => along[i],
+    at(d: number): XZ {
+      let lo = 1,
+        hi = points.length - 1;
+      if (d >= length) lo = hi;
+      else if (d > 0)
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (along[mid] < d) lo = mid + 1;
+          else hi = mid;
+        }
+      const a = points[lo - 1],
+        b = points[lo],
+        t = (d - along[lo - 1]) / (along[lo] - along[lo - 1] || 1);
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    },
+  };
+}
+/** An arc about (cx, cz) of radius r from angle a0 to a1 (x = cos, z = sin), about 0.05 apart; its first point left off. */
+function planeArc(cx: number, cz: number, r: number, a0: number, a1: number): XZ[] {
+  const n = Math.max(2, Math.ceil((Math.abs(a1 - a0) * r) / 0.05));
+  return Array.from({ length: n }, (_, k): XZ => {
+    const a = a0 + ((a1 - a0) * (k + 1)) / n;
+    return [cx + Math.cos(a) * r, cz + Math.sin(a) * r];
+  });
+}
+/**
+ * Distance covered `t` seconds into a leg whose speed eases (a smoothstep in time, as the tram's
+ * does) from each knot's speed to the next's: [time, speed] pairs, the first at the leg's start.
+ * Past the last knot it holds the last speed.
+ */
+function planeEase(knots: [number, number][], t: number) {
+  let s = 0;
+  for (let i = 0; i + 1 < knots.length; i++) {
+    const [t0, v0] = knots[i],
+      [t1, v1] = knots[i + 1];
+    if (t <= t0) return s;
+    const span = t1 - t0,
+      x = Math.min(1, (t - t0) / span);
+    s += span * (v0 * x + (v1 - v0) * (x * x * x - (x * x * x * x) / 2));
+  }
+  const [tn, vn] = knots[knots.length - 1];
+  return s + vn * Math.max(0, t - tn);
+}
+/** The speed `t` seconds into such a leg. */
+function planeSpeed(knots: [number, number][], t: number) {
+  for (let i = 0; i + 1 < knots.length; i++) {
+    const [t0, v0] = knots[i],
+      [t1, v1] = knots[i + 1];
+    if (t <= t1) {
+      const x = Math.max(0, (t - t0) / (t1 - t0));
+      return v0 + (v1 - v0) * x * x * (3 - 2 * x);
+    }
+  }
+  return knots[knots.length - 1][1];
+}
+/**
+ * The plane's routes (its main gear's paths) and each leg's speeds. Taxiing out: east from where
+ * pushback leaves it, so its nose wheel runs straight into the turn north onto the taxiway (round the
+ * stand's lead-in line's offset to it, 3.4), west along the taxiway, round through the west stub
+ * onto the track and east to the pivot. Climbing out: west along the track from the pivot, easing
+ * round to west-north-west. Coming in: west along the track from far out, round through the west
+ * stub onto the taxiway, east along it, the S-bend onto the lead-in line and on to the stand.
+ */
+export const PLANE_PATHS = (() => {
+  const R = PLANE_ROUTE,
+    lead = STAND.z,
+    taxiway = TAXIWAY.z,
+    bend = (lead - taxiway) / 2,
+    stubTurn = (taxiway - R.track) / 2,
+    turnOut = R.pushback - PLANE_BACK + PLANE_WHEELBASE,
+    out: XZ[] = [[R.pushback - PLANE_BACK, lead], [turnOut, lead], ...planeArc(turnOut, lead - bend, bend, Math.PI / 2, -Math.PI / 2)];
+  out.push([R.stub, taxiway], ...planeArc(R.stub, taxiway - stubTurn, stubTurn, Math.PI / 2, (3 * Math.PI) / 2));
+  const stubEnd = out.length - 1;
+  out.push([R.pivot + PLANE_WHEELBASE + 4, R.track]);
+  const taxiOut = planeRoute(out);
+  // The climb out: past x `at` the heading eases from west round toward the north by `turn`, over `over` units.
+  const { at, over, turn } = R.climb,
+    up: XZ[] = [[R.pivot, R.track]];
+  for (let d = 0, x = R.pivot, z = R.track; d < 400; d += 0.5) {
+    const s = Math.min(1, Math.max(0, (d + 0.25 - (R.pivot - at)) / over)),
+      heading = -Math.PI / 2 - turn * s * s * (3 - 2 * s);
+    x += Math.sin(heading) * 0.5;
+    z += Math.cos(heading) * 0.5;
+    up.push([x, z]);
+  }
+  const climbOut = planeRoute(up);
+  const back: XZ[] = [[R.far, R.track], [R.stub, R.track], ...planeArc(R.stub, R.track + stubTurn, stubTurn, -Math.PI / 2, (-3 * Math.PI) / 2)];
+  back.push([R.bend, taxiway], ...planeArc(R.bend, taxiway + bend, bend, -Math.PI / 2, 0), ...planeArc(R.bend + 2 * bend, taxiway + bend, bend, Math.PI, Math.PI / 2));
+  back.push([STAND.x + PLANE_WHEELBASE + 4, lead]);
+  const comeIn = planeRoute(back);
+  return {
+    taxiOut,
+    climbOut,
+    comeIn,
+    /** Along the taxi out: where the main gear leaves the turn through the stub, and stops at the pivot. */
+    stubEnd: taxiOut.along(stubEnd),
+    pivot: taxiOut.length - PLANE_WHEELBASE - 4,
+    /** Along the way in: touchdown (the main gear's) and the stand. */
+    touchdown: R.far - R.touchdown,
+    stand: comeIn.length - PLANE_WHEELBASE - 4 - PLANE_BACK,
+  };
+})();
+/**
+ * Each leg's speeds, as planeEase's knots in the loop's seconds. Pushback eases to its pace and back
+ * to a stop over 2.5 s at either end. The taxi out goes at `turning` through the turns and faster
+ * along the runway, braking to a stop at the pivot over its last 3 s. The take-off roll eases from
+ * rest to `liftOff` and the climb on to `climbing`. Coming in it holds `approach`, eases to
+ * `touchdown` by touchdown, and to taxi speed over the roll-out, which it holds back to the stand.
+ */
+export const PLANE_LEGS = (() => {
+  const T = PLANE_TIMES,
+    F = PLANE_FLIGHT,
+    W = PLANE_PATHS,
+    [p0, p1] = T.pushback,
+    pace = (STAND.x - PLANE_ROUTE.pushback) / (p1 - p0 - 2.5),
+    [t0, t1] = T.taxi,
+    v1 = F.turning,
+    out = t0 + 2 + (W.stubEnd - v1) / v1,
+    runway = (W.pivot - W.stubEnd - v1) / (t1 - 3 - (out + 2) + 2.5),
+    [r0, r1] = T.roll,
+    // The approach holds its speed until it must start slowing to touch down on time.
+    ease = (2 * (W.touchdown + T.approach * F.approach - (T.touchdown * (F.approach + F.touchdown)) / 2)) / (F.approach - F.touchdown),
+    taxi = (W.stand - W.touchdown - (F.touchdown * (T.rollOut - T.touchdown)) / 2) / ((T.rollOut - T.touchdown) / 2 + (T.parked - 2 - T.rollOut) + 1);
+  return {
+    pushback: [[p0, 0], [p0 + 2.5, pace], [p1 - 2.5, pace], [p1, 0]] as [number, number][],
+    taxi: [[t0, 0], [t0 + 2, v1], [out, v1], [out + 2, runway], [t1 - 3, runway], [t1, 0]] as [number, number][],
+    climb: [[r0, 0], [r1, F.liftOff], [r1 + 10, F.climbing]] as [number, number][],
+    land: [[T.approach, F.approach], [ease, F.approach], [T.touchdown, F.touchdown], [T.rollOut, taxi], [T.parked - 2, taxi], [T.parked, 0]] as [number, number][],
+  };
+})();
+/** Where the plane is on a route with its main gear `d` along it: that point, the way its nose points (toward its nose wheels, PLANE_WHEELBASE on) and that heading. */
+function planeOn(route: (typeof PLANE_PATHS)['taxiOut'], d: number) {
+  const [mx, mz] = route.at(d),
+    [nx, nz] = route.at(d + PLANE_WHEELBASE),
+    l = Math.hypot(nx - mx, nz - mz) || 1;
+  return { mx, mz, ux: (nx - mx) / l, uz: (nz - mz) / l, heading: Math.atan2(nx - mx, nz - mz) };
+}
+const planeStep = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
+/**
+ * The main gear's height over the runway `u` past lift-off: the climb's gradient eases in over the
+ * first 6 units, and the climb levels off toward `cruise` (a tanh, so it never kinks). Also how
+ * steep it still is, as a share of the full gradient.
+ */
+function planeClimb(u: number) {
+  const { climb, cruise } = PLANE_FLIGHT,
+    straight = u < 6 ? (climb * u * u) / 12 : climb * (u - 3),
+    k = Math.tanh(straight / cruise);
+  return { y: cruise * k, steep: (u < 6 ? u / 6 : 1) * (1 - k * k) };
+}
+/**
+ * The main gear's height on the way in, `r` short of touchdown: the glide's gradient, rounded off into
+ * the flare over the last 3 units (it touches down sinking at a sixth of the glide's rate) and, far
+ * out, levelling off at `inbound`.
+ */
+function planeDescent(r: number) {
+  const { glide, inbound } = PLANE_FLIGHT,
+    x = r / 3,
+    straight = r < 3 ? glide * 3 * (-0.85 * x * x * x + 1.7 * x * x + 0.15 * x) : glide * r;
+  return inbound * Math.tanh(straight / inbound);
+}
+export type PlanePhase = 'parked' | 'pushback' | 'taxi' | 'turn' | 'take-off' | 'climb' | 'away' | 'approach' | 'roll-out' | 'taxi-in';
+/**
+ * Where the plane is in its loop at `time`: on which leg (pushback, the taxi out, the climb out
+ * from the take-off roll on, the way in from the approach on, or none: parked, the wait after
+ * pushback, the turn onto 27) and how far its main gear has come along it (for pushback, how far
+ * back it has been pushed), with its speed. Like the tram's distance, each only ever grows.
+ */
+export function planeTravel(time: number) {
+  const P = PLANE_LOOP,
+    t = ((time % P) + P) % P,
+    T = PLANE_TIMES,
+    L = PLANE_LEGS,
+    leg = (name: 'pushback' | 'taxi' | 'climb' | 'land', s: number) => ({ leg: name, t, d: planeEase(L[name], s), speed: planeSpeed(L[name], s) });
+  if (t >= T.pushback[0] && t < T.pushback[1]) return leg('pushback', t);
+  if (t >= T.taxi[0] && t < T.taxi[1]) return leg('taxi', t);
+  if (t >= T.roll[0] && t < T.approach) return leg('climb', Math.min(t, T.lost));
+  if (t >= T.approach && t < T.parked) return leg('land', t);
+  return { leg: null, t, d: 0, speed: 0 };
+}
+/**
+ * The plane at `time` (seconds of town time; city-scene holds it at 0, on its stand, under reduced
+ * motion and while paused): its middle (x, y, z; y the airside's top when it stands on its wheels),
+ * its heading (rotation.y, the nose along (sin, cos)), its pitch (nose up) and bank (port wing up)
+ * in radians, whether it is on its wheels and whether it is to be drawn (not while it is away, lost
+ * in the haze between climbing out and coming back). On the ground its main gear follows the
+ * routes (PLANE_PATHS) and it faces its nose wheels a wheelbase further on, as the tram faces from
+ * its rear bogie to its front one, so it turns smoothly however the route bends; it pivots about its
+ * main gear to line up; it pitches about its main gear (rotating to take off, flaring to land) and
+ * banks with its rate of turn in the air. Periodic: ((time % PLANE_LOOP) + PLANE_LOOP) % PLANE_LOOP.
+ */
+export function planePose(time: number): { x: number; y: number; z: number; heading: number; pitch: number; bank: number; ground: boolean; visible: boolean; phase: PlanePhase } {
+  const T = PLANE_TIMES,
+    R = PLANE_ROUTE,
+    F = PLANE_FLIGHT,
+    W = PLANE_PATHS,
+    { leg, t, d, speed } = planeTravel(time);
+  const at = (on: ReturnType<typeof planeOn>, gear: number, pitch: number, bank: number, ground: boolean, phase: PlanePhase, visible = true) => ({
+    x: on.mx + on.ux * PLANE_BACK * Math.cos(pitch),
+    y: gear + PLANE_BACK * Math.sin(pitch),
+    z: on.mz + on.uz * PLANE_BACK * Math.cos(pitch),
+    heading: on.heading,
+    pitch,
+    bank,
+    ground,
+    visible,
+    phase,
+  });
+  // Pushed straight back along the lead-in line, nose still east (then a moment's wait there).
+  if (leg === 'pushback' || (t >= T.pushback[1] && t < T.taxi[0]))
+    return { x: STAND.x - (leg ? d : STAND.x - R.pushback), y: AIRSIDE, z: STAND.z, heading: STAND.heading, pitch: 0, bank: 0, ground: true, visible: true, phase: 'pushback' };
+  if (leg === 'taxi') return at(planeOn(W.taxiOut, d), AIRSIDE, 0, 0, true, 'taxi');
+  // The turn about onto 27: round through the south (clear of the deck's north edge), on its main gear.
+  if (t >= T.turn[0] && t < T.roll[0]) {
+    const heading = Math.PI / 2 - Math.PI * planeStep((t - T.turn[0]) / (T.turn[1] - T.turn[0]));
+    return at({ mx: R.pivot, mz: R.track, ux: Math.sin(heading), uz: Math.cos(heading), heading }, AIRSIDE, 0, 0, true, 'turn');
+  }
+  if (leg === 'climb') {
+    // The take-off roll, rotation (the nose up over the last 1.6 units of it and the first 2.5 of the
+    // climb) and the climb out, banking into the turn; held where it is lost once it is away.
+    const lift = (F.liftOff * (T.roll[1] - T.roll[0])) / 2,
+      { y, steep } = planeClimb(Math.max(0, d - lift)),
+      pitch = planeStep((d - lift + 1.6) / 4.1) * (0.03 + (F.rotate - 0.03) * steep),
+      wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a)),
+      turning = (wrap(planeOn(W.climbOut, d + 1).heading - planeOn(W.climbOut, d - 1).heading) / 2) * speed,
+      bank = d > lift ? Math.max(-F.bank, Math.min(F.bank, -F.bankRate * turning)) : 0;
+    return at(planeOn(W.climbOut, d), AIRSIDE + y, pitch, bank, d <= lift, t >= T.lost ? 'away' : d <= lift ? 'take-off' : 'climb', t < T.lost);
+  }
+  if (leg === 'land') {
+    // Coming in: the approach, touchdown with the nose up in the flare, lowering it over the first
+    // 2.5 of the roll-out, and the taxi back.
+    const r = W.touchdown - d,
+      pitch = r > 0 ? 0.02 + (F.flare - 0.02) * (1 - planeStep(r / 6)) : F.flare * (1 - planeStep(-r / 2.5));
+    return at(planeOn(W.comeIn, d), AIRSIDE + (r > 0 ? planeDescent(r) : 0), pitch, 0, r <= 0, r > 0 ? 'approach' : t < T.rollOut ? 'roll-out' : 'taxi-in');
+  }
+  return { x: STAND.x, y: AIRSIDE, z: STAND.z, heading: STAND.heading, pitch: 0, bank: 0, ground: true, visible: true, phase: 'parked' };
+}
 /**
  * The dog walk: a slim lap of the open lawn between the corner park's east edge and the south
  * avenue's trees, 0.4 off the park, clear of the trunks and the pavements. The dog trots on a
@@ -1278,14 +1772,16 @@ export const pavementTop = (x: number, z: number) => droppedFloor(x, z) ?? level
  * the tram runs; an avenue from its plaza end, `from`) and `across` it, positive to the right of
  * that direction (the ring's inner side; an avenue's inbound lane). The road ribbons carry the same
  * pair in their uv (an avenue's along plus 1000 × its place in ROADS), so the road shader's wear
- * lines up with these.
+ * lines up with these. The airport's road runs from the lane's start (AIRPORT_ROAD.lane) toward the
+ * island, its uv along from 4000.
  */
-export type RoadId = 'ring' | JunctionId;
-export const ROADS: RoadId[] = ['ring', 'south', 'west', 'east'];
+export type RoadId = 'ring' | JunctionId | 'airport';
+export const ROADS: RoadId[] = ['ring', 'south', 'west', 'east', 'airport'];
 export type RoadSpot = { road: RoadId; along: number; across: number; x: number; z: number; heading: number };
 export function roadSpot(road: RoadId, along: number, across: number): RoadSpot {
   let x: number, z: number, heading: number;
   if (road === 'ring') ({ x, z, heading } = samplePolyline(ringLine, along, true));
+  else if (road === 'airport') ({ x, z, heading } = samplePolyline(airportRoad.slice(1), along));
   else {
     const a = avenues.find((v) => v.id === road)!,
       length = Math.hypot(a.to[0] - a.from[0], a.to[1] - a.from[1]);
