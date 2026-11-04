@@ -541,6 +541,41 @@ assert(
   driftAt(false, { inspect: {}, driftAngle: swayed }) < swayed - 0.01,
   'Inspect eases the drift back to the building’s own bearing.',
 );
+// The motion preference is followed while the page is open, not read once at load: switched, the
+// scene's flag follows it (the plane's hold, the turns' cut and the drift read it every frame) and
+// its listener goes with the scene; the page pauses the town or lets it go with it, unless the
+// visitor has pressed Pause or Play.
+{
+  const motionPieces = [];
+  (function collectMotion(node) {
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['motionQuery', 'reduced', 'followMotion'].includes(d.name.getText(syntax))))
+      motionPieces.push(node.getText(syntax));
+    if (ts.isExpressionStatement(node) && node.getText(syntax) === "motionQuery.addEventListener('change', followMotion);")
+      motionPieces.push(node.getText(syntax));
+    ts.forEachChild(node, collectMotion);
+  })(syntax);
+  assert.equal(motionPieces.length, 4, 'The motion check must find every piece it runs.');
+  const listeners = new Set(),
+    query = { matches: true, addEventListener: (type, f) => type === 'change' && listeners.add(f) },
+    motion = runInNewContext(
+      `${ts.transpileModule(motionPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ get reduced() { return reduced; } });`,
+      { window: { matchMedia: (q) => (q === '(prefers-reduced-motion: reduce)' ? query : null) } },
+    );
+  assert.equal(motion.reduced, true, 'The scene does not start from the visitor’s motion preference.');
+  query.matches = false;
+  listeners.forEach((f) => f());
+  assert.equal(motion.reduced, false, 'Reduce Motion switched off while the page is open keeps the plane on its stand and the turns cut.');
+  query.matches = true;
+  listeners.forEach((f) => f());
+  assert.equal(motion.reduced, true, 'Reduce Motion switched on while the page is open leaves the plane flying.');
+  assert(/planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);/.test(source) && /motionQuery\.removeEventListener\('change', followMotion\);/.test(source), 'The plane no longer parks for the motion preference, or the scene leaves its listener behind.');
+  assert(
+    /const media = window\.matchMedia\('\(prefers-reduced-motion: reduce\)'\),\s*follow = \(event: MediaQueryListEvent\) => \{\s*if \(!pauseChosen\.current\) setPaused\(event\.matches\);\s*\};\s*media\.addEventListener\('change', follow\);\s*return \(\) => media\.removeEventListener\('change', follow\);/.test(
+      await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+    ),
+    'The page no longer pauses the town, or lets it go, when the motion preference changes.',
+  );
+}
 // Leaving Inspect from a study zoom closer than the town's limit eases all the way out: the
 // real OrbitControls clamps the zoom to its limit on every update, so the limit must come
 // down with the glide, not before it.

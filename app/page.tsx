@@ -720,6 +720,17 @@ export default function Home() {
   useEffect(() => {
     api.current?.setPaused(paused);
   }, [paused, ready]);
+  // The motion preference switched while the page is open: the town is paused or let go with it,
+  // as at load, unless the visitor has pressed Pause or Play themselves.
+  useEffect(() => {
+    if (!ready) return;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)'),
+      follow = (event: MediaQueryListEvent) => {
+        if (!pauseChosen.current) setPaused(event.matches);
+      };
+    media.addEventListener('change', follow);
+    return () => media.removeEventListener('change', follow);
+  }, [ready]);
   // The tab names the chapter being read (in the city, the open place's chapter).
   const titleChapter = explore
     ? content === 'overview'

@@ -389,7 +389,15 @@ export async function createCity(
   onPark: () => void = () => {},
   options: CityOptions = {},
 ): Promise<CityAPI> {
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // The visitor's motion preference, followed while the page is open: switched on, the plane parks,
+  // turns cut and the drift stops at once; switched off, they come back (Play, if the town was
+  // paused for it: page.tsx follows the preference too).
+  const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduced = motionQuery.matches;
+  const followMotion = () => {
+    reduced = motionQuery.matches;
+  };
+  motionQuery.addEventListener('change', followMotion);
   // Two quality tiers up front, then a frame-time governor that lowers resolution if needed.
   const cores = navigator.hardwareConcurrency || 4,
     memory = (navigator as { deviceMemory?: number }).deviceMemory || 8,
@@ -1815,6 +1823,7 @@ export async function createCity(
     dispose() {
       disposed = true;
       cancelAnimationFrame(raf);
+      motionQuery.removeEventListener('change', followMotion);
       window.clearTimeout(warmTimer);
       window.clearTimeout(lostTimer);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
