@@ -1621,7 +1621,8 @@ body:has(.mode-explore),
   background: color-mix(in oklab, var(--ink) 6%, transparent);
 }
 .departures.is-zh {
-  --board-date: 84px;
+  /* "2026年12月" is 87.6 px on its flap (Inter's tabular figures): the column leaves it room. */
+  --board-date: 92px;
   --board-status: 56px;
 }
 /* At night the page's ink is pale: the split stays dark, and runs across the flap. */
@@ -1826,6 +1827,11 @@ summary.board-row:hover {
   font-family: var(--font-sans);
   letter-spacing: 0.02em;
   text-transform: none;
+}
+/* Chinese column heads at the size of the page's other Chinese labels (10 px is for capitals). */
+.departures.is-zh .board-head {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
 }
 .departures.is-zh .board-row .board-name {
   font-family: 'Fraunces Variable', 'Fraunces', var(--font-sans);

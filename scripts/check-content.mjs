@@ -1211,6 +1211,9 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
     ])
       assert(flapWidth(text, t) <= room, `On a board ${inner} px inside, "${text}" (${flapWidth(text, t).toFixed(1)} px) no longer keeps to one flap (${room.toFixed(1)} px).`);
   }
+  // In Chinese the date column fits a two-digit month ("2026年12月", 87.6 px measured with Inter's
+  // tabular figures), and the column heads are set at the page's other Chinese labels' size.
+  assert(/--board-date: 92px;/.test(block('\n.departures.is-zh {')) && /font-size: 11\.5px;/.test(block('\n.departures.is-zh .board-head {')));
 }
 // The reading page numbers its seven chapters; the airport's is 03 and holds the departures board.
 for (const locale of ['en', 'zh']) {
