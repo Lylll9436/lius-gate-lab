@@ -166,11 +166,22 @@ export function posePlane(plane: T.Object3D, clock: number) {
 }
 
 /**
+ * The airport's parts that stand on its ground (airport-land), not in its model, as boxes from the
+ * sea up: the hangar's plan up to its roof, and a slim box round the windsock's mast and the sway of
+ * its sock (it streams east, 0.9 out at most, and dips to 1.6 up).
+ */
+export const AIRPORT_EXTRAS = [
+  { x0: plan.HANGAR.x0, x1: plan.HANGAR.x1, z0: plan.HANGAR.z0, z1: plan.HANGAR.z1, top: plan.AIRPORT.deck + plan.HANGAR.top },
+  { x0: plan.WINDSOCK.x - 0.15, x1: plan.WINDSOCK.x + 0.95, z0: plan.WINDSOCK.z - 0.75, z1: plan.WINDSOCK.z + 0.2, top: 2.35 },
+];
+/**
  * Pointer picking's broad phase: one invisible box per building (its bounds in the town, which
  * stands untransformed under `parent`), set as the model's `hit`. The airport's deck is part of
  * the airport (pointing at the runway or the apron finds it too): a slab of the deck's footprint
  * and no taller than the deck, hung on the hall's box. The hall's box stretched over the deck
  * would stand 7 high over all of it, and its slack would reach several units out over the sea.
+ * So are the hangar and the windsock: their boxes (AIRPORT_EXTRAS) hang there too. Without them
+ * the hangar's west end, which a ray reaches past the deck's edge, and the sock answered nothing.
  * See pickTarget.
  */
 export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) {
@@ -190,6 +201,12 @@ export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) 
       deck.position.set(A.x - centre.x, (A.deck + 0.1) / 2 - centre.y, A.z - centre.z);
       deck.userData.buildingId = id;
       hit.add(deck);
+      for (const e of AIRPORT_EXTRAS) {
+        const extra = new T.Mesh(new T.BoxGeometry(e.x1 - e.x0, e.top, e.z1 - e.z0), hit.material);
+        extra.position.set((e.x0 + e.x1) / 2 - centre.x, e.top / 2 - centre.y, (e.z0 + e.z1) / 2 - centre.z);
+        extra.userData.buildingId = id;
+        hit.add(extra);
+      }
     }
     parent.add(hit);
     hit.updateMatrixWorld();
@@ -203,8 +220,8 @@ export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) 
  * a building counts where the ray meets its own geometry, and the nearest such meeting wins
  * (the bike rack, seen past the gate's attic, picks the studio). Where the ray meets no
  * building at all, the nearest box still answers, so the pointer keeps the boxes' slack round
- * each silhouette. The park's boxes, the airport's deck (hung on its hall's box) and a model the
- * scene gave no box are taken as they are.
+ * each silhouette. The park's boxes, the airport's deck, hangar and windsock (hung on its hall's
+ * box) and a model the scene gave no box are taken as they are.
  */
 export function pickTarget(
   ray: T.Raycaster,

@@ -1490,6 +1490,54 @@ for (const [x, z] of [
     ray.set(new T.Vector3(RW.x0 + 3, A.deck, RW.z).addScaledVector(back, 80), back.clone().negate());
     assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the runway from bearing ${bearing.toFixed(2)} finds no airport.`);
   }
+  // The hangar and the windsock stand on the airport's ground, not in its model: a ray through any
+  // point of the hangar's roof (its west end too, where a ray comes down past the deck's edge) or of
+  // the sock, from the four Rotate stops and the chapter's bearing, finds the airport (the hangar's
+  // west 29% and the sock found nothing). Their boxes hold the sock however it sways.
+  {
+    const { AIRPORT_EXTRAS } = await load('city-scene'),
+      H = plan.HANGAR,
+      land = model.airportLand,
+      sockEntry = model.animated.find((e) => e.object.name === 'windsock-sock'),
+      windsock = land.getObjectByName('airport-windsock'),
+      within = (p, e) => p.x >= e.x0 - 1e-6 && p.x <= e.x1 + 1e-6 && p.z >= e.z0 - 1e-6 && p.z <= e.z1 + 1e-6 && p.y <= e.top + 1e-6,
+      [hangarBox, sockBox] = AIRPORT_EXTRAS,
+      roof = [],
+      sock = [];
+    assert(hangarBox.x0 === H.x0 && hangarBox.x1 === H.x1 && hangarBox.z0 === H.z0 && hangarBox.z1 === H.z1 && Math.abs(hangarBox.top - (A.deck + H.top)) < 1e-9, 'The hangar\'s pointer box is not its plan up to its roof.');
+    for (let i = 0; i < 8; i++)
+      for (let k = 0; k < 7; k++) {
+        const x = H.x0 + ((i + 0.5) / 8) * (H.x1 - H.x0),
+          z = H.z0 + ((k + 0.5) / 7) * (H.z1 - H.z0);
+        ray.set(new T.Vector3(x, 40, z), new T.Vector3(0, -1, 0));
+        const top = ray.intersectObject(land, true)[0];
+        if (top && top.point.y > A.deck + 1) roof.push(top.point.clone());
+      }
+    for (let t = 0; t < 40; t += 0.73) {
+      sockEntry.update(t, 0, 0);
+      windsock.updateMatrixWorld(true);
+      sockEntry.object.traverse((o) => {
+        if (!o.isMesh) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const p = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          assert(within(p, sockBox), `The windsock's sock sways out of its pointer box at t=${t.toFixed(2)} (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}).`);
+          if (i % 9 === 0) sock.push(p);
+        }
+      });
+    }
+    sockEntry.update(0, 0, 0);
+    windsock.updateMatrixWorld(true);
+    assert(roof.length > 40 && sock.length > 100, 'The pointer check finds no hangar roof or sock to point at.');
+    for (const bearing of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings.airport]) {
+      const look = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize().negate();
+      for (const { name, points } of [{ name: 'hangar\'s roof', points: roof }, { name: 'windsock\'s sock', points: sock.filter((_, i) => i % 7 === 0) }])
+        for (const p of points) {
+          ray.set(p.clone().addScaledVector(look, -80), look);
+          assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the ${name} at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)} from bearing ${bearing.toFixed(2)} finds no airport.`);
+        }
+    }
+  }
   // Its surf is the tide foam's (no mesh of its own), after the island's two bands: one strip, rows
   // of AIRPORT_FOAM_ROW vertices inner edge first, from the beach's tide line up the causeway's west
   // toe, round the deck and down the east toe. Its inner line lies under the stones (so no strip of
