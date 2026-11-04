@@ -5,6 +5,7 @@ import type { DistrictId } from './city-districts';
 import {
   ADDRESS_EVENT,
   chapterFor,
+  facingChapter,
   readingChapter,
   readingContent,
   parseLocation,
@@ -85,8 +86,7 @@ function endFrame() {
   return hidden / (2 * dock.offsetHeight);
 }
 /** The bearing that shows a place from the front: its chapter's, as in reading mode. */
-const facing = (id: ContentId) =>
-  bearings[chapterFor(sceneTarget(id).building ?? id)] ?? bearings.overview;
+const facing = (id: ContentId) => bearings[facingChapter(id)] ?? bearings.overview;
 /** City mode's camera for an address, Plan view off: the place from its front, or the island. */
 function frameCity(engine: CityAPI, content: ContentId) {
   engine.setPlan(false);

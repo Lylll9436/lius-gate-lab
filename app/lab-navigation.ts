@@ -233,6 +233,18 @@ export function chapterFor(id: ContentId, today: Date = pageDay) {
       : id.replace(/^place:/, '');
 }
 /**
+ * The chapter whose bearing shows a content's place from the front on `today` (the page's day
+ * unless given): City mode turns the camera to it. It is the chapter of the building the camera
+ * frames, looked up as that place, else the content's own. A founding member's home has their
+ * address as its id ('qin-li'), so once they have left, chapterFor of the bare id would be theirs
+ * (Departures) and turn the camera to the airport's bearing for the home they left, empty or with
+ * someone new in it.
+ */
+export function facingChapter(id: ContentId, today: Date = pageDay) {
+  const building = sceneTarget(id, today).building;
+  return chapterFor(building ? 'place:' + building : id, today);
+}
+/**
  * The reading page's chapter for an address. The hero's overview is a chapter of its own
  * there, not part of About (chapterFor puts it in About for City mode's masthead).
  */

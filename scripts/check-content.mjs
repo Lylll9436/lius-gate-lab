@@ -996,6 +996,36 @@ async function siteOver(name, testCatalog) {
   assert.deepEqual(shown(TODAY), ['Fay Future', 'Fay', 'person:test-future-member']);
   assert.deepEqual(shown(DEPART), ['Sam Successor', 'Sam', 'person:test-successor']);
   assert(snav.peopleOn(TODAY).some((p) => p.id === 'person:test-successor'), 'A newcomer is a member as soon as they are entered.');
+  // A founding member's address is their home's id ('qin-li'). Once they have left, that address is
+  // filed at the airport, but the home they left is still a home: City mode faces it, and whoever
+  // lives there next, from the People chapter's bearing, never the airport's. TEST-ONLY: here Qin Li
+  // left in 2025 from the home the 2099 leaver lives in, and Sam Successor moves in after them.
+  {
+    const qin = leaving.people.find((p) => p.id === 'qin-li'),
+      { nav: fnav, data: fdata } = await siteOver(
+        'founder',
+        upsertRecord(
+          upsertRecord(leaving, 'people', { ...qin, buildingId: 'qin-li', departure }),
+          'people',
+          tester('test-successor', 'Sam Successor', '测试己', 24, 'qin-li'),
+        ),
+      );
+    assert(fnav.departedOn('qin-li', TODAY) && fnav.facingChapter('qin-li', TODAY) === 'airport', 'Her own address is faced at the airport.');
+    assert.deepEqual(
+      [fnav.contentForBuilding('qin-li', TODAY), fnav.contentForBuilding('qin-li', DEPART)],
+      ['person:test-future-member', 'person:test-successor'],
+    );
+    for (const day of [TODAY, DEPART])
+      for (const b of fdata.buildingsOn(day)) {
+        const chapter = fdata.dwelling(b) ? 'people' : b.id;
+        for (const id of [fnav.contentForBuilding(b.id, day), 'place:' + b.id])
+          assert.equal(
+            fnav.facingChapter(id, day),
+            chapter,
+            `On ${day.toISOString().slice(0, 10)} City mode does not face ${id} from the ${chapter} chapter's bearing.`,
+          );
+      }
+  }
   // A page left open past midnight UTC into someone's departure day goes on by the day it was
   // loaded on (pageDay) until it is reloaded, so all it shows agrees: the People chapter and the
   // homes, read once, and the name tags, what a home opens, the People framing and the tour, read
@@ -1464,5 +1494,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file), the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
 );

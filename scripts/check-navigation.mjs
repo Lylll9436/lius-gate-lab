@@ -132,7 +132,21 @@ for (const p of peopleRecords) {
     gone = nav.departedOn(id);
   assert.equal(nav.chapterFor(id), gone ? 'airport' : 'people', id + ' is in the wrong chapter.');
   if (gone) assert.deepEqual(nav.sceneTarget(id), { building: 'airport' }, id + ' has left: the camera goes to the airport.');
+  assert.equal(nav.facingChapter(id), gone ? 'airport' : 'people', id + ' is faced from the wrong chapter.');
 }
+// City mode faces each place from its chapter's bearing: a home or the residence from People's,
+// whoever lives there (check-content tries the home a founding member has left), every other
+// building from its own chapter's, the People file and the park from theirs.
+for (const b of buildings)
+  for (const id of [nav.contentForBuilding(b.id), 'place:' + b.id])
+    assert.equal(nav.facingChapter(id), b.variant || b.model === 'residence' ? 'people' : b.id, `City mode faces ${id} from the wrong chapter.`);
+assert.deepEqual(['people', 'corner-park', 'overview'].map((id) => nav.facingChapter(id)), ['people', 'corner-park', 'town-hall']);
+assert(
+  /const facing = \(id: ContentId\) => bearings\[facingChapter\(id\)\] \?\? bearings\.overview;/.test(
+    await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+  ),
+  'City mode no longer turns to the chapter of the place it frames (facingChapter).',
+);
 for (const stop of nav.tourStops)
   assert.deepEqual(nav.parseLocation(`#city/${stop}`), { mode: 'city', content: stop });
 for (const [old, content] of Object.entries({
