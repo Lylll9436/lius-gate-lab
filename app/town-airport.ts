@@ -1244,7 +1244,8 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
       // slate and three rows of tiles. Each row is one pane of dark umber glass (its centre on the
       // road's axis seeds its light), its tiles parted by shading alone (each darkens over its last
       // 0.022 at either side; no gap, no glyph), so by day the rows are dark tiles and at night they
-      // glow amber all night ('beacon', in a glass of its own glow). Two iron hangers from the soffit.
+      // glow amber all night ('beacon', in a glass of its own glow), the joints a little dimmer
+      // (glowShade) so they read as blank lit tiles, not a lit blind. Two iron hangers from the soffit.
       const y = 1.99,
         z = z1 - 0.15,
         tiles = 12,
@@ -1276,6 +1277,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
         const row = new T.Mesh(geometry, rowGlass);
         row.position.set(hx, y + dy, z - 0.025);
         row.userData.window = 'beacon';
+        row.userData.glowShade = 0.4; // its joints' shade dims the glow too (by 18%), so the tiles part at night
         shell.add(row);
       }
       for (const s of [-1, 1]) {

@@ -505,8 +505,18 @@ export function createBatch(ctx: TownContext) {
           if (group) groupLight.set(group, light);
           windows.push({ role, place: opts.place ?? g.name, at, light: light.map((v) => v / 255) });
         }
-        const bytes = light;
-        geometry.setAttribute('aWindow', new T.BufferAttribute(new Uint8Array(count * 4).map((_, i) => bytes[i % 4]), 4, true));
+        const bytes = light,
+          lights = new Uint8Array(count * 4).map((_, i) => bytes[i % 4]),
+          // A pane's own vertex shade may dim its light as well (`glowShade`: the share of the
+          // shade's darkening that carries into the glow), so the departures board's tile joints,
+          // drawn by shading alone, still part its tiles at night instead of three solid bars.
+          glowShade: number = o.userData.glowShade ?? 0;
+        if (glowShade > 0 && previous)
+          for (let i = 0; i < count; i++) {
+            const tone = (previous.getX(i) + previous.getY(i) + previous.getZ(i)) / 3;
+            lights[i * 4] = Math.round(bytes[0] * (1 - glowShade * T.MathUtils.clamp(1 - tone, 0, 1)));
+          }
+        geometry.setAttribute('aWindow', new T.BufferAttribute(lights, 4, true));
       }
       if (!groups.has(key)) groups.set(key, { mat, cast, list: [] });
       groups.get(key)!.list.push(geometry);

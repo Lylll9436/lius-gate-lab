@@ -1401,6 +1401,15 @@ for (const [x, z] of [
     }
     assert(Math.abs(area - 3 * 1.7 * 0.16) < 1e-3, `The board's rows cover ${area.toFixed(3)}, not three whole strips.`);
     assert(tone / p.count < 0.08, `The board's tiles are not dark by day (${(tone / p.count).toFixed(3)}).`);
+    // At night the joints dim the rows' glow as well (glowShade): 15-20% under the tiles' middles on
+    // a third of the vertices (each tile's two outer edges), so the rows read as blank lit tiles,
+    // not three solid amber bars.
+    const lit = g.attributes.aWindow,
+      levels = Array.from({ length: lit.count }, (_, i) => lit.getX(i)),
+      top = Math.max(...levels),
+      low = Math.min(...levels),
+      dim = levels.filter((l) => l < top - 1e-6).length / levels.length;
+    assert(top === 1 && low / top >= 0.8 && low / top <= 0.85 && Math.abs(dim - 1 / 3) < 0.01, `The board's joints dim its glow to ${(low / top).toFixed(3)} on ${(dim * 100).toFixed(1)}% of it.`);
   }
   // The jet bridge, from the hall's west wall toward the stand: below the plane's fin (y 2) and west
   // of the hall it stays north of the parked fuselage (0.66 across on the stand's line) by at least
