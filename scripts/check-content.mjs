@@ -1325,6 +1325,8 @@ for (const [where, body] of [
       last(body.zh, '。').includes('堤道') && last(body.zh, '。').includes('机场'),
     where + ' says where the causeway leads.',
   );
+  // Behind the Town Hall by name: "the hall" could be the airport's own Departures Hall.
+  assert(/behind the Town Hall/i.test(last(body.en, '. ')) && last(body.zh, '。').includes('市政厅背后'), where + ' says the causeway is behind the Town Hall.');
 }
 assert.deepEqual(
   chapterMeta.find((c) => c.id === 'lius-gate').title,

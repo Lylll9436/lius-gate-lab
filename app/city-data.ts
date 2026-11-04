@@ -110,7 +110,7 @@ const places: Building[] = [
       {
         heading: t('This site', '关于本站'),
         body: t(
-          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive. Those who move on take the causeway behind the hall to the airport, whose departures board shows where each of them went.',
+          'The site is organised as a small city. Each chapter corresponds to a building, and completed work moves from the studio to the archive. Those who move on take the causeway behind the Town Hall to the airport, whose departures board shows where each of them went.',
           '本站按一座小城组织：每一章对应一栋建筑，完成的工作从工作室转入档案馆。离开的人沿市政厅背后的堤道去往机场，出发屏上显示每个人去了哪里。',
         ),
       },
