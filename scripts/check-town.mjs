@@ -788,11 +788,17 @@ assert.deepEqual(
   [meshes, triangles, models.size, walkers.length],
   'Built in phases, the town is the same town.',
 );
+// The visitor's pan limit holds the target within PAN.lift of the subject's ground, sliding it along
+// the line of sight past that (city-scene's holdPan): a pick's framing (its building's middle) and
+// Inspect's never stand that high, so a glide's end never slides the camera.
+const panLift = Number(/\n {4}lift: ([\d.]+),\n {2}\};/.exec(await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8'))?.[1]);
+assert(panLift > 0, 'The check cannot find PAN.lift.');
 for (const [id, m] of models) {
   assert.equal(m.root.userData.buildingId, id);
   const bounds = new T.Box3().setFromObject(m.root);
   assert(!bounds.isEmpty());
   assert(bounds.max.y < 14 && bounds.min.y >= -0.3, `Invalid building height: ${id}`);
+  assert(bounds.getCenter(new T.Vector3()).y < panLift - 1, `The framing of ${id} stands its target higher than the pan limit's lift (${panLift}).`);
   // One batched shell per building: walls and roof together, no rooms inside.
   assert.deepEqual(m.root.children, [m.shell], 'A building is a single shell: ' + id);
   assert(m.shell.children.some((o) => o.isMesh), 'The shell has geometry: ' + id);

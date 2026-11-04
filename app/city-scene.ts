@@ -581,16 +581,19 @@ export async function createCity(
   controls.minZoom = 0.45;
   controls.maxZoom = CITY_MAX_ZOOM;
   /**
-   * Panning stops before the view leaves the town for open sea: the subject point (the view centre
-   * less the panel offset) stays in the island's disc, in the airport's deck and 4 beyond its edge
-   * (as the disc reaches a few units past the island's coast), or in a capsule over the causeway
-   * between them. Each region is a core (the origin, the causeway's line, the deck's rectangle
-   * inset by its corner radius) and a reach round it, so OrbitControls' own clamp holds it: each
-   * frame `cursor` is the nearest point of the core of whichever region the subject is deepest in
-   * (or nearest to) and `maxTargetRadius` that region's reach.
+   * Panning stops before the view leaves the town for open sea: the subject's ground point (where
+   * the line of sight through the view centre less the panel offset meets the ground) stays in the
+   * island's disc, which reaches just past its farthest coast (the north-west headland, 35.4 out)
+   * and the lighthouse's rock, in the airport's deck and 4 beyond its edge, or in a capsule over the
+   * causeway between them. Each region is a core (the origin, the causeway's line, the deck's
+   * rectangle inset by its corner radius) and a reach round it, so OrbitControls' own clamp holds
+   * it: each frame `cursor` is the nearest point of the core of whichever region the subject is
+   * deepest in (or nearest to) and `maxTargetRadius` that region's reach (see holdPan). `lift` is
+   * how far the target may stand above or below the subject's ground: above the middle of every
+   * building a framing centres (the Town Hall's, 6.7 up, is the highest).
    */
   const PAN = {
-    disc: 30,
+    disc: 36,
     from: new T.Vector3(plan.AIRPORT_ROAD.x, 0, -20),
     to: new T.Vector3(plan.AIRPORT_ROAD.x, 0, plan.AIRPORT.z + plan.AIRPORT.hd),
     causeway: 8,
@@ -601,11 +604,14 @@ export async function createCity(
       z1: plan.AIRPORT.z + plan.AIRPORT.hd - plan.AIRPORT.radius,
       reach: plan.AIRPORT.radius + 4,
     },
+    lift: 8,
   };
   const panSubject = new T.Vector3(),
     panOrigin = new T.Vector3(),
     panOnLine = new T.Vector3(),
     panOnDeck = new T.Vector3(),
+    panGround = new T.Vector3(),
+    panBack = new T.Vector3(),
     panLine = new T.Line3(PAN.from, PAN.to);
   /** The pan region the subject point p is deepest in, or nearest to: the nearest point of its core and its reach. */
   function panRegion(p: T.Vector3) {
@@ -617,6 +623,33 @@ export async function createCity(
       deck = panSubject.distanceTo(panOnDeck) - PAN.deck.reach;
     if (disc <= causeway && disc <= deck) return { centre: panOrigin, radius: PAN.disc };
     return deck <= causeway ? { centre: panOnDeck, radius: PAN.deck.reach } : { centre: panOnLine, radius: PAN.causeway };
+  }
+  /**
+   * The visitor's pan limit for the frame, which OrbitControls' update then applies (its own updates,
+   * a pointer move at a time, keep the last frame's). Screen-space panning lifts the target as well
+   * as moving it, 0.74 a unit of screen-vertical pan, while what the view shows is set by where the
+   * line of sight through the subject meets the ground: so the region is the ground point's, and
+   * `cursor` stands lifted with the target, so that OrbitControls' sphere measures the distance on
+   * the ground. (Measured at the lifted target, the view jumped as the subject passed from the disc
+   * to the causeway or the deck, and vertical pans ran 14 past the disc.) The lift is held within
+   * PAN.lift by sliding the target and the camera together along the line of sight, which changes
+   * nothing on screen: a drag kept up against the limit would otherwise lift the camera on into the
+   * fog. A glide itself is never clamped: the camera's own moves (a panel offset can reach past
+   * the limit on narrow wide screens) are the camera's.
+   */
+  function holdPan() {
+    const back = panBack.copy(camera.position).sub(controls.target).normalize(),
+      ground = panGround.copy(controls.target).sub(shiftApplied),
+      excess = tween ? 0 : ground.y - T.MathUtils.clamp(ground.y, -PAN.lift, PAN.lift);
+    if (excess) {
+      controls.target.addScaledVector(back, -excess / back.y);
+      camera.position.addScaledVector(back, -excess / back.y);
+    }
+    const lift = (ground.y - excess) / back.y;
+    ground.addScaledVector(back, -ground.y / back.y);
+    const region = panRegion(ground);
+    controls.cursor.copy(shiftApplied).add(region.centre).addScaledVector(back, lift);
+    controls.maxTargetRadius = tween ? Infinity : region.radius;
   }
   controls.maxTargetRadius = PAN.disc;
   controls.screenSpacePanning = true;
@@ -1313,11 +1346,8 @@ export async function createCity(
       )
         tween = false;
     }
-    // The limit is the visitor's; the camera's own moves (a panel offset can reach past it
-    // on narrow wide screens) are never clamped.
-    const region = panRegion(panSubject.copy(controls.target).sub(shiftApplied));
-    controls.cursor.copy(shiftApplied).add(region.centre);
-    controls.maxTargetRadius = tween ? Infinity : region.radius;
+    // The limit is the visitor's: the camera's own glides are never clamped.
+    holdPan();
     // Out of Inspect, the zoom limit follows the camera back down to the town's.
     if (!inspect)
       controls.maxZoom = Math.max(CITY_MAX_ZOOM, Math.min(controls.maxZoom, camera.zoom));

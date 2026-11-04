@@ -611,22 +611,23 @@ for (let frame = 0; frame < 120; frame++) {
 }
 assert(Math.abs(studyCamera.zoom - townZoom) < 1e-3, 'The glide must reach the town framing.');
 assert.equal(studyControls.maxZoom, 4, 'Back in the town, its zoom limit holds again.');
-// The visitor's pan limit: the subject point (the view centre less the panel offset) stays in the
-// island's disc (30), a capsule (8) over the causeway, or the airport's deck and 4 past its edge,
-// clamped each frame to whichever it is deepest in or nearest to; and the overview and the
-// airport's chapter fit their frames.
+// The visitor's pan limit: the subject's ground point (where the line of sight through the view
+// centre less the panel offset meets the ground) stays in the island's disc (36, just past its
+// farthest coast and the lighthouse's rock), a capsule (8) over the causeway, or the airport's deck
+// and 4 past its edge, clamped each frame to whichever it is deepest in or nearest to; and the
+// overview and the airport's chapter fit their frames.
 const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href);
 {
   const pieces = [];
   const collect = (node) => {
-    if (ts.isFunctionDeclaration(node) && ['panRegion', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup'].includes(node.name?.text))
+    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup'].includes(node.name?.text))
       pieces.push(node.getText(syntax));
     if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 11, 'The pan and fit check must find every piece it runs.');
+  assert.equal(pieces.length, 12, 'The pan and fit check must find every piece it runs.');
   assert(/controls\.minZoom = 0\.45;/.test(source), 'The town\'s widest zoom is no longer 0.45.');
   const view = {
     T,
@@ -641,10 +642,8 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     frameDrop: 0,
     tween: false,
   };
-  const scene = runInNewContext(
-    `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, fitOverview, fitGroup, islandMarks, AIRPORT_FIT, PAN });`,
-    view,
-  );
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, islandMarks, AIRPORT_FIT, PAN });`,
+    scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
       return { x: r.centre.x, z: r.centre.z, radius: r.radius };
@@ -659,27 +658,150 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // The union, measured from the plan rather than from panRegion: the disc, the capsule round the
     // causeway's line (x 0.5, from z -20 to the deck's south edge) and the deck's signed distance.
     beyondDeck = (x, z) => plan.airportDistance(x, z),
-    inside = (x, z) => {
+    // How far a point lies outside the union (negative inside).
+    beyond = (x, z) => {
       const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
-      return Math.hypot(x, z) <= 30 + 1e-6 || Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) <= 8 + 1e-6 || beyondDeck(x, z) <= 4 + 1e-6;
-    };
-  assert.deepEqual(region(3, -4), { x: 0, z: 0, radius: 30 }, 'The island is not its own pan region.');
+      return Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4);
+    },
+    inside = (x, z) => beyond(x, z) <= 1e-6,
+    DISC = 36;
+  assert.equal(scene.PAN.disc, DISC, 'The island\'s pan disc is no longer 36.');
+  // The disc reaches the island's farthest coast (its north-west headland) and the lighthouse's rock,
+  // and no more than a unit or two past them.
+  const coast = Math.max(...plan.islandOutline.map(([x, z]) => Math.hypot(x, z)));
+  assert(coast > 35 && coast <= DISC && Math.hypot(...plan.lighthouseRock) <= DISC && DISC - coast < 1.5, `The pan disc (${DISC}) does not just reach the coast (${coast.toFixed(1)}) and the lighthouse's rock.`);
+  assert.deepEqual(region(3, -4), { x: 0, z: 0, radius: DISC }, 'The island is not its own pan region.');
   for (const [x, z] of [[plan.AIRPORT.x, plan.AIRPORT.z], [0.5, -36], [-17, -52], [6.5, -44], [-5.5, -58.5], [-20.5, -49.2], [0.5, -26]])
-    assert((z < -30 ? region(x, z).radius !== 30 : true) && inside(x, z) && clamp(x, z).every((c, i) => Math.abs(c - [x, z][i]) < 1e-9), `The airport's pan region leaves out ${x}, ${z}.`);
+    assert((z < -30 ? region(x, z).radius !== DISC : true) && inside(x, z) && clamp(x, z).every((c, i) => Math.abs(c - [x, z][i]) < 1e-9), `The airport's pan region leaves out ${x}, ${z}.`);
   for (const [x, z] of [[60, 0], [0, 60], [-40, -70], [25, -45], [-30, -40], [-5.5, -62], [-21, -40], [12, -40]]) {
     const [cx, cz] = clamp(x, z);
     assert(inside(cx, cz) && Math.hypot(cx - x, cz - z) > 1, `A pan to ${x}, ${z} is not held to the town.`);
   }
   // Out past the airport (north of its middle, or past either end) the subject is held within 4 of
   // its deck's edge, as the disc holds it a few units off the island's coast: a pan north of it no
-  // longer ends on two thirds of open sea (the capsule of 15 let it run 9 past the north edge).
+  // longer ends on two thirds of open sea (the capsule of 15 let it run 9 past the north edge). Only
+  // 40 out past the deck's east end is the island's disc the nearer region, and there it is held on
+  // the disc's edge, 3.5 off the coast.
   for (let a = Math.PI; a <= 2 * Math.PI + 1e-9; a += Math.PI / 36)
     for (const far of [5, 20, 40]) {
       const x = plan.AIRPORT.x + Math.cos(a) * (plan.AIRPORT.hw + far),
         z = plan.AIRPORT.z + Math.sin(a) * (plan.AIRPORT.hd + far),
-        [cx, cz] = clamp(x, z);
-      assert(inside(cx, cz) && beyondDeck(cx, cz) <= 4 + 1e-6, `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
+        [cx, cz] = clamp(x, z),
+        onDisc = region(x, z).radius === DISC;
+      assert(inside(cx, cz) && (onDisc ? far === 40 && Math.cos(a) > 0.99 && Math.abs(Math.hypot(cx, cz) - DISC) < 1e-6 : beyondDeck(cx, cz) <= 4 + 1e-6), `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
     }
+  // The limit as the frame loop applies it, through three's real OrbitControls as a drag drives
+  // it: each pointer move pans and updates, then each frame holds the limit (holdPan) and updates
+  // again, 8 px a frame on a 1440 x 900 frame. Screen-space panning lifts the target 0.74 a unit of
+  // screen-vertical pan: measured at the lifted target, a drag down and then sideways jumped the
+  // view 139-151 px in one frame where the causeway's capsule took over from the disc, and its
+  // ground point ran 14 past the disc and 7 past the deck. Measured on the ground, at every Rotate
+  // stop and the chapter's bearing, the view never moves more than twice the drag in a frame, its
+  // ground point keeps within half a unit of the regions (4.5 of the deck), and a drag kept up
+  // against the limit does not lift the camera past PAN.lift (into the fog).
+  const drivePan = (yaw, w = 1440, h = 900) => {
+    const aspect = w / h,
+      vertical = Math.max(53, 76 / aspect),
+      camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+      controls = new OrbitControls(camera, null),
+      held = { T, Math, plan, camera, controls, shiftApplied: new T.Vector3(), tween: false },
+      pan = runInNewContext(panScript, held),
+      offset = new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38),
+      back = offset.clone().normalize(),
+      right = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
+      up = new T.Vector3().crossVectors(back, right),
+      perUnit = h / (camera.top - camera.bottom);
+    controls.domElement = { clientWidth: w, clientHeight: h };
+    Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true });
+    camera.position.copy(offset);
+    camera.lookAt(controls.target);
+    camera.updateMatrixWorld();
+    controls.update();
+    camera.updateMatrixWorld();
+    const ground = () => {
+        const g = controls.target.clone().sub(held.shiftApplied);
+        return g.addScaledVector(back, -g.y / back.y);
+      },
+      worst = { move: 0, beyond: -Infinity, deck: -Infinity, lift: 0, reached: Infinity };
+    return {
+      held,
+      ground,
+      worst,
+      // One frame: the pointer's move (if any), then the frame loop's hold and update.
+      frame(dx = 0, dy = 0) {
+        const was = controls.target.clone();
+        if (dx || dy) {
+          controls._pan(dx, dy);
+          controls.update();
+          camera.updateMatrixWorld();
+        }
+        pan.holdPan();
+        controls.update();
+        camera.updateMatrixWorld();
+        const d = controls.target.clone().sub(was),
+          g = ground();
+        worst.move = Math.max(worst.move, Math.hypot(d.dot(right), d.dot(up)) * perUnit);
+        worst.beyond = Math.max(worst.beyond, beyond(g.x, g.z));
+        // Past the deck, where the deck's region is the nearest (neither the disc nor the capsule holds it).
+        const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, g.z)),
+          deckOut = beyondDeck(g.x, g.z) - 4;
+        if (deckOut < Math.hypot(g.x, g.z) - DISC && deckOut < Math.hypot(g.x - plan.AIRPORT_ROAD.x, g.z - along) - 8) worst.deck = Math.max(worst.deck, deckOut + 4);
+        worst.lift = Math.max(worst.lift, Math.abs(controls.target.y - held.shiftApplied.y));
+        worst.reached = Math.min(worst.reached, beyondDeck(g.x, g.z));
+        return g;
+      },
+      toward(x, z) {
+        // A drag that moves the view toward (x, z): the map follows the finger the other way.
+        const g = ground(),
+          aim = new T.Vector3(x - g.x, 0, z - g.z),
+          sx = aim.dot(right),
+          sy = aim.dot(up),
+          l = Math.hypot(sx, sy) || 1;
+        return [(-8 * sx) / l, (8 * sy) / l];
+      },
+    };
+  };
+  for (const yaw of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings.airport])
+    for (const down of [8, -8])
+      for (const reach of [280, 480, 640])
+        for (const side of [8, -8]) {
+          const drive = drivePan(yaw);
+          for (let f = 0; f < reach / 8; f++) drive.frame(0, down);
+          for (let f = 0; f < 300; f++) drive.frame(side, 0);
+          for (let f = 0; f < 120; f++) drive.frame();
+          const { move, beyond: out, deck, lift } = drive.worst,
+            gesture = `dragging ${down > 0 ? 'down' : 'up'} ${reach} px and then ${side > 0 ? 'right' : 'left'} at bearing ${yaw.toFixed(2)}`;
+          assert(move <= 16, `The view jumps ${move.toFixed(0)} px in one frame ${gesture}.`);
+          assert(out <= 0.5 && deck <= 4.5, `The view's ground point ends ${out.toFixed(2)} outside the pan regions (${deck.toFixed(2)} past the deck) ${gesture}.`);
+          assert(lift <= scene.PAN.lift + 1, `The target lifts ${lift.toFixed(1)} over the ground ${gesture}.`);
+        }
+  // From the airport, a drag out past its ends and its north edge is held within 4.5 of the deck.
+  for (const yaw of [Math.PI / 4, (5 * Math.PI) / 4, plan.chapterBearings.airport])
+    for (const [x, z] of [[60, -49.2], [-70, -49.2], [-5.5, -110], [40, -90], [-50, -95]]) {
+      const drive = drivePan(yaw);
+      drive.held.controls.target.set(plan.AIRPORT.x, 0, plan.AIRPORT.z);
+      drive.held.camera.position.copy(drive.held.controls.target).add(new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38));
+      drive.held.controls.update();
+      drive.held.camera.updateMatrixWorld();
+      for (let f = 0; f < 500; f++) drive.frame(...drive.toward(x, z));
+      for (let f = 0; f < 120; f++) drive.frame();
+      assert(drive.worst.deck <= 4.5 && drive.worst.beyond <= 0.5 && drive.worst.move <= 16, `A drag from the airport toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.deck.toFixed(2)} past its deck (or jumps ${drive.worst.move.toFixed(0)} px).`);
+    }
+  // A straight drag from the plaza toward the airport gets there (measured at the lifted target it
+  // stuck on the disc's sphere 30 out), and at the opening bearing a drag kept up against the limit
+  // holds the view still.
+  for (const yaw of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+    const drive = drivePan(yaw);
+    for (let f = 0; f < 400; f++) drive.frame(...drive.toward(plan.AIRPORT.x, plan.AIRPORT.z));
+    assert(drive.worst.reached < 0 && drive.worst.move <= 16, `A drag toward the airport at bearing ${yaw.toFixed(2)} does not reach its deck (${drive.worst.reached.toFixed(1)} short) or jumps.`);
+  }
+  {
+    const drive = drivePan(Math.PI / 4);
+    for (let f = 0; f < 600; f++) drive.frame(0, 8);
+    const before = drive.ground();
+    for (let f = 0; f < 300; f++) drive.frame(0, 8);
+    assert(drive.ground().distanceTo(before) < 0.6 && drive.worst.lift <= scene.PAN.lift + 1, 'A drag kept up against the pan limit moves the view on, or lifts the camera into the fog.');
+  }
   // The overview takes in the airport's island too (its armour's toe, the tower's mast, the hangar's
   // roof): at 1440 x 900 it zooms out about 16% from the island's 0.911, and beside the open file
   // (460 wide: a frame shift of about 0.17 at 1440, 0.19 at 1280) it still fits above the widest zoom.
