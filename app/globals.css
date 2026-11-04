@@ -2250,6 +2250,12 @@ summary.board-row:hover {
   .masthead-nav {
     display: none;
   }
+  /* The masthead's chips keep to the stage's 12 px edge, as the sky chip, the bars, the tour bar
+     and the file do. The wide screens' inset (16 px, growing with the width) set the wordmark's
+     pill out of line with the sky chip right under it: by 4 px on a phone, 17 px at 960. */
+  .masthead {
+    padding: 0 12px;
+  }
   /* The reading page scrolls under the masthead: the wordmark sits on the buttons' glass, a
      pill of their height, so the text passing under it never runs into the name. */
   .wordmark {

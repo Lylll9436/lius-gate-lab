@@ -1234,6 +1234,16 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
       reaching.every((r) => !/text-shadow:/.test(r.body)),
     'The wordmark’s pill has a border colour or its name a text-shadow: the glass has no border and the text no glow.',
   );
+  // Up to 960 px the masthead's chips keep to the stage's edge: the pill right above the sky chip,
+  // the buttons in line with the camera bar, both ends with the tour bar's.
+  const inset = rule('.masthead', NARROW)?.body.match(/(^|;)\s*padding: 0 ([\d.]+px);/)?.[2];
+  assert(
+    inset &&
+      [['.stage-caption', 'left'], ['.hud-sky', 'left'], ['.hud-camera', 'right'], ['.tour-control', 'left'], ['.tour-control', 'right']].every(
+        ([selector, side]) => has(rule(selector, NARROW), `${side}: ${inset}`),
+      ),
+    'Up to 960 px the masthead’s chips are out of line with the sky chip, the bars and the tour bar: they share one edge.',
+  );
 }
 // The board's settle-flip (lab-content.tsx; the static render runs no effects, so its source): it
 // is settled by whatever ends its effect, so 中文 pressed mid-flip cannot leave every cell's flip on
