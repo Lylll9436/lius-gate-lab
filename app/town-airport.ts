@@ -68,6 +68,23 @@ export const HALL_DRESSING = {
   capital: [2.32, 2.48] as [number, number],
   cornice: [2.48, 2.66] as [number, number],
 };
+/**
+ * Each runway threshold's paint, in from the runway's end (x) and across its centre line (z): a bar
+ * across the runway (`bar`, `across` wide), then four keys along it (`key`, at `keys`, each `width`
+ * wide) and a pair of aiming blocks (`aim`, at `aims`, `aimWidth` wide). The bar is what tells it
+ * from a zebra crossing, which never has one, and the keys run longer than a zebra's stripes (1.8,
+ * 0.3 wide on gaps of 0.25: the first four, 1.2 long and 0.25 wide on 0.2, read as one).
+ */
+export const THRESHOLD = {
+  bar: [0.15, 0.45] as [number, number],
+  across: 1.95,
+  key: [0.6, 2.4] as [number, number],
+  keys: [-0.825, -0.275, 0.275, 0.825],
+  width: 0.3,
+  aim: [3.0, 4.4] as [number, number],
+  aims: [-0.5, 0.5],
+  aimWidth: 0.3,
+};
 /** The island's edge, out from the deck's edge: the coping's outer face, and the armour's bed from there to its toe (o, y). */
 const EDGE = { coping: 0.05, bed: [[0.03, 0.31], [0.92, -0.58]] as [number, number][] };
 
@@ -318,19 +335,22 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
       jointMesh.geometry.setAttribute('color', new T.BufferAttribute(new Float32Array(count * 3).fill(L.joint), 3));
     }
     slab(g, FC.x0, FC.x1, FC.z0, FC.z1 - 0.4, A.deck - 0.02, A.deck + 0.06, palette.pavement, 'paving');
-    // Markings, never under 0.25 wide: at each threshold four bars along the runway either side of
-    // its centre line, then a pair of broad aiming blocks; no centre-line dashes, no numbers. On the
-    // apron the stand's lead-in line, ending at the parked plane's nose.
+    // Markings, never under 0.25 wide (THRESHOLD): at each threshold a bar across the runway, four
+    // keys along it either side of its centre line, then a pair of broad aiming blocks; no
+    // centre-line dashes, no numbers. On the apron the stand's lead-in line, ending at the parked
+    // plane's nose.
     const paint: Piece[] = [],
-      y = top + 0.004;
+      y = top + 0.004,
+      TH = THRESHOLD;
     for (const end of [-1, 1]) {
       const from = end < 0 ? RW.x0 : RW.x1,
-        bar = (a: number, b: number, c: number, width: number) => {
+        bar = ([a, b]: [number, number], c: number, width: number) => {
           const [x0, x1] = [from - end * a, from - end * b].sort((p, q) => p - q);
           paint.push({ geometry: flat(x1 - x0, width), at: [(x0 + x1) / 2, y, RW.z + c] });
         };
-      for (const c of [-0.675, -0.225, 0.225, 0.675]) bar(0.3, 1.5, c, 0.25);
-      for (const c of [-0.5, 0.5]) bar(3.0, 4.4, c, 0.3);
+      bar(TH.bar, 0, TH.across);
+      for (const c of TH.keys) bar(TH.key, c, TH.width);
+      for (const c of TH.aims) bar(TH.aim, c, TH.aimWidth);
     }
     const lead0 = AP.x0 + 1.6,
       lead1 = STAND.x + 1.8;

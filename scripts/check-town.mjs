@@ -1585,6 +1585,32 @@ for (const [x, z] of [
     const sheets = g.children.filter((o) => o.isMesh && o.geometry.getAttribute('normal').array.every((n, i) => Math.abs(n - (i % 3 === 1 ? 1 : 0)) < 1e-6));
     assert(sheets.some((o) => o.geometry.getAttribute('position').count === 4 * 6 && o.geometry.getAttribute('color')?.array.every((c) => Math.abs(c - look.joint) < 1e-6)), 'The apron has not its four joints.');
     assert(sheets.filter((o) => o.material.userData.surfaceKind === 'paint').length === 2, 'The airport\'s paint is not two flat sheets (the markings and the lead-in).');
+    // Each runway threshold reads as one, not as another zebra crossing: a solid bar across the
+    // runway (1.9 of its 2.2 at least, 0.25 wide at least) 0.15 in from its end, then four keys along
+    // it, each unbroken for 1.7 at least, with bare concrete between them.
+    const { THRESHOLD: TH } = await load('town-airport'),
+      RW = plan.RUNWAY,
+      marks = sheets.find((o) => o.material.userData.surfaceKind === 'paint' && o.material.color.getHex() === new T.Color(look.paint).getHex()),
+      mq = marks.geometry.attributes.position,
+      tris = [],
+      side = (u, v, w) => (u.x - w.x) * (v.y - w.y) - (v.x - w.x) * (u.y - w.y);
+    for (let i = 0; i < mq.count; i += 3) tris.push([0, 1, 2].map((k) => new T.Vector2(mq.getX(i + k), mq.getZ(i + k))));
+    const painted = (x, z) => {
+      const p = new T.Vector2(x, z);
+      return tris.some(([a, b, c]) => {
+        const d = [side(p, a, b), side(p, b, c), side(p, c, a)];
+        return !(d.some((e) => e < 0) && d.some((e) => e > 0));
+      });
+    };
+    for (const end of [-1, 1]) {
+      const from = end < 0 ? RW.x0 : RW.x1,
+        at = (d) => from - end * d,
+        name = end < 0 ? 'west' : 'east';
+      for (let z = -0.95; z <= 0.95 + 1e-9; z += 0.05) assert(painted(at(0.3), RW.z + z), `The runway's ${name} threshold has no bar across it at ${z.toFixed(2)}.`);
+      assert(painted(at(0.18), RW.z) && painted(at(0.42), RW.z) && !painted(at(0.05), RW.z) && !painted(at(0.52), RW.z + 0.55), `The runway's ${name} threshold bar is off its 0.15-0.45 from the end.`);
+      for (const c of TH.keys) for (let d = 0.65; d <= 2.35 + 1e-9; d += 0.1) assert(painted(at(d), RW.z + c), `A ${name} threshold key is broken or short at ${d.toFixed(2)}.`);
+      for (const c of [-0.55, 0, 0.55]) assert(!painted(at(1.5), RW.z + c), `The ${name} threshold's keys run together.`);
+    }
   }
   const lawn = named('airport-deck')[0].geometry.attributes.position;
   for (let i = 0; i < lawn.count; i++) assert(Math.abs(lawn.getY(i) - plan.AIRPORT.deck) < 1e-6 && plan.airportDistance(lawn.getX(i), lawn.getZ(i)) <= -0.3 + 1e-4, 'The deck\'s grass leaves the deck.');
