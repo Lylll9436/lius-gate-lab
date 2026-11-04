@@ -138,6 +138,19 @@ function fileFrame(stage: HTMLElement | null) {
   };
 }
 
+/**
+ * Where the reading page's chapter panels start, as a share of the stage's width from its left
+ * (1 when none shows, as in City mode). From 1180 px down they are half the window wide and start
+ * at about 46% of it, left of where the reading frame shift alone puts the free space's edge, so the
+ * scene fits the airport's island (the widest subject framed beside them) to the room they leave.
+ */
+function readingEdge(stage: HTMLElement | null) {
+  const frame = stage?.getBoundingClientRect(),
+    panel = document.querySelector<HTMLElement>('.chapter .panel')?.getBoundingClientRect();
+  if (!frame || !panel || frame.width <= 0 || panel.width <= 0) return 1;
+  return Math.min(1, Math.max(0.3, (panel.left - frame.left) / frame.width));
+}
+
 export default function Home() {
   const mount = useRef<HTMLDivElement>(null),
     api = useRef<CityAPI | null>(null),
@@ -672,7 +685,7 @@ export default function Home() {
       engine.setFrameShift(wide ? -0.06 : 0);
       return;
     }
-    engine.setFrameShift(wide ? 0.21 : 0);
+    engine.setFrameShift(wide ? 0.21 : 0, 0, wide ? readingEdge(mount.current) : 1);
     const destination = sceneTarget(focusContent);
     if (destination.district)
       engine.focusBuildings(selectionForContent(focusContent));
@@ -680,6 +693,22 @@ export default function Home() {
     else if (destination.building) engine.select(destination.building);
     else engine.reset();
   }, [settledShot, mode, ready, wide, content]);
+  // A window resized while a chapter is framed beside its panel (not the opening view, nor the
+  // footer's whole island) tells the scene where the panel now starts: across 1180 px it jumps
+  // from 52% of the width to 46%.
+  useEffect(() => {
+    const engine = api.current;
+    if (mode !== 'reading' || !wide || !engine || settledShot === READ_END || settledShot === 'overview') return;
+    let edge = readingEdge(mount.current);
+    const refit = () => {
+      const next = readingEdge(mount.current);
+      if (Math.abs(next - edge) < 0.002) return;
+      edge = next;
+      engine.setFrameShift(0.21, 0, edge);
+    };
+    window.addEventListener('resize', refit);
+    return () => window.removeEventListener('resize', refit);
+  }, [settledShot, mode, ready, wide]);
   // The whole island is fitted to the part of the stage the footer leaves in view, so a window
   // made shorter (or a footer that grows) while it shows fits it again; the shot stays.
   useEffect(() => {

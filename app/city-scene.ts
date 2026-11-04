@@ -84,9 +84,11 @@ export type CityAPI = {
   /**
    * Keep the subject left of centre (fraction of the viewport width) so a reading panel can
    * sit beside it, and `down` (fraction of the viewport height) below the middle, for a
-   * frame whose top part is hidden.
+   * frame whose top part is hidden. `edge` is where that panel really starts (a share of the
+   * width from the left; 1, the default, for none): the airport's island, the widest subject
+   * framed beside the reading panel, is fitted into the space it leaves.
    */
-  setFrameShift: (fraction: number, down?: number) => void;
+  setFrameShift: (fraction: number, down?: number, edge?: number) => void;
   /** Ring one place from the page (hovering a person card or a Directory row, for example). */
   setAccent: (id: HoverTarget) => void;
   /**
@@ -748,6 +750,7 @@ export async function createCity(
     driftAngle = 0,
     frameShift = 0,
     frameDrop = 0,
+    panelEdge = 1,
     lastInteraction = -1e9,
     lastHover: HoverTarget = null,
     accentId: HoverTarget = null,
@@ -865,6 +868,8 @@ export async function createCity(
    * tower's mast. Fitted like a group (fitGroup) between 0.95 and 2.6: the one-building rule's 1.3
    * floor would push it under the reading panel on most screens.
    */
+  /** How far (px) a group fitted beside a panel that starts at its own edge keeps from it, and from the frame's left edge. */
+  const PANEL_CLEAR = 24;
   const AIRPORT_FIT = new T.Box3(
     new T.Vector3(plan.AIRPORT.x - plan.AIRPORT.hw - plan.AIRPORT.armour, 0, plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour),
     new T.Vector3(plan.AIRPORT.x + plan.AIRPORT.hw + plan.AIRPORT.armour, 7, -35),
@@ -964,7 +969,7 @@ export async function createCity(
       return;
     }
     if (focusedIds.length === 1 && focusedIds[0] === 'airport') {
-      fitGroup(AIRPORT_FIT, 0.95, 2.6);
+      fitGroup(AIRPORT_FIT, 0.95, 2.6, panelEdge);
       return;
     }
     const roots = focusedIds
@@ -1000,9 +1005,15 @@ export async function createCity(
    * the frame a side panel, a phone's sheet or bars, the masthead and the controls leave free. A
    * row seen along its length takes less of the frame than the one-building rule (which is blind
    * to the bearing) allows for, and on a phone that crowded the roofs' name tags together. The zoom
-   * stays within `near` and `far` (the airport's island takes 0.95 to 2.6).
+   * stays within `near` and `far` (the airport's island takes 0.95 to 2.6). Beside a panel that
+   * starts at `edge` (a share of the width), left of where the frame shift puts the free space's
+   * edge, the group is fitted into the space the panel really leaves, PANEL_CLEAR px clear of it
+   * and of the frame's left edge, the view's centre moved just as far as it must be: the reading
+   * page's panel is half the window wide from 1180 px down and starts at about 46% of it (45% with
+   * a scrollbar), where the shift's 0.21 assumes 52%, and at 1024 x 768 it covered the airport's
+   * island's east end by 30 px.
    */
-  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4) {
+  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4, edge = 1) {
     const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
       right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
       up = new T.Vector3().crossVectors(back, right),
@@ -1022,7 +1033,8 @@ export async function createCity(
     }
     // Beside a side panel the group keeps a margin from it: the reading page's panel starts a
     // little left of where the frame shift alone would put the free space's edge.
-    const freeWidth = Math.max(1, Math.max(0.3, 1 - 2.5 * Math.abs(frameShift)) * width - 48),
+    const room = edge * width - 2 * PANEL_CLEAR,
+      freeWidth = Math.max(1, Math.min(Math.max(0.3, 1 - 2.5 * Math.abs(frameShift)) * width - 48, room)),
       shownHeight = Math.max(0.3, 1 - 2 * Math.abs(frameDrop)) * height,
       freeHeight = Math.max(shownHeight * 0.6, shownHeight - 152);
     targetZoom = T.MathUtils.clamp(
@@ -1040,6 +1052,16 @@ export async function createCity(
       .addScaledVector(up, (minY + maxY) / 2);
     target.addScaledVector(back, -target.y / back.y);
     offsetTarget();
+    // A panel that comes nearer than the shift allows for: the group's middle moves left until its
+    // right edge is PANEL_CLEAR px from the panel (in the middle of the room, if it is wider), the
+    // view's centre right with it. The frame shift's own offset (shiftApplied) is untouched.
+    if (edge < 1) {
+      const perUnit = (width * targetZoom) / (camera.right - camera.left),
+        half = ((maxX - minX) * perUnit) / 2,
+        middle = width / 2 - frameShift * width,
+        wanted = Math.min(middle, 2 * half <= room ? edge * width - PANEL_CLEAR - half : (edge * width) / 2);
+      target.addScaledVector(right, (middle - wanted) / perUnit);
+    }
     tween = true;
   }
   function focusBuildings(ids: BuildingId[]) {
@@ -1754,9 +1776,10 @@ export async function createCity(
       inspectionAutoFit = true;
       if (overviewFit) fitOverview();
     },
-    setFrameShift(fraction, down = 0) {
+    setFrameShift(fraction, down = 0, edge = 1) {
       frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
       frameDrop = T.MathUtils.clamp(down, -0.35, 0.35);
+      panelEdge = T.MathUtils.clamp(edge, 0.3, 1);
       // A framing the camera chose itself (the overview, a pick) is fitted again.
       if (autoFocus) fitFocused();
     },

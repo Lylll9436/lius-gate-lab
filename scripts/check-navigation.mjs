@@ -657,12 +657,12 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
   const collect = (node) => {
     if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup'].includes(node.name?.text))
       pieces.push(node.getText(syntax));
-    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT'].includes(d.name.getText(syntax))))
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 12, 'The pan and fit check must find every piece it runs.');
+  assert.equal(pieces.length, 13, 'The pan and fit check must find every piece it runs.');
   assert(/controls\.minZoom = 0\.45;/.test(source), 'The town\'s widest zoom is no longer 0.45.');
   const view = {
     T,
@@ -947,6 +947,61 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     const subject = view.target.clone().sub(view.shiftApplied);
     assert(inside(subject.x, subject.z) && region(subject.x, subject.z).radius === scene.PAN.deck.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9), `The airport's chapter frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pan region.`);
   }
+  // Beside the reading panel, where it really starts (page.tsx's readingEdge: from 1180 px down the
+  // panel is half the window wide and starts at about 46% of it, 45% with a scrollbar, where the
+  // frame shift's 0.21 assumes 52%), the island's armour keeps 24 px clear of the panel through the
+  // idle drift's +-0.16 and stays whole in the frame: at 1024 x 768 its east end ran 30 px under the
+  // panel. Where the shift's own room was enough (1440 and up) nothing moves more than the margin
+  // needs, and the zoom keeps its fit.
+  {
+    const css = await fs.readFile(path.join(root, 'app/globals.css'), 'utf8');
+    assert(
+      /\n\.chapter \{[^}]*padding: calc\(var\(--masthead\) \+ 28px\) clamp\(16px, 4vw, 56px\) 12vh;/.test(css) &&
+        /\n\.panel \{[^}]*width: min\(100%, clamp\(400px, 44vw, 640px\)\);/.test(css) &&
+        /@media \(max-width: 1180px\) \{\s*\.panel \{\s*width: min\(100%, clamp\(380px, 50vw, 600px\)\);/.test(css),
+      'The reading panel\'s width or the chapter\'s padding changed: the panel check below works them out.',
+    );
+    // The panel's left edge (px from the stage's left) in a window vw wide with a scrollbar of `bar`.
+    const clampPx = (v, lo, hi) => Math.min(hi, Math.max(lo, v)),
+      panelLeft = (vw, bar) => {
+        const doc = vw - bar,
+          pad = clampPx(0.04 * vw, 16, 56),
+          wide = vw <= 1180 ? clampPx(0.5 * vw, 380, 600) : clampPx(0.44 * vw, 400, 640);
+        return doc - pad - Math.min(doc - 2 * pad, wide);
+      },
+      armour = plan.airportOutline(plan.AIRPORT.armour, 0.5).map((p) => new T.Vector3(p.x, 0, p.z)),
+      bearing = plan.chapterBearings.airport;
+    let worst = Infinity;
+    for (const [vw, vh] of [[961, 700], [1024, 768], [1080, 800], [1100, 820], [1180, 820], [1181, 820], [1280, 800], [1366, 768], [1440, 900], [1920, 1080]])
+      for (const bar of [0, 15]) {
+        const w = vw - bar,
+          left = panelLeft(vw, bar),
+          edge = left / w;
+        frame(w, vh, 0.21, bearing);
+        scene.fitGroup(scene.AIRPORT_FIT, 0.95, 2.6);
+        const plain = { zoom: view.targetZoom, at: view.target.clone() };
+        frame(w, vh, 0.21, bearing);
+        scene.fitGroup(scene.AIRPORT_FIT, 0.95, 2.6, edge);
+        const perUnit = (w * view.targetZoom) / (view.camera.right - view.camera.left);
+        for (const drift of [-0.16, -0.08, 0, 0.08, 0.16]) {
+          const right = new T.Vector3(Math.cos(bearing + drift), 0, -Math.sin(bearing + drift)),
+            xs = armour.map((p) => w / 2 + p.clone().sub(view.target).dot(right) * perUnit),
+            east = Math.max(...xs),
+            west = Math.min(...xs);
+          worst = Math.min(worst, left - east);
+          assert(left - east >= 24 && west >= 0, `Beside the reading panel at ${vw} x ${vh}${bar ? ' with a scrollbar' : ''} (drifted ${drift}), the airport's island spans ${west.toFixed(0)} to ${east.toFixed(0)} px, against the panel at ${left.toFixed(0)}.`);
+        }
+        // Moved only as far as the panel asks: never right, never closer than the margin needs.
+        const moved = plain.at.clone().sub(view.target).dot(new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing))) * perUnit;
+        assert(moved <= 1e-6, `Beside the reading panel at ${vw} x ${vh} the airport's island moves right.`);
+        if (vw >= 1440) assert(Math.abs(view.targetZoom - plain.zoom) < 1e-9 && -moved <= 20, `At ${vw} x ${vh} the panel's edge moves the airport ${(-moved).toFixed(0)} px or changes its zoom.`);
+        if (vw === 1024 && !bar) assert(-moved > 40 && view.targetZoom >= 0.95, `At 1024 x 768 the airport's island moves only ${(-moved).toFixed(0)} px off the panel (zoom ${view.targetZoom.toFixed(3)}).`);
+        // Its subject stays in the airport's own pan region, so the glide's end is never pulled back.
+        const subject = view.target.clone().sub(view.shiftApplied);
+        assert(region(subject.x, subject.z).radius === scene.PAN.deck.reach && inside(subject.x, subject.z), `Beside the reading panel at ${vw} x ${vh} the airport's framing leaves its pan region.`);
+      }
+    assert(worst >= 24 && worst < 80, `The armour's nearest approach to the reading panel is ${worst.toFixed(0)} px.`);
+  }
   // A glide between the People side and the airport (or the residence and the airport, the tour's
   // stops 6 and 7) runs straight across open water, out of the pan regions. Cut short by a touch on
   // a narrow screen (no panel offset there to glide it on), it hands the visitor the view where it
@@ -1114,10 +1169,24 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     ts.forEachChild(node, findFit);
   })(syntax);
   assert(
-    /focusedIds\.length === 1 && focusedIds\[0\] === 'airport'\)\s*\{\s*fitGroup\(AIRPORT_FIT, 0\.95, 2\.6\);/.test(fitFocusedSource) &&
+    /focusedIds\.length === 1 && focusedIds\[0\] === 'airport'\)\s*\{\s*fitGroup\(AIRPORT_FIT, 0\.95, 2\.6, panelEdge\);/.test(fitFocusedSource) &&
+      (fitFocusedSource.match(/panelEdge/g) ?? []).length === 1 &&
       /focusedIds = \[id\];[\s\S]*fitFocused\(\);/.test(selectSource),
-    'Selecting the airport no longer fits its island and causeway.',
+    'Selecting the airport no longer fits its island and causeway (beside the panel where it really starts, and nothing else by it).',
   );
+  // The reading page tells the scene where its panel really starts, measured, as it frames a
+  // chapter beside it and again when the window is resized there; City mode's file passes none.
+  {
+    const page = await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8');
+    assert(
+      /panel = document\.querySelector<HTMLElement>\('\.chapter \.panel'\)\?\.getBoundingClientRect\(\);/.test(page) &&
+        /engine\.setFrameShift\(wide \? 0\.21 : 0, 0, wide \? readingEdge\(mount\.current\) : 1\);/.test(page) &&
+        /const next = readingEdge\(mount\.current\);[\s\S]{0,120}engine\.setFrameShift\(0\.21, 0, edge\);/.test(page) &&
+        /api\.current\?\.setFrameShift\(at\.shift, at\.drop\);/.test(page),
+      'The reading page no longer passes its panel\'s measured edge to the scene (or City mode now does).',
+    );
+    assert(/panelEdge = T\.MathUtils\.clamp\(edge, 0\.3, 1\);/.test(source), 'The scene no longer keeps the panel\'s edge.');
+  }
 }
 // A sun shadow map thrown away (Inspect's sharper map, the town's again, a quality step) or a
 // frustum moved elsewhere is drawn again before the next frame uses it, even paused: an empty
