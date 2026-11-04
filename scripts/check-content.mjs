@@ -1045,14 +1045,15 @@ async function siteOver(name, testCatalog) {
   }
   // A page left open past midnight UTC into someone's departure day goes on by the day it was
   // loaded on (pageDay) until it is reloaded, so all it shows agrees: the People chapter and the
-  // homes, read once, and the name tags, what a home opens, the People framing and the tour, read
-  // on each render or click. The leaver here sets off two days from now, ahead of the 2099 leaver
-  // in Qin Li's home by order, and the clock is then moved on two days.
+  // homes, read once, and the name tags, what a home opens, the People framing, the tour, the
+  // leaver's chapter, camera and file and the departures board, read on each render or click. The
+  // leaver here sets off two days from now, ahead of the 2099 leaver in Qin Li's home by order, and
+  // the clock is then moved on two days.
   {
     const RealDate = Date,
       ahead = 2 * 86_400_000,
       setOff = new RealDate(RealDate.now() + ahead).toISOString().slice(0, 10);
-    const { nav: mnav, records: mrec, data: mdata } = await siteOver(
+    const { nav: mnav, records: mrec, data: mdata, content: mcontent } = await siteOver(
       'midnight',
       upsertRecord(leaving, 'people', {
         ...tester('test-soon', 'Sol Soon', '测试庚', 22.5, 'qin-li'),
@@ -1068,6 +1069,11 @@ async function siteOver(name, testCatalog) {
       mnav.contentForBuilding('qin-li'),
       mnav.selectionForContent('people'),
       mnav.tourOn(),
+      mrec.hasDeparted(mrec.peopleRecords.find((p) => p.id === 'test-soon')),
+      mrec.alumniRecords().map((p) => p.id),
+      [mnav.chapterFor('person:test-soon'), mnav.facingChapter('person:test-soon'), mnav.placeFor('person:test-soon')],
+      renderToStaticMarkup(React.createElement(mcontent.LabContent, { id: 'person:test-soon', locale: 'en', onOpen() {} })),
+      renderToStaticMarkup(React.createElement(mcontent.DeparturesBoard, { locale: 'en', onOpen() {}, reading: true })),
     ];
     const loaded = view();
     assert.equal(loaded[5], 'person:test-soon', 'Until the day they set off, the home is theirs.');
