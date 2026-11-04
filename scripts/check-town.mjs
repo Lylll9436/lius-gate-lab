@@ -2920,33 +2920,53 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     }
   }
   assert(Object.values(worst).every(Number.isFinite), `The plane's clearances were not all measured: ${JSON.stringify(worst)}.`);
-  // Never over the main island, and nowhere near the balloon, the gulls, the beam or the boat.
+  // Never over the main island, and nowhere near the balloon, the gulls, the beam or the boat. The
+  // plane keeps a clock of its own (city-scene's planeClock starts its loop again after every Pause,
+  // while town time stands still), so it is held clear of everywhere the others go at any moment of
+  // theirs, not only at the moment of its own loop that matches: its whole loop against each of
+  // theirs. The balloon also turns with the idle drift about the view's centre, on the island or
+  // out at the airport.
   const birds = createGulls(),
-    [rockX, rockZ] = plan.lighthouseRock;
-  let island = Infinity;
-  const others = { balloon: Infinity, gulls: Infinity, beam: Infinity, boat: Infinity };
-  for (let t = 0; t < 900; t += 0.25) {
+    [rockX, rockZ] = plan.lighthouseRock,
+    flown = [];
+  for (let t = 0; t < plan.PLANE_LOOP; t += 0.25) {
     const p = plan.planePose(t);
-    if (!p.visible) continue;
+    if (p.visible) flown.push(p);
+  }
+  let island = Infinity;
+  for (const p of flown)
     for (const [dx, dz] of [[0, 0], [2, 0], [-2, 0], [0, 2.3], [0, -2.3]]) {
       const x = p.x + dx,
         z = p.z + dz;
       island = Math.min(island, plan.distanceToPolyline([x, z], plan.islandOutline, true) * (plan.onIsland(x, z) ? -1 : 1));
     }
+  const others = { balloon: Infinity, gulls: Infinity, beam: Infinity, boat: Infinity },
+    nearest = (x, y, z) => {
+      let best = Infinity;
+      for (const p of flown) best = Math.min(best, Math.hypot(p.x - x, p.y - y, p.z - z));
+      return best;
+    };
+  for (let t = 0; t < 900; t += 0.25) {
     balloon.update(t, 0);
-    for (const drift of [-0.16, 0, 0.16]) {
-      const b = balloon.object.position,
-        c = Math.cos(drift),
-        s = Math.sin(drift);
-      others.balloon = Math.min(others.balloon, Math.hypot(p.x - (b.x * c + b.z * s), p.y - (b.y + 2.5), p.z - (-b.x * s + b.z * c)));
-    }
+    const b = balloon.object.position;
+    for (const [cx, cz] of [[0, 0], [plan.AIRPORT.x, plan.AIRPORT.z]])
+      for (const drift of [-0.16, 0, 0.16]) {
+        const c = Math.cos(drift),
+          s = Math.sin(drift),
+          x = b.x - cx,
+          z = b.z - cz;
+        others.balloon = Math.min(others.balloon, nearest(cx + x * c + z * s, b.y + 2.5, cz - x * s + z * c));
+      }
     birds.update(t, 1);
-    for (const g of birds.object.children) others.gulls = Math.min(others.gulls, Math.hypot(p.x - g.position.x, p.y - g.position.y, p.z - g.position.z));
+    for (const g of birds.object.children) others.gulls = Math.min(others.gulls, nearest(g.position.x, g.position.y, g.position.z));
     beam.update(t, 1);
-    const a = beam.object.rotation.y;
-    others.beam = Math.min(others.beam, plan.distanceToSegment([p.x, p.z], [rockX, rockZ], [rockX + Math.cos(a) * 18, rockZ - Math.sin(a) * 18]) - 3.6);
-    const boat = plan.boatPose(t);
-    others.boat = Math.min(others.boat, Math.hypot(p.x - boat.x, p.z - boat.z));
+    const a = beam.object.rotation.y,
+      tip = [rockX + Math.cos(a) * 18, rockZ - Math.sin(a) * 18],
+      boat = plan.boatPose(t);
+    for (const p of flown) {
+      others.beam = Math.min(others.beam, plan.distanceToSegment([p.x, p.z], [rockX, rockZ], tip) - 3.6);
+      others.boat = Math.min(others.boat, Math.hypot(p.x - boat.x, p.z - boat.z));
+    }
   }
   balloon.update(0, 0);
   beam.update(3, 0);
