@@ -1121,15 +1121,22 @@ assert.deepEqual(chapterMeta[2], {
 });
 assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.');
 // The masthead holds a chip for each chapter. Seven were measured in a browser at 961, 980, 1000,
-// 1024 and 1040 px (and just past, at 1041) with the chips' padding trimmed from 961 to 1040 px:
-// the narrowest gaps, beside City mode's wider "Reading view", are 29.6 px at 961 and 46.2 px at
-// 1041. An eighth chapter needs measuring again.
+// 1024 and 1040 px (and just past, at 1041) with the chips' padding trimmed up to 1040 px: the
+// narrowest gaps, beside City mode's wider "Reading view", are 29.6 px at 961 and 46.2 px at 1041.
+// The trim has no lower bound, so it meets the rule that hides the nav at 960 px with no gap
+// between them: a width between 960 and 961 px (page zoom, display scaling) showed the chips at
+// full padding. An eighth chapter needs measuring again.
 {
   const css = await fs.readFile(path.join(root, 'app/globals.css'), 'utf8');
   assert(
-    /@media \(min-width: 961px\) and \(max-width: 1040px\) \{\s*\.masthead-nav a \{\s*padding: 7px 10px;\s*\}\s*\}/.test(css) &&
+    /@media \(max-width: 1040px\) \{\s*\.masthead-nav a \{\s*padding: 7px 10px;\s*\}\s*\}/.test(css) &&
       /\.masthead-nav a \{\s*padding: 7px 13px;/.test(css),
-    'The masthead’s chips are no longer trimmed between 961 and 1040 px.',
+    'The masthead’s chips are no longer trimmed up to 1040 px.',
+  );
+  assert(
+    !/@media \(min-width: [\d.]+px\) and \(max-width: 1040px\)/.test(css) &&
+      /@media \(max-width: 960px\) \{\s*:root \{\s*--masthead: 58px;\s*\}\s*\.masthead-nav \{\s*display: none;\s*\}/.test(css),
+    'The chips’ trim and the rule that hides the nav at 960 px leave a gap between them.',
   );
   assert(chapterMeta.length <= 7, 'The masthead was measured with seven chapter chips: measure it again in a browser at 961-1040 px.');
 }
