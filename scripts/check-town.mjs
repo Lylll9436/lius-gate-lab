@@ -1728,6 +1728,33 @@ for (const [x, z] of [
       });
       assert(pilasters >= 4, `The hangar's west gable has ${pilasters} pilaster faces past its cornice.`);
     }
+    // Its ironwork (the doors' handles and the south door's knob) is chunky: every piece at least
+    // 0.07 across every way (thinner ones twinkle as the view moves).
+    {
+      const iron = [];
+      hangar.traverse((m) => m.isMesh && m.material.color.getHex() === hex(LOOK.iron) && iron.push(m));
+      const pieces = [];
+      for (const m of iron) {
+        const q = m.geometry.attributes.position,
+          key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+          parent = new Map(),
+          find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+        for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+        for (let i = 0; i + 2 < q.count; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
+        const boxes = new Map();
+        for (let i = 0; i < q.count; i++) {
+          const root = find(key(i));
+          if (!boxes.has(root)) boxes.set(root, new T.Box3());
+          boxes.get(root).expandByPoint(new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld));
+        }
+        pieces.push(...boxes.values());
+      }
+      assert(pieces.length === 3, `The hangar has ${pieces.length} pieces of ironwork, not its two handles and a knob.`);
+      for (const b of pieces) {
+        const size = b.getSize(new T.Vector3());
+        assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `A piece of the hangar's ironwork is ${size.toArray().map((n) => n.toFixed(3)).join(' x ')}.`);
+      }
+    }
     const pad = g.children.find((o) => {
       if (!o.isMesh || o.material.color.getHex() !== hex(LOOK.apron)) return false;
       const b = new T.Box3().setFromObject(o);

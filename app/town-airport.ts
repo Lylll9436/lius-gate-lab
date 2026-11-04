@@ -740,20 +740,21 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
         green.push(block(face - 0.01, face + 0.038, 0.02, archY(Math.abs(z) + 0.04) - 0.03, z - 0.04, z + 0.04));
       for (const y of [0.07, 0.56, 1.02, spring - 0.05]) green.push(block(face - 0.01, face + 0.03, y - 0.045, y + 0.045, -door.half, door.half));
       green.push({ geometry: prism(arcBand(door.arch - 0.09, door.arch - 0.01, springAngle + 0.01, Math.PI - springAngle - 0.01, 24), 0.03, 0.008, 0), matrix: placed(face, yc, 0, 0, Math.PI / 2, 0) });
-      for (const s of [-1, 1]) iron.push(block(face + 0.03, face + 0.06, 0.66, 0.86, s * 0.075 - 0.015, s * 0.075 + 0.015));
+      // The handles, chunky bars 0.07 square (thinner ones twinkle as the view moves).
+      for (const s of [-1, 1]) iron.push(block(face, face + 0.07, 0.62, 0.9, s * 0.095 - 0.035, s * 0.095 + 0.035));
     }
     // The south door, for people: a green leaf in a blonde frame under a lintel, on a stone step.
     {
       const { x, half: f } = side,
         z = wall;
-      green.push(block(x - f + 0.06, x + f - 0.06, 0.12, 0.78, z - 0.02, z + 0.03));
+      green.push(block(x - f + 0.07, x + f - 0.07, 0.12, 0.78, z - 0.02, z + 0.03));
       stone.push(
-        block(x - f, x - f + 0.06, 0.08, 0.8, z - 0.02, z + 0.07),
-        block(x + f - 0.06, x + f, 0.08, 0.8, z - 0.02, z + 0.07),
+        block(x - f, x - f + 0.07, 0.08, 0.8, z - 0.02, z + 0.07),
+        block(x + f - 0.07, x + f, 0.08, 0.8, z - 0.02, z + 0.07),
         block(x - f - 0.03, x + f + 0.03, 0.78, 0.88, z - 0.02, z + 0.09),
       );
       plinth.push(block(x - f - 0.02, x + f + 0.02, 0, 0.12, z - 0.02, z + 0.18));
-      iron.push(block(x + f - 0.13, x + f - 0.1, 0.42, 0.5, z + 0.03, z + 0.06));
+      iron.push(block(x + f - 0.17, x + f - 0.1, 0.42, 0.49, z + 0.03, z + 0.1));
     }
     merge(h, stone, L.dressing, 'stone', { tone: 0.05 });
     merge(h, plinth, palette.plinth, 'stone', { tone: 0.04 });
