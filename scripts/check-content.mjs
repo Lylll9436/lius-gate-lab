@@ -30,10 +30,12 @@ const text = (en) => ({ en, zh: '测试内容' });
 // Who is still at the Gate depends on the day: people leave on their departure's UTC day, the day
 // Gate's News counts by. Every helper that decides it takes that day, and these checks pass fixed
 // days, so they give the same answer whenever they run. The page decides by the visitor's UTC day
-// when it loads (pageDay); what it renders is checked against that day, read once here.
+// when it loads (pageDay); what it renders is checked against that day as the page's own module
+// read it (NOW, below, once the site is loaded), and each copy of the site compiled again over a
+// test catalogue against its own: read from the clock at the top of the run, a run that crossed
+// midnight UTC on someone's departure day compared the page's new day with the old one.
 const DAY = '2026-11-03',
-  TODAY = new Date(DAY + 'T12:00:00Z'),
-  NOW = new Date().toISOString().slice(0, 10);
+  TODAY = new Date(DAY + 'T12:00:00Z');
 const on = (day) => new Date(day + 'T12:00:00Z');
 /** The rule stated again, independently of the site's code: gone from their departure's day on. */
 const leftBy = (p, day) => !!p.departure && p.departure.date <= day;
@@ -355,6 +357,9 @@ const nav = await import(
 const records = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
 );
+// The page's day, as its module read it when it loaded: the moment it loaded, on the real clock.
+const NOW = records.utcDay(records.pageDay);
+assert(Math.abs(Date.now() - records.pageDay.getTime()) < 60_000, 'pageDay is not the moment the page loaded.');
 const { LabContent, NewsPreview, PeopleCards, DeparturesBoard } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
@@ -618,7 +623,7 @@ async function siteOver(name, testCatalog) {
   // two test visitors; a name written only in Latin letters keeps its first name on the Chinese tag.
   // The tags are checked on DAY, the rendered file on the visitor's day.
   const stayers = membersOf(catalog, DAY).filter((p) => p.buildingId === 'visiting-phd'),
-    stayersNow = membersOf(catalog, NOW).filter((p) => p.buildingId === 'visiting-phd');
+    stayersNow = membersOf(catalog, site.records.utcDay(site.records.pageDay)).filter((p) => p.buildingId === 'visiting-phd');
   for (const { locale, sep, tests } of [
     { locale: 'en', sep: ' · ', tests: ['Ada', 'Bea'] },
     { locale: 'zh', sep: '、', tests: ['测试甲', '测试乙'] },
@@ -828,7 +833,7 @@ async function siteOver(name, testCatalog) {
   );
   assert.deepEqual(
     [...chapter.matchAll(/id="read-([^"]+)"/g)].map((m) => m[1]),
-    membersOf(leaving, NOW).map(lrec.personContentId),
+    membersOf(leaving, lrec.utcDay(lrec.pageDay)).map(lrec.personContentId),
     'The People chapter lists the members, in order.',
   );
   assert(
@@ -842,7 +847,7 @@ async function siteOver(name, testCatalog) {
   );
   assert.equal(
     (residenceFile.match(/class="person-card"/g) || []).length,
-    membersOf(leaving, NOW).filter((p) => p.buildingId === 'visiting-phd').length,
+    membersOf(leaving, lrec.utcDay(lrec.pageDay)).filter((p) => p.buildingId === 'visiting-phd').length,
     'The residence lists who is staying.',
   );
   assert(!residenceFile.includes('Val Visitor'), 'The visitor who went home is not listed.');
