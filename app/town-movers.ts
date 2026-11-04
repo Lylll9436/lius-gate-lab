@@ -2,6 +2,7 @@ import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { SurfaceKind } from './city-materials';
+import * as plan from './town-plan';
 import { palette, type TownContext } from './town-shared';
 import type { Kit } from './town-kit';
 import { mouldedBlock, type Moulding } from './town-sculpt';
@@ -208,6 +209,180 @@ function placed(g: T.BufferGeometry, x: number, y: number, z: number, ry = 0, rx
   if (rx) g.rotateX(rx);
   if (ry) g.rotateY(ry);
   return g.translate(x, y, z);
+}
+
+/*
+ * The plane's shapes (plan.PLANE's units: +z to the nose, +x to port, y 0 the slabs it stands on).
+ */
+/** Where the nose starts to round (its station), where the tail cone starts to draw in, and the tail cone's end radius. */
+const PLANE_NOSE = 1.42,
+  PLANE_TAIL = -0.95,
+  PLANE_TAIL_END = 0.07;
+/**
+ * The fuselage at station z: its radius and the height of its axis. A constant section between
+ * the tail cone and the nose; the nose rounds over its last 0.78 to a blunt tip a little under the
+ * axis (the cockpit's brow sloping down to it); the tail cone draws in to PLANE_TAIL_END while its
+ * axis rises, so its top runs on almost level and its belly sweeps up.
+ */
+export function planeSection(z: number) {
+  const { length, radius: R, axis: A } = plan.PLANE,
+    tip = length / 2;
+  if (z > PLANE_NOSE) {
+    const t = Math.min(1, (z - PLANE_NOSE) / (tip - PLANE_NOSE));
+    return { r: R * Math.sqrt(Math.max(0, 1 - t * t)), y: A - 0.1 * t * t };
+  }
+  if (z < PLANE_TAIL) {
+    const t = Math.min(1, (PLANE_TAIL - z) / (PLANE_TAIL + tip)),
+      s = t * t * (3 - 2 * t);
+    return { r: R - (R - PLANE_TAIL_END) * s, y: A + 0.9 * (R - PLANE_TAIL_END) * s };
+  }
+  return { r: R, y: A };
+}
+/**
+ * The livery's green belly: its top edge at station z, as the sine of its angle up the side. Level
+ * along the cabin, a little under the axis; up the tail cone it sweeps toward the fin (the
+ * cheatline's flourish), leaving a cream strip along the top for the fin's orange.
+ */
+export function planeBelly(z: number) {
+  const t = T.MathUtils.clamp((-0.9 - z) / 1.3, 0, 1);
+  return -0.04 + 0.79 * t * t * (3 - 2 * t);
+}
+/** The cabin's window band (stations, and angles up the port side; mirrored to starboard) and the cockpit's glazing (stations; from the band's foot over the top). */
+export const PLANE_GLAZING = { cabin: [-0.85, 1.28], band: [0.21, 0.61], cockpit: [1.7, 1.93] };
+/** The navigation lights' steady emissive, the traffic signals' own: no strobe, no blink, no boost at night. */
+export const PLANE_LIGHT = 0.95;
+/** The skin's point at station z and angle a (0 to port, a quarter turn up), `out` proud of it, with the smooth skin's normal there. */
+function skinPoint(z: number, a: number, out = 0) {
+  const tip = plan.PLANE.length / 2,
+    lo = Math.max(-tip, z - 1e-4),
+    hi = Math.min(tip, z + 1e-4),
+    s0 = planeSection(lo),
+    s1 = planeSection(hi),
+    s = planeSection(z),
+    c = Math.cos(a),
+    sn = Math.sin(a),
+    // Out of the surface (r cos a, y + r sin a, z): (cos a, sin a, -(r' + y' sin a)).
+    n = new T.Vector3(c, sn, -(s1.r - s0.r + (s1.y - s0.y) * sn) / (hi - lo)).normalize();
+  return { p: new T.Vector3(s.r * c, s.y + s.r * sn, z).addScaledVector(n, out), n };
+}
+type SkinList = { p: number[]; n: number[] };
+/**
+ * Cells of the skin between stations zs (ascending) and the angles keys(z) gives at each (ascending,
+ * as many at every station), `out` proud of it: each cell goes to the list its middle's paint(z, a)
+ * names, or to none, as two triangles with the smooth skin's normals at their corners, so a
+ * colour's edge is crisp and leaves no seam in the shading.
+ */
+function skinCells(zs: number[], keys: (z: number) => number[], out: number, paint: (z: number, a: number) => string | null, lists: Map<string, SkinList>) {
+  const rows = zs.map((z) => keys(z).map((a) => skinPoint(z, a, out)));
+  for (let i = 0; i + 1 < zs.length; i++) {
+    const ka = keys(zs[i]),
+      kb = keys(zs[i + 1]);
+    for (let j = 0; j + 1 < ka.length; j++) {
+      const name = paint((zs[i] + zs[i + 1]) / 2, (ka[j] + ka[j + 1] + kb[j] + kb[j + 1]) / 4);
+      if (!name) continue;
+      let list = lists.get(name);
+      if (!list) lists.set(name, (list = { p: [], n: [] }));
+      const a = rows[i][j],
+        b = rows[i][j + 1],
+        c = rows[i + 1][j],
+        d = rows[i + 1][j + 1];
+      for (const v of [a, b, c, b, d, c]) {
+        list.p.push(v.p.x, v.p.y, v.p.z);
+        list.n.push(v.n.x, v.n.y, v.n.z);
+      }
+    }
+  }
+}
+/**
+ * A panel raised `rise` off the skin over stations z0..z1 and the angles `keys` (ascending), its top
+ * and its four low sides (each side flat-shaded, facing out of the panel), painted by paint.
+ */
+function skinPanel(z0: number, z1: number, keys: number[], rise: number, paint: (z: number, a: number) => string, lists: Map<string, SkinList>) {
+  const zm = (z0 + z1) / 2,
+    zs = [z0, zm, z1];
+  skinCells(zs, () => keys, rise, paint, lists);
+  const last = keys.length - 1,
+    loop: [number, number][] = [
+      ...keys.map((a): [number, number] => [z0, a]),
+      [zm, keys[last]],
+      ...keys.slice().reverse().map((a): [number, number] => [z1, a]),
+      [zm, keys[0]],
+    ],
+    centre = skinPoint(zm, (keys[0] + keys[last]) / 2).p,
+    face = new T.Vector3(),
+    mid = new T.Vector3();
+  loop.forEach(([za, aa], k) => {
+    const [zb, ab] = loop[(k + 1) % loop.length],
+      p0 = skinPoint(za, aa).p,
+      q0 = skinPoint(zb, ab).p,
+      p1 = skinPoint(za, aa, rise).p,
+      q1 = skinPoint(zb, ab, rise).p;
+    face.subVectors(q0, p0).cross(new T.Vector3().subVectors(p1, p0)).normalize();
+    const outward = face.dot(mid.addVectors(p0, q0).multiplyScalar(0.5).sub(centre)) > 0,
+      tri = outward ? [p0, q0, q1, p0, q1, p1] : [p0, q1, q0, p0, p1, q1];
+    if (!outward) face.negate();
+    const name = paint((za + zb) / 2, (aa + ab) / 2);
+    let list = lists.get(name);
+    if (!list) lists.set(name, (list = { p: [], n: [] }));
+    for (const v of tri) {
+      list.p.push(v.x, v.y, v.z);
+      list.n.push(face.x, face.y, face.z);
+    }
+  });
+}
+/** A NACA-style thickness along the chord (u 0 at the leading edge, 1 at the trailing): 1 at its thickest (30%), none at the trailing edge. */
+const foilHalf = (u: number) => (0.2969 * Math.sqrt(u) - 0.126 * u - 0.3516 * u * u + 0.2843 * u ** 3 - 0.1036 * u ** 4) / 0.1;
+const FOIL_U = [0, 0.03, 0.09, 0.2, 0.34, 0.52, 0.74, 1];
+type FoilStation = { at: number; le: number; chord: number; mid: number; thick: number };
+/**
+ * A foil (a wing, the tailplane or the fin) lofted through stations along its span: each its
+ * place along the span, its leading edge's station, its chord, its middle and its thickness, the
+ * upper side taking `upper` of it. place(at, z, across) puts a point of it in the plane's space.
+ * Smooth skinned round its leading edge; its trailing edge a crisp edge (its two sides end on
+ * points of their own: one shared point there turned both sides' shading toward the ground, a
+ * dark line along every trailing edge); its ends closed flat; wound to face out however placed.
+ */
+function foil(stations: FoilStation[], place: (at: number, z: number, across: number) => T.Vector3, upper = 0.55) {
+  const ring = (s: FoilStation) => [
+    ...FOIL_U.slice().reverse().map((u) => place(s.at, s.le - u * s.chord, s.mid + upper * s.thick * foilHalf(u))),
+    ...FOIL_U.slice(1).map((u) => place(s.at, s.le - u * s.chord, s.mid - (1 - upper) * s.thick * foilHalf(u))),
+  ];
+  const rings = stations.map(ring),
+    m = rings[0].length,
+    pos: number[] = [],
+    index: number[] = [],
+    all = rings.flat(),
+    middle = all.reduce((s, v) => s.add(v), new T.Vector3()).multiplyScalar(1 / all.length);
+  all.forEach((v) => pos.push(v.x, v.y, v.z));
+  // The skin, wound so that a face on the thickest part of the upper side faces away from its section's middle.
+  const sides: number[] = [];
+  for (let i = 0; i + 1 < rings.length; i++)
+    for (let k = 0; k + 1 < m; k++) {
+      const a = i * m + k,
+        b = a + 1,
+        c = a + m,
+        d = b + m;
+      sides.push(a, b, c, b, d, c);
+    }
+  const probe = FOIL_U.length - 1 - 4, // the upper side's point at u 0.34
+    section = rings[0].reduce((s, v) => s.add(v), new T.Vector3()).multiplyScalar(1 / m),
+    normal = new T.Vector3().subVectors(rings[0][probe + 1], rings[0][probe]).cross(new T.Vector3().subVectors(rings[1][probe], rings[0][probe]));
+  if (normal.dot(new T.Vector3().subVectors(rings[0][probe], section)) < 0) for (let t = 0; t < sides.length; t += 3) [sides[t + 1], sides[t + 2]] = [sides[t + 2], sides[t + 1]];
+  index.push(...sides);
+  // Flat end caps, each a fan round its own copy of its end ring, facing away from the foil's middle.
+  for (const r of [rings[0], rings[rings.length - 1]]) {
+    const base = pos.length / 3,
+      centre = r.reduce((s, v) => s.add(v), new T.Vector3()).multiplyScalar(1 / m),
+      out = new T.Vector3().subVectors(r[1], centre).cross(new T.Vector3().subVectors(r[2], centre)).dot(new T.Vector3().subVectors(centre, middle)) > 0;
+    r.forEach((v) => pos.push(v.x, v.y, v.z));
+    pos.push(centre.x, centre.y, centre.z);
+    for (let k = 0; k < m; k++) index.push(base + m, out ? base + k : base + ((k + 1) % m), out ? base + ((k + 1) % m) : base + k);
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
 }
 
 /* ------------------------------------------------------------------ */
@@ -703,6 +878,154 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     return boat;
   }
   /**
+   * The plane: a toy regional twin-jet in the tram's livery (plan.PLANE's measures and units), with
+   * no lettering, registration or logo. A smooth fuselage (planeSection): cream, its belly green
+   * (planeBelly) up to a little under the axis and sweeping up the tail cone toward the fin; a band
+   * of cabin windows along both sides and the cockpit's glazing wrapped round the nose over the band's
+   * foot, all one 'vehicle' glass (lit all night); a forward door either side, raised a little off
+   * the skin with a small light at the windows' height (the port one where the jet bridge docks).
+   * Low swept wings with a little dihedral and the tailplane in cream, the swept fin in orange; two
+   * nacelles under the wings (green, a cream intake lip, dark fan faces, no propellers) on cream
+   * pylons; chunky fixed gear (a nose leg with twin wheels, a main leg under each wing root with two
+   * wheels), every part at least 0.08 across, so it all casts and nothing thin crawls. Steady
+   * navigation lights, red to port and green to starboard at the wingtips and white at the tail:
+   * small lenses lit by their own emissive (as the traffic signals' are), out of the lamps' night
+   * loop, kept apart from the batch (`plane-lights`). Parts of a colour merge before batching, so
+   * it batches as two meshes (its enamel and its glass) besides the three lenses.
+   */
+  function buildPlane() {
+    const plane = new T.Group();
+    plane.name = 'plane';
+    const P = plan.PLANE,
+      tip = P.length / 2,
+      cream = palette.tramCream,
+      green = palette.tram,
+      orange = palette.tramOrange,
+      steel = '#a6aaa5',
+      G = PLANE_GLAZING,
+      skins = new Map<string, SkinList>(),
+      parts = new Map<string, T.BufferGeometry[]>(),
+      add = (colour: string, ...list: T.BufferGeometry[]) => {
+        const known = parts.get(colour);
+        if (known) known.push(...list);
+        else parts.set(colour, list);
+      };
+    // The fuselage's skin: stations closer where the nose and the tail cone curve, and on every
+    // edge of the glazing; round each station the belly's edge, the band's edges and the top, so
+    // each colour's edge falls on cells' edges.
+    const nose = Array.from({ length: 12 }, (_, k) => PLANE_NOSE + (tip - PLANE_NOSE) * (1 - (1 - (k + 1) / 12) ** 1.6)).filter((z) => G.cockpit.every((c) => Math.abs(z - c) > 0.015)),
+      zs = [...Array.from({ length: 12 }, (_, k) => -tip + (k * (PLANE_TAIL + tip)) / 12), PLANE_TAIL, G.cabin[0], -0.3, 0.3, 0.8, G.cabin[1], PLANE_NOSE, ...nose, ...G.cockpit].sort((a, b) => a - b),
+      steps = (a: number, b: number, n: number) => Array.from({ length: n }, (_, k) => a + ((b - a) * k) / n),
+      keys = (z: number) => {
+        const belly = Math.asin(planeBelly(z)),
+          b0 = Math.max(G.band[0], belly + 0.05),
+          b1 = Math.max(G.band[1], b0 + 0.05),
+          port = [...steps(-Math.PI / 2, belly, 5), ...steps(belly, b0, 2), ...steps(b0, b1, 2), ...steps(b1, Math.PI / 2, 4)];
+        return [...port, Math.PI / 2, ...port.slice().reverse().map((a) => Math.PI - a)];
+      },
+      glazed = (z: number, a: number) => {
+        const s = Math.sin(a);
+        return (z > G.cabin[0] && z < G.cabin[1] && s > Math.sin(G.band[0]) && s < Math.sin(G.band[1])) || (z > G.cockpit[0] && z < G.cockpit[1] && s > Math.sin(G.band[0]));
+      },
+      livery = (z: number, a: number) => (Math.sin(a) < planeBelly(z) ? green : cream);
+    skinCells(zs, keys, 0, (z, a) => (glazed(z, a) ? 'glass' : livery(z, a)), skins);
+    // The tail cone's end, closed (the white light sits on it).
+    {
+      const end = planeSection(-tip),
+        ring = keys(-tip),
+        list = skins.get(green)!;
+      for (let j = 0; j + 1 < ring.length; j++)
+        for (const a of [ring[j + 1], ring[j], null]) {
+          const [x, y] = a === null ? [0, end.y] : [end.r * Math.cos(a), end.y + end.r * Math.sin(a)];
+          list.p.push(x, y, -tip);
+          list.n.push(0, 0, -1);
+        }
+    }
+    // The forward doors, either side, raised 0.012 off the skin in the livery's colours, each with a
+    // small light at the windows' height; the port one is where the jet bridge's bellows meet it.
+    for (const side of [1, -1]) {
+      const turn = (a: number) => (side > 0 ? a : Math.PI - a),
+        sorted = (list: number[]) => list.map(turn).sort((a, b) => a - b),
+        belly = Math.asin(planeBelly(P.door));
+      skinPanel(P.door - 0.11, P.door + 0.11, sorted([-0.66, (belly - 0.66) / 2, belly, G.band[0], 0.47, 0.73]), 0.012, livery, skins);
+      skinCells([P.door - 0.05, P.door + 0.05], () => sorted([0.26, 0.56]), 0.015, () => 'glass', skins);
+    }
+    const glass: T.BufferGeometry[] = [];
+    for (const [name, list] of skins) {
+      const g = new T.BufferGeometry();
+      g.setAttribute('position', new T.Float32BufferAttribute(list.p, 3));
+      g.setAttribute('normal', new T.Float32BufferAttribute(list.n, 3));
+      if (name === 'glass') glass.push(g);
+      else add(name, g);
+    }
+    // The wings: one low swept foil from tip to tip through the fuselage's belly, with a little
+    // dihedral; the tailplane likewise through the tail cone; the fin up from inside its top.
+    const across = (at: number, z: number, y: number) => new T.Vector3(at, y, z),
+      wing = (x: number): FoilStation => {
+        const s = Math.abs(x) / (P.span / 2);
+        return { at: x, le: 0.35 - 0.77 * s, chord: 1.1 - 0.68 * s, mid: 0.38 + 0.16 * s, thick: 0.13 - 0.06 * s };
+      },
+      tailY = planeSection(-1.8).y,
+      tailplane = (x: number): FoilStation => {
+        const s = Math.abs(x) / 0.8;
+        return { at: x, le: -1.5 - 0.35 * s, chord: 0.55 - 0.25 * s, mid: tailY + 0.06 * s, thick: 0.085 - 0.015 * s };
+      },
+      root = 0.86,
+      fin = (y: number): FoilStation => {
+        const s = (y - root) / (P.fin - root);
+        return { at: y, le: -1.1 - 0.72 * s, chord: 1.05 - 0.67 * s, mid: 0, thick: 0.11 - 0.04 * s };
+      };
+    add(cream, foil([wing(-P.span / 2), wing(0), wing(P.span / 2)], across));
+    add(cream, foil([tailplane(-0.8), tailplane(0), tailplane(0.8)], across));
+    add(orange, foil([fin(root), fin(P.fin)], (at, z, x) => new T.Vector3(x, at, z), 0.5));
+    // The engines, under the wings: a nacelle turned about its axis (the exhaust's plug and nozzle
+    // dark, the cowl green, the intake's lip cream, curling in to the dark fan face and its
+    // spinner), on a cream pylon.
+    const turned = (points: number[][]) => new T.LatheGeometry(points.map(([r, h]) => new T.Vector2(r, h)), 16).rotateX(Math.PI / 2);
+    for (const s of [-1, 1]) {
+      const at = (g: T.BufferGeometry) => g.translate(s * 0.95, 0.226, 0.05);
+      add(UNDERGEAR, at(turned([[0.0005, -0.4], [0.045, -0.36], [0.075, -0.3], [0.1, -0.29], [0.118, -0.3]])));
+      add(green, at(turned([[0.118, -0.3], [0.136, -0.2], [0.152, 0.0], [0.155, 0.18], [0.148, 0.32], [0.14, 0.375]])));
+      add(cream, at(turned([[0.14, 0.375], [0.125, 0.41], [0.108, 0.395], [0.102, 0.36], [0.1, 0.3]])));
+      add(UNDERGEAR, at(turned([[0.1, 0.3], [0.035, 0.3], [0.02, 0.325], [0.0005, 0.34]])));
+      add(cream, new RoundedBoxGeometry(0.075, 0.1, 0.36, 1, 0.03).translate(s * 0.95, 0.405, -0.1));
+    }
+    // The gear: a nose leg with twin wheels, and a main leg under each wing root with two wheels on
+    // its axle, the tyres dark with pale hubs, all standing on y 0.
+    const wheel = (x: number, r: number, w: number, z: number) => {
+      add(UNDERGEAR, new T.CylinderGeometry(r, r, w, 16).rotateZ(Math.PI / 2).translate(x, r, z));
+      add(steel, new T.CylinderGeometry(r * 0.48, r * 0.48, w + 0.008, 12).rotateZ(Math.PI / 2).translate(x, r, z));
+    };
+    for (const s of [-1, 1]) {
+      const x = (s * P.track) / 2;
+      add(steel, new T.CylinderGeometry(0.045, 0.045, 0.3, 10).translate(x, 0.26, P.main));
+      for (const w of [-1, 1]) wheel(x + w * 0.085, 0.11, 0.075, P.main);
+    }
+    add(steel, new T.CylinderGeometry(0.04, 0.04, 0.27, 10).translate(0, 0.225, P.nose));
+    for (const w of [-1, 1]) wheel(w * 0.075, 0.085, 0.06, P.nose);
+    for (const [colour, list] of parts) part(plane, mergeParts(list), colour, 'enamel');
+    part(plane, mergeParts(glass), palette.glass, 'glass');
+    // The navigation lights: steady lenses lit by their own emissive, kept apart from the batch.
+    const lights = new T.Group();
+    lights.name = 'plane-lights';
+    lights.userData.keepSeparate = true;
+    plane.add(lights);
+    const tipAt = wing(P.span / 2),
+      end = planeSection(-tip);
+    for (const [lit, dark, x, y, z, stretch] of [
+      ['#ff3426', '#3d1c19', P.span / 2 + 0.005, tipAt.mid, tipAt.le - 0.12, 1.4],
+      ['#1fe39b', '#163a2c', -P.span / 2 - 0.005, tipAt.mid, tipAt.le - 0.12, 1.4],
+      ['#fff1d6', '#5a5650', 0, end.y, -tip - 0.012, 1],
+    ] as const) {
+      const lens = new T.Mesh(new T.SphereGeometry(0.06, 12, 8).scale(1, 0.85, stretch), new T.MeshStandardMaterial({ color: dark, emissive: lit, emissiveIntensity: PLANE_LIGHT, roughness: 0.3, metalness: 0 }));
+      lens.material.name = 'nav-light';
+      lens.position.set(x, y, z);
+      lens.castShadow = lens.receiveShadow = false;
+      lights.add(lens);
+    }
+    return plane;
+  }
+  /**
    * A town bike (local +z forward, y 0 the ground, about 0.9 long): two tyres, a diamond frame in
    * `colour`, a dark bar and saddle, a chainring on the left, and optionally a wicker basket and a
    * front lamp (a dark housing round a lantern lens the frame loop lights at night, no light or
@@ -752,5 +1075,5 @@ export function createMovers(ctx: TownContext, kit: Kit) {
     }
     return bike;
   }
-  return { hotAirBalloon, buildTram, buildBoat, bicycle };
+  return { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle };
 }

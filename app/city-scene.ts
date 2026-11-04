@@ -404,7 +404,7 @@ export async function createCity(
     // A negative near plane: on tall (phone) frames the bottom edge of an orthographic view
     // starts below sea level, and a positive near plane would cut the sea off there.
     camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180);
-  const { city, models, walkers, lamps, tram, boat, clocks, animated, parkGroup, parkHit } = model;
+  const { city, models, walkers, lamps, tram, boat, plane, clocks, animated, parkGroup, parkHit } = model;
   const driftFollowers = animated.map((entry) => entry.object).filter((o) => o.userData.followsDrift);
   // Everything the frame loop turns: Inspect's copy of a building follows these parts of it.
   const movingParts = new Set<T.Object3D>([
@@ -1319,7 +1319,7 @@ export async function createCity(
     );
     if (zones.visible) shadeDistricts(zones, night);
     if (inspect && inspectionAutoFit) frameStudy();
-    // People on the pavements, the tram on the ring, the boat in the harbour.
+    // People on the pavements, the tram on the ring, the boat in the harbour, the plane on its stand.
     for (const walker of walkers) {
       const before = plan.samplePolyline(walker.loop, walker.distance, true);
       if (!paused) walker.distance += walker.speed * dt;
@@ -1346,6 +1346,9 @@ export async function createCity(
     const pose = plan.boatPose(time);
     boat.position.set(pose.x, model.waterLevel + pose.y, pose.z);
     boat.rotation.set(0, pose.heading, pose.roll);
+    // The plane waits on its stand, nose east to the jet bridge. It never follows the idle drift.
+    plane.position.set(plan.STAND.x, plan.AIRSIDE, plan.STAND.z);
+    plane.rotation.set(0, plan.STAND.heading, 0);
     for (const entry of animated) entry.update(time, night, rain);
     if (now - clockChecked > 15000) {
       clockChecked = now;

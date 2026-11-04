@@ -1687,6 +1687,13 @@ for (const [x, z] of [
     for (const bench of pieces.filter((o) => o.name === 'forecourt-bench'))
       assert(Math.sin(bench.rotation.y) * (AR.x - bench.position.x) > 0 && Math.abs(Math.cos(bench.rotation.y)) < 1e-9, 'A forecourt bench turns its back on the axis.');
   }
+  // The stand's lead-in line ends just ahead of the parked plane's nose wheels.
+  {
+    const line = g.children.find((o) => o.isMesh && o.material.color.getHex() === hex(LOOK.leadIn)),
+      end = line && new T.Box3().setFromObject(line).max.x,
+      wheels = plan.STAND.x + plan.PLANE.nose;
+    assert(line && end - wheels > 0 && end - wheels <= 0.2, `The lead-in line ends ${(end - wheels).toFixed(2)} from the plane's nose wheels.`);
+  }
   // The hall lane's dressing, flat on the ground and facing up: its kerb radii at the mouth (the
   // road's asphalt, across held at the carriageway's edge) and its flush edging of the town's
   // paving, from the ring's footway to the causeway's. It keeps a trunk's breadth from every tree
@@ -2396,6 +2403,120 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     tris += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3;
   });
   assert(tris <= 9000 && count <= 6, `The boat costs ${Math.round(tris)} triangles in ${count} meshes.`);
+}
+// The plane (buildPlane, plan.PLANE's measures), built alone: inside its measures (the span, the
+// length, the fin's top), standing on its six tyres (the only parts within 0.02 of the ground, at
+// its nose and main gear), 0.66 across at its forward door, at most 7k triangles. It lights no lamp
+// of the town's: its three navigation lights stay out of the batch (plane-lights), red at the port
+// wingtip, green at the starboard one and white at the tail, each its own plain material on the
+// lanterns' program at the traffic signals' steady glow, casting nothing.
+{
+  const { createMovers, PLANE_LIGHT } = await load('town-movers'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    plane = createMovers(ctx, kit).buildPlane(),
+    P = plan.PLANE,
+    lights = plane.getObjectByName('plane-lights'),
+    gear = [...[-1, 1].map((s) => [s * 0.075, P.nose]), ...[-1, 1].flatMap((s) => [-1, 1].map((w) => [(s * P.track) / 2 + w * 0.085, P.main]))],
+    tyres = new Set(),
+    p = new T.Vector3();
+  plane.updateMatrixWorld(true);
+  assert.equal(ctx.lamps.length, 0, 'The plane lights a lamp of the town\'s.');
+  let tris = 0,
+    width = 0;
+  plane.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    tris += (o.geometry.index?.count ?? pos.count) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      assert(Math.abs(p.x) <= P.span / 2 + 0.07 && p.z <= P.length / 2 + 1e-6 && p.z >= -P.length / 2 - 0.08 && p.y >= -1e-6 && p.y <= P.fin + 1e-6, `The plane reaches out of its measures at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      if (p.y < 0.02) {
+        const k = gear.findIndex(([x, z]) => Math.abs(p.x - x) < 0.05 && Math.abs(p.z - z) < 0.12);
+        assert(k >= 0, `Something but a tyre touches the ground under the plane at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+        tyres.add(k);
+      }
+      if (o.parent !== lights && Math.abs(p.z - P.door) < 0.08 && Math.abs(p.y - P.axis) < 0.05) width = Math.max(width, Math.abs(p.x));
+    }
+  });
+  assert.equal(tyres.size, 6, `The plane stands on ${tyres.size} tyres.`);
+  assert(width >= P.radius - 1e-3 && width <= P.radius + 0.013, `The plane's fuselage is ${(2 * width).toFixed(3)} across at its door.`);
+  assert(tris <= 7000, `The plane costs ${Math.round(tris)} triangles.`);
+  const lens = lights?.children ?? [],
+    lantern = kit.lampGlass();
+  assert(lights?.userData.keepSeparate && lens.length === 3 && new Set(lens.map((l) => l.material)).size === 3, 'The plane\'s three navigation lights are not apart, each in its own material.');
+  for (const l of lens) {
+    const m = l.material;
+    assert(m.type === lantern.type && !m.vertexColors && !m.map && !m.transparent && m.onBeforeCompile === T.Material.prototype.onBeforeCompile && m.customProgramCacheKey() === lantern.customProgramCacheKey(), 'A navigation light has a program of its own.');
+    assert(m.emissiveIntensity === PLANE_LIGHT && PLANE_LIGHT <= 0.95 && !l.castShadow, 'A navigation light glows harder than the signals, or casts.');
+  }
+  const lit = (test) => lens.filter((l) => test(l.material.emissive, l.position));
+  assert(
+    lit((c, at) => c.r > 2 * c.g && c.r > 2 * c.b && at.x > P.span / 2 - 0.05).length === 1 &&
+      lit((c, at) => c.g > 2 * c.r && at.x < -P.span / 2 + 0.05).length === 1 &&
+      lit((c, at) => Math.min(c.r, c.g, c.b) > 0.6 && at.z < -P.length / 2 + 0.05 && Math.abs(at.x) < 1e-6).length === 1,
+    'The plane\'s lights are not red to port, green to starboard and white at the tail.',
+  );
+  library.dispose();
+}
+// The plane as the town has it, parked on its stand (plan.STAND, nose east) on the airside's slabs:
+// batched into its enamel and its glass (one 'vehicle' pane, lit all night) beside its three lights;
+// not following the idle drift, nor answering the pointer (a ray down on it finds the airport's
+// deck). Its forward door is at the jet bridge's cab and its port side 0.15-0.25 short of the
+// bridge's bellows (it docks); nothing of it reaches under or into the bridge, and its port wing and
+// engine keep 0.3 west of it. It stands on the apron, 0.3 in from the deck's edge, and keeps 0.3
+// from the hall's walls and the hangar.
+{
+  const plane = model.plane,
+    P = plan.PLANE,
+    S = plan.STAND,
+    J = plan.JET_BRIDGE,
+    AP = plan.APRON,
+    TW = plan.TAXIWAY,
+    bridgeWest = J.cab - 0.34,
+    { shell: hall } = models.get('airport'),
+    p = new T.Vector3();
+  assert(plane.position.x === S.x && plane.position.z === S.z && plane.position.y === plan.AIRSIDE && plane.rotation.y === S.heading, 'The plane is off its stand.');
+  assert(Math.abs(S.x + P.door - J.cab) < 0.005, 'The plane\'s forward door is off the jet bridge\'s cab.');
+  const meshes = [];
+  plane.traverse((o) => o.isMesh && meshes.push(o));
+  const kinds = meshes.map((o) => `${o.material.userData.surfaceKind ?? o.material.name}${o.castShadow ? '' : '(n)'}`).sort();
+  assert.deepEqual(kinds, ['enamel', 'glass(n)', 'nav-light(n)', 'nav-light(n)', 'nav-light(n)'], `The plane batches into ${kinds.join(', ')}.`);
+  const panes = model.windows.filter((w) => w.place === 'plane');
+  assert(panes.length === 1 && panes[0].role === 'vehicle', 'The plane\'s glass is not one pane lit all night.');
+  assert(!plane.userData.followsDrift && !model.animated.some((e) => e.object === plane), 'The plane follows the drift or the animated list.');
+  for (let o = plane; o; o = o.parent) assert(!o.userData.buildingId && !o.userData.placeId, 'The plane answers the pointer.');
+  ray.set(new T.Vector3(S.x, 40, S.z), new T.Vector3(0, -1, 0));
+  assert.equal(pickTarget(ray, models, model.parkHit), 'airport', 'Pointing at the parked plane finds no airport.');
+  let side = Infinity,
+    nose = -Infinity,
+    tail = Infinity,
+    hallWest = Infinity;
+  for (const o of meshes) {
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      nose = Math.max(nose, p.x);
+      tail = Math.min(tail, p.x);
+      if (Math.abs(p.x - J.cab) < 0.31 && p.y > J.floor && p.y < J.floor + 0.6) side = Math.min(side, p.z);
+      if (p.x >= bridgeWest - 0.3) assert(p.z >= J.bellows + 0.15, `The plane reaches under the jet bridge at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      assert(plan.onAirport(p.x, p.z, -0.3), `The plane leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      if (p.y < plan.AIRSIDE + 0.25) assert(p.x > AP.x0 && p.x < AP.x1 && p.z > TW.z + TW.width / 2 && p.z < AP.z1, `The plane's footprint leaves the apron at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+    }
+  }
+  assert(side - J.bellows >= 0.15 && side - J.bellows <= 0.25, `The plane's port side lies ${(side - J.bellows).toFixed(3)} from the jet bridge's bellows.`);
+  hall.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (p.x > plan.AIRPORT_ROAD.x - 2.1 - 0.2) hallWest = Math.min(hallWest, p.x);
+    }
+  });
+  assert(nose <= hallWest - 0.3 && tail >= plan.HANGAR.x1 + 0.3, `The plane (x ${tail.toFixed(2)} to ${nose.toFixed(2)}) crowds the hall (${hallWest.toFixed(2)}) or the hangar.`);
 }
 // Moorland: a few heather drifts on the hills only, never on the mown town lawn, the terrace, the
 // streets, the beach or within 1.0 of the herd's paddock, and thistles at the dyke's foot.
@@ -4107,5 +4228,5 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
 }
 console.log(
-  `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall and hangar), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

@@ -546,6 +546,18 @@ export const JET_BRIDGE = { z: -48.2, floor: 0.8, width: [0.44, 0.5], height: [0
 /** The airside's slabs (the runway, the taxiway, the apron) lie this far up, 0.03 over the deck's grass: the plane stands on them. */
 export const AIRSIDE = AIRPORT.deck + 0.03;
 /**
+ * The plane (town-movers' buildPlane), a toy regional twin-jet in the tram's livery, in its own
+ * units: +z forward to the nose, +x to port (its left), y 0 the slabs it stands on, x 0 and z 0
+ * under the middle of its fuselage. The fuselage is `length` long and `radius` round about an axis
+ * `axis` up (in its constant section, from the tail cone to the nose); the wings `span` across;
+ * the fin's top at `fin`. Its forward door's middle, on the port side, is `door` ahead of the
+ * middle; its nose wheels are at `nose` and its main wheels at `main`, `track` apart. Parked on the
+ * stand (STAND, nose east), its fuselage lies on the stand's line and its door at JET_BRIDGE.cab,
+ * where the bridge's bellows stop 0.19 off its port side; the stand's lead-in line ends just ahead
+ * of its nose wheels.
+ */
+export const PLANE = { length: 4.4, radius: 0.33, axis: 0.63, span: 3.8, fin: 1.55, door: 1.49, nose: 1.7, main: -0.38, track: 1.0 };
+/**
  * West of the apron, the hangar (its plan x0..x1, z0..z1 and its ribbed barrel roof's top `top` over
  * the deck), its doors to the apron (east) over a concrete pad that joins them to it; by the
  * runway's east end (its 27 threshold), the windsock (its mast's foot).

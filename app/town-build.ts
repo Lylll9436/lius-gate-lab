@@ -123,7 +123,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildResidence } = createResidence(ctx, kit, nature, props);
   const { airportGround, buildAirport } = createAirport(ctx, kit, props, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
-  const { hotAirBalloon, buildTram, buildBoat, bicycle } = createMovers(ctx, kit);
+  const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
   const { batch, windows } = createBatch(ctx);
   const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, trafficSignals, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
@@ -354,6 +354,12 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   city.add(tram);
   const boat = buildBoat();
   city.add(boat);
+  // The plane, parked on its stand: nose east, its forward door at the jet bridge (the frame loop
+  // poses it there too, beside the tram and the boat).
+  const plane = buildPlane();
+  plane.position.set(plan.STAND.x, plan.AIRSIDE, plan.STAND.z);
+  plane.rotation.y = plan.STAND.heading;
+  city.add(plane);
   yield 'buildings and vehicles';
 
   /* ---------------------------------------------------------------- */
@@ -394,6 +400,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   batch(dog, { contact: 'none' });
   batch(tram, { contact: 'local', localFloor: 0, windows: 'vehicle' });
   batch(boat, { contact: 'none', windows: 'vehicle' });
+  batch(plane, { contact: 'none', windows: 'vehicle' });
   for (const entry of animated)
     if (!entry.object.userData.prebatched && (entry.object.children.length > 1 || entry.object.children.some((c) => c instanceof T.Mesh)))
       batch(entry.object, { contact: 'none' });
@@ -413,6 +420,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     walkers,
     tram,
     boat,
+    plane,
     lamps,
     clocks,
     windows,
