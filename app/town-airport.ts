@@ -557,9 +557,10 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
    * ribbed in the lighter copper (a broad rib on each verge). To the apron (east) the gable's
    * arched doorway, 3.0 wide, framed by blonde jambs and imposts and an archivolt rising to just
    * under the roof's edge, closed by four green leaves under an arched head (their stiles and rails
-   * proud, handles where the middle two meet); the west gable is plain. In the south wall a green
-   * door for people, on a step. A concrete pad runs from under the doors to the apron. All of it
-   * stands inside its plan (the overview frames the hangar by it) and on y 0, like the hall's
+   * proud, handles where the middle two meet); across the west gable, to the sea, the cornice
+   * carried round and an archivolt under the roof's edge, as on the hall's gables. In the south wall
+   * a green door for people, on a step. A concrete pad runs from under the doors to the apron. All
+   * of it stands inside its plan (the overview frames the hangar by it) and on y 0, like the hall's
    * plinth. No glass, no lettering.
    */
   function hangar(g: T.Group) {
@@ -652,6 +653,12 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
       for (const x of ribX) stone.push(block(x - 0.08, x + 0.08, foot - 0.01, cornice[0], z0, z1));
       stone.push(block(-gable - 0.06, gable + 0.06, cornice[0], cornice[1], sz > 0 ? wall - 0.02 : -wall - 0.07, sz > 0 ? wall + 0.07 : -wall + 0.02));
     }
+    // The west gable, to the sea: the cornice carried across it between the corners, and an
+    // archivolt from eave to eave under the roof's edge, as the hall's gables have.
+    stone.push(
+      block(-gable - 0.06, -gable + 0.02, cornice[0], cornice[1], -wall + 0.02, wall - 0.02),
+      { geometry: prism(arcBand(Ri - 0.14, Ri - 0.005, Math.atan2(under(wall) - yc, wall), Math.PI - Math.atan2(under(wall) - yc, wall), 20), 0.08, 0.02, 0), matrix: placed(-gable, yc, 0, 0, -Math.PI / 2, 0) },
+    );
     // The roof: the barrel shell from verge to verge, a bull-nosed roll along each eave, its ribs
     // over the standing seams (one over each pier) and a broader one on each verge, all reaching
     // the crown's 2.4 and no further.
