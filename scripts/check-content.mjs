@@ -42,6 +42,21 @@ const membersOf = (cat, day) =>
   cat.people
     .filter((p) => p.visibility === 'published' && !leftBy(p, day))
     .sort((a, b) => a.order - b.order);
+/** Those who have left by a day: everyone published gone by then, newest departure first. */
+const alumniOf = (cat, day) =>
+  cat.people
+    .filter((p) => p.visibility === 'published' && leftBy(p, day))
+    .sort((a, b) => b.departure.date.localeCompare(a.departure.date) || a.order - b.order);
+/**
+ * A catalogue in which nobody leaves before 2099-12-31: every departure it holds is moved there.
+ * The fixtures below are tried on it, so a real departure (one entered ahead of its day, or an
+ * alumnus from before the site) never joins their board. A departure still frees its home, so the
+ * catalogue stays valid whatever the real one holds.
+ */
+const settle = (cat) => ({
+  ...cat,
+  people: cat.people.map((p) => (p.departure ? { ...p, departure: { ...p.departure, date: '2099-12-31' } } : p)),
+});
 /** A name tag's name: the first name in English; in Chinese the full name, if it has one. */
 const tagName = (p, locale) =>
   locale === 'zh' && /[\u3400-\u9fff]/.test(p.title.zh) ? p.title.zh : p.title.en.split(' ')[0];
@@ -364,19 +379,20 @@ assert.deepEqual(
   nav.people.map((p) => p.id),
   membersOf(next, NOW).map(records.personContentId),
 );
-// On DAY nobody had left Liu’s Gate, so the rules for who is here give exactly the site as it
-// was: every published person a member, no one on the departures board, every home its one
-// resident, and the tour, the People framing and the name tags unchanged.
+// On DAY everyone then at Liu’s Gate was still here, so the rules for who is here gave exactly the
+// site as it was: all four of them members, every home its one resident, and the tour, the People
+// framing and the name tags unchanged. Someone entered later with a departure dated before DAY (an
+// alumnus from before the site) was never among them: the lists on DAY follow the rule stated above.
 assert.deepEqual(
-  catalog.people.filter((p) => leftBy(p, DAY)),
+  catalog.people.filter((p) => ['pengyuan-liu', 'yunlong-liu', 'qin-li', 'luisa-lo-presti'].includes(p.id) && leftBy(p, DAY)),
   [],
-  'Nobody had left on ' + DAY + ', so the live site is as it was.',
+  'Nobody at the Gate on ' + DAY + ' had left by then.',
 );
-assert.deepEqual(records.memberRecords(TODAY), records.peopleRecords);
-assert.deepEqual(records.alumniRecords(TODAY), []);
+assert.deepEqual(records.memberRecords(TODAY).map((p) => p.id), membersOf(next, DAY).map((p) => p.id));
+assert.deepEqual(records.alumniRecords(TODAY).map((p) => p.id), alumniOf(next, DAY).map((p) => p.id));
 {
   const residentOf = (b) =>
-    b.variant ? records.peopleRecords.find((p) => p.buildingId === b.id) : null;
+    b.variant ? membersOf(next, DAY).find((p) => p.buildingId === b.id) : null;
   assert.deepEqual(
     data.buildingsOn(TODAY).map((b) => [b.id, b.name]),
     buildings.map((b) => [b.id, residentOf(b)?.title ?? b.name]),
@@ -610,9 +626,8 @@ async function siteOver(name, testCatalog) {
     assert.deepEqual(
       vnav.homeTags(locale, TODAY).map((t) => [t.building, t.label]),
       [
-        ...membersOf(catalog, DAY)
-          .filter((p) => p.buildingId && p.buildingId !== 'visiting-phd')
-          .map((p) => [p.buildingId, tagName(p, locale)]),
+        // One tag a home, its first resident's (a newcomer entered ahead of a departure waits).
+        ...tagsOf(catalog, DAY, locale).filter(([home]) => home !== 'visiting-phd'),
         ['visiting-phd', [...stayers.map((p) => tagName(p, locale)), ...tests].join(sep)],
       ],
       'The residence\'s tag names its residents; the homes\' stay as they were (' + locale + ').',
@@ -633,8 +648,9 @@ async function siteOver(name, testCatalog) {
 // TEST-ONLY departures (never in content/lab.json): a member who left in 2025, a visiting
 // researcher who went home in 2026 and a member who leaves in 2099, filed by the site's own code
 // compiled again over this catalogue. The test catalogue hands Qin Li's home to the 2099 leaver
-// (Qin stays a member, without a home), so the checks can watch a home empty on its resident's day
-// and fill again when someone moves in.
+// (whoever lives there moves out of it: Qin stays a member, without a home), so the checks can
+// watch a home empty on its resident's day and fill again when someone moves in. The real people stay at the Gate on every day tried here (settle), so the departures
+// board shows the test leavers alone, whatever departures the real catalogue holds.
 {
   const EVE = on('2099-06-30'),
     DEPART = on('2099-07-01');
@@ -675,10 +691,8 @@ async function siteOver(name, testCatalog) {
       link: { label: text('Homepage'), url: 'https://example.org/future-member' },
     },
   };
-  let leaving = upsertRecord(next, 'people', {
-    ...catalog.people.find((p) => p.id === 'qin-li'),
-    buildingId: null,
-  });
+  let leaving = settle(next);
+  leaving = { ...leaving, people: leaving.people.map((p) => (p.buildingId === 'qin-li' ? { ...p, buildingId: null } : p)) };
   for (const p of [pastMember, pastVisitor, futureMember]) leaving = upsertRecord(leaving, 'people', p);
   // A farewell names the member who has left: they stay published, so it still opens their file.
   leaving = upsertRecord(leaving, 'events', {
@@ -767,11 +781,14 @@ async function siteOver(name, testCatalog) {
     ).includes('Pat Former'),
     'A farewell still names the member who left.',
   );
-  // A home keeps its current resident whoever lived there before: Yunlong Liu's home is his,
-  // though the member who left in 2025 once lived there.
-  const home = (day, id) => ldata.buildingsOn(day).find((b) => b.id === id);
-  assert.deepEqual(home(TODAY, 'yunlong-liu').name, catalog.people.find((p) => p.id === 'yunlong-liu').title);
-  assert.deepEqual(ids(ldata.residentsOf('yunlong-liu', TODAY)), ['yunlong-liu']);
+  // A home keeps its current resident whoever lived there before: Yunlong Liu's home is his (or,
+  // with someone entered ahead of his own departure, its first current resident's), though the
+  // member who left in 2025 once lived there.
+  const home = (day, id) => ldata.buildingsOn(day).find((b) => b.id === id),
+    yunlongs = membersOf(leaving, DAY).filter((p) => p.buildingId === 'yunlong-liu');
+  assert(yunlongs.some((p) => p.id === 'yunlong-liu') && !yunlongs.some((p) => p.id === 'test-past-member'));
+  assert.deepEqual(home(TODAY, 'yunlong-liu').name, yunlongs[0].title);
+  assert.deepEqual(ids(ldata.residentsOf('yunlong-liu', TODAY)), ids(yunlongs));
   // The residence lists only who is staying: the visitor who went home is not among them.
   assert(ids(ldata.residentsOf('visiting-phd', on('2026-08-30'))).includes('test-past-visitor'));
   assert.deepEqual(
@@ -1116,11 +1133,25 @@ for (const locale of ['en', 'zh']) {
     'The Departures chapter (' + locale + ') holds the board.',
   );
 }
-// While nobody has left (on DAY) the board shows one row still to be announced, with blank flaps
-// for its date and where they are now, and under it a note for visitors.
+// The page's own board is the visitor's day's: whoever has left by then, newest first, or the row
+// to be announced while nobody has.
+{
+  const board = renderToStaticMarkup(React.createElement(DeparturesBoard, { locale: 'en', onOpen() {}, reading: true })),
+    gone = alumniOf(next, NOW);
+  assert.deepEqual(
+    [...board.matchAll(/<details class="board-entry" id="read-([^"]+)">/g)].map((m) => m[1]),
+    gone.map(records.personContentId),
+    'The page’s board lists who has left by the visitor’s day.',
+  );
+  assert.equal(board.includes('is-tba'), !gone.length, 'The page’s board is empty only while nobody has left.');
+}
+// While nobody has left (on DAY, in a catalogue where nobody leaves before 2099 whatever departures
+// the real one holds) the board shows one row still to be announced, with blank flaps for its date
+// and where they are now, and under it a note for visitors.
+const { DeparturesBoard: EmptyBoard } = (await siteOver('settled', settle(next))).content;
 for (const reading of [true, false]) {
   const empty = (locale) =>
-    renderToStaticMarkup(React.createElement(DeparturesBoard, { locale, onOpen() {}, reading, today: TODAY }));
+    renderToStaticMarkup(React.createElement(EmptyBoard, { locale, onOpen() {}, reading, today: TODAY }));
   const en = empty('en'),
     zh = empty('zh');
   assert(
@@ -1494,5 +1525,5 @@ assert.equal(
   original,
 );
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody gone on ' + DAY + ' so the live site unchanged, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration, properties, bilingual routes and scene targets, and site copy that never calls Liu’s Gate a lab.',
 );
