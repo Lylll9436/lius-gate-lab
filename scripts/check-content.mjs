@@ -1133,6 +1133,17 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
   );
   assert(chapterMeta.length <= 7, 'The masthead was measured with seven chapter chips: measure it again in a browser at 961-1040 px.');
 }
+// The board's settle-flip (lab-content.tsx; the static render runs no effects, so its source): it
+// is settled by whatever ends its effect, so 中文 pressed mid-flip cannot leave every cell's flip on
+// for good (replayed each time the board is shown again), and it never shows in Chinese.
+{
+  const source = await fs.readFile(path.join(root, 'app/lab-content.tsx'), 'utf8');
+  assert(
+    /return \(\) => \{\s*watch\.disconnect\(\);\s*window\.clearTimeout\(settled\);\s*setFlipping\(false\);\s*\};\s*\}, \[zh, where\]\);/.test(source) &&
+      source.includes("${flipping && !zh ? ' is-flipping' : ''}"),
+    'A language switched mid-flip leaves the board flipping.',
+  );
+}
 // The departures board's flaps and layouts (globals.css).
 {
   const css = await fs.readFile(path.join(root, 'app/globals.css'), 'utf8');

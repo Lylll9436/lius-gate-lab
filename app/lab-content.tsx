@@ -1021,7 +1021,9 @@ export function DeparturesBoard({
     [flipping, setFlipping] = useState(false),
     where = reading ? 'reading' : 'city';
   // One left-to-right settle-flip the first time the board comes into view: never in Chinese, nor
-  // for a visitor who prefers reduced motion.
+  // for a visitor who prefers reduced motion. Whatever ends the effect (中文 pressed mid-flip, the
+  // board going) settles the flip too: a settle timer cancelled with nothing to clear the class left
+  // every cell's flip on, replayed each time the board was shown again.
   useEffect(() => {
     const el = board.current;
     if (
@@ -1047,6 +1049,7 @@ export function DeparturesBoard({
     return () => {
       watch.disconnect();
       window.clearTimeout(settled);
+      setFlipping(false);
     };
   }, [zh, where]);
   // Nothing stays ringed once the board goes: a row's click opens a file, and the board with it.
@@ -1073,7 +1076,7 @@ export function DeparturesBoard({
     <>
       <div
         ref={board}
-        className={`departures${zh ? ' is-zh' : ''}${flipping ? ' is-flipping' : ''}`}
+        className={`departures${zh ? ' is-zh' : ''}${flipping && !zh ? ' is-flipping' : ''}`}
       >
         <div className="board-head" aria-hidden="true">
           {['date', 'name', 'destination', 'now', 'status'].map((column, i) => (
