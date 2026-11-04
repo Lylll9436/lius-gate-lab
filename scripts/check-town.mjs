@@ -1528,10 +1528,21 @@ for (const [x, z] of [
     }
     sockEntry.update(0, 0, 0);
     windsock.updateMatrixWorld(true);
-    assert(roof.length > 40 && sock.length > 100, 'The pointer check finds no hangar roof or sock to point at.');
+    // The apron's kit stands over the deck's box (its tops up to 0.8 over the apron): every point of
+    // its tops answers as the airport too.
+    const kitTops = [],
+      K = plan.APRON_KIT;
+    for (const [x0, x1, z0, z1] of [[K.train.x0, K.train.x1, K.train.z - K.train.width / 2, K.train.z + K.train.width / 2], ...K.cones.at.map(([x, z]) => [x - K.cones.base / 2, x + K.cones.base / 2, z - K.cones.base / 2, z + K.cones.base / 2])])
+      for (let i = 0; i < 12; i++)
+        for (let k = 0; k < 4; k++) {
+          ray.set(new T.Vector3(x0 + ((i + 0.5) / 12) * (x1 - x0), 40, z0 + ((k + 0.5) / 4) * (z1 - z0)), new T.Vector3(0, -1, 0));
+          const top = ray.intersectObject(land, true)[0];
+          if (top && top.point.y > plan.AIRSIDE + 0.15) kitTops.push(top.point.clone());
+        }
+    assert(roof.length > 40 && sock.length > 100 && kitTops.length > 60, `The pointer check finds no hangar roof, sock or apron kit to point at (${roof.length}, ${sock.length}, ${kitTops.length}).`);
     for (const bearing of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings.airport]) {
       const look = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize().negate();
-      for (const { name, points } of [{ name: 'hangar\'s roof', points: roof }, { name: 'windsock\'s sock', points: sock.filter((_, i) => i % 7 === 0) }])
+      for (const { name, points } of [{ name: 'hangar\'s roof', points: roof }, { name: 'windsock\'s sock', points: sock.filter((_, i) => i % 7 === 0) }, { name: 'apron\'s kit', points: kitTops }])
         for (const p of points) {
           ray.set(p.clone().addScaledVector(look, -80), look);
           assert.equal(pickTarget(ray, models, model.parkHit), 'airport', `Pointing at the ${name} at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)} from bearing ${bearing.toFixed(2)} finds no airport.`);
@@ -1883,6 +1894,72 @@ for (const [x, z] of [
     assert(posts.length === 4 && posts.every((b) => Math.abs(b.hi - b.lo - 0.14) < 0.005) && Math.abs(middles[0] + middles[3] - 2 * AR.x) < 1e-6 && Math.abs(middles[1] + middles[2] - 2 * AR.x) < 1e-6, `The bollards are not four 0.14 across in pairs about the road's axis: ${posts.map((b) => (b.hi - b.lo).toFixed(3)).join(', ')}.`);
     for (const bench of pieces.filter((o) => o.name === 'forecourt-bench'))
       assert(Math.sin(bench.rotation.y) * (AR.x - bench.position.x) > 0 && Math.abs(Math.cos(bench.rotation.y)) < 1e-9, 'A forecourt bench turns its back on the axis.');
+  }
+  // The apron's ground-service kit (plan.APRON_KIT), built on its own: a tug and two carts end to
+  // end along the apron's south edge, each inside the train's plan and on the apron's concrete,
+  // standing on the airside's slabs and under 0.8 tall, the tug at the east end; three cones in the
+  // north-east corner, each inside its square foot's plan. Every piece of every part (each run of
+  // joined faces) is 0.07 across or more every way (thinner ones twinkle as the view moves); the kit
+  // is the hall's cream and green, its undergear dark rubber and pale hubs, and the cones' orange
+  // (the tram's) is its one accent; nothing of it is glass, lit or a lamp, and its dark undergear
+  // casts nothing.
+  {
+    const K = plan.APRON_KIT,
+      AP = plan.APRON,
+      apronZ0 = plan.TAXIWAY.z + plan.TAXIWAY.width / 2,
+      kit = g.children.filter((o) => o.name.startsWith('apron-')),
+      count = (name) => kit.filter((o) => o.name === name).length,
+      tug = kit.find((o) => o.name === 'apron-tug'),
+      carts = kit.filter((o) => o.name === 'apron-cart'),
+      cones = kit.find((o) => o.name === 'apron-cones'),
+      inside = (p, [x0, x1, z0, z1]) => p.x >= x0 - 1e-6 && p.x <= x1 + 1e-6 && p.z >= z0 - 1e-6 && p.z <= z1 + 1e-6,
+      trainBox = [K.train.x0, K.train.x1, K.train.z - K.train.width / 2, K.train.z + K.train.width / 2],
+      coneBoxes = K.cones.at.map(([x, z]) => [x - K.cones.base / 2, x + K.cones.base / 2, z - K.cones.base / 2, z + K.cones.base / 2]),
+      allowed = new Set([LOOK.render, LOOK.green, LOOK.tyre, LOOK.steel].map(hex)),
+      orange = hex((await load('town-shared')).palette.tramOrange);
+    assert.deepEqual(['apron-tug', 'apron-cart', 'apron-cones'].map(count), [1, 2, 1], 'The apron lacks its tug, its two carts or its cones.');
+    assert(carts.every((c) => c.position.x < tug.position.x) && Math.abs(tug.position.z - K.train.z) < 1e-9 && carts.every((c) => Math.abs(c.position.z - K.train.z) < 1e-9), 'The baggage train is not the tug at the east end and its two carts behind it, on the train\'s line.');
+    for (const o of kit) {
+      const box = new T.Box3().setFromObject(o);
+      assert(Math.abs(box.min.y - plan.AIRSIDE) < 1e-6 && box.max.y - plan.AIRSIDE < 0.8, `The apron's ${o.name} stands from ${box.min.y.toFixed(3)} to ${box.max.y.toFixed(3)}.`);
+      vertices(o, (p, m) => {
+        assert(o === cones ? coneBoxes.some((b) => inside(p, b)) : inside(p, trainBox), `The apron's ${o.name} leaves its plan at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+        assert(p.x > AP.x0 + 0.05 && p.x < AP.x1 - 0.05 && p.z > apronZ0 + 0.05 && p.z < AP.z1 + 1e-6, `The apron's ${o.name} leaves the apron's concrete at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+        const colour = m.material.color.getHex(),
+          kind = m.material.userData.surfaceKind;
+        assert(kind !== 'glass' && !ctx.lamps.includes(m), `The apron's ${o.name} has glass or a lamp.`);
+        assert(o === cones ? colour === orange || colour === hex(LOOK.render) : allowed.has(colour), `The apron's ${o.name} is ${m.material.color.getHexString()}, not the kit's cream, green, rubber and steel (or the cones' orange and cream).`);
+        if (colour === hex(LOOK.tyre) || colour === hex(LOOK.steel)) assert(!m.castShadow && m.userData.noShadow, `The apron's ${o.name}'s undergear casts.`);
+      });
+      // Every run of joined faces, every way: 0.07 at least.
+      o.traverse((m) => {
+        if (!m.isMesh) return;
+        const q = m.geometry.attributes.position,
+          key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+          parent = new Map(),
+          find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+        for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+        for (let i = 0; i + 2 < q.count; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
+        const boxes = new Map();
+        for (let i = 0; i < q.count; i++) {
+          const root = find(key(i));
+          if (!boxes.has(root)) boxes.set(root, new T.Box3());
+          boxes.get(root).expandByPoint(new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld));
+        }
+        for (const b of boxes.values()) {
+          const size = b.getSize(new T.Vector3());
+          assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `A part of the apron's ${o.name} is ${size.toArray().map((n) => n.toFixed(3)).join(' x ')}.`);
+        }
+      });
+    }
+    // The cones carry the kit's only orange, and each stands on its own square foot.
+    let orangeParts = 0;
+    for (const o of kit) o.traverse((m) => m.isMesh && m.material.color.getHex() === orange && (orangeParts++, assert.equal(o, cones, 'Orange off the cones.')));
+    assert(orangeParts === 1 && coneBoxes.every((b) => {
+      let n = 0;
+      vertices(cones, (p) => inside(p, b) && n++);
+      return n > 50;
+    }), 'The cones are not three, each on its own foot, in the kit\'s one orange.');
   }
   // The stand's lead-in line ends just ahead of the parked plane's nose wheels.
   {
@@ -2954,10 +3031,18 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
     }
     return inside ? -best : best;
   };
+  // The apron's kit as its plans (check-town holds the kit inside them): the baggage train's and the
+  // three cones' together.
+  const K = plan.APRON_KIT,
+    plot = (x0, x1, z0, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].reverse(),
+    coneXs = K.cones.at.map(([x]) => x),
+    coneZs = K.cones.at.map(([, z]) => z);
   const obstacles = [
     { name: 'hall', outline: hull(hallVertices), gap: 0.3 },
     { name: 'jet bridge', outline: hull(bridgeVertices), gap: 0.15 },
     { name: 'hangar', outline: [[H.x0, H.z0], [H.x1, H.z0], [H.x1, H.z1], [H.x0, H.z1]].reverse(), gap: 0.3 },
+    { name: 'baggage train', outline: plot(K.train.x0, K.train.x1, K.train.z - K.train.width / 2, K.train.z + K.train.width / 2), gap: 0.3 },
+    { name: 'cones', outline: plot(Math.min(...coneXs) - K.cones.base / 2, Math.max(...coneXs) + K.cones.base / 2, Math.min(...coneZs) - K.cones.base / 2, Math.max(...coneZs) + K.cones.base / 2), gap: 0.3 },
   ].map((o) => {
     const xs = o.outline.map(([x]) => x),
       zs = o.outline.map(([, z]) => z);
@@ -3018,7 +3103,7 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
       world.copy(q).applyMatrix4(m);
       for (const o of near) {
         const [x0, x1, z0, z1] = o.box;
-        if (world.x < x0 - 1 || world.x > x1 + 1 || world.z < z0 - 1 || world.z > z1 + 1) continue;
+        if (world.x < x0 - 2 || world.x > x1 + 2 || world.z < z0 - 2 || world.z > z1 + 2) continue;
         const gap = outside(o.outline, world.x, world.z);
         worst[o.name] = Math.min(worst[o.name], gap);
         assert(gap >= o.gap, `The plane comes ${gap.toFixed(3)} from the ${o.name} at ${world.x.toFixed(2)}, ${world.z.toFixed(2)} (t=${t.toFixed(2)}).`);

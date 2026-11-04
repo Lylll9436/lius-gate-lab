@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, hash, noise2, WATER, type TownContext } from './town-shared';
@@ -57,6 +58,8 @@ export const AIRPORT_LOOK = {
   /** The hangar's doors: the paintwork's green a step lighter and greyer, so their panels read in the gable's shade. */
   doors: '#46785c',
   mast: palette.white,
+  /** The apron kit's tyres (the plane's own undergear rubber); its paint is the hall's cream and green, the cones the tram's orange. */
+  tyre: '#3a3f44',
 };
 /**
  * The hangar roof's surface kind: matte coated sheet, as the jet bridge's steel is. Never 'copper':
@@ -915,12 +918,113 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     }
   }
 
+  /** A ground vehicle's wheels (axle across, along z): dark tyres and pale hubs, 0.09 wide or more, standing on y 0. */
+  function wheels(tyres: Part[], hubs: Part[], at: [number, number][], r: number, width: number) {
+    for (const [x, z] of at) {
+      tyres.push({ geometry: new T.CylinderGeometry(r, r, width, 14), matrix: placed(x, r, z, Math.PI / 2, 0, 0) });
+      hubs.push({ geometry: new T.CylinderGeometry(r * 0.5, r * 0.5, width + 0.012, 10), matrix: placed(x, r, z, Math.PI / 2, 0, 0) });
+    }
+  }
+  /**
+   * The apron's ground-service kit (plan.APRON_KIT), chunky toy vehicles that make the apron a working
+   * one (bare, beside the town's detail it read as a flat diagram), parked where the plane never
+   * comes. Along the apron's south edge a baggage tug and two baggage carts end to end, the tug at
+   * the east end facing the hall: the tug a low green body on four wheels under a cream bonnet, a
+   * cream seat back and a dark cushion, a dark bumper and hitch; each cart a green dolly on four
+   * smaller wheels carrying a cream luggage container with rounded edges, its tow bar to the next
+   * one. In the north-east corner, between the jet bridge and the taxiway, three traffic cones in the
+   * tram's orange with a cream band on square feet, the kit's one orange accent. Every part is 0.07
+   * across or more (thinner ones twinkle as the view moves), none is glass or lit, and nothing
+   * carries a letter, a number or a mark. Each vehicle is a group of its own on the apron, so each
+   * takes its own top-lit gradient in the batch; the dark undergear casts nothing.
+   */
+  function apronKit(g: T.Group) {
+    const K = plan.APRON_KIT,
+      { train } = K,
+      y = plan.AIRSIDE,
+      rounded = (w: number, h: number, d: number, r: number) => new RoundedBoxGeometry(w, h, d, 2, r),
+      vehicle = (name: string, x: number) => {
+        const v = new T.Group();
+        v.name = name;
+        v.position.set(x, y, train.z);
+        g.add(v);
+        return v;
+      },
+      half = train.width / 2;
+    // The tug, 1.0 long (its east end the train's), facing east.
+    {
+      const tug = vehicle('apron-tug', train.x1 - 0.5),
+        green: Part[] = [],
+        cream: Part[] = [],
+        dark: Part[] = [],
+        hubs: Part[] = [];
+      wheels(dark, hubs, [[0.3, half - 0.07], [0.3, -half + 0.07], [-0.3, half - 0.07], [-0.3, -half + 0.07]], 0.13, 0.11);
+      green.push({ geometry: rounded(0.92, 0.22, train.width - 0.02, 0.06), matrix: placed(-0.02, 0.27, 0) });
+      cream.push(
+        { geometry: rounded(0.42, 0.17, train.width - 0.12, 0.05), matrix: placed(0.2, 0.45, 0) },
+        { geometry: rounded(0.1, 0.26, train.width - 0.2, 0.035), matrix: placed(-0.37, 0.51, 0) },
+      );
+      // The seat's cushion, the bumper across its nose and the hitch at its tail.
+      dark.push(
+        { geometry: chamfered(0.26, 0.08, train.width - 0.22), matrix: placed(-0.19, 0.42, 0) },
+        { geometry: chamfered(0.08, 0.1, train.width - 0.06), matrix: placed(0.46, 0.22, 0) },
+        { geometry: chamfered(0.1, 0.08, 0.12), matrix: placed(-0.53, 0.22, 0) },
+      );
+      merge(tug, green, L.green, 'paint', { band: false });
+      merge(tug, cream, L.render, 'paint', { band: false });
+      merge(tug, dark, L.tyre, 'paint', { band: false, shadow: false });
+      merge(tug, hubs, L.steel, 'paint', { band: false, shadow: false });
+    }
+    // The carts, 0.92 long, 0.16 apart, west of the tug.
+    for (let k = 0; k < 2; k++) {
+      const cart = vehicle('apron-cart', train.x1 - 1.0 - 0.16 - 0.46 - k * (0.92 + 0.16)),
+        green: Part[] = [],
+        cream: Part[] = [],
+        dark: Part[] = [],
+        hubs: Part[] = [];
+      wheels(dark, hubs, [[0.3, half - 0.07], [0.3, -half + 0.07], [-0.3, half - 0.07], [-0.3, -half + 0.07]], 0.1, 0.09);
+      green.push({ geometry: rounded(0.92, 0.1, train.width - 0.06, 0.03), matrix: placed(0, 0.19, 0) });
+      cream.push({ geometry: rounded(0.84, 0.5, train.width - 0.08, 0.07), matrix: placed(0, 0.49, 0) });
+      // Its tow bar, forward to the next one's hitch.
+      dark.push({ geometry: chamfered(0.2, 0.07, 0.08), matrix: placed(0.54, 0.2, 0) });
+      merge(cart, green, L.green, 'paint', { band: false });
+      merge(cart, cream, L.render, 'paint', { band: false });
+      merge(cart, dark, L.tyre, 'paint', { band: false, shadow: false });
+      merge(cart, hubs, L.steel, 'paint', { band: false, shadow: false });
+    }
+    // The cones: a chamfered square foot, then the cone in three turned bands (orange, a cream
+    // band, orange) up to a flat top 0.08 across.
+    {
+      const cones = new T.Group(),
+        { base } = K.cones,
+        foot = 0.07,
+        top = 0.4,
+        radius = (h: number) => 0.11 + ((0.04 - 0.11) * (h - foot)) / (top - foot),
+        band = (h0: number, h1: number, cap = false) =>
+          new T.LatheGeometry([new T.Vector2(radius(h0), h0), new T.Vector2(radius(h1), h1), ...(cap ? [new T.Vector2(0, h1)] : [])], 12),
+        orange: Part[] = [],
+        cream: Part[] = [];
+      cones.name = 'apron-cones';
+      g.add(cones);
+      for (const [x, z] of K.cones.at) {
+        orange.push(
+          { geometry: chamfered(base - 0.02, foot, base - 0.02), matrix: placed(x, y + foot / 2, z) },
+          { geometry: band(foot, 0.19), matrix: placed(x, y, z) },
+          { geometry: band(0.27, top, true), matrix: placed(x, y, z) },
+        );
+        cream.push({ geometry: band(0.19, 0.27), matrix: placed(x, y, z) });
+      }
+      merge(cones, orange, palette.tramOrange, 'paint', { band: false });
+      merge(cones, cream, palette.tramCream, 'paint', { band: false });
+    }
+  }
+
   /**
    * The airport's ground, in its own group (the town's `airportLand`, batched on its own): the deck,
    * its coping and armour, the runway, taxiway, apron and forecourt with their markings, the road from
-   * the ring over the beach ramp and the causeway, its parapets and lamps; the hangar, the windsock
-   * and the forecourt's furniture. The boulders of the armour and the causeway's flanks are merged
-   * into one geometry before batching.
+   * the ring over the beach ramp and the causeway, its parapets and lamps; the hangar, the windsock,
+   * the forecourt's furniture and the apron's ground-service kit. The boulders of the armour and the
+   * causeway's flanks are merged into one geometry before batching.
    */
   function airportGround(g: T.Group) {
     deckLawn(g);
@@ -932,6 +1036,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     hangar(g);
     windsock(g);
     forecourt(g);
+    apronKit(g);
     const merged = mergeGeometries(rocks, false)!;
     rocks.forEach((r) => r.dispose());
     STONE.forEach((s) => s.dispose());

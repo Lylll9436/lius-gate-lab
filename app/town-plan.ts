@@ -565,6 +565,19 @@ export const PLANE = { length: 4.4, radius: 0.33, axis: 0.63, span: 3.8, fin: 1.
  */
 export const HANGAR = { x0: -16.8, x1: -13.8, z0: -50, z1: -45.6, top: 2.4 };
 export const WINDSOCK = { x: 5.4, z: -50.0 };
+/**
+ * The apron's ground-service kit (town-airport's apronKit), parked where the plane never comes: its
+ * footprint, swept over its whole loop, keeps 0.3 off each plan as off the hall and the hangar
+ * (check-town). A baggage tug and two baggage carts end to end along the apron's south edge
+ * (`train`: x0..x1 along the line z, `width` across; the tug at the east end, facing the hall),
+ * where the plane's starboard wing on its stand and on pushback comes no nearer than z -45.25; and three
+ * cones in a row in the apron's north-east corner, between the jet bridge and the taxiway (`cones`:
+ * their middles, each standing on a square `base` across).
+ */
+export const APRON_KIT = {
+  train: { x0: -12.4, x1: -9.2, z: -44.53, width: 0.62 },
+  cones: { at: [[-3.35, -49.3], [-2.9, -49.3], [-2.45, -49.3]] as XZ[], base: 0.26 },
+};
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */
