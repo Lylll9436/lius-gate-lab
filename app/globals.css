@@ -1591,11 +1591,15 @@ body:has(.mode-explore),
 
 /* Departures: the airport's board, in its chapter and its City file. A split-flap list on a flat
    ink tint: no border, no frost of its own, no glow, halo or shadow on the text. Latin text sits on
-   small flaps (IBM Plex Mono, capitals, tabular figures) cut by a dark hairline, never a white one;
-   names are in Fraunces; Chinese is set in the page's sans and never in capitals. A wide board
-   gives each row one line of five columns; below 640 px (every phone, the City file, a laptop's
-   reading panel) each row takes two lines, the date, name and status over where they went and
-   where they are now, so that each field keeps to one flap. */
+   small flaps (IBM Plex Mono, capitals, tabular figures) split by a dark hairline, never a white
+   one; names are in Fraunces; Chinese is set in the page's sans and never in capitals. Widths
+   below are the board's inside, as its container queries measure it. From 692 px (a tablet's
+   board) each row is one line of five columns. From 464 to 692 px (a laptop's reading panel, 1280
+   px wide and up) the row's first line keeps the board's order, date, name, destination and
+   status, and where they are now runs under it. Below 464 px (every phone, the City file, a
+   1024 px laptop's panel) the date, name and status come first and where they went and where they
+   are now under them. Each layout keeps "FREIBURG, GERMANY" and "UNIVERSITY COLLEGE CORK" each to
+   one flap. */
 .departures {
   container: departures / inline-size;
   /* A flap's two leaves, the lower a shade deeper, and the split between them. By day the split
@@ -1632,7 +1636,7 @@ body:has(.mode-explore),
 .board-row {
   display: grid;
   grid-template-columns:
-    var(--board-date) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr)
+    var(--board-date) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr)
     var(--board-status) 14px;
   grid-template-areas: 'date name destination now status mark';
   column-gap: 10px;
@@ -1661,16 +1665,35 @@ body:has(.mode-explore),
   color: var(--ink-3);
   transition: transform 0.2s ease;
 }
-@container departures (max-width: 639.98px) {
+/* A laptop's reading panel (464-692 px): date, name, destination and status in a line, as a
+   departures board reads, and where they are now under the name. From 464 px "First departure"
+   and a 15-character name keep to one line, and "FREIBURG, GERMANY" to one flap. */
+@container departures (max-width: 691.98px) {
   .board-head,
   .board-row {
     grid-template-columns:
-      var(--board-date) minmax(0, 0.7fr) minmax(0, 1.5fr) var(--board-status)
+      var(--board-date) minmax(0, 1fr) minmax(0, 1.2fr) var(--board-status)
+      14px;
+    grid-template-areas:
+      'date name destination status mark'
+      '. now now now .';
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+}
+/* Narrower (phones, the City file): the date, name and status, then where they went under the
+   date and where they are now beside it. On a 390 px phone "FREIBURG, GERMANY" and "UNIVERSITY
+   COLLEGE CORK" each keep to one flap. */
+@container departures (max-width: 463.98px) {
+  .board-head,
+  .board-row {
+    grid-template-columns:
+      var(--board-date) minmax(0, 1fr) minmax(0, 1.4fr) var(--board-status)
       14px;
     grid-template-areas:
       'date name name status mark'
       'destination destination now now now';
-    row-gap: 6px;
+    column-gap: 10px;
   }
 }
 .board-head {
@@ -1813,8 +1836,8 @@ summary.board-row:hover {
 .departures.is-zh .board-row .board-status {
   font-size: 12.5px;
 }
-/* A phone's board: closer columns and slightly smaller flaps, so a name keeps to one line. After
-   the rules above, which it overrides. */
+/* A phone's board: closer columns and slightly smaller, untracked flaps, so a name keeps to one
+   line and a field to one flap. After the rules above, which it overrides. */
 @container departures (max-width: 400px) {
   .board-head,
   .board-row {
@@ -1830,7 +1853,7 @@ summary.board-row:hover {
   }
   .flap {
     padding: 3px 5px;
-    letter-spacing: 0.02em;
+    letter-spacing: 0;
   }
 }
 /* The one settle-flip as the board first comes into view, column by column from the left: each

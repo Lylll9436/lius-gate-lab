@@ -1122,7 +1122,7 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
   );
   assert(chapterMeta.length <= 7, 'The masthead was measured with seven chapter chips: measure it again in a browser at 961-1040 px.');
 }
-// The departures board's flaps (globals.css).
+// The departures board's flaps and layouts (globals.css).
 {
   const css = await fs.readFile(path.join(root, 'app/globals.css'), 'utf8');
   const block = (start) => {
@@ -1153,6 +1153,64 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
       !layers.includes('--flap-split'),
     'A flap’s split by day runs across its text.',
   );
+  // Its layouts by the board's inside width, as its container queries measure it: one line of five
+  // columns from 692 px; from 464 px the date, name, destination and status in a line with where
+  // they are now under it; narrower, the destination under the date. Worked out from the rules
+  // themselves (Plex Mono is 0.6 em a character), every field of the rows we know of keeps to one
+  // flap at each width measured in a browser (a 390 px phone 312, the City file 383, the reading
+  // panel at 1024 433, 1280 468, 1440 536 and 1920 542, tablets at 768 663 and 800 695) and on
+  // either side of each break.
+  const rules = {
+      line: block('\n.board-head,\n.board-row {'),
+      middle: block('@container departures (max-width: 691.98px) {'),
+      narrow: block('@container departures (max-width: 463.98px) {'),
+      phone: block('@container departures (max-width: 400px) {'),
+    },
+    areas = (rule) => rule.match(/grid-template-areas:([^;]+);/)[1].replace(/\s+/g, ' ').trim(),
+    fr = (rule) => [...rule.match(/grid-template-columns:([^;]+);/)[1].matchAll(/minmax\(0, ([\d.]+)fr\)/g)].map((m) => +m[1]),
+    px = (rule, property) => +rule.match(new RegExp('\\b' + property + ': ([\\d.]+)px'))[1],
+    cell = block('\n.board-row .board-date,'),
+    flap = block('\n.flap {');
+  assert.deepEqual(
+    [rules.line, rules.middle, rules.narrow].map(areas),
+    [
+      "'date name destination now status mark'",
+      "'date name destination status mark' '. now now now .'",
+      "'date name name status mark' 'destination destination now now now'",
+    ],
+  );
+  assert(/--board-date: 72px;/.test(day) && /--board-status: 72px;/.test(day) && /grid-template-columns:\s*var\(--board-date\)[^;]*var\(--board-status\)\s*14px;/.test(rules.line));
+  const type = {
+    wide: { size: px(cell, 'font-size'), track: +flap.match(/letter-spacing: ([\d.]+)em;/)[1], pad: +flap.match(/padding: 3px (\d+)px;/)[1] },
+    phone: { size: px(rules.phone, 'font-size'), track: +rules.phone.match(/letter-spacing: ([\d.]+)(em)?;/)[1], pad: +rules.phone.match(/padding: 3px (\d+)px;/)[1] },
+  };
+  const flapWidth = (text, { size, track, pad }) => text.length * size * (0.6 + track) + 2 * pad;
+  for (const inner of [312, 383, 400, 401, 433, 463, 464, 468, 536, 542, 663, 691, 692, 695]) {
+    const phone = inner <= 400,
+      rule = inner >= 692 ? rules.line : inner >= 464 ? rules.middle : rules.narrow,
+      ratio = fr(rule),
+      gap = px(phone ? rules.phone : rule, 'column-gap'),
+      pad = phone ? px(rules.phone, 'padding-left') : px(rules.line, 'padding'),
+      unit = (inner - 2 * pad - 72 - 72 - 14 - gap * (ratio.length + 2)) / ratio.reduce((a, b) => a + b),
+      col = ratio.map((r) => r * unit),
+      [destination, now] =
+        rule === rules.line
+          ? [col[1], col[2]]
+          : rule === rules.middle
+            ? [col[1], col[0] + col[1] + 72 + 2 * gap]
+            : [72 + gap + col[0], col[1] + gap + 72 + gap + 14],
+      t = type[phone ? 'phone' : 'wide'];
+    for (const [text, room] of [
+      ['Freiburg, Germany', destination],
+      ['To be announced', destination],
+      ['University of Leeds', now],
+      ['University College Cork', now],
+      ['Dec 2026', 72],
+      ['Returned', 72],
+      ['Departed', 72],
+    ])
+      assert(flapWidth(text, t) <= room, `On a board ${inner} px inside, "${text}" (${flapWidth(text, t).toFixed(1)} px) no longer keeps to one flap (${room.toFixed(1)} px).`);
+  }
 }
 // The reading page numbers its seven chapters; the airport's is 03 and holds the departures board.
 for (const locale of ['en', 'zh']) {
