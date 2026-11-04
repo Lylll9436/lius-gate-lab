@@ -1706,6 +1706,28 @@ for (const [x, z] of [
       }
     });
     assert(z1 - z0 > 2.9 && head > 1.8 && shut > 5, `The hangar's doors to the apron span ${(z1 - z0).toFixed(2)}, rise ${head.toFixed(2)} and close ${shut.toFixed(2)} of the doorway.`);
+    // Its west gable, to the sea, is dressed and not one blank grey arch: besides the cornice carried
+    // across it and the archivolt, two blonde pilasters rise past the cornice either side of its middle.
+    {
+      const middle = (H.z0 + H.z1) / 2,
+        [a, b, c] = [0, 1, 2].map(() => new T.Vector3()),
+        n = new T.Vector3();
+      let pilasters = 0;
+      hangar.traverse((m) => {
+        if (!m.isMesh || m.material.color.getHex() !== hex(LOOK.dressing)) return;
+        const q = m.geometry.attributes.position;
+        for (let i = 0; i + 2 < q.count; i += 3) {
+          a.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+          b.fromBufferAttribute(q, i + 1).applyMatrix4(m.matrixWorld);
+          c.fromBufferAttribute(q, i + 2).applyMatrix4(m.matrixWorld);
+          n.subVectors(b, a).cross(new T.Vector3().subVectors(c, a));
+          const mid = a.clone().add(b).add(c).divideScalar(3),
+            up = mid.y - plan.AIRPORT.deck;
+          if (n.x < -0.9 * n.length() && mid.x < H.x0 + 0.2 && up > 1.1 && up < 1.85 && Math.abs(Math.abs(mid.z - middle) - 0.75) < 0.1) pilasters++;
+        }
+      });
+      assert(pilasters >= 4, `The hangar's west gable has ${pilasters} pilaster faces past its cornice.`);
+    }
     const pad = g.children.find((o) => {
       if (!o.isMesh || o.material.color.getHex() !== hex(LOOK.apron)) return false;
       const b = new T.Box3().setFromObject(o);
