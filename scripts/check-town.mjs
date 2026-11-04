@@ -3052,8 +3052,15 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   for (let f = 0; f < 30; f++) clock = planeClock(clock, 1 / 60, true);
   for (let f = 0; f < 60; f++) clock = planeClock(clock, 1 / 60, false);
   assert.equal(plan.planePose(clock).phase, 'parked', 'Let go, the plane does not wait on its stand.');
+  // Held anywhere out of its loop's start, its clock goes back (the frame loop then redraws the
+  // shadows at once, so the plane on its stand never stands without its shadow, or leaves it on
+  // the runway, until the paused cadence comes round); held on its stand already, it stays put
+  // (no extra shadow pass, frame after paused frame).
+  for (let t = 0.05; t < P; t += 0.37) assert(planeClock(t, 1 / 60, true) < t && planeClock(P + t, 1 / 60, true) < P + t, `Held at t=${t.toFixed(2)} the plane's clock does not go back.`);
+  for (const t of [0, P, 7 * P]) assert.equal(planeClock(t, 1 / 60, true), t, 'Held on its stand, the plane\'s clock moves.');
   const source = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8');
   assert(/planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);\s*posePlane\(plane, planeTime\);/.test(source), 'The frame loop no longer holds the plane on its stand when paused or under reduced motion.');
+  assert(/const (\w+) = planeTime;\s*planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);\s*posePlane\(plane, planeTime\);(?:\s*\/\/[^\n]*)*\s*if \(planeTime < \1\) shadowDirty = true;/.test(source), 'Sent back to its stand mid-loop, the plane leaves its shadow behind until the paused shadow cadence comes round.');
   const plane = model.plane,
     lights = plane.getObjectByName('plane-lights').children;
   for (const t of [10, 45, 75, 100, 125, 143]) {

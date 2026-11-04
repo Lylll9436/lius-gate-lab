@@ -1372,8 +1372,13 @@ export async function createCity(
     // The plane flies its loop on a clock of its own that runs with town time; paused, or for a
     // visitor who prefers reduced motion, it stands parked on its stand (planeClock). It never
     // follows the idle drift.
+    const flown = planeTime;
     planeTime = planeClock(planeTime, dt, paused || reduced);
     posePlane(plane, planeTime);
+    // Sent back to its stand mid-loop (Pause pressed while it is out), its shadow goes with it at
+    // once: a paused frame redraws the shadows only every 30th frame, which left its shadow on
+    // the runway and none under it on the stand for up to half a second.
+    if (planeTime < flown) shadowDirty = true;
     for (const entry of animated) entry.update(time, night, rain);
     if (now - clockChecked > 15000) {
       clockChecked = now;
