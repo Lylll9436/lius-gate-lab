@@ -1804,9 +1804,13 @@ summary.board-row:hover {
 .board-status .flap {
   white-space: nowrap;
 }
-/* The status in the amber of the hall's board rows: a tint on the flap, the text stays ink. */
+/* The status in the amber of the hall's board rows: a tint on the flap, the text stays ink. An
+   unlit status (the empty board's) is blank tiles like the date's. */
 .board-status .flap {
   --flap: color-mix(in oklab, var(--amber) 20%, transparent);
+}
+.board-status .flap.is-blank {
+  --flap: inherit;
 }
 /* The empty board's blank fields: a few small tiles, each split across since they hold no text,
    as an unlit board shows them. One long blank bar would read as a page still loading. */

@@ -1214,6 +1214,12 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
     ],
   );
   assert(/--board-date: 72px;/.test(day) && /--board-status: 72px;/.test(day) && /grid-template-columns:\s*var\(--board-date\)[^;]*var\(--board-status\)\s*14px;/.test(rules.line));
+  // An unlit status (the empty row's) is blank tiles like the date's, not the status's amber flap;
+  // its four tiles fit the narrower Chinese status column.
+  const tile = +block('\n.flap.is-blank {').match(/width: ([\d.]+)px;/)[1],
+    tileGap = +block('\n.flap-blanks {').match(/gap: ([\d.]+)px;/)[1],
+    zhStatus = +block('\n.departures.is-zh {').match(/--board-status: ([\d.]+)px;/)[1];
+  assert(/\n\.board-status \.flap\.is-blank \{\s*--flap: inherit;\s*\}/.test(css) && 4 * tile + 3 * tileGap <= zhStatus, 'The empty row’s blank status is not the date’s blank tiles, or does not fit the Chinese status column.');
   const type = {
     wide: { size: px(cell, 'font-size'), track: +flap.match(/letter-spacing: ([\d.]+)em;/)[1], pad: +flap.match(/padding: 3px (\d+)px;/)[1] },
     phone: { size: px(rules.phone, 'font-size'), track: +rules.phone.match(/letter-spacing: ([\d.]+)(em)?;/)[1], pad: +rules.phone.match(/padding: 3px (\d+)px;/)[1] },
@@ -1279,9 +1285,11 @@ for (const locale of ['en', 'zh']) {
   assert.equal(board.includes('is-tba'), !gone.length, 'The page’s board is empty only while nobody has left.');
 }
 // While nobody has left (on DAY, in a catalogue where nobody leaves before 2099 whatever departures
-// the real one holds) the board shows one row still to be announced, with blank tiles for its date
-// and where they are now, and under it a note for visitors. A blank field is four small tiles, as an
-// unlit board shows it: one long blank bar read as a page still loading.
+// the real one holds) the board shows one row still to be announced, saying so once, in its
+// destination: blank tiles for its date, where they are now and its status (a status of TBA / 待定
+// only repeated the destination), and under it a note for visitors. A blank field is four small
+// tiles, as an unlit board shows it: one long blank bar read as a page still loading. The row is
+// read aloud as "First departure: to be announced.".
 const { DeparturesBoard: EmptyBoard } = (await siteOver('settled', settle(next))).content;
 const blankTiles =
   '<span class="flap-blanks" aria-hidden="true">' + '<span class="flap is-blank">\u00a0</span>'.repeat(4) + '</span>';
@@ -1294,14 +1302,16 @@ for (const reading of [true, false]) {
     assert(
       html.includes('<span class="board-cell board-date">' + blankTiles + '</span>') &&
         html.includes('<span class="board-cell board-now">' + blankTiles + '</span>') &&
-        (html.match(/class="flap is-blank"/g) || []).length === 8,
-      'The empty row’s date and where they are now are blank tiles.',
+        html.includes('<span class="board-cell board-status">' + blankTiles + '</span>') &&
+        (html.match(/class="flap is-blank"/g) || []).length === 12,
+      'The empty row’s date, where they are now and its status are blank tiles.',
     );
   assert(
     en.includes('<li class="board-row is-tba" aria-label="First departure: to be announced.">') &&
       en.includes('<span class="board-cell board-name">First departure</span>') &&
       en.includes('<span class="board-cell board-destination"><span class="flap">To be announced</span></span>') &&
-      en.includes('<span class="board-cell board-status"><span class="flap">TBA</span></span>') &&
+      (en.match(/>To be announced</g) || []).length === 1 &&
+      !en.includes('TBA') &&
       en.includes('<h4>First departures</h4>') &&
       en.includes(
         '<p>Everyone at Liu’s Gate is still here. When members finish their PhDs and move on, or visiting researchers head home, this board will show where each of them went and when they set off.</p>',
@@ -1316,7 +1326,7 @@ for (const reading of [true, false]) {
     zh.includes('<li class="board-row is-tba" aria-label="首个航班：待定。">') &&
       zh.includes('<span class="board-cell board-name">首个航班</span>') &&
       zh.includes('<span class="board-cell board-destination"><span class="flap">待定</span></span>') &&
-      zh.includes('<span class="board-cell board-status"><span class="flap">待定</span></span>') &&
+      (zh.match(/<span class="flap">待定<\/span>/g) || []).length === 1 &&
       zh.includes('<h4>首批启程</h4>') &&
       zh.includes(
         '<p>刘家门的成员都还在这里。等有人完成博士学业奔赴下一站，或访问学者回到自己的学校，这块屏会显示每个人去了哪里、何时启程。</p>',

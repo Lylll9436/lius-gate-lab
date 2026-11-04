@@ -1109,7 +1109,8 @@ export function DeparturesBoard({
               </li>
             ))
           ) : (
-            // The first departure is still to come: blank tiles for its date and where they are now.
+            // The first departure is still to come, to be announced: blank tiles for its date, where
+            // they are now and its status (a status that said so again only repeated the destination).
             <li
               className="board-row is-tba"
               aria-label={zh ? '首个航班：待定。' : 'First departure: to be announced.'}
@@ -1127,7 +1128,7 @@ export function DeparturesBoard({
                 <BlankFlaps />
               </span>
               <span className="board-cell board-status">
-                <span className="flap">{zh ? '待定' : 'TBA'}</span>
+                <BlankFlaps />
               </span>
             </li>
           )}
