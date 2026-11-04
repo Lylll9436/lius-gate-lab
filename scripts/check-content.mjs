@@ -958,6 +958,12 @@ async function siteOver(name, testCatalog) {
           page.includes('href="https://example.org/past-member"'),
         'A reading row folds out the portrait, profile and links.',
       );
+    // The role it shows is marked as theirs at Liu’s Gate, so the row's Now reads as the present.
+    assert(
+      page.includes('<div class="board-profile-body"><span class="eyebrow">' + (zh ? '在刘家门时 · 博士生' : 'At Liu’s Gate · PHD RESEARCHER') + '</span>') &&
+        page.includes('<div class="board-profile-body"><span class="eyebrow">' + (zh ? '在刘家门时 · 访问博士生' : 'At Liu’s Gate · VISITING PHD RESEARCHER') + '</span>'),
+      'A reading row’s fold-out marks the role held here (' + locale + ').',
+    );
   }
   // A departure entered ahead joins the board on its day, at the top.
   assert.deepEqual(
@@ -970,15 +976,17 @@ async function siteOver(name, testCatalog) {
     ).includes('id="read-person:test-past-member"'),
     'The airport’s chapter shows the board on the visitor’s day.',
   );
-  // Their City file: a Now line, the status and the month they left, a way back to the board, their
-  // own link, and the airport's note rather than the home they left.
-  for (const [id, now, status, when, home] of [
-    ['person:test-past-member', 'Test University · Postdoctoral researcher', 'Departed', '<time dateTime="2025-06-30">June 2025</time> · Testford, Scotland', 'Red sandstone terrace'],
-    ['person:test-past-visitor', 'Test Institute', 'Returned', '<time dateTime="2026-08-31">August 2026</time> · Testburg, Ireland', 'Contemporary apartment house'],
+  // Their City file: the role they held here marked as theirs at Liu’s Gate, a Now line, the status
+  // and the month they left, a way back to the board, their own link, and the airport's note rather
+  // than the home they left.
+  for (const [id, role, now, status, when, home] of [
+    ['person:test-past-member', 'PHD RESEARCHER', 'Test University · Postdoctoral researcher', 'Departed', '<time dateTime="2025-06-30">June 2025</time> · Testford, Scotland', 'Red sandstone terrace'],
+    ['person:test-past-visitor', 'VISITING PHD RESEARCHER', 'Test Institute', 'Returned', '<time dateTime="2026-08-31">August 2026</time> · Testburg, Ireland', 'Contemporary apartment house'],
   ]) {
     const file = renderToStaticMarkup(React.createElement(lcontent.LabContent, { id, locale: 'en', onOpen() {} }));
     assert(
-      file.includes('<p class="record-now"><span class="eyebrow">Now</span><span>' + now + '</span></p>') &&
+      file.includes('<span class="eyebrow">At Liu’s Gate · ' + role + '</span>') &&
+        file.includes('<p class="record-now"><span class="eyebrow">Now</span><span>' + now + '</span></p>') &&
         file.includes('<span class="pill pill-neutral">' + status + '</span>') &&
         file.includes('<span class="record-date">' + when + '</span>') &&
         file.includes('>Departures board<'),
@@ -993,12 +1001,15 @@ async function siteOver(name, testCatalog) {
     ),
     'Their own link replaces a student mailbox that has closed.',
   );
-  assert(
-    !renderToStaticMarkup(React.createElement(lcontent.LabContent, { id: 'person:test-future-member', locale: 'en', onOpen() {} })).includes('record-now'),
-    'Someone still here has no Now line.',
-  );
+  {
+    const stayer = renderToStaticMarkup(React.createElement(lcontent.LabContent, { id: 'person:test-future-member', locale: 'en', onOpen() {} }));
+    assert(
+      !stayer.includes('record-now') && stayer.includes('<span class="eyebrow">PHD RESEARCHER</span>') && !stayer.includes('At Liu’s Gate ·'),
+      'Someone still here has no Now line, and their role is their own today.',
+    );
+  }
   const fileZh = renderToStaticMarkup(React.createElement(lcontent.LabContent, { id: 'person:test-past-member', locale: 'zh', onOpen() {} }));
-  assert(fileZh.includes('<span class="eyebrow">现任</span><span>测试大学 · 博士后研究员</span>') && fileZh.includes('>已启程<') && fileZh.includes('2025年6月') && fileZh.includes('>出发屏<'));
+  assert(fileZh.includes('<span class="eyebrow">在刘家门时 · 博士生</span>') && fileZh.includes('<span class="eyebrow">现任</span><span>测试大学 · 博士后研究员</span>') && fileZh.includes('>已启程<') && fileZh.includes('2025年6月') && fileZh.includes('>出发屏<'));
   // Someone moves into that home while the 2099 leaver still lives there: a home shows its first
   // current resident (by order), with one name on its tag, and the newcomer from the leaver's day.
   const { nav: snav, data: sdata } = await siteOver(

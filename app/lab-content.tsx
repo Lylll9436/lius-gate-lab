@@ -302,6 +302,12 @@ function monthInWords(date: string, zh: boolean) {
 /** Where someone is now: the institution, then their role there if there is one. */
 const nowParts = (d: Departure, locale: Locale) =>
   [d.destination[locale], ...(d.role ? [d.role[locale]] : [])];
+/**
+ * The role someone who has left held here, marked as theirs at Liu’s Gate ("At Liu’s Gate ·
+ * Visiting PhD researcher"), so that the Now under it reads as the present. The role is unchanged.
+ */
+const formerRole = (person: PersonRecord, locale: Locale) =>
+  `${locale === 'zh' ? '在刘家门时' : 'At Liu’s Gate'} · ${person.role[locale]}`;
 
 function newsKindLabel(item: NewsItem, zh: boolean) {
   if (item.kind === 'event') return categoryLabel(item.record.category, zh);
@@ -507,7 +513,9 @@ function RecordView({
         <div className="identity">
           <Portrait id={id} locale={locale} size="large" />
           <div>
-            <span className="eyebrow">{person.role[locale]}</span>
+            <span className="eyebrow">
+              {alumnus ? formerRole(alumnus, locale) : person.role[locale]}
+            </span>
             <p className="record-lead">{record.summary[locale]}</p>
             <span className="institution">{person.affiliation[locale]}</span>
             {alumnus && (
@@ -965,7 +973,7 @@ function DepartureRow({
       <div className="board-profile">
         <Portrait id={id} locale={locale} size="small" />
         <div className="board-profile-body">
-          <span className="eyebrow">{person.role[locale]}</span>
+          <span className="eyebrow">{formerRole(person, locale)}</span>
           <p>{person.summary[locale]}</p>
           <ProfileBody record={person} locale={locale} />
           {!!links.length && (
