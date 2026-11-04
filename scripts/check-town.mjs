@@ -1584,7 +1584,7 @@ for (const [x, z] of [
   }
   model.airportLand.traverse((o) => assert(!o.isMesh || !o.material.transparent, 'A see-through mesh on the airport.'));
   // Budgets: the airport's ground (with its hangar, windsock and forecourt furniture, whose new
-  // families are the hangar's copper and paint, the benches' wood and the planter's box ball, and
+  // families are the hangar's paint, the benches' wood and the planter's box ball, and
   // whose two lamps add their lanterns) and its building add at most 27 meshes and 70k triangles to
   // the town.
   let landMeshes = 0,
@@ -1723,9 +1723,10 @@ for (const [x, z] of [
     hex = (c) => new T.Color(c).getHex();
   // The hangar (plan.HANGAR), west of the apron: inside its plan, which the overview frames (the
   // roof's 2.4 over the deck included), standing on the deck like the hall's plinth, 0.3 in from the
-  // deck's edge at least; one barrel roof of copper, flagged as the roof (its eave shades the
-  // walls); its green doors in the east gable, to the apron, a doorway 3 wide under an arched head
-  // over 1.8; and a concrete pad at the airside's level from under them to the apron.
+  // deck's edge at least; one barrel roof of galvanised grey, flagged as the roof (its eave shades
+  // the walls), and nothing of it copper; its green doors in the east gable, to the apron, a doorway
+  // 3 wide under an arched head over 1.8; and a concrete pad at the airside's level from under them
+  // to the apron.
   {
     const H = plan.HANGAR,
       hangar = g.getObjectByName('airport-hangar'),
@@ -1735,7 +1736,31 @@ for (const [x, z] of [
     vertices(hangar, (p) => assert(plan.onAirport(p.x, p.z, -0.3), `The hangar leaves the deck at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`));
     const roofs = [];
     hangar.traverse((o) => o.isMesh && o.userData.roof && roofs.push(o));
-    assert(roofs.length === 1 && roofs[0].material.userData.surfaceKind === 'copper' && roofs[0].userData.eaveY > 1, 'The hangar has not its one copper barrel roof.');
+    const { HANGAR_ROOF } = await load('town-airport');
+    assert(roofs.length === 1 && HANGAR_ROOF !== 'copper' && roofs[0].material.userData.surfaceKind === HANGAR_ROOF && roofs[0].material.color.getHex() === hex(LOOK.hangarRoof) && roofs[0].userData.eaveY > 1, 'The hangar has not its one galvanised barrel roof.');
+    // The hall's verdigris barrel (and the tower's cap that echoes it) is the airport's only copper:
+    // the hangar's barrel in the same copper made the island's two ends read as twins, so the hall
+    // was no longer its one main building. The hangar's grey is its cladding's a step darker (no
+    // more saturated, so it stays quiet), its ribs a step lighter than the sheet.
+    {
+      let copper = 0;
+      hangar.traverse((o) => o.isMesh && o.material.userData.surfaceKind === 'copper' && copper++);
+      assert.equal(copper, 0, 'Part of the hangar is copper, the hall\'s roof.');
+      const lum = (c) => {
+          const k = new T.Color(c);
+          return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b;
+        },
+        sat = (c) => {
+          const k = new T.Color(c),
+            hi = Math.max(k.r, k.g, k.b);
+          return (hi - Math.min(k.r, k.g, k.b)) / hi;
+        },
+        sheet = lum(LOOK.hangarRoof) / lum(LOOK.cladding);
+      assert(sheet > 0.7 && sheet < 0.95 && sat(LOOK.hangarRoof) <= sat(LOOK.cladding) && lum(LOOK.hangarRib) > 1.08 * lum(LOOK.hangarRoof) && sat(LOOK.hangarRib) <= sat(LOOK.cladding), `The hangar's roof is not a quiet grey a step under its cladding (${sheet.toFixed(2)} of it) with lighter ribs.`);
+      let ribs = 0;
+      hangar.traverse((o) => o.isMesh && o.material.color.getHex() === hex(LOOK.hangarRib) && o.material.userData.surfaceKind === HANGAR_ROOF && ribs++);
+      assert.equal(ribs, 1, 'The hangar\'s roof has not its ribs in the lighter grey.');
+    }
     let z0 = Infinity,
       z1 = -Infinity,
       head = 0,

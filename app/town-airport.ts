@@ -20,7 +20,10 @@ import type { Props } from './town-props';
  * copper) with ribs of the lighter copper; its paintwork in the tram's green; the board's dark
  * slate and its tiles, dark umber glass that glows amber at night; dark iron; the jet bridge's
  * light steel, dark rubber bellows and concrete footing; the hangar's light grey cladding (the
- * placement box's) and its doors' lighter green, and the windsock's white mast.
+ * placement box's), its barrel roof of galvanised sheet a step darker and a little cooler, ribbed a
+ * step lighter (so the hall's verdigris, and the tower's cap that echoes it, stay the airport's
+ * only copper and the hall its one main building), and its doors' lighter green; and the
+ * windsock's white mast.
  */
 export const AIRPORT_LOOK = {
   armour: ['#8b8c85', '#7f847f', '#97958a', '#868478', '#737874', '#6a6f6c'],
@@ -48,10 +51,18 @@ export const AIRPORT_LOOK = {
   rubber: '#727773',
   footing: '#b9b4a6',
   cladding: '#b9b6aa',
+  /** The hangar's galvanised roof: the cladding a step darker and cooler, its ribs a step lighter than the sheet. */
+  hangarRoof: '#9ea098',
+  hangarRib: '#bdbfb7',
   /** The hangar's doors: the paintwork's green a step lighter and greyer, so their panels read in the gable's shade. */
   doors: '#46785c',
   mast: palette.white,
 };
+/**
+ * The hangar roof's surface kind: matte coated sheet, as the jet bridge's steel is. Never 'copper':
+ * its verdigris finish and seams are the hall's (and the tower cap's) alone.
+ */
+export const HANGAR_ROOF: SurfaceKind = 'paint';
 /** The hall lane's kerb radii where it meets the ring's footway, and the width of its flush edging. */
 export const LANE_DRESSING = { radius: 0.5, edge: 0.1 };
 /** The hall's levels (y): its floor on the plinth, the walls' top (the eaves) and the barrel roof's apex. */
@@ -589,8 +600,9 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
    * The hangar west of the apron (plan.HANGAR: 3.0 along x, 4.4 across, its ribs' crowns 2.4 over
    * the deck), the hall's working sibling: a stone plinth course; walls of light grey cladding
    * between blonde piers (one at each corner and one under each rib), a blonde cornice under the
-   * eaves; a verdigris barrel roof (the hall's copper) with a bull-nosed roll along each eave,
-   * ribbed in the lighter copper (a broad rib on each verge). To the apron (east) the gable's
+   * eaves; a barrel roof of quiet galvanised grey (HANGAR_ROOF's kind: not the hall's copper, so
+   * the two barrels never read as twins at the island's two ends) with a bull-nosed roll along
+   * each eave, ribbed a step lighter (a broad rib on each verge). To the apron (east) the gable's
    * arched doorway, 3.0 wide, framed by blonde jambs and imposts and an archivolt rising to just
    * under the roof's edge, closed by four green leaves under an arched head (their stiles and rails
    * proud, handles where the middle two meet); across the west gable, to the sea, the cornice
@@ -715,7 +727,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
         new T.ExtrudeGeometry(s, { depth: len - 0.06, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelOffset: -0.03, bevelSegments: 2, curveSegments: 24 })
           .rotateY(Math.PI / 2)
           .translate(-len / 2 + 0.03, 0, 0),
-        material(L.roof, 'copper'),
+        material(L.hangarRoof, HANGAR_ROOF),
       );
       shell.castShadow = shell.receiveShadow = true;
       shell.userData.roof = true;
@@ -724,7 +736,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
       const low = yc + Ri * Math.cos(b),
         high = yc + Ro * Math.cos(spread);
       for (const sz of [-1, 1]) {
-        const r = new T.Mesh(new T.CylinderGeometry(roll, roll, len, 16).rotateZ(Math.PI / 2), material(L.roof, 'copper'));
+        const r = new T.Mesh(new T.CylinderGeometry(roll, roll, len, 16).rotateZ(Math.PI / 2), material(L.hangarRoof, HANGAR_ROOF));
         r.position.set(0, (low + high) / 2, sz * (edge - 0.03));
         r.castShadow = r.receiveShadow = true;
         r.userData.band = true;
@@ -777,7 +789,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     merge(h, plinth, palette.plinth, 'stone', { tone: 0.04 });
     merge(h, cladding, L.cladding, 'paint');
     merge(h, green, L.doors, 'paint', { tone: 0.06 });
-    merge(h, ribs, L.rib, 'copper');
+    merge(h, ribs, L.hangarRib, HANGAR_ROOF);
     merge(h, iron, L.iron, 'iron', { shadow: false });
     // The pad: the apron's concrete from under the doors to the apron's west edge.
     slab(g, H.x1 - 0.3, plan.APRON.x0, h.position.z - door.half - 0.35, h.position.z + door.half + 0.35, A.deck - 0.01, plan.AIRSIDE, L.apron, 'stone');
