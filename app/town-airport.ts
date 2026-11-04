@@ -116,6 +116,22 @@ export function windsockAim(time: number) {
     droop: W.droop + W.lift * (0.7 * Math.sin(time * 1.3 + 2.0) + 0.3 * Math.sin(time * 3.1 + 0.3)),
   };
 }
+/**
+ * The rock armour's stones (the island's and the causeway's flanks'): each an icosahedron of
+ * `detail` 2 with its corners merged (detail 1's 80 faces left 10-12-sided outlines, faceted polygons
+ * beside the beach's smooth boulder at a close zoom), each corner in or out by up to `jitter` / 2.
+ * They lie in courses (`courses`: the island's upper and lower, the flanks' upper and lower; each
+ * `step` apart, give or take 40%, `skip` of them left out, sized `r` give or take 28%): about a
+ * third as many as there were, each about 1.5 times the size, chunkier and inside the same budget.
+ * The eight capstones are `cap` across (give or take `capSpread`).
+ */
+export const ARMOUR = {
+  detail: 2,
+  jitter: 0.08,
+  courses: { upper: { step: 1.3, skip: 0.04, r: 0.37 }, lower: { step: 1.35, skip: 0.02, r: 0.45 }, flankUpper: { step: 1.3, skip: 0.04, r: 0.36 }, flankLower: { step: 1.35, skip: 0.02, r: 0.43 } },
+  cap: 0.58,
+  capSpread: 0.08,
+};
 /** The island's edge, out from the deck's edge: the coping's outer face, and the armour's bed from there to its toe (o, y). */
 const EDGE = { coping: 0.05, bed: [[0.03, 0.31], [0.92, -0.58]] as [number, number][] };
 
@@ -183,21 +199,21 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     return m;
   }
   /**
-   * The armour stones' shapes: an icosahedron with its corners merged, so a corner moved moves
-   * every face round it (no cracks); the capstones' one step finer.
+   * The armour stones' shape (ARMOUR.detail): an icosahedron with its corners merged, so a corner
+   * moved moves every face round it (no cracks).
    */
-  const STONE = [1, 2].map((detail) => mergeVertices(new T.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv')));
+  const STONE = mergeVertices(new T.IcosahedronGeometry(1, ARMOUR.detail).deleteAttribute('normal').deleteAttribute('uv'));
   /**
    * An armour stone, quarried rather than rolled: the shape pushed part way toward a rounded block
-   * (each stone its own squareness), each corner in or out by up to 8%, squashed (longest across
-   * the slope's line, lowest upright), turned about y and tipped up to 0.25 either way. It shades
-   * as the smooth rounded block (its normals are the block's, not the corners'), so no facet
-   * shows. Pushed onto `list` at (x, y, z) in world space with its tone baked in: one of the
-   * armour's greys a little lighter or darker, lighter toward its top, damp below the waterline.
+   * (each stone its own squareness), each corner in or out by up to 4% (ARMOUR.jitter), squashed
+   * (longest across the slope's line, lowest upright), turned about y and tipped up to 0.25 either
+   * way. It shades as the smooth rounded block (its normals are the block's, not the corners'), so
+   * no facet shows. Pushed onto `list` at (x, y, z) in world space with its tone baked in: one of
+   * the armour's greys a little lighter or darker, lighter toward its top, damp below the waterline.
    */
-  function boulder(list: T.BufferGeometry[], x: number, y: number, z: number, r: number, seed: number, big = false) {
+  function boulder(list: T.BufferGeometry[], x: number, y: number, z: number, r: number, seed: number) {
     const h = (k: number) => hash(seed * 7.31 + k * 1.913),
-      geometry = STONE[big ? 1 : 0].clone(),
+      geometry = STONE.clone(),
       p = geometry.getAttribute('position'),
       normals = new Float32Array(p.count * 3),
       n = new T.Vector3(),
@@ -207,7 +223,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
         uy = p.getY(i),
         uz = p.getZ(i),
         block = (ux ** 4 + uy ** 4 + uz ** 4) ** -0.25,
-        k = (1 + square * (block - 1)) * (1 + 0.16 * (hash(seed * 31.7 + i * 3.17) - 0.5));
+        k = (1 + square * (block - 1)) * (1 + ARMOUR.jitter * (hash(seed * 31.7 + i * 3.17) - 0.5));
       p.setXYZ(i, ux * k, uy * k, uz * k);
       n.set(ux ** 3, uy ** 3, uz ** 3).normalize().multiplyScalar(square).add(new T.Vector3(ux, uy, uz).multiplyScalar(1 - square)).normalize().toArray(normals, i * 3);
     }
@@ -309,10 +325,10 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     const rocks: T.BufferGeometry[] = [],
       [[o0, y0], [o1, y1]] = EDGE.bed,
       path = round(0, 0.1, R.top / 2 + 0.75),
-      put = (p: Station, f: number, size: number, seed: number, big = false) => {
+      put = (p: Station, f: number, size: number, seed: number) => {
         const o = o0 + f * (o1 - o0),
           slide = 0.1 * (hash(seed * 5 + 2) - 0.5),
-          stone = boulder(rocks, p.x + p.nx * o + slide * p.nz, y0 + f * (y1 - y0) + size * 0.3, p.z + p.nz * o - slide * p.nx, size, seed, big),
+          stone = boulder(rocks, p.x + p.nx * o + slide * p.nz, y0 + f * (y1 - y0) + size * 0.3, p.z + p.nz * o - slide * p.nx, size, seed),
           at = stone.getAttribute('position');
         // A stone reaching past the armour's toe (A.armour, give or take 0.15) is drawn back up the slope.
         let reach = -Infinity;
@@ -320,8 +336,9 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
         const excess = reach - (A.armour + 0.15);
         if (excess > 0) stone.translate(-p.nx * excess, 0, -p.nz * excess);
       };
-    course(path, 0.55, 0.1, 1, put, 0.2, 0.07, 0.25);
-    course(path, 0.6, 0.04, 500, put, 0.52, 0.07, 0.3);
+    const { upper, lower } = ARMOUR.courses;
+    course(path, upper.step, upper.skip, 1, put, 0.2, 0.07, upper.r);
+    course(path, lower.step, lower.skip, 500, put, 0.52, 0.07, lower.r);
     const corner = (sx: number, sz: number): Station => {
       const a = Math.atan2(sz, sx);
       return { x: A.x + sx * (A.hw - A.radius) + Math.cos(a) * A.radius, z: A.z + sz * (A.hd - A.radius) + Math.sin(a) * A.radius, nx: Math.cos(a), nz: Math.sin(a), y: 0 };
@@ -331,7 +348,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
       ...[-1, 1].map((s): Station => ({ x: R.x + s * (R.top / 2 + 0.95), z: A.z + A.hd, nx: 0, nz: 1, y: 0 })),
       ...[-4.2, 3.6].map((dx): Station => ({ x: A.x + dx, z: A.z - A.hd, nx: 0, nz: -1, y: 0 })),
     ];
-    caps.forEach((p, k) => put(p, 0.34, 0.47 + 0.08 * hash(k * 3 + 0.5), 800 + k * 3, true));
+    caps.forEach((p, k) => put(p, 0.34, ARMOUR.cap + ARMOUR.capSpread * hash(k * 3 + 0.5), 800 + k * 3));
     return rocks;
   }
 
@@ -586,7 +603,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     const flank: Station[] = [];
     for (let z = from - 0.3; z > A.z + A.hd + 0.25; z -= 0.1) flank.push({ x: R.x, z, nx: 1, nz: 0, y: plan.airportRoadTop(z) });
     for (const side of [-1, 1])
-      for (const [f0, r0, step, skip, seed] of [[0.22, 0.24, 0.55, 0.08, 1000 + side * 300], [0.56, 0.29, 0.6, 0.04, 2000 + side * 300]] as const)
+      for (const [f0, { r: r0, step, skip }, seed] of [[0.22, ARMOUR.courses.flankUpper, 1000 + side * 300], [0.56, ARMOUR.courses.flankLower, 2000 + side * 300]] as const)
         course(flank, step, skip, seed, (s, f, size, k) => {
           const drop = s.y - 0.03 - toe(s);
           if (drop * (1 - f) < 0.06) return;
@@ -1039,7 +1056,7 @@ export function createAirport(ctx: TownContext, kit: Kit, props: Props, nature: 
     apronKit(g);
     const merged = mergeGeometries(rocks, false)!;
     rocks.forEach((r) => r.dispose());
-    STONE.forEach((s) => s.dispose());
+    STONE.dispose();
     solid(g, merged, '#ffffff', 'stone', { name: 'airport-armour' });
   }
 

@@ -1627,6 +1627,34 @@ for (const [x, z] of [
   for (const name of ['airport-armour', 'airport-deck', 'airport-coping', 'airport-road']) assert.equal(named(name).length, 1, `The airport's ${name} is not one mesh.`);
   const armour = named('airport-armour')[0].geometry;
   assert(armour.attributes.position.count / 3 <= 40000, `The airport's armour costs ${armour.attributes.position.count / 3} triangles.`);
+  // Its stones read as smooth chunky boulders, not faceted blobs: each an icosahedron of detail 2 at
+  // least (one run of 20 (detail + 1)^2 faces; detail 1's 80 left 10-12-sided outlines beside the
+  // beach's smooth boulder at a close zoom), its corners jittered by 4% at most (8% made dents);
+  // about half as many as the 290 there were, each about 1.5 times the size (their median plan
+  // extent 0.68 then).
+  {
+    const { ARMOUR } = await load('town-airport'),
+      q = armour.attributes.position,
+      key = (i) => `${q.getX(i).toFixed(4)},${q.getY(i).toFixed(4)},${q.getZ(i).toFixed(4)}`,
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+    for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let i = 0; i + 2 < q.count; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
+    const stones = new Map();
+    for (let i = 0; i < q.count; i += 3) {
+      const root = find(key(i));
+      if (!stones.has(root)) stones.set(root, { faces: 0, box: new T.Box3() });
+      const stone = stones.get(root);
+      stone.faces++;
+      for (let k = 0; k < 3; k++) stone.box.expandByPoint(new T.Vector3().fromBufferAttribute(q, i + k));
+    }
+    const faces = 20 * (ARMOUR.detail + 1) ** 2,
+      extents = [...stones.values()].map(({ box }) => Math.max(box.max.x - box.min.x, box.max.z - box.min.z)).sort((a, b) => a - b),
+      median = extents[extents.length >> 1];
+    assert(ARMOUR.detail >= 2 && ARMOUR.jitter <= 0.08, `The armour's stones are icosahedra of detail ${ARMOUR.detail}, jittered ${ARMOUR.jitter}.`);
+    assert([...stones.values()].every((stone) => stone.faces === faces), 'An armour stone is not one smooth icosahedron of the armour\'s detail.');
+    assert(stones.size >= 100 && stones.size <= 170 && median >= 0.95, `The armour lays ${stones.size} stones of median extent ${median.toFixed(2)}, not about half the 290 at about 1.5 times their 0.68.`);
+  }
   // Its stones sit a clear step under the coping's kerb stone in value (they were near-white beads
   // round the island), and their greys spread widely: a darker stone for about every three.
   {
