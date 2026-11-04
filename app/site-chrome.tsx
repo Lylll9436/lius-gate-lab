@@ -95,6 +95,8 @@ export function Masthead({
           onNavigate('overview');
         }}
       >
+        {/* The glass behind the wordmark: shown on narrow screens only (globals.css). */}
+        <span className="wordmark-glass" aria-hidden="true" />
         <GateMark size={26} />
         <span className="wordmark-name">{zh ? '刘家门' : 'LIU’S GATE'}</span>
       </a>

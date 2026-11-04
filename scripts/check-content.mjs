@@ -1145,6 +1145,96 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
   );
   assert(chapterMeta.length <= 7, 'The masthead was measured with seven chapter chips: measure it again in a browser at 961-1040 px.');
 }
+// Up to 960 px the reading page scrolls under the masthead, and its text ran into the bare
+// wordmark: there the wordmark sits on the buttons' glass, a pill of their height. The glass is a
+// layer of its own inside the link (.wordmark-glass), listed beside the language switch in every
+// shared glass rule (the surface, the night frost, the specular ring, both accessibility
+// fallbacks) and in the lens's list. On desktop the layer has no box and the wordmark's own rules
+// give it no surface, so nothing changes there. The surface's border stays transparent (only the
+// more-contrast fallback draws one, on every chip alike), and nothing puts a shadow on the name.
+{
+  const css = (await fs.readFile(path.join(root, 'app/globals.css'), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, ''),
+    page = await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+    chrome = await fs.readFile(path.join(root, 'app/site-chrome.tsx'), 'utf8');
+  /** Every style rule in the sheet: its selectors, its declarations and the at-rules around it. */
+  const rules = [];
+  (function walk(text, at) {
+    for (let i = 0; ; ) {
+      const open = text.indexOf('{', i);
+      if (open < 0) return;
+      let depth = 1,
+        end = open + 1;
+      for (; depth; end++) depth += text[end] === '{' ? 1 : text[end] === '}' ? -1 : 0;
+      const head = text.slice(i, open).split(';').pop().trim(),
+        body = text.slice(open + 1, end - 1);
+      if (/^@(media|supports|container)\b/.test(head)) walk(body, [...at, head]);
+      else if (!head.startsWith('@')) rules.push({ at: at.join(' '), selectors: head.split(',').map((s) => s.trim()), body });
+      i = end;
+    }
+  })(css, []);
+  const NARROW = '@media (max-width: 960px)',
+    rule = (selector, at = '') => rules.find((r) => r.at === at && r.selectors.includes(selector)),
+    has = (r, decl) => !!r && new RegExp(`(^|;)\\s*${decl.replace(/[()]/g, '\\$&')};`).test(r.body);
+  // The glass in every shared rule beside the language switch, and in the lens's list.
+  const surface = rules.find((r) => r.body.includes('--glass-tint: linear-gradient'));
+  assert(
+    surface &&
+      !surface.at &&
+      surface.selectors.includes('.lang-switch') &&
+      surface.selectors.includes('.wordmark-glass') &&
+      has(surface, 'border: 1px solid transparent') &&
+      rule(":root[data-theme='night'] .lang-switch")?.selectors.includes(":root[data-theme='night'] .wordmark-glass") &&
+      rule('.lang-switch::before')?.selectors.includes('.wordmark-glass::before') &&
+      rule('.lang-switch', '@media (prefers-reduced-transparency: reduce)')?.selectors.includes('.wordmark-glass') &&
+      rule('.lang-switch', '@media (prefers-contrast: more)')?.selectors.includes('.wordmark-glass'),
+    'The wordmark’s glass is not on the buttons’ glass: the shared surface, night frost, ring and fallbacks all list it beside .lang-switch.',
+  );
+  const lens = page.match(/const REFRACTING_GLASS =\s*'([^']*)'/)?.[1].split(', ') ?? [];
+  assert(lens.includes('.lang-switch') && lens.includes('.wordmark-glass'), 'The wordmark’s glass does not refract at the rim as the buttons do.');
+  assert(
+    /<a\s+className="wordmark"[\s\S]*?<span className="wordmark-glass" aria-hidden="true" \/>\s*<GateMark size=\{26\} \/>\s*<span className="wordmark-name">/.test(chrome),
+    'The wordmark link no longer holds its glass, behind the gate mark and the name.',
+  );
+  // A pill of the buttons' height up to 960 px, the glass filling it; on desktop the glass has no box.
+  const buttons = rules.find((r) => !r.at && r.selectors.includes('.lang-switch') && /min-height:/.test(r.body)),
+    height = buttons?.body.match(/min-height: ([\d.]+px);/)?.[1],
+    pill = rule('.wordmark', NARROW),
+    glass = rule('.wordmark-glass', NARROW);
+  assert(
+    height &&
+      has(pill, `min-height: ${height}`) &&
+      has(pill, 'border-radius: 999px') &&
+      has(pill, 'position: relative') &&
+      /(^|;)\s*padding: 0 1[2-6]px;/.test(pill.body) &&
+      ['display: block', 'position: absolute', 'inset: 0', 'border-radius: inherit'].every((d) => has(glass, d)),
+    'Up to 960 px the wordmark is no longer a pill of the buttons’ height with its glass filling it.',
+  );
+  const shows = rules.filter((r) => r.selectors.includes('.wordmark-glass') && /(^|;)\s*display:/.test(r.body));
+  assert(
+    shows.length === 2 && shows.includes(glass) && shows.some((r) => !r.at && r.selectors.length === 1 && has(r, 'display: none')),
+    'The wordmark’s glass shows outside the narrow layout: on desktop it must have no box.',
+  );
+  // The rules that style the link itself (.wordmark in a selector's last part).
+  const wordmark = rules.filter((r) => r.selectors.some((s) => /\.wordmark(?![-\w])\S*$/.test(s)));
+  assert(
+    wordmark
+      .filter((r) => r !== pill)
+      .every((r) => !/(^|;)\s*(-webkit-)?(background|backdrop-filter|border|box-shadow|padding|min-height|outline)(-[a-z-]+)?:/.test(r.body)),
+    'The desktop wordmark gained a surface: its rules outside the 960 px block must stay as they were.',
+  );
+  // No border colour on the pill or its glass (outside the more-contrast fallback), no text-shadow
+  // on the name or anything it inherits from.
+  const reaching = rules.filter((r) =>
+    r.selectors.some((s) => /\.wordmark|\.masthead(?![-\w])|^(html|body|\*|\.site)$|^:root(\[[^\]]*\])*$/.test(s)),
+  );
+  assert(
+    reaching
+      .filter((r) => r.at !== '@media (prefers-contrast: more)' && r.selectors.some((s) => /\.wordmark(-glass)?(?![-\w])/.test(s)))
+      .every((r) => !/(^|;)\s*border(-[a-z]+)*-color:/.test(r.body) && [...r.body.matchAll(/(^|;)\s*border:([^;]*);/g)].every((m) => /transparent/.test(m[2]))) &&
+      reaching.every((r) => !/text-shadow:/.test(r.body)),
+    'The wordmark’s pill has a border colour or its name a text-shadow: the glass has no border and the text no glow.',
+  );
+}
 // The board's settle-flip (lab-content.tsx; the static render runs no effects, so its source): it
 // is settled by whatever ends its effect, so 中文 pressed mid-flip cannot leave every cell's flip on
 // for good (replayed each time the board is shown again), and it never shows in Chinese.

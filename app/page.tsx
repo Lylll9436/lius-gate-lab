@@ -25,9 +25,12 @@ import { Hero, Chapters } from './chapters';
 import { chapterBearings } from './town-plan';
 import { installLiquidGlass } from './liquid-glass';
 
-/** Controls and the news card refract at the rim; the long text panels stay frosted only. */
+/**
+ * Controls and the news card refract at the rim; the long text panels stay frosted only. The
+ * wordmark's glass has no box on desktop, where the lens leaves it alone (under 16 px).
+ */
 const REFRACTING_GLASS =
-  '.hero-news, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .hud, .sky-chip, .hover-chip, .tour-control, .inspection-toolbar, .plan-legend';
+  '.hero-news, .masthead-nav, .mode-switch, .lang-switch, .wordmark-glass, .button-ghost, .hud, .sky-chip, .hover-chip, .tour-control, .inspection-toolbar, .plan-legend';
 
 type View = { mode: BrowseMode; content: ContentId };
 /** A different bearing for every chapter, each facing its subject's front. */

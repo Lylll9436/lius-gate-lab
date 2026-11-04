@@ -347,6 +347,12 @@ img {
 .wordmark .gate-mark {
   color: var(--accent);
 }
+/* The wordmark's glass, behind the mark and the name on narrow screens only (see the 960 px
+   rules), where the reading page scrolls under the masthead. A layer of its own, so the shared
+   glass rules below can list it beside the buttons while desktop keeps the bare wordmark. */
+.wordmark-glass {
+  display: none;
+}
 .wordmark-zh {
   font-size: 14px;
   color: var(--ink-3);
@@ -2012,6 +2018,7 @@ summary.board-row:hover {
 .masthead-nav,
 .mode-switch,
 .lang-switch,
+.wordmark-glass,
 .button-ghost,
 .sky-chip,
 .hover-chip,
@@ -2047,6 +2054,7 @@ summary.board-row:hover {
 :root[data-theme='night'] .masthead-nav,
 :root[data-theme='night'] .mode-switch,
 :root[data-theme='night'] .lang-switch,
+:root[data-theme='night'] .wordmark-glass,
 :root[data-theme='night'] .button-ghost,
 :root[data-theme='night'] .sky-chip,
 :root[data-theme='night'] .hover-chip,
@@ -2090,6 +2098,7 @@ summary.board-row:hover {
 .masthead-nav::before,
 .mode-switch::before,
 .lang-switch::before,
+.wordmark-glass::before,
 .button-ghost::before,
 .sky-chip::before,
 .hover-chip::before,
@@ -2152,6 +2161,7 @@ summary.board-row:hover {
   .masthead-nav,
   .mode-switch,
   .lang-switch,
+  .wordmark-glass,
   .button-ghost,
   .sky-chip,
   .hover-chip,
@@ -2177,6 +2187,7 @@ summary.board-row:hover {
   .masthead-nav,
   .mode-switch,
   .lang-switch,
+  .wordmark-glass,
   .button-ghost,
   .sky-chip,
   .hover-chip,
@@ -2238,6 +2249,21 @@ summary.board-row:hover {
   }
   .masthead-nav {
     display: none;
+  }
+  /* The reading page scrolls under the masthead: the wordmark sits on the buttons' glass, a
+     pill of their height, so the text passing under it never runs into the name. */
+  .wordmark {
+    position: relative;
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+  }
+  .wordmark-glass {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
   }
   .stage-dock {
     height: 46svh;
