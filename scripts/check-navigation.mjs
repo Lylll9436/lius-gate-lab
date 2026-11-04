@@ -704,22 +704,25 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       vertical = Math.max(53, 76 / aspect),
       camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
       controls = new OrbitControls(camera, null),
-      held = { T, Math, plan, camera, controls, shiftApplied: new T.Vector3(), tween: false },
-      pan = runInNewContext(panScript, held),
-      offset = new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38),
-      back = offset.clone().normalize(),
-      right = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
-      up = new T.Vector3().crossVectors(back, right),
-      perUnit = h / (camera.top - camera.bottom);
+      held = { T, Math, plan, camera, controls, shiftApplied: new T.Vector3(), tween: false, panSlack: Infinity },
+      pan = runInNewContext(panScript, held);
     controls.domElement = { clientWidth: w, clientHeight: h };
     Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true });
-    camera.position.copy(offset);
+    camera.position.set(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38);
     camera.lookAt(controls.target);
     camera.updateMatrixWorld();
     controls.update();
     camera.updateMatrixWorld();
-    const ground = () => {
-        const g = controls.target.clone().sub(held.shiftApplied);
+    // The camera's line of sight back, its screen's right and up, and pixels a unit, as it stands.
+    const axes = () => ({
+        back: camera.position.clone().sub(controls.target).normalize(),
+        right: new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0),
+        up: new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
+        perUnit: (h * camera.zoom) / (camera.top - camera.bottom),
+      }),
+      ground = () => {
+        const { back } = axes(),
+          g = controls.target.clone().sub(held.shiftApplied);
         return g.addScaledVector(back, -g.y / back.y);
       },
       worst = { move: 0, beyond: -Infinity, deck: -Infinity, lift: 0, reached: Infinity };
@@ -729,7 +732,8 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       worst,
       // One frame: the pointer's move (if any), then the frame loop's hold and update.
       frame(dx = 0, dy = 0) {
-        const was = controls.target.clone();
+        const was = controls.target.clone(),
+          { right, up, perUnit } = axes();
         if (dx || dy) {
           controls._pan(dx, dy);
           controls.update();
@@ -753,6 +757,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       toward(x, z) {
         // A drag that moves the view toward (x, z): the map follows the finger the other way.
         const g = ground(),
+          { right, up } = axes(),
           aim = new T.Vector3(x - g.x, 0, z - g.z),
           sx = aim.dot(right),
           sy = aim.dot(up),
@@ -829,6 +834,89 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     assert(Math.abs(view.targetZoom - want) < 0.01 && view.targetZoom >= 0.95, `The airport's chapter fits at ${view.targetZoom.toFixed(3)} on ${w} x ${h} (${want} expected).`);
     const subject = view.target.clone().sub(view.shiftApplied);
     assert(inside(subject.x, subject.z) && region(subject.x, subject.z).radius === scene.PAN.deck.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9), `The airport's chapter frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pan region.`);
+  }
+  // A glide between the People side and the airport (or the residence and the airport, the tour's
+  // stops 6 and 7) runs straight across open water, out of the pan regions. Cut short by a touch on
+  // a narrow screen (no panel offset there to glide it on), it hands the visitor the view where it
+  // is: the next frame does not pull it in (it jumped as the touch landed), a drag out holds it
+  // within how far out it was, and a drag back in takes that slack away.
+  {
+    const w = 768,
+      h = 1024,
+      people = new T.Vector3(-24.5, 0, -1.5),
+      // The residence's pick centres its middle, 2.8 up.
+      residence = new T.Vector3(-20.61, 2.79, -10.27);
+    frame(w, h, 0, plan.chapterBearings.airport);
+    scene.fitGroup(scene.AIRPORT_FIT, 0.95, 2.6);
+    const departures = { at: view.target.clone(), yaw: plan.chapterBearings.airport, zoom: view.targetZoom },
+      glides = [
+        [{ at: people, yaw: plan.chapterBearings.people, zoom: 1.6 }, departures],
+        [departures, { at: people, yaw: plan.chapterBearings.people, zoom: 1.6 }],
+        [{ at: residence, yaw: plan.chapterBearings.people, zoom: 2.4 }, departures],
+      ];
+    let crossing = 0,
+      handed = 0;
+    for (const [from, to] of glides) {
+      for (let k = 0; k <= 100; k++) {
+        // Its ground point (the lifted middle slid down the line of sight at the opening bearing's elevation).
+        const p = from.at.clone().lerp(to.at, k / 100),
+          sight = 35 / Math.hypot(38, 35);
+        crossing = Math.max(crossing, beyond(p.x - (p.y / sight) * Math.sqrt(1 - sight * sight) * Math.sin(from.yaw), p.z - (p.y / sight) * Math.sqrt(1 - sight * sight) * Math.cos(from.yaw)));
+      }
+      for (let cut = 2; cut < 150; cut += cut < 60 ? 1 : 4) {
+        const drive = drivePan(from.yaw, w, h),
+          { camera, controls } = drive.held,
+          blend = 1 - Math.exp(-5.5 / 60);
+        let yaw = from.yaw;
+        const align = () => {
+          camera.position.copy(controls.target).add(new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38));
+          camera.lookAt(controls.target);
+          camera.updateMatrixWorld();
+        };
+        controls.target.copy(from.at);
+        camera.zoom = from.zoom;
+        camera.updateProjectionMatrix();
+        align();
+        controls.update();
+        drive.held.tween = true;
+        // The frame loop's turn and glide (step), then the limit and OrbitControls' update.
+        for (let f = 0; f < cut && drive.held.tween; f++) {
+          const left = to.yaw - yaw;
+          yaw += Math.sign(left) * Math.min(Math.abs(left) * (1 - Math.exp(-2.5 / 60)), Math.PI / 2 / 60);
+          controls.target.lerp(to.at, blend);
+          camera.zoom += (to.zoom - camera.zoom) * blend;
+          camera.updateProjectionMatrix();
+          align();
+          drive.held.tween = controls.target.distanceTo(to.at) >= 0.002;
+          drive.frame();
+        }
+        if (!drive.held.tween) continue;
+        // A touch: OrbitControls' 'start' cancels the glide; the next frame hands the view over.
+        drive.held.tween = false;
+        const before = controls.target.clone(),
+          g = drive.ground(),
+          out = Math.max(0, beyond(g.x, g.z));
+        drive.frame();
+        const moved = controls.target.distanceTo(before) * ((h * camera.zoom) / (camera.top - camera.bottom));
+        handed = Math.max(handed, out);
+        assert(moved < 0.5, `Cut short ${cut} frames into its glide ${out.toFixed(1)} out of the pan regions, the view is pulled ${moved.toFixed(0)} px in one frame.`);
+        if (out < 1) continue;
+        // Dragged on outward (away from the union), it is held within the slack it was handed...
+        const e = 0.01,
+          grad = new T.Vector3(beyond(g.x + e, g.z) - beyond(g.x - e, g.z), 0, beyond(g.x, g.z + e) - beyond(g.x, g.z - e)).normalize(),
+          far = g.clone().addScaledVector(grad, 60);
+        for (let f = 0; f < 90; f++) {
+          const at = drive.frame(...drive.toward(far.x, far.z));
+          assert(beyond(at.x, at.z) <= out + 0.5, `Handed the view ${out.toFixed(1)} out, a drag takes it ${beyond(at.x, at.z).toFixed(1)} out.`);
+        }
+        // ...and dragged back in, the slack goes and stays gone.
+        const near = g.clone().addScaledVector(grad, -30);
+        for (let f = 0; f < 150; f++) drive.frame(...drive.toward(near.x, near.z));
+        const back = drive.ground();
+        assert(drive.held.panSlack < 0.5 && beyond(back.x, back.z) <= 0.5, `Panned back in, the view keeps ${drive.held.panSlack.toFixed(1)} of slack.`);
+      }
+    }
+    assert(crossing > 2 && handed > 2, `The glide check no longer leaves the pan regions (${crossing.toFixed(1)}, handed ${handed.toFixed(1)} out).`);
   }
   // That is the framing the Departures chapter gets: the reading camera turns to its chapter's
   // bearing (the gate's) and selects its scene target, the airport, and the scene fits a selected

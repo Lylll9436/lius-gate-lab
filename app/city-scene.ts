@@ -635,7 +635,11 @@ export async function createCity(
    * PAN.lift by sliding the target and the camera together along the line of sight, which changes
    * nothing on screen: a drag kept up against the limit would otherwise lift the camera on into the
    * fog. A glide itself is never clamped: the camera's own moves (a panel offset can reach past
-   * the limit on narrow wide screens) are the camera's.
+   * the limit on narrow wide screens) are the camera's. And it can end, or be cut short by a
+   * touch, with its subject out of the regions (a glide between the People side and the airport
+   * crosses open water, 2.5 out): the visitor is then handed the view where it is, held within how
+   * far out it was (`panSlack`, which only ever shrinks until the next glide), and can only pan it
+   * back in. Pulled in at once, the view jumped as the touch landed.
    */
   function holdPan() {
     const back = panBack.copy(camera.position).sub(controls.target).normalize(),
@@ -648,8 +652,9 @@ export async function createCity(
     const lift = (ground.y - excess) / back.y;
     ground.addScaledVector(back, -ground.y / back.y);
     const region = panRegion(ground);
+    panSlack = tween ? Infinity : Math.min(panSlack, Math.max(0, ground.distanceTo(region.centre) - region.radius));
     controls.cursor.copy(shiftApplied).add(region.centre).addScaledVector(back, lift);
-    controls.maxTargetRadius = tween ? Infinity : region.radius;
+    controls.maxTargetRadius = tween ? Infinity : region.radius + panSlack;
   }
   controls.maxTargetRadius = PAN.disc;
   controls.screenSpacePanning = true;
@@ -704,6 +709,8 @@ export async function createCity(
     targetZoom = 1,
     shownZoom = 1,
     tween = true,
+    // How far out of the pan regions the visitor was handed the view (holdPan).
+    panSlack = Infinity,
     planMode = false,
     inViewport = true,
     inspect: T.Group | null = null,
