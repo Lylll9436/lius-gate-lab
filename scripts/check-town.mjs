@@ -1649,8 +1649,8 @@ for (const [x, z] of [
     assert(strongest > 0.6 && gone > 0 && gone < rows * 0.15, `The airport's surf is too even (${strongest.toFixed(2)} at most, ${gone} rows gone).`);
   }
   model.airportLand.traverse((o) => assert(!o.isMesh || !o.material.transparent, 'A see-through mesh on the airport.'));
-  // Budgets: the airport's ground (with its hangar, windsock and forecourt furniture, whose new
-  // families are the hangar's paint, the benches' wood and the planter's box ball, and
+  // Budgets: the airport's ground (with its hangar, windsock, forecourt furniture and apron kit, whose new
+  // families are the hangar's and the kit's paint, the benches' wood and the planter's box ball, and
   // whose two lamps add their lanterns) and its building add at most 27 meshes and 70k triangles to
   // the town.
   let landMeshes = 0,
