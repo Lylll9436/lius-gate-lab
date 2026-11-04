@@ -249,6 +249,8 @@ export function planeBelly(z: number) {
 }
 /** The cabin's window band (stations, and angles up the port side; mirrored to starboard) and the cockpit's glazing (stations; from the band's foot over the top). */
 export const PLANE_GLAZING = { cabin: [-0.85, 1.28], band: [0.21, 0.61], cockpit: [1.7, 1.93] };
+/** The forward doors' small lights: their stations about the door's middle and their angles up the port side (mirrored to starboard). */
+export const DOOR_LIGHT = { z: [-0.05, 0.05], keys: [0.26, 0.56] };
 /** The navigation lights' steady emissive, the traffic signals' own: no strobe, no blink, no boost at night. */
 export const PLANE_LIGHT = 0.95;
 /** The skin's point at station z and angle a (0 to port, a quarter turn up), `out` proud of it, with the smooth skin's normal there. */
@@ -294,21 +296,25 @@ function skinCells(zs: number[], keys: (z: number) => number[], out: number, pai
   }
 }
 /**
- * A panel raised `rise` off the skin over stations z0..z1 and the angles `keys` (ascending), its top
- * and its four low sides (each side flat-shaded, facing out of the panel), painted by paint.
+ * A panel raised `rise` off the skin over the stations zs (ascending, its ends first and last) and
+ * the angles `keys` (ascending), its top and its four low sides (each side flat-shaded, facing out
+ * of the panel), painted by paint. Anything set on it (a window) shares its stations and keys, so
+ * the panel's cells under it are flat quads parallel to it: a facet's corner inside its outline
+ * would poke through it wherever the skin curves.
  */
-function skinPanel(z0: number, z1: number, keys: number[], rise: number, paint: (z: number, a: number) => string, lists: Map<string, SkinList>) {
-  const zm = (z0 + z1) / 2,
-    zs = [z0, zm, z1];
+function skinPanel(zs: number[], keys: number[], rise: number, paint: (z: number, a: number) => string, lists: Map<string, SkinList>) {
+  const z0 = zs[0],
+    z1 = zs[zs.length - 1],
+    inner = zs.slice(1, -1);
   skinCells(zs, () => keys, rise, paint, lists);
   const last = keys.length - 1,
     loop: [number, number][] = [
       ...keys.map((a): [number, number] => [z0, a]),
-      [zm, keys[last]],
+      ...inner.map((z): [number, number] => [z, keys[last]]),
       ...keys.slice().reverse().map((a): [number, number] => [z1, a]),
-      [zm, keys[0]],
+      ...inner.slice().reverse().map((z): [number, number] => [z, keys[0]]),
     ],
-    centre = skinPoint(zm, (keys[0] + keys[last]) / 2).p,
+    centre = skinPoint((z0 + z1) / 2, (keys[0] + keys[last]) / 2).p,
     face = new T.Vector3(),
     mid = new T.Vector3();
   loop.forEach(([za, aa], k) => {
@@ -947,8 +953,8 @@ export function createMovers(ctx: TownContext, kit: Kit) {
       const turn = (a: number) => (side > 0 ? a : Math.PI - a),
         sorted = (list: number[]) => list.map(turn).sort((a, b) => a - b),
         belly = Math.asin(planeBelly(P.door));
-      skinPanel(P.door - 0.11, P.door + 0.11, sorted([-0.66, (belly - 0.66) / 2, belly, G.band[0], 0.47, 0.73]), 0.012, livery, skins);
-      skinCells([P.door - 0.05, P.door + 0.05], () => sorted([0.26, 0.56]), 0.015, () => 'glass', skins);
+      skinPanel([P.door - 0.11, ...DOOR_LIGHT.z.map((dz) => P.door + dz), P.door + 0.11], sorted([-0.66, (belly - 0.66) / 2, belly, G.band[0], ...DOOR_LIGHT.keys, 0.73]), 0.012, livery, skins);
+      skinCells(DOOR_LIGHT.z.map((dz) => P.door + dz), () => sorted(DOOR_LIGHT.keys), 0.015, () => 'glass', skins);
     }
     const glass: T.BufferGeometry[] = [];
     for (const [name, list] of skins) {

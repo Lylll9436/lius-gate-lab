@@ -2445,7 +2445,7 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
 // wingtip, green at the starboard one and white at the tail, each its own plain material on the
 // lanterns' program at the traffic signals' steady glow, casting nothing.
 {
-  const { createMovers, PLANE_LIGHT } = await load('town-movers'),
+  const { createMovers, PLANE_LIGHT, planeSection, DOOR_LIGHT } = await load('town-movers'),
     { createKit } = await load('town-kit'),
     { createCityMaterials } = await load('city-materials'),
     library = createCityMaterials(),
@@ -2479,6 +2479,40 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   assert.equal(tyres.size, 6, `The plane stands on ${tyres.size} tyres.`);
   assert(width >= P.radius - 1e-3 && width <= P.radius + 0.013, `The plane's fuselage is ${(2 * width).toFixed(3)} across at its door.`);
   assert(tris <= 7000, `The plane costs ${Math.round(tris)} triangles.`);
+  // The forward doors' small lights: nothing of a door panel pokes through one (a facet's corner of
+  // the panel under the light showed as a small diamond in it). A ray from the fuselage's axis out
+  // through any corner or face middle of the parts round the door meets the light's glass (when it
+  // meets it at all) farther out.
+  {
+    const glassMesh = plane.children.find((o) => o.isMesh && o.material.userData.surfaceKind === 'glass'),
+      corners = (mesh, i) => [0, 1, 2].map((k) => new T.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, i + k).applyMatrix4(mesh.matrixWorld)),
+      lightsGlass = [],
+      ray = new T.Ray(),
+      hit = new T.Vector3();
+    for (let i = 0; i < glassMesh.geometry.attributes.position.count; i += 3) {
+      const tri = corners(glassMesh, i);
+      if (tri.every((q) => Math.abs(q.z - P.door) <= Math.max(...DOOR_LIGHT.z.map(Math.abs)) + 0.01)) lightsGlass.push(tri);
+    }
+    let met = 0;
+    plane.traverse((o) => {
+      if (!o.isMesh || o === glassMesh || o.parent === lights) return;
+      for (let i = 0; i + 2 < o.geometry.attributes.position.count; i += 3) {
+        const tri = corners(o, i);
+        if (!tri.every((q) => Math.abs(q.z - P.door) < 0.12)) continue;
+        for (const q of [...tri, tri[0].clone().add(tri[1]).add(tri[2]).divideScalar(3)]) {
+          const axis = new T.Vector3(0, planeSection(q.z).y, q.z),
+            reach = q.distanceTo(axis);
+          ray.set(axis, q.clone().sub(axis).normalize());
+          for (const [a, b, c] of lightsGlass)
+            if (ray.intersectTriangle(a, b, c, false, hit)) {
+              met++;
+              assert(hit.distanceTo(axis) > reach + 1e-4, `A door panel pokes through its light at ${q.toArray().map((n) => n.toFixed(3)).join(', ')}.`);
+            }
+        }
+      }
+    });
+    assert(lightsGlass.length === 4 && met > 0, `The doors' lights are ${lightsGlass.length} triangles over ${met} points of the panels.`);
+  }
   const lens = lights?.children ?? [],
     lantern = kit.lampGlass();
   assert(lights?.userData.keepSeparate && lens.length === 3 && new Set(lens.map((l) => l.material)).size === 3, 'The plane\'s three navigation lights are not apart, each in its own material.');
