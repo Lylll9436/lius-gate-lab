@@ -94,7 +94,7 @@ export const Hero = memo(function Hero({
   );
 });
 
-/** The six chapters. Memoised: hovering a building must not re-render the page's text. */
+/** The seven chapters. Memoised: hovering a building must not re-render the page's text. */
 export const Chapters = memo(function Chapters({
   locale,
   onOpen,
@@ -144,6 +144,7 @@ export const Chapters = memo(function Chapters({
                   id={chapter.id}
                   locale={locale}
                   onOpen={onOpen}
+                  onHover={onHoverBuilding}
                 />
               )}
             </div>

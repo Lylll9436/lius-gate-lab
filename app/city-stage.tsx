@@ -493,6 +493,7 @@ export function CityStage({
                 id={ctl.content}
                 locale={locale}
                 onOpen={(id) => ctl.navigate('city', id)}
+                onHover={ctl.accent}
               />
             </div>
             <div className="dossier-foot">

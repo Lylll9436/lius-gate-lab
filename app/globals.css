@@ -1578,6 +1578,346 @@ body:has(.mode-explore),
 .person-profile-body > :last-child {
   margin-bottom: 0;
 }
+/* A file of someone who has left: where they are now, under where they were. */
+.record-now {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.record-now .eyebrow {
+  margin-right: 8px;
+}
+
+/* Departures: the airport's board, in its chapter and its City file. A split-flap list on a flat
+   ink tint: no border, no frost of its own, no glow, halo or shadow on the text. Latin text sits on
+   small flaps (IBM Plex Mono, capitals, tabular figures) split by a dark hairline, never a white
+   one; names are in Fraunces; Chinese is set in the page's sans and never in capitals. Widths
+   below are the board's inside, as its container queries measure it. From 692 px (a tablet's
+   board) each row is one line of five columns. From 464 to 692 px (a laptop's reading panel, 1280
+   px wide and up) the row's first line keeps the board's order, date, name, destination and
+   status, and where they are now runs under it. Below 464 px (every phone, the City file, a
+   1024 px laptop's panel) the date, name and status come first and where they went and where they
+   are now under them. Each layout keeps "FREIBURG, GERMANY" and "UNIVERSITY COLLEGE CORK" each to
+   one flap. */
+.departures {
+  container: departures / inline-size;
+  /* A flap's two leaves, the lower a shade deeper, and the split between them. By day the split
+     shows only at the flap's ends, its hinges: run across dark capitals it reads as a
+     strikethrough, which on a departures board means cancelled. At night it cuts across the pale
+     text as on a real board, and across a blank tile always. */
+  --flap: color-mix(in oklab, var(--ink) 5%, transparent);
+  --flap-lower: color-mix(in oklab, var(--ink) 4.5%, transparent);
+  --flap-split: color-mix(in oklab, var(--ink) 18%, transparent);
+  --flap-hinge: var(--flap-split);
+  --flap-cut: transparent;
+  /* The date and status columns fit their widest flap ("DEC 2026", "RETURNED"; "2026年12月",
+     "已返程"), the same in the head and in every row so the columns line up. */
+  --board-date: 72px;
+  --board-status: 72px;
+  margin: 2px 0 18px;
+  padding: 8px 8px 4px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.departures.is-zh {
+  /* "2026年12月" is 87.6 px on its flap (Inter's tabular figures): the column leaves it room. */
+  --board-date: 92px;
+  --board-status: 56px;
+}
+/* At night the page's ink is pale: the split stays dark, and runs across the flap. */
+:root[data-theme='night'] .departures {
+  --flap: color-mix(in oklab, var(--ink) 7%, transparent);
+  --flap-lower: transparent;
+  --flap-split: rgba(0, 0, 0, 0.45);
+  --flap-hinge: transparent;
+  --flap-cut: var(--flap-split);
+}
+.board-head,
+.board-row {
+  display: grid;
+  grid-template-columns:
+    var(--board-date) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr)
+    var(--board-status) 14px;
+  grid-template-areas: 'date name destination now status mark';
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 8px;
+}
+.board-date {
+  grid-area: date;
+}
+.board-name {
+  grid-area: name;
+}
+.board-destination {
+  grid-area: destination;
+}
+.board-now {
+  grid-area: now;
+}
+.board-status {
+  grid-area: status;
+}
+.board-mark {
+  grid-area: mark;
+  align-self: start;
+  margin-top: 4px;
+  color: var(--ink-3);
+  transition: transform 0.2s ease;
+}
+/* A laptop's reading panel (464-692 px): date, name, destination and status in a line, as a
+   departures board reads, and where they are now under the name. From 464 px "First departure"
+   and a 15-character name keep to one line, and "FREIBURG, GERMANY" to one flap. */
+@container departures (max-width: 691.98px) {
+  .board-head,
+  .board-row {
+    grid-template-columns:
+      var(--board-date) minmax(0, 1fr) minmax(0, 1.2fr) var(--board-status)
+      14px;
+    grid-template-areas:
+      'date name destination status mark'
+      '. now now now .';
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+}
+/* Narrower (phones, the City file): the date, name and status, then where they went under the
+   date and where they are now beside it. On a 390 px phone "FREIBURG, GERMANY" and "UNIVERSITY
+   COLLEGE CORK" each keep to one flap. */
+@container departures (max-width: 463.98px) {
+  .board-head,
+  .board-row {
+    grid-template-columns:
+      var(--board-date) minmax(0, 1fr) minmax(0, 1.4fr) var(--board-status)
+      14px;
+    grid-template-areas:
+      'date name name status mark'
+      'destination destination now now now';
+    column-gap: 10px;
+  }
+}
+.board-head {
+  padding-top: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.board-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.board-rows > li + li {
+  border-top: 1px solid var(--line);
+}
+.board-row {
+  width: 100%;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--ink);
+}
+button.board-row,
+summary.board-row {
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.15s ease;
+}
+summary.board-row::-webkit-details-marker {
+  display: none;
+}
+/* A click anywhere on a row lands on the row itself, so it keeps the focus (the name can still
+   take it when an address jumps to the row). */
+summary.board-row > * {
+  pointer-events: none;
+}
+button.board-row:hover,
+summary.board-row:hover {
+  background: var(--accent-soft);
+}
+.board-entry[open] > summary .board-mark {
+  transform: rotate(180deg);
+}
+.board-entry {
+  scroll-margin-top: calc(var(--masthead) + 16px);
+}
+.board-row .board-name {
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.board-row h3:focus {
+  outline: none;
+}
+.board-row.is-tba .board-name {
+  color: var(--ink-2);
+}
+.board-row .board-date,
+.board-row .board-destination,
+.board-row .board-now,
+.board-row .board-status {
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 27px;
+}
+/* Each field is one flap that moves to the next line whole ("UNIVERSITY COLLEGE CORK", then "PHD
+   RESEARCHER"); only a field longer than its column breaks inside its flap. */
+.flap {
+  display: inline-block;
+  max-width: 100%;
+  /* Flaps line up by their tops: a flap that breaks over two lines would otherwise lift the
+     row's baseline to its last line, and the flaps beside it with it. */
+  vertical-align: top;
+  padding: 3px 6px;
+  border-radius: 4px;
+  /* The split's hinges at the two ends (by day), the split across the flap (at night), the lower
+     leaf's shade, and the flap. */
+  background:
+    linear-gradient(var(--flap-hinge), var(--flap-hinge)) left center / 2px 1px no-repeat,
+    linear-gradient(var(--flap-hinge), var(--flap-hinge)) right center / 2px 1px no-repeat,
+    linear-gradient(
+      transparent calc(50% - 0.5px),
+      var(--flap-cut) calc(50% - 0.5px) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    ),
+    linear-gradient(transparent 50%, var(--flap-lower) 50%),
+    var(--flap);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  line-height: 17px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.board-date .flap,
+.board-status .flap {
+  white-space: nowrap;
+}
+/* The status in the amber of the hall's board rows: a tint on the flap, the text stays ink. */
+.board-status .flap {
+  --flap: color-mix(in oklab, var(--amber) 20%, transparent);
+}
+/* The empty board's blank fields: a few small tiles, each split across since they hold no text,
+   as an unlit board shows them. One long blank bar would read as a page still loading. */
+.flap-blanks {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: top;
+}
+.flap.is-blank {
+  --flap-hinge: transparent;
+  --flap-cut: var(--flap-split);
+  width: 10px;
+  padding-left: 0;
+  padding-right: 0;
+}
+.departures.is-zh .board-head,
+.departures.is-zh .flap {
+  font-family: var(--font-sans);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+/* Chinese column heads at the size of the page's other Chinese labels (10 px is for capitals). */
+.departures.is-zh .board-head {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+.departures.is-zh .board-row .board-name {
+  font-family: 'Fraunces Variable', 'Fraunces', var(--font-sans);
+}
+.departures.is-zh .board-row .board-date,
+.departures.is-zh .board-row .board-destination,
+.departures.is-zh .board-row .board-now,
+.departures.is-zh .board-row .board-status {
+  font-size: 12.5px;
+}
+/* A phone's board: closer columns and slightly smaller, untracked flaps, so a name keeps to one
+   line and a field to one flap. After the rules above, which it overrides. */
+@container departures (max-width: 400px) {
+  .board-head,
+  .board-row {
+    column-gap: 8px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .board-row .board-date,
+  .board-row .board-destination,
+  .board-row .board-now,
+  .board-row .board-status {
+    font-size: 11px;
+  }
+  .flap {
+    padding: 3px 5px;
+    letter-spacing: 0;
+  }
+}
+/* The one settle-flip as the board first comes into view, column by column from the left: each
+   cell turns over on its split and lands, 600 ms in all (FLIP_MS in lab-content.tsx). */
+.departures.is-flipping .board-row .board-cell {
+  animation: board-flip 360ms cubic-bezier(0.3, 0.75, 0.4, 1) both;
+}
+.departures.is-flipping .board-row .board-name {
+  animation-delay: 60ms;
+}
+.departures.is-flipping .board-row .board-destination {
+  animation-delay: 120ms;
+}
+.departures.is-flipping .board-row .board-now {
+  animation-delay: 180ms;
+}
+.departures.is-flipping .board-row .board-status {
+  animation-delay: 240ms;
+}
+@keyframes board-flip {
+  0% {
+    transform: perspective(400px) rotateX(0deg);
+  }
+  40% {
+    transform: perspective(400px) rotateX(-90deg);
+  }
+  40.1% {
+    transform: perspective(400px) rotateX(90deg);
+  }
+  80% {
+    transform: perspective(400px) rotateX(-7deg);
+  }
+  100% {
+    transform: perspective(400px) rotateX(0deg);
+  }
+}
+/* A row's fold-out on the reading page: the person's portrait, profile and links. */
+.board-profile {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 14px;
+  padding: 4px 8px 16px;
+}
+.board-profile-body > p {
+  margin: 6px 0 4px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.board-profile-body .record-props {
+  margin: 12px 0;
+}
+.board-profile-body > :last-child {
+  margin-bottom: 0;
+}
+.board-note {
+  margin-top: -2px;
+}
 
 /* ------------------------------------------------------------------ */
 /* Footer                                                              */
@@ -1878,6 +2218,15 @@ body:has(.mode-explore),
     width: min(100%, clamp(380px, 50vw, 600px));
   }
 }
+/* Seven chapter chips: from the wide layout's first width to 1040 px they sit closer, so the nav
+   keeps clear of the wordmark and of the mode switch, which is wider in City mode ("Reading
+   view"). At full padding the gaps fell to the masthead's 16 px floor at 961 px and the chips
+   were squeezed. */
+@media (min-width: 961px) and (max-width: 1040px) {
+  .masthead-nav a {
+    padding: 7px 10px;
+  }
+}
 @media (max-width: 960px) {
   :root {
     --masthead: 58px;
@@ -2049,6 +2398,10 @@ body:has(.mode-explore),
   .record-props > div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+  /* The departures board gives its rows the room its own margin took. */
+  .departures {
+    padding: 6px 2px 2px;
   }
 }
 /* City mode below the wide layout: the panels that come and go stack in rows under the sky

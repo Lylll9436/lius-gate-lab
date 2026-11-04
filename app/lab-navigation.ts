@@ -6,11 +6,14 @@ import {
   type Locale,
 } from './city-data';
 import {
-  peopleRecords,
+  hasDeparted,
+  memberRecords,
+  pageDay,
   personContentId,
   getRecord,
   researchRecords,
 } from './lab-records';
+import type { PersonRecord } from './content-schema';
 export type ContentId = string;
 export type BrowseMode = 'city' | 'reading';
 export const destinations = [
@@ -31,33 +34,45 @@ export const readingChapters = [
   'corner-park',
   'lius-gate',
 ];
-export const people = peopleRecords.map((p) => ({
+const card = (p: PersonRecord) => ({
   ...p,
   id: personContentId(p),
   name: p.title,
   category: p.role,
-}));
+});
+/** The People chapter on `today` (the page's day unless given): the members, in their order. */
+export const peopleOn = (today: Date = pageDay) =>
+  memberRecords(today).map(card);
+/** The People chapter as the page finds it, on the visitor's day when it loaded (pageDay). */
+export const people = peopleOn();
+/** A member's home (not the residence, which everyone staying there shares). */
+const isHome = (id: BuildingId) =>
+  !!buildings.find((b) => b.id === id)?.variant;
 /**
- * The People chapter's name tags over the roofs: one for each building someone lives in (a home
- * has one resident, the Visiting PhD Residence any number, and no tag while no one stays there),
- * naming its residents in the chapter's order: first names in English, full names in Chinese.
+ * The People chapter's name tags over the roofs on `today` (the page's day unless given): one for
+ * each building someone lives in (no tag while no one stays there), naming in the chapter's order
+ * a home's first current resident, or everyone staying in the Visiting PhD Residence: first names
+ * in English, full names in Chinese.
  */
-export function homeTags(locale: Locale) {
+export function homeTags(locale: Locale, today: Date = pageDay) {
+  const members = peopleOn(today);
   return [
     ...new Set(
-      people
+      members
         .map((p) => p.buildingId)
         .filter((id): id is BuildingId => buildings.some((b) => b.id === id)),
     ),
-  ].map((building) => ({
-    building,
-    label: people
-      .filter((p) => p.buildingId === building)
-      // A tag carries a first name in English; in Chinese the full Chinese name, or, for someone
-      // whose name is only written in Latin letters, the first name as in English.
-      .map((p) => (locale === 'zh' && /[\u3400-\u9fff]/.test(p.name.zh) ? p.name.zh : p.name.en.split(' ')[0]))
-      .join(locale === 'zh' ? '、' : ' · '),
-  }));
+  ].map((building) => {
+    const residents = members.filter((p) => p.buildingId === building);
+    return {
+      building,
+      label: (isHome(building) ? residents.slice(0, 1) : residents)
+        // A tag carries a first name in English; in Chinese the full Chinese name, or, for someone
+        // whose name is only written in Latin letters, the first name as in English.
+        .map((p) => (locale === 'zh' && /[\u3400-\u9fff]/.test(p.name.zh) ? p.name.zh : p.name.en.split(' ')[0]))
+        .join(locale === 'zh' ? '、' : ' · '),
+    };
+  });
 }
 export const isContentId = (id: string): id is ContentId =>
   ['overview', 'people', 'corner-park', ...buildings.map((b) => b.id)].includes(
@@ -82,7 +97,21 @@ export function titleFor(id: ContentId, locale: Locale) {
     (locale === 'zh' ? '内容已归档或移除' : 'Record unavailable')
   );
 }
-export function buildingForContent(id: ContentId) {
+/**
+ * Whether an address is someone who has left Liu’s Gate by `today` (the page's day unless given).
+ * Their record keeps the home they lived in as history, but their file is now the airport's: its
+ * departures board lists them, and the camera, the chapter and the file's place go there.
+ */
+export function departedOn(id: ContentId, today: Date = pageDay) {
+  const entry = getRecord(id);
+  return entry?.kind === 'person' && hasDeparted(entry.record as PersonRecord, today);
+}
+/**
+ * The building a content's file is about on `today` (the page's day unless given). Someone who has
+ * left is at the airport: that is decided before their record's buildingId (their old home) is read.
+ */
+export function buildingForContent(id: ContentId, today: Date = pageDay) {
+  if (departedOn(id, today)) return buildings.find((b) => b.id === 'airport');
   const entry = getRecord(id),
     target =
       entry && 'buildingId' in entry.record
@@ -90,12 +119,13 @@ export function buildingForContent(id: ContentId) {
         : id.replace(/^place:/, '');
   return buildings.find((b) => b.id === target);
 }
-export function sceneTarget(id: ContentId): {
+/** Where the camera goes for a content on `today` (the page's day unless given). */
+export function sceneTarget(id: ContentId, today: Date = pageDay): {
   building?: BuildingId;
   district?: 'residential' | 'research' | 'waterfront';
   park?: boolean;
 } {
-  const building = buildingForContent(id);
+  const building = buildingForContent(id, today);
   if (building) return { building: building.id };
   const entry = getRecord(id);
   if (id === 'people' || entry?.kind === 'person')
@@ -120,28 +150,38 @@ export function sceneTarget(id: ContentId): {
   return {};
 }
 /**
- * The place a City file is about, as the camera frames it: a building, the terrace ('people',
- * for the People chapter and anyone without a home), the corner park (its events too), or
- * null for the whole island. The file's eyebrow and glyph name it.
+ * The place a City file is about on `today` (the page's day unless given), as the camera frames
+ * it: a building (the airport for someone who has left), the terrace ('people', for the People
+ * chapter and anyone without a home), the corner park (its events too), or null for the whole
+ * island. The file's eyebrow and glyph name it.
  */
-export function placeFor(id: ContentId): BuildingId | 'people' | 'corner-park' | null {
-  const target = sceneTarget(id);
+export function placeFor(
+  id: ContentId,
+  today: Date = pageDay,
+): BuildingId | 'people' | 'corner-park' | null {
+  const target = sceneTarget(id, today);
   return target.building ?? (target.park ? 'corner-park' : target.district ? 'people' : null);
 }
 /**
- * What a building opens: a member's home its resident's file (or, empty, its own); any other
- * place its own file, the Visiting PhD Residence's listing whoever lives there.
+ * What a building opens on `today` (the page's day unless given): a member's home its first
+ * current resident's file (or, with no one in it, its own); any other place its own file, the
+ * Visiting PhD Residence's listing whoever lives there.
  */
-export function contentForBuilding(id: BuildingId) {
-  if (!buildings.find((b) => b.id === id)?.variant) return id;
-  const resident = residentsOf(id)[0];
+export function contentForBuilding(id: BuildingId, today: Date = pageDay) {
+  if (!isHome(id)) return id;
+  const resident = residentsOf(id, today)[0];
   return resident ? personContentId(resident) : 'place:' + id;
 }
-/** The City tour: every place in the Directory's order, ending in the corner park. */
-export const tourStops: ContentId[] = [
-  ...buildings.map((b) => contentForBuilding(b.id)),
+/**
+ * The City tour on `today` (the page's day unless given): every place in the Directory's order,
+ * ending in the corner park.
+ */
+export const tourOn = (today: Date = pageDay): ContentId[] => [
+  ...buildings.map((b) => contentForBuilding(b.id, today)),
   'corner-park',
 ];
+/** The City tour as the page finds it, on the visitor's day when it loaded (pageDay). */
+export const tourStops: ContentId[] = tourOn();
 /**
  * Fired on window when the app itself has moved to an address (pushState and replaceState
  * fire neither popstate nor hashchange), so what follows the address can read it again.
@@ -171,9 +211,13 @@ export function parseLocation(hash: string): {
     return { mode: 'reading', content: legacy[prefix] };
   return { mode: 'city', content: isContentId(prefix) ? prefix : 'overview' };
 }
-export function chapterFor(id: ContentId) {
+/**
+ * The chapter an address belongs to on `today` (the page's day unless given): a member is in
+ * People, someone who has left in Departures (the airport's chapter, where the board lists them).
+ */
+export function chapterFor(id: ContentId, today: Date = pageDay) {
   const entry = getRecord(id);
-  if (entry?.kind === 'person') return 'people';
+  if (entry?.kind === 'person') return departedOn(id, today) ? 'airport' : 'people';
   if (entry?.kind === 'event') return 'corner-park';
   if (entry?.kind === 'output') return 'city-archive';
   if (entry?.kind === 'note') return 'research-studio';
@@ -181,12 +225,24 @@ export function chapterFor(id: ContentId) {
     return 'status' in entry.record && entry.record.status === 'completed'
       ? 'city-archive'
       : 'research-studio';
-  const place = buildingForContent(id);
+  const place = buildingForContent(id, today);
   return dwelling(place)
     ? 'people'
     : id === 'overview'
       ? 'town-hall'
       : id.replace(/^place:/, '');
+}
+/**
+ * The chapter whose bearing shows a content's place from the front on `today` (the page's day
+ * unless given): City mode turns the camera to it. It is the chapter of the building the camera
+ * frames, looked up as that place, else the content's own. A founding member's home has their
+ * address as its id ('qin-li'), so once they have left, chapterFor of the bare id would be theirs
+ * (Departures) and turn the camera to the airport's bearing for the home they left, empty or with
+ * someone new in it.
+ */
+export function facingChapter(id: ContentId, today: Date = pageDay) {
+  const building = sceneTarget(id, today).building;
+  return chapterFor(building ? 'place:' + building : id, today);
 }
 /**
  * The reading page's chapter for an address. The hero's overview is a chapter of its own
@@ -202,19 +258,22 @@ export const readingContent = (id: ContentId, chapter: ContentId) =>
   readingChapter(id) === chapter ? id : chapter;
 
 /**
- * The buildings a content's camera frames. People: every home with someone in it and the
- * Visiting PhD Residence, lived in or not (the chapter's places).
+ * The buildings a content's camera frames on `today` (the page's day unless given). People: every
+ * home a member lives in and the Visiting PhD Residence, lived in or not (the chapter's places).
  */
-export function selectionForContent(id: ContentId): BuildingId[] {
+export function selectionForContent(
+  id: ContentId,
+  today: Date = pageDay,
+): BuildingId[] {
   if (id === 'people')
     return [
       ...new Set([
-        ...peopleRecords
+        ...memberRecords(today)
           .map((p) => p.buildingId)
           .filter((id): id is BuildingId => buildings.some((b) => b.id === id)),
         ...buildings.filter((b) => b.model === 'residence').map((b) => b.id),
       ]),
     ];
-  const target = sceneTarget(id);
+  const target = sceneTarget(id, today);
   return target.building ? [target.building] : [];
 }

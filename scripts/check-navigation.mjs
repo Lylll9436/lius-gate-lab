@@ -85,8 +85,33 @@ assert.deepEqual(nav.tourStops, [
   'corner-park',
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
+// Ten stops: the gate, the hall, the three homes, the residence, then the airport, the studio, the
+// archive and the park.
+assert.equal(nav.tourStops.length, 10);
+assert.deepEqual(
+  nav.tourStops.slice(5),
+  ['visiting-phd', 'airport', 'research-studio', 'city-archive', 'corner-park'],
+);
+// The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
+// and the overview's list of places names it there too.
+assert.deepEqual(nav.readingChapters, [
+  'town-hall',
+  'people',
+  'airport',
+  'research-studio',
+  'city-archive',
+  'corner-park',
+  'lius-gate',
+]);
+assert.deepEqual(nav.destinations, nav.readingChapters.slice(0, -1));
+// Its address frames the airport: the chapter, the camera's subject and the file's place.
+assert.equal(nav.chapterFor('airport'), 'airport');
+assert.equal(nav.readingChapter('airport'), 'airport');
+assert.deepEqual(nav.sceneTarget('airport'), { building: 'airport' });
+assert.deepEqual(nav.selectionForContent('airport'), ['airport']);
+assert.equal(nav.placeFor('airport'), 'airport');
 // A City file's eyebrow names the place the camera frames, an event's park included.
-const { eventRecords } = await import(
+const { eventRecords, peopleRecords, personContentId } = await import(
   pathToFileURL(path.join(output, 'lab-records.mjs')).href
 );
 assert(eventRecords.length, 'The place check needs an event to open.');
@@ -100,6 +125,28 @@ for (const b of buildings) assert.equal(nav.placeFor(nav.contentForBuilding(b.id
 assert.equal(nav.placeFor('people'), 'people');
 assert.equal(nav.placeFor('corner-park'), 'corner-park');
 assert.equal(nav.placeFor('overview'), null);
+// Everyone published reads in People while they are here, and in Departures once they have left,
+// their camera on the airport whatever home their record names (check-content tries test leavers).
+for (const p of peopleRecords) {
+  const id = personContentId(p),
+    gone = nav.departedOn(id);
+  assert.equal(nav.chapterFor(id), gone ? 'airport' : 'people', id + ' is in the wrong chapter.');
+  if (gone) assert.deepEqual(nav.sceneTarget(id), { building: 'airport' }, id + ' has left: the camera goes to the airport.');
+  assert.equal(nav.facingChapter(id), gone ? 'airport' : 'people', id + ' is faced from the wrong chapter.');
+}
+// City mode faces each place from its chapter's bearing: a home or the residence from People's,
+// whoever lives there (check-content tries the home a founding member has left), every other
+// building from its own chapter's, the People file and the park from theirs.
+for (const b of buildings)
+  for (const id of [nav.contentForBuilding(b.id), 'place:' + b.id])
+    assert.equal(nav.facingChapter(id), b.variant || b.model === 'residence' ? 'people' : b.id, `City mode faces ${id} from the wrong chapter.`);
+assert.deepEqual(['people', 'corner-park', 'overview'].map((id) => nav.facingChapter(id)), ['people', 'corner-park', 'town-hall']);
+assert(
+  /const facing = \(id: ContentId\) => bearings\[facingChapter\(id\)\] \?\? bearings\.overview;/.test(
+    await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+  ),
+  'City mode no longer turns to the chapter of the place it frames (facingChapter).',
+);
 for (const stop of nav.tourStops)
   assert.deepEqual(nav.parseLocation(`#city/${stop}`), { mode: 'city', content: stop });
 for (const [old, content] of Object.entries({
@@ -151,10 +198,13 @@ assert.notEqual(
   nav.parseLocation('#city/town-hall').content,
   'The gate story and lab introduction must stay distinct.',
 );
+// Every published person has a portrait slot, including anyone who has left (their file still
+// opens). The People chapter (nav.people) shows only the members on the visitor's day.
 assert.deepEqual(
   Object.keys(personPhotos).sort((a, b) => a.localeCompare(b)),
-  nav.people.map((p) => p.id).sort((a, b) => a.localeCompare(b)),
+  peopleRecords.map(personContentId).sort((a, b) => a.localeCompare(b)),
 );
+assert(nav.people.every((p) => Object.hasOwn(personPhotos, p.id)));
 for (const url of Object.values(personPhotos))
   if (url !== null) {
     assert(/^\/people\/[^/]+\.(jpg|jpeg|png|webp)$/i.test(url));
@@ -658,6 +708,26 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     const subject = view.target.clone().sub(view.shiftApplied);
     assert(inside(subject.x, subject.z) && region(subject.x, subject.z).radius === scene.PAN.deck.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9), `The airport's chapter frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pan region.`);
   }
+  // That is the framing the Departures chapter gets: the reading camera turns to its chapter's
+  // bearing (the gate's) and selects its scene target, the airport, and the scene fits a selected
+  // airport alone to that box between 0.95 and 2.6. The City file of the airport, or of anyone who
+  // has left, turns and selects the same way (page.tsx's frameCity), so the camera stays put as a
+  // board row opens a person's file.
+  for (const chapter of nav.readingChapters)
+    assert(Number.isFinite(plan.chapterBearings[chapter]), `The ${chapter} chapter has no bearing.`);
+  assert.equal(plan.chapterBearings.airport, plan.chapterBearings['lius-gate']);
+  assert.equal(nav.sceneTarget('airport').building, 'airport');
+  let fitFocusedSource, selectSource;
+  (function findFit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'fitFocused') fitFocusedSource = node.getText(syntax);
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'select') selectSource = node.getText(syntax);
+    ts.forEachChild(node, findFit);
+  })(syntax);
+  assert(
+    /focusedIds\.length === 1 && focusedIds\[0\] === 'airport'\)\s*\{\s*fitGroup\(AIRPORT_FIT, 0\.95, 2\.6\);/.test(fitFocusedSource) &&
+      /focusedIds = \[id\];[\s\S]*fitFocused\(\);/.test(selectSource),
+    'Selecting the airport no longer fits its island and causeway.',
+  );
 }
 // A sun shadow map thrown away (Inspect's sharper map, the town's again, a quality step) or a
 // frustum moved elsewhere is drawn again before the next frame uses it, even paused: an empty
@@ -1101,5 +1171,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, a tour of ${nav.tourStops.length} stops ending in the park, 3 portrait slots, hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
