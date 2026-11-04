@@ -16,7 +16,7 @@ import { createKit } from './town-kit';
 import { createBatch } from './town-batch';
 import { createNature } from './town-nature';
 import { createProps } from './town-props';
-import { buildGroundMasks, createGround } from './town-ground';
+import { addAirportShallows, buildGroundMasks, createGround } from './town-ground';
 import { createStreets } from './town-streets';
 import { createHarbour } from './town-harbour';
 import { createHomes } from './town-homes';
@@ -27,7 +27,7 @@ import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
 export { palette } from './town-shared';
 export { treeLook, heatherLook } from './town-nature';
-export { MASK_EXTENT, MASK_SIZE, buildGroundMasks } from './town-ground';
+export { MASK_EXTENT, MASK_SIZE, AIRPORT_SHALLOWS, addAirportShallows, buildGroundMasks } from './town-ground';
 export { BALLOON, followDrift } from './town-movers';
 
 /**
@@ -155,6 +155,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const groundMasks = buildGroundMasks(trees, lampSpecs);
   library.bakeUniforms.groundMasks.value = groundMasks;
   yield 'ground masks';
+  // The airport's own faint shallows, in G (a phase of its own).
+  addAirportShallows(groundMasks);
+  yield 'airport shallows';
   const parkGroup = new T.Group();
   parkGroup.name = 'corner-park';
   parkGroup.userData.parkSelection = true;

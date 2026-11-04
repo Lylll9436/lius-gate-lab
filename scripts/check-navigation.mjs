@@ -24,6 +24,7 @@ for (const name of [
   'people-photos',
   'glasgow-sun',
   'town-plan',
+  'town-shared',
 ]) {
   const source = await fs.readFile(
     path.join(root, 'app', name + '.ts'),

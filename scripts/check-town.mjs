@@ -1259,6 +1259,61 @@ for (const [x, z] of [
   ray.set(new T.Vector3(x, 1, z), new T.Vector3(0, -1, 0));
   assert.equal(ray.intersectObject(city, true)[0]?.object, water.mesh, 'Open sea expected at ' + x + ',' + z);
 }
+// The ground masks reach past the airport's island (town-shared's MASK_EXTENT) on the grid they
+// always had: the same 0.34375-unit texels on the same centres (the 256 over +-44, 48 more each
+// way), so the main island's masks read exactly as before, and the ground and the sea both read them
+// over that extent. In a phase of its own, a faint narrow ring of shallows round the airport's armour
+// and down the causeway's flanks: a third or so of the island's full tint at the stones' toe (the sea
+// tints by G squared), all but gone 1.5 out and gone by 2.2; never on the grid's border (its clamped
+// edge would carry it out over the whole sea); and no mask shade on the airport's deck, forecourt or
+// causeway (R, B and A nought there, as when the grid stopped short of them).
+{
+  const { MASK_EXTENT, MASK_SIZE } = await load('town-shared'),
+    { AIRPORT_SHALLOWS } = await load('town-ground'),
+    texel = (2 * MASK_EXTENT) / MASK_SIZE,
+    shift = (MASK_EXTENT - 44) / texel,
+    sources = await Promise.all(['city-water', 'city-materials'].map((n) => fs.readFile(path.join(root, 'app', n + '.ts'), 'utf8')));
+  assert(Math.abs(texel - 88 / 256) < 1e-12 && Math.abs(shift - Math.round(shift)) < 1e-9 && MASK_EXTENT >= 58 + 2 * texel, `The ground masks' grid (${MASK_SIZE} over +-${MASK_EXTENT}) is not the old one's texels, or stops short of the airport's shallows.`);
+  assert(sources.every((src) => /maskExtent: \{ value: MASK_EXTENT \}/.test(src) && !/maskExtent: \{ value: \d/.test(src)) && model.materialLibrary.bakeUniforms.maskExtent.value === MASK_EXTENT, 'The ground or the sea reads the masks over another extent.');
+  assert.equal(phaseNames[phaseNames.indexOf('ground masks') + 1], 'airport shallows', 'The airport\'s shallows are not baked in a phase of their own after the masks.');
+  const N = MASK_SIZE,
+    data = model.groundMasks.image.data,
+    A = plan.AIRPORT,
+    AR = plan.AIRPORT_ROAD,
+    // The masks as the GPU reads them: linear between texel centres, clamped at the edge.
+    at = (x, z, c) => {
+      const u = Math.min(N - 1, Math.max(0, (x / (2 * MASK_EXTENT) + 0.5) * N - 0.5)),
+        v = Math.min(N - 1, Math.max(0, (z / (2 * MASK_EXTENT) + 0.5) * N - 0.5)),
+        i0 = Math.floor(u),
+        j0 = Math.floor(v),
+        i1 = Math.min(N - 1, i0 + 1),
+        j1 = Math.min(N - 1, j0 + 1),
+        fu = u - i0,
+        fv = v - j0,
+        tx = (i, j) => data[(j * N + i) * 4 + c] / 255;
+      return (tx(i0, j0) * (1 - fu) + tx(i1, j0) * fu) * (1 - fv) + (tx(i0, j1) * (1 - fu) + tx(i1, j1) * fu) * fv;
+    };
+  for (let k = 0; k < N; k++) for (const [i, j] of [[k, 0], [k, N - 1], [0, k], [N - 1, k]]) assert.equal(data[(j * N + i) * 4 + 1], 0, 'Shallows on the ground masks\' border.');
+  // Round the island, clear of where the causeway lands, the ring's mean strength out from the toe.
+  const ring = (out) => {
+      const g = plan.airportOutline(A.armour + out, 0.5).filter((p) => Math.abs(p.x - AR.x) > AR.top + 1.5 || p.z < A.z).map((p) => at(p.x, p.z, 1));
+      return g.reduce((sum, v) => sum + v, 0) / g.length;
+    },
+    island = 1; // the main island's shallows are full (G 1) at its shelf
+  assert(ring(0) ** 2 >= 0.25 * island && ring(0) ** 2 <= 0.42 * island && ring(1) < 0.3 && ring(1.5) < 0.1 && ring(2.2) < 0.01, `The airport's shallows are not a faint narrow ring (${[0, 1, 1.5, 2.2].map((o) => ring(o).toFixed(2)).join(', ')} out to 2.2).`);
+  assert(Math.abs(AIRPORT_SHALLOWS.strength - ring(0)) < 0.08, 'The airport\'s shallows are off their strength at the toe.');
+  // Down the causeway's flanks, the same ring from their toe (both sides, over open water past the
+  // main island's own shallows, which reach 7.5 off its coast).
+  for (const z of [-37, -40.5]) {
+    const toe = AR.top / 2 + AIRPORT_SHALLOWS.flank;
+    for (const side of [-1, 1]) assert(at(AR.x + side * toe, z, 1) > 0.45 && at(AR.x + side * (toe + 2.2), z, 1) < 0.01, `The causeway's flank at z ${z} has no ring of shallows (${at(AR.x + side * toe, z, 1).toFixed(2)}).`);
+  }
+  // The airport's own ground takes no mask shade.
+  for (let x = A.x - A.hw; x <= A.x + A.hw; x += 0.25)
+    for (let z = A.z - A.hd; z <= AR.island; z += 0.25)
+      if (plan.airportDistance(x, z) <= 0 || (Math.abs(x - AR.x) <= AR.top / 2 && z > A.z))
+        for (const c of [0, 2, 3]) assert(at(x, z, c) < 1e-9, `The airport's ground takes mask shade (channel ${c}) at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+}
 // The airport: a small island of its own off the north shore, the road out to it from the ring
 // (the hall lane, the beach ramp and the causeway) and its Departures Hall with the control tower.
 {

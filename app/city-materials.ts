@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { GULLY, MANHOLE, PLAZA_PAVING, gullies, manholes, roadPatches, stopLines } from './town-plan';
-import { palette } from './town-shared';
+import { MASK_EXTENT, palette } from './town-shared';
 
 export type SurfaceKind =
   | 'stone'
@@ -589,7 +589,7 @@ export function createCityMaterials() {
   // The ground masks are baked by buildTown; until then a black texel leaves the ground untouched.
   const blank = new T.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
   blank.needsUpdate = true;
-  const bakeUniforms: BakeUniforms = { groundMasks: { value: blank }, maskExtent: { value: 44 } };
+  const bakeUniforms: BakeUniforms = { groundMasks: { value: blank }, maskExtent: { value: MASK_EXTENT } };
   /**
    * A studio render, not a texture atlas: chalky matte clay for masonry, render and ground,
    * soft plastic foliage, satin roofs, and a few real finishes on small props only: dark

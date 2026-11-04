@@ -1,5 +1,6 @@
 // Water surface adapted from AC / xi4u (MIT). See THIRD_PARTY_NOTICES.md.
 import * as T from 'three';
+import { MASK_EXTENT } from './town-shared';
 
 /**
  * Where the moon hangs at the opening bearing (yaw pi/4). The frame loop turns it with the yaw,
@@ -21,7 +22,7 @@ function createCreekMaterial() {
     moonPosition: { value: MOON_POSITION.clone() },
     sunPosition: { value: new T.Vector3(-160, 320, 200) },
     groundMasks: { value: blankMasks as T.Texture },
-    maskExtent: { value: 44 },
+    maskExtent: { value: MASK_EXTENT },
   };
   // Local lamps illuminate the bank; their specular lobes do not become glowing water pillars.
   const material = new T.MeshPhysicalMaterial({

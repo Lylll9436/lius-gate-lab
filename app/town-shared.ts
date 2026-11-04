@@ -102,6 +102,17 @@ export const paddockRuns = (): (readonly [number, number, number, number])[] => 
 };
 
 export const WATER = -0.028;
+/**
+ * The ground masks' grid (town-ground's buildGroundMasks): one RGBA8 texture over +-MASK_EXTENT,
+ * MASK_SIZE texels a side. It reaches past the airport's island (its armour's toe is at z -56, its
+ * shallows fade out by -58), so the sea's shallows ring it too. It is the 256 texels over +-44 it
+ * was, 48 more each way: the same 0.34375 units a texel on the same texel centres, so on the main
+ * island every mask reads exactly as before (+-62 over 368, 2% finer, moved the lamp feet's and
+ * the pavement lip's texel-wide stamps by up to 76/255). The ground shaders (city-materials) and
+ * the sea (city-water) read it by world x, z through their `maskExtent`, which is this.
+ */
+export const MASK_EXTENT = 44 + 48 * (88 / 256),
+  MASK_SIZE = 256 + 2 * 48;
 
 export type TownContext = {
   library: ReturnType<typeof createCityMaterials>;

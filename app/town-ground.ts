@@ -2,6 +2,8 @@ import * as T from 'three';
 import { GROUND_HEIGHT_RANGE } from './city-materials';
 import * as plan from './town-plan';
 import {
+  MASK_EXTENT,
+  MASK_SIZE,
   palette,
   hash,
   noise2,
@@ -59,9 +61,8 @@ export function shoreHeight(width: number) {
 /* Ground masks                                                        */
 /* ------------------------------------------------------------------ */
 
-/** One RGBA8 grid over ±MASK_EXTENT (0.34 units per texel); texel i runs along x, row j along z. */
-export const MASK_EXTENT = 44,
-  MASK_SIZE = 256;
+/** One RGBA8 grid over ±MASK_EXTENT (town-shared's; 0.34375 units per texel); texel i runs along x, row j along z. */
+export { MASK_EXTENT, MASK_SIZE };
 /** Separable box blur along rows or columns, with a running sum and clamped edges. */
 function boxBlur(src: Float32Array, dst: Float32Array, alongX: boolean, radius = 2) {
   const N = MASK_SIZE,
@@ -82,7 +83,8 @@ function boxBlur(src: Float32Array, dst: Float32Array, alongX: boolean, radius =
 /**
  * Baked ground masks, all from plan data so later layout changes stay in sync.
  * R: ground darkening (footprint pads, canopy and trunk discs, lamp feet, the grass lip by the pavements).
- * G: the shallow-water ring round the coast and the lighthouse rock.
+ * G: the shallow-water ring round the coast and the lighthouse rock (and, added in a phase of its
+ *    own, the airport's: addAirportShallows).
  * B: the mown town lawn (plan.lawnCore). A: terrain height over GROUND_HEIGHT_RANGE.
  */
 export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpec[]) {
@@ -117,7 +119,9 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   const disc = (cx: number, cz: number, r: number, strength: number, feather: number) =>
     stamp(cx, cz, r + feather, (dx, dz) => strength * (1 - T.MathUtils.smoothstep(Math.hypot(dx, dz) - r, 0, feather)));
 
-  for (const s of plan.siteList) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
+  // Footprint pads under the island's buildings. Not the airport's: its deck stands clear of the
+  // ground, and its grass takes no mask shade (the grid stopped short of it until its shallows).
+  for (const s of plan.siteList) if (!plan.onAirport(s.x, s.z)) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
   for (const c of plan.cottages) rect(c.x, c.z, 3.0, 2.6, c.rotation, 1, 0.5);
   const plot = plan.reservedPlot;
   rect(plot.x, plot.z, CRANE_BASE, CRANE_BASE, 0, 0.9, 0.4);
@@ -184,6 +188,43 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
   texture.name = 'ground-masks';
   texture.needsUpdate = true;
   return texture;
+}
+/**
+ * The airport's shallows: a faint, narrow ring round its island like the main island's, so it sits
+ * in water of its own rather than on the deep blue right up to the stones. It is `strength` at
+ * the armour's toe (the sea tints by G squared, so a little over a third of the island's full
+ * tint), easing out over `width` (the island's runs 4.9 past its shelf); down the causeway's flanks
+ * likewise from their toe (`flank` out from the road's top edge).
+ */
+export const AIRPORT_SHALLOWS = { strength: 0.6, width: 1.8, flank: 0.95 };
+/**
+ * Bake the airport's shallows into the masks' G, in a phase of its own after them: max-combined
+ * with the island's (where the causeway reaches its shallows they meet), only inside the grid
+ * (never its border rows or columns: the texture's clamped edge would carry them out over the
+ * whole sea).
+ */
+export function addAirportShallows(texture: T.DataTexture) {
+  const N = MASK_SIZE,
+    E = MASK_EXTENT,
+    texel = (2 * E) / N,
+    data = texture.image.data as Uint8Array,
+    A = plan.AIRPORT,
+    R = plan.AIRPORT_ROAD,
+    S = AIRPORT_SHALLOWS,
+    reach = A.armour + S.width,
+    cell = (v: number) => Math.floor((v + E) / texel),
+    [i0, i1] = [Math.max(1, cell(A.x - A.hw - reach)), Math.min(N - 2, cell(A.x + A.hw + reach))],
+    [j0, j1] = [Math.max(1, cell(A.z - A.hd - reach)), Math.min(N - 2, cell(R.beach))];
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      const x = -E + (i + 0.5) * texel,
+        z = -E + (j + 0.5) * texel,
+        toe = Math.min(plan.airportDistance(x, z) - A.armour, z > A.z + A.hd && z < R.beach ? Math.abs(x - R.x) - R.top / 2 - S.flank : Infinity),
+        ring = Math.round(S.strength * (1 - T.MathUtils.smoothstep(toe, -0.2, S.width)) * 255),
+        k = (j * N + i) * 4 + 1;
+      if (ring > data[k]) data[k] = ring;
+    }
+  texture.needsUpdate = true;
 }
 type RectStamp = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => void;
 type DiscStamp = (cx: number, cz: number, r: number, strength: number, feather: number) => void;
