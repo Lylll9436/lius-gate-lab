@@ -1784,10 +1784,19 @@ summary.board-row:hover {
 .board-status .flap {
   --flap: color-mix(in oklab, var(--amber) 20%, transparent);
 }
-/* A blank flap holds no text: its split runs across it, as on an unlit board. */
+/* The empty board's blank fields: a few small tiles, each split across since they hold no text,
+   as an unlit board shows them. One long blank bar would read as a page still loading. */
+.flap-blanks {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: top;
+}
 .flap.is-blank {
   --flap-hinge: transparent;
   --flap-cut: var(--flap-split);
+  width: 10px;
+  padding-left: 0;
+  padding-right: 0;
 }
 .departures.is-zh .board-head,
 .departures.is-zh .flap {

@@ -859,6 +859,23 @@ function departureSentence(person: Alumnus, locale: Locale) {
   return `${person.title.en}: ${returned ? 'returned' : 'departed'} ${monthInWords(d.date, false)} ${returned ? 'to' : 'for'} ${d.city.en}. Now: ${nowParts(d, 'en').join(', ')}.`;
 }
 
+/**
+ * A field still blank on the board, as an unlit board shows it: a few small tiles, each split
+ * across, never one long bar (which reads as a page still loading). Hidden from screen readers:
+ * the row's own label says what is still to come.
+ */
+function BlankFlaps() {
+  return (
+    <span className="flap-blanks" aria-hidden="true">
+      {[0, 1, 2, 3].map((tile) => (
+        <span key={tile} className="flap is-blank">
+          {'\u00a0'}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** A row's cells in the board's order: date, name, destination, now and status. */
 function DepartureCells({
   person,
@@ -1081,15 +1098,13 @@ export function DeparturesBoard({
               </li>
             ))
           ) : (
-            // The first departure is still to come: blank flaps for its date and where they are now.
+            // The first departure is still to come: blank tiles for its date and where they are now.
             <li
               className="board-row is-tba"
               aria-label={zh ? '首个航班：待定。' : 'First departure: to be announced.'}
             >
               <span className="board-cell board-date">
-                <span className="flap is-blank" aria-hidden="true">
-                  {'\u00a0'.repeat(8)}
-                </span>
+                <BlankFlaps />
               </span>
               <span className="board-cell board-name">
                 {zh ? '首个航班' : 'First departure'}
@@ -1098,9 +1113,7 @@ export function DeparturesBoard({
                 <span className="flap">{zh ? '待定' : 'To be announced'}</span>
               </span>
               <span className="board-cell board-now">
-                <span className="flap is-blank" aria-hidden="true">
-                  {'\u00a0'.repeat(10)}
-                </span>
+                <BlankFlaps />
               </span>
               <span className="board-cell board-status">
                 <span className="flap">{zh ? '待定' : 'TBA'}</span>

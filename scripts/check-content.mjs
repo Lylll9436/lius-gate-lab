@@ -1184,14 +1184,24 @@ for (const locale of ['en', 'zh']) {
   assert.equal(board.includes('is-tba'), !gone.length, 'The page’s board is empty only while nobody has left.');
 }
 // While nobody has left (on DAY, in a catalogue where nobody leaves before 2099 whatever departures
-// the real one holds) the board shows one row still to be announced, with blank flaps for its date
-// and where they are now, and under it a note for visitors.
+// the real one holds) the board shows one row still to be announced, with blank tiles for its date
+// and where they are now, and under it a note for visitors. A blank field is four small tiles, as an
+// unlit board shows it: one long blank bar read as a page still loading.
 const { DeparturesBoard: EmptyBoard } = (await siteOver('settled', settle(next))).content;
+const blankTiles =
+  '<span class="flap-blanks" aria-hidden="true">' + '<span class="flap is-blank">\u00a0</span>'.repeat(4) + '</span>';
 for (const reading of [true, false]) {
   const empty = (locale) =>
     renderToStaticMarkup(React.createElement(EmptyBoard, { locale, onOpen() {}, reading, today: TODAY }));
   const en = empty('en'),
     zh = empty('zh');
+  for (const html of [en, zh])
+    assert(
+      html.includes('<span class="board-cell board-date">' + blankTiles + '</span>') &&
+        html.includes('<span class="board-cell board-now">' + blankTiles + '</span>') &&
+        (html.match(/class="flap is-blank"/g) || []).length === 8,
+      'The empty row’s date and where they are now are blank tiles.',
+    );
   assert(
     en.includes('<li class="board-row is-tba" aria-label="First departure: to be announced.">') &&
       en.includes('<span class="board-cell board-name">First departure</span>') &&
@@ -1202,7 +1212,6 @@ for (const reading of [true, false]) {
         '<p>Everyone at Liu’s Gate is still here. When members finish their PhDs and move on, or visiting researchers head home, this board will show where each of them went and when they set off.</p>',
       ) &&
       (en.match(/<li/g) || []).length === 1 &&
-      (en.match(/class="flap is-blank" aria-hidden="true">/g) || []).length === 2 &&
       !en.includes('<details') &&
       !en.includes('<button'),
     'The empty board (English).',
