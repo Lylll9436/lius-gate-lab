@@ -2670,6 +2670,401 @@ for (const e of herdParts) assert(e.object.children.length >= 1 && e.object.chil
   });
   assert(nose <= hallWest - 0.3 && tail >= plan.HANGAR.x1 + 0.3, `The plane (x ${tail.toFixed(2)} to ${nose.toFixed(2)}) crowds the hall (${hallWest.toFixed(2)}) or the hangar.`);
 }
+// The plane's loop (plan.planePose): 180 s, three of the tram's laps, a pure function of time like
+// the tram's timetable. Copied from the tram's and the cyclist's checks: periodic and the same far
+// into the day; its phases in order on their times; frame by frame at 60 fps never a jump while it
+// shows, never rolling back on a leg (pushback only ever back, everything else nose first), easing
+// its speed no harder than 0.75 v² / ramp, turning at most 1.2° a frame and banking at most 0.12.
+{
+  const P = plan.PLANE_LOOP,
+    T0 = plan.PLANE_TIMES,
+    dt = 1 / 60,
+    wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)),
+    deg = Math.PI / 180;
+  assert.equal(P, 3 * LAP, 'The plane\'s loop is not three of the tram\'s laps.');
+  assert.equal(P, 180, 'The plane\'s loop is not 180 s.');
+  const parked = plan.planePose(10);
+  assert(parked.phase === 'parked' && parked.x === plan.STAND.x && parked.z === plan.STAND.z && parked.y === plan.AIRSIDE && parked.heading === plan.STAND.heading && parked.y < 11 && parked.visible, 'At t=10 the plane is not parked on its stand (low, as the balloon\'s search needs).');
+  for (const t of [0, P - 1e-6]) assert.deepEqual(plan.planePose(t), parked, `The plane is not parked at t=${t}.`);
+  const order = ['parked', 'pushback', 'taxi', 'turn', 'take-off', 'climb', 'away', 'approach', 'roll-out', 'taxi-in', 'parked'],
+    phases = [];
+  let last = plan.planePose(0),
+    travel = plan.planeTravel(0),
+    speedBefore = 0,
+    farthest = 0;
+  for (let f = 1; f <= P * 60; f++) {
+    const t = f * dt,
+      p = plan.planePose(t),
+      q = plan.planePose(t + P);
+    if (phases.at(-1)?.phase !== p.phase) phases.push({ phase: p.phase, t });
+    assert(Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 1e-7 && Math.abs(wrap(p.heading - q.heading)) < 1e-7 && p.visible === q.visible, `The plane's loop from t=${t.toFixed(2)} differs from the next.`);
+    assert([p.x, p.y, p.z, p.heading, p.pitch, p.bank].every(Number.isFinite), `The plane's pose is not finite at t=${t.toFixed(2)}.`);
+    assert(Math.abs(p.bank) <= 0.12 + 1e-9 && (!p.ground || p.bank === 0), `The plane banks ${p.bank.toFixed(3)} at t=${t.toFixed(2)}.`);
+    assert(p.pitch >= -1e-9 && p.pitch <= 0.15, `The plane pitches ${p.pitch.toFixed(3)} at t=${t.toFixed(2)}.`);
+    assert(!p.ground || Math.abs(p.y - plan.AIRSIDE - plan.PLANE.main * -Math.sin(p.pitch)) < 1e-9, `The plane's wheels leave the airside at t=${t.toFixed(2)} without flying.`);
+    if (p.visible && last.visible) {
+      const step = Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z),
+        turn = Math.abs(wrap(p.heading - last.heading));
+      assert(step <= 6.2 * dt, `The plane jumps ${step.toFixed(3)} at t=${t.toFixed(2)}.`);
+      assert(turn <= 1.2 * deg, `The plane turns ${(turn / deg).toFixed(2)}° in one frame at t=${t.toFixed(2)}.`);
+      // Nose first, or (pushed back) tail first; sideways only as it pivots about its main gear (its
+      // middle swinging round on a circle 0.38 across, a few thousandths a frame off its heading).
+      const along = ((p.x - last.x) * Math.sin(last.heading) + (p.z - last.z) * Math.cos(last.heading)) / dt;
+      if (p.phase === 'pushback') assert(along <= 0.01, `The plane rolls forward on pushback at t=${t.toFixed(2)}.`);
+      else assert(along >= -0.01, `The plane rolls back at t=${t.toFixed(2)} (${p.phase}).`);
+    }
+    if (!p.visible) farthest = Math.max(farthest, Math.hypot(p.x, p.z));
+    // Each leg's distance only grows, eased no harder than 0.75 v² over its ramp's distance.
+    const now = plan.planeTravel(t);
+    if (now.leg && now.leg === travel.leg) {
+      const speed = (now.d - travel.d) / dt;
+      assert(speed >= -1e-9, `The plane's ${now.leg} runs backwards at t=${t.toFixed(2)}.`);
+      const knots = plan.PLANE_LEGS[now.leg],
+        k = knots.findIndex(([at], i) => i + 1 < knots.length && t <= knots[i + 1][0] && t >= at);
+      if (k >= 0 && f > 1 && Math.abs(t - knots[k][0]) > dt && Math.abs(t - knots[k + 1][0]) > dt) {
+        const [[t0, v0], [t1, v1]] = [knots[k], knots[k + 1]],
+          ramp = ((v0 + v1) / 2) * (t1 - t0),
+          most = ramp > 0 ? (0.75 * Math.max(v0, v1) ** 2) / ramp : 0;
+        assert(Math.abs(speed - speedBefore) / dt <= most * 1.02 + 1e-6, `The plane's speed changes by ${(Math.abs(speed - speedBefore) / dt).toFixed(2)} a second² at t=${t.toFixed(2)} (most ${most.toFixed(2)}).`);
+      }
+      speedBefore = speed;
+    } else speedBefore = now.speed;
+    last = p;
+    travel = now;
+  }
+  assert.deepEqual(phases.map((s) => s.phase), order, `The plane's loop runs ${phases.map((s) => s.phase).join(', ')}.`);
+  for (const [phase, at] of [['pushback', T0.pushback[0]], ['taxi', T0.taxi[0]], ['turn', T0.turn[0]], ['take-off', T0.roll[0]], ['away', T0.lost], ['approach', T0.approach], ['roll-out', T0.touchdown], ['taxi-in', T0.rollOut]])
+    assert(Math.abs(phases.find((s) => s.phase === phase).t - at) <= dt + 1e-9, `The plane's ${phase} starts at ${phases.find((s) => s.phase === phase).t.toFixed(2)} s, not ${at} s.`);
+  // It lifts off rotating near x -7, and touches down near x 3 on 27, its threshold the east end.
+  const lift = phases.find((s) => s.phase === 'climb').t,
+    down = phases.find((s) => s.phase === 'roll-out').t;
+  assert(Math.abs(plan.planePose(lift).x + 8) < 1.5 && Math.abs(plan.planePose(down).x - 2.5) < 1, `The plane lifts off at x ${plan.planePose(lift).x.toFixed(2)} and touches down at x ${plan.planePose(down).x.toFixed(2)}.`);
+  assert(farthest >= 150 && Math.hypot(plan.planePose(T0.lost - dt).x, plan.planePose(T0.lost - dt).z) >= 150 && Math.hypot(plan.planePose(T0.approach).x, plan.planePose(T0.approach).z) >= 150, 'The plane goes out of sight less than 150 from the island.');
+  for (const t of [86400 * 7 + 13.37, 3e6 + 41.2]) {
+    const a = plan.planePose(t),
+      b = plan.planePose(t % P);
+    assert(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-4 && Math.abs(wrap(a.heading - b.heading)) < 1e-4, `The plane drifts after ${t} s.`);
+  }
+}
+// Where the plane goes. Its routes keep its main gear on the airside's slabs (the runway, the
+// taxiway and its stubs, the apron); on the ground the whole of it stays 0.3 inside the deck's edge,
+// 0.3 from the hall, the tower and the hangar and 0.15 from the jet bridge (its docking gap) and
+// never under it, and near the deck, on the ground or in the air, 0.3 from the windsock however it
+// sways. It never crosses the main island (it keeps 12 off its coast), and keeps well clear of the
+// balloon's lap (turned either way with the idle drift), the gulls, the lighthouse beam's sweep and
+// the boat. It goes out of sight only beyond 150, outside the opening view at every common size and
+// drift, and outside the City overview and the airport's chapter even zoomed out to 0.45 at any of
+// the four Rotate stops, or else lost in the fog.
+{
+  const { WINDSOCK_SWAY } = await load('town-airport'),
+    { createGulls } = await load('city-atmosphere'),
+    RW = plan.RUNWAY,
+    TW = plan.TAXIWAY,
+    AP = plan.APRON,
+    H = plan.HANGAR,
+    slabs = [
+      [RW.x0, RW.x1, RW.z - RW.width / 2, RW.z + RW.width / 2],
+      [TW.x0 - TW.width / 2, TW.x1 + TW.width / 2, TW.z - TW.width / 2, TW.z + TW.width / 2],
+      ...TW.stubs.map((x) => [x - TW.width / 2, x + TW.width / 2, RW.z + RW.width / 2, TW.z - TW.width / 2]),
+      [AP.x0, AP.x1, TW.z + TW.width / 2, AP.z1],
+    ],
+    onSlabs = (x, z) => slabs.some(([x0, x1, z0, z1]) => x >= x0 - 1e-9 && x <= x1 + 1e-9 && z >= z0 - 1e-9 && z <= z1 + 1e-9);
+  for (const [name, route, from, to] of [['taxi out', plan.PLANE_PATHS.taxiOut, 0, plan.PLANE_PATHS.pivot], ['way in', plan.PLANE_PATHS.comeIn, plan.PLANE_PATHS.touchdown, plan.PLANE_PATHS.stand]])
+    for (let d = from; d <= to; d += 0.05) {
+      const [x, z] = route.at(d);
+      assert(onSlabs(x, z), `The plane's ${name} runs off the airside at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+    }
+  assert(onSlabs(plan.PLANE_ROUTE.pivot, plan.PLANE_ROUTE.track) && onSlabs(plan.PLANE_ROUTE.pivot + plan.PLANE.nose - plan.PLANE.main + 0.1, plan.PLANE_ROUTE.track), 'The plane turns onto 27 with a wheel off the runway.');
+  // The plane's points, in its own frame; its pose's matrix, as posePlane sets it.
+  const plane = model.plane,
+    local = [],
+    seen = new Set(),
+    v = new T.Vector3(),
+    inverse = plane.matrixWorld.clone().invert();
+  plane.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position,
+      m = inverse.clone().multiply(o.matrixWorld);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      const key = `${Math.round(v.x / 0.05)},${Math.round(v.y / 0.05)},${Math.round(v.z / 0.05)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      local.push(v.clone());
+    }
+  });
+  const matrix = (p) => new T.Matrix4().makeRotationFromEuler(new T.Euler(-p.pitch, p.heading, p.bank, 'YXZ')).setPosition(p.x, p.y, p.z);
+  // The hall itself (from its west wall: the hall, the link block and the tower) and the jet bridge
+  // as plan outlines (convex hulls) of their parts under 2.2; the hangar as its plan.
+  const hallVertices = [],
+    bridgeVertices = [];
+  let hallWest = Infinity;
+  models.get('airport').shell.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.x > plan.AIRPORT_ROAD.x - 2.3) hallWest = Math.min(hallWest, v.x);
+    }
+  });
+  models.get('airport').shell.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.y < 2.2) (v.x >= hallWest - 1e-6 ? hallVertices : bridgeVertices).push([v.x, v.z]);
+    }
+  });
+  const hull = (points) => {
+    const s = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+      cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]),
+      half = (list) => {
+        const out = [];
+        for (const p of list) {
+          while (out.length >= 2 && cross(out.at(-2), out.at(-1), p) <= 0) out.pop();
+          out.push(p);
+        }
+        return out;
+      },
+      lower = half(s),
+      upper = half(s.reverse());
+    return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+  };
+  // Signed distance from a convex outline (counter-clockwise from hull()): negative inside.
+  const outside = (outline, x, z) => {
+    let inside = true,
+      best = Infinity;
+    for (let i = 0; i < outline.length; i++) {
+      const a = outline[i],
+        b = outline[(i + 1) % outline.length];
+      if ((b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]) < 0) inside = false;
+      best = Math.min(best, plan.distanceToSegment([x, z], a, b));
+    }
+    return inside ? -best : best;
+  };
+  const obstacles = [
+    { name: 'hall', outline: hull(hallVertices), gap: 0.3 },
+    { name: 'jet bridge', outline: hull(bridgeVertices), gap: 0.15 },
+    { name: 'hangar', outline: [[H.x0, H.z0], [H.x1, H.z0], [H.x1, H.z1], [H.x0, H.z1]].reverse(), gap: 0.3 },
+  ].map((o) => {
+    const xs = o.outline.map(([x]) => x),
+      zs = o.outline.map(([, z]) => z);
+    return { ...o, box: [Math.min(...xs) - o.gap, Math.max(...xs) + o.gap, Math.min(...zs) - o.gap, Math.max(...zs) + o.gap] };
+  });
+  assert(outside(obstacles[0].outline, plan.AIRPORT_ROAD.x, -47.5) < 0 && outside(obstacles[1].outline, plan.JET_BRIDGE.cab, plan.JET_BRIDGE.z) < 0, 'The plane\'s obstacles are not where the hall and the jet bridge stand.');
+  // The windsock as the frame loop swings it: its mast, and its sock at twelve moments of the sway as
+  // a capsule round its axis, as wide as its mouth (its points all within it).
+  const sockEntry = model.animated.find((e) => e.object.name === 'windsock-sock'),
+    windsock = model.airportLand.getObjectByName('airport-windsock'),
+    W = plan.WINDSOCK,
+    socks = [],
+    S = WINDSOCK_SWAY;
+  assert(sockEntry && windsock, 'The windsock\'s sock is not in the animated list.');
+  for (let k = 0; k < 12; k++) {
+    sockEntry.update(k * 1.3, 0, 0);
+    windsock.updateMatrixWorld(true);
+    const from = new T.Vector3().setFromMatrixPosition(sockEntry.object.matrixWorld),
+      to = new T.Vector3(0, 0.7, 0).applyMatrix4(sockEntry.object.matrixWorld),
+      axis = new T.Line3(from, to),
+      near = new T.Vector3();
+    sockEntry.object.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position,
+        q = new T.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        q.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        axis.closestPointToPoint(q, true, near);
+        assert(near.distanceTo(q) <= S.mouth + 0.04, 'The windsock\'s sock reaches out of its capsule.');
+      }
+    });
+    socks.push(axis);
+  }
+  sockEntry.update(0, 0, 0);
+  const mastTop = plan.AIRPORT.deck + S.mast + 0.08,
+    closest = new T.Vector3(),
+    // The deck is convex, so the plane's points farthest out over its edge are corners of its plan.
+    rim = hull(local.map((q) => [q.x, q.z])).map(([x, z]) => new T.Vector3(x, 0, z)),
+    reach = Math.max(...local.map((q) => Math.hypot(q.x, q.z)));
+  const worst = { deck: Infinity, windsock: Infinity, ...Object.fromEntries(obstacles.map((o) => [o.name, Infinity])) },
+    world = new T.Vector3();
+  for (let f = 0; f < plan.PLANE_LOOP * 60; f++) {
+    const t = f / 60,
+      p = plan.planePose(t);
+    if (!p.visible || (!p.ground && (p.y > plan.AIRSIDE + 4 || plan.airportDistance(p.x, p.z) > 6)) || (p.phase === 'parked' && f)) continue;
+    const m = matrix(p);
+    if (p.ground)
+      for (const q of rim) {
+        const inside = -plan.airportDistance(world.copy(q).applyMatrix4(m).x, world.z);
+        worst.deck = Math.min(worst.deck, inside);
+        assert(inside >= 0.3, `The plane leaves the deck at ${world.x.toFixed(2)}, ${world.z.toFixed(2)} (t=${t.toFixed(2)}).`);
+      }
+    // Only what it comes within reach of (its parts are all within `reach` of its middle).
+    const near = obstacles.filter(({ box: [x0, x1, z0, z1] }) => p.x > x0 - reach - 1 && p.x < x1 + reach + 1 && p.z > z0 - reach - 1 && p.z < z1 + reach + 1),
+      nearSock = Math.hypot(p.x - W.x, p.z - W.z) < reach + 1.2;
+    if (!near.length && !nearSock) continue;
+    for (const q of local) {
+      world.copy(q).applyMatrix4(m);
+      for (const o of near) {
+        const [x0, x1, z0, z1] = o.box;
+        if (world.x < x0 - 1 || world.x > x1 + 1 || world.z < z0 - 1 || world.z > z1 + 1) continue;
+        const gap = outside(o.outline, world.x, world.z);
+        worst[o.name] = Math.min(worst[o.name], gap);
+        assert(gap >= o.gap, `The plane comes ${gap.toFixed(3)} from the ${o.name} at ${world.x.toFixed(2)}, ${world.z.toFixed(2)} (t=${t.toFixed(2)}).`);
+      }
+      if (nearSock) {
+        let gap = world.y < mastTop ? Math.hypot(world.x - W.x, world.z - W.z) - 0.06 : Infinity;
+        for (const axis of socks) gap = Math.min(gap, axis.closestPointToPoint(world, true, closest).distanceTo(world) - S.mouth - 0.04);
+        worst.windsock = Math.min(worst.windsock, gap);
+        assert(gap >= 0.3, `The plane comes ${gap.toFixed(3)} from the windsock at t=${t.toFixed(2)}.`);
+      }
+    }
+  }
+  assert(Object.values(worst).every(Number.isFinite), `The plane's clearances were not all measured: ${JSON.stringify(worst)}.`);
+  // Never over the main island, and nowhere near the balloon, the gulls, the beam or the boat.
+  const birds = createGulls(),
+    [rockX, rockZ] = plan.lighthouseRock;
+  let island = Infinity;
+  const others = { balloon: Infinity, gulls: Infinity, beam: Infinity, boat: Infinity };
+  for (let t = 0; t < 900; t += 0.25) {
+    const p = plan.planePose(t);
+    if (!p.visible) continue;
+    for (const [dx, dz] of [[0, 0], [2, 0], [-2, 0], [0, 2.3], [0, -2.3]]) {
+      const x = p.x + dx,
+        z = p.z + dz;
+      island = Math.min(island, plan.distanceToPolyline([x, z], plan.islandOutline, true) * (plan.onIsland(x, z) ? -1 : 1));
+    }
+    balloon.update(t, 0);
+    for (const drift of [-0.16, 0, 0.16]) {
+      const b = balloon.object.position,
+        c = Math.cos(drift),
+        s = Math.sin(drift);
+      others.balloon = Math.min(others.balloon, Math.hypot(p.x - (b.x * c + b.z * s), p.y - (b.y + 2.5), p.z - (-b.x * s + b.z * c)));
+    }
+    birds.update(t, 1);
+    for (const g of birds.object.children) others.gulls = Math.min(others.gulls, Math.hypot(p.x - g.position.x, p.y - g.position.y, p.z - g.position.z));
+    beam.update(t, 1);
+    const a = beam.object.rotation.y;
+    others.beam = Math.min(others.beam, plan.distanceToSegment([p.x, p.z], [rockX, rockZ], [rockX + Math.cos(a) * 18, rockZ - Math.sin(a) * 18]) - 3.6);
+    const boat = plan.boatPose(t);
+    others.boat = Math.min(others.boat, Math.hypot(p.x - boat.x, p.z - boat.z));
+  }
+  balloon.update(0, 0);
+  beam.update(3, 0);
+  birds.dispose();
+  assert(island >= 12, `The plane comes within ${island.toFixed(1)} of the island's coast.`);
+  for (const [name, gap] of Object.entries(others)) assert(gap >= 30, `The plane comes within ${gap.toFixed(1)} of the ${name}.`);
+  assert(balloon.object !== sockEntry.object && beam.object !== sockEntry.object, 'The windsock is taken for the balloon or the beam.');
+  // Out of sight: off every standard frame, or lost in the fog, where it vanishes and where it comes back.
+  const fogFar = Number(/new T\.Fog\('#[0-9a-f]+', \d+, (\d+)\)/.exec(await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8'))[1]),
+    edges = [plan.planePose(plan.PLANE_TIMES.lost - 1e-6), plan.planePose(plan.PLANE_TIMES.approach)];
+  for (const p of edges)
+    for (const centre of [new T.Vector3(0, 0, 0), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z)])
+      for (const yaw of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings.airport]) {
+        const eye = centre.clone().add(new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38)),
+          forward = centre.clone().sub(eye).normalize(),
+          right = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)),
+          up = new T.Vector3().crossVectors(right, forward),
+          rel = new T.Vector3(p.x, p.y, p.z).sub(eye);
+        // The widest and the squarest common frames (city-scene's frustum for their shape) zoomed
+        // out to 0.45, with the plane's own size.
+        for (const [w, h] of [[1920, 1080], [1440, 900], [1024, 768]]) {
+          const tall = Math.max(53, (76 * h) / w),
+            offFrame = Math.abs(rel.dot(right)) > (tall * w) / h / 2 / 0.45 + 2.3 || Math.abs(rel.dot(up)) > tall / 2 / 0.45 + 2.3;
+          assert(offFrame || rel.dot(forward) >= fogFar, `The plane vanishes or comes back in view at ${p.x.toFixed(0)}, ${p.z.toFixed(0)} (bearing ${yaw.toFixed(2)}, ${w} x ${h}).`);
+        }
+      }
+}
+// On the opening view (bearing pi/4 swayed by the idle drift's +-0.16, zoom 1, the hero's frame
+// shift of -0.06) the plane keeps to the top right corner, where the airport shows: never behind
+// the hero copy or the News card (at its tallest), at every common size, with and without a
+// scrollbar, all through its loop, as the balloon is held there.
+{
+  const screens = [
+    { W: 1024, H: 768, copy: [41, 285, 721, 613], news: [693, 983] },
+    { W: 1280, H: 720, copy: [51, 219, 731, 590], news: [922, 1229] },
+    { W: 1280, H: 800, copy: [51, 288, 731, 670], news: [922, 1229] },
+    { W: 1366, H: 768, copy: [55, 251, 735, 638], news: [984, 1311] },
+    { W: 1440, H: 800, copy: [56, 271, 736, 670], news: [1038, 1384] },
+    { W: 1440, H: 900, copy: [56, 360, 736, 770], news: [1038, 1384] },
+    { W: 1536, H: 864, copy: [56, 322, 736, 734], news: [1120, 1480] },
+    { W: 1600, H: 900, copy: [56, 357, 736, 770], news: [1184, 1544] },
+    { W: 1680, H: 1050, copy: [56, 507, 736, 920], news: [1264, 1624] },
+    { W: 1920, H: 1080, copy: [56, 537, 736, 950], news: [1504, 1864] },
+  ].flatMap((s) => [s, { ...s, W: s.W - 15, news: s.news.map((x) => x - 15) }]);
+  const yaw = Math.PI / 4,
+    corner = new T.Vector3(),
+    P = plan.PLANE,
+    poses = [];
+  for (let t = 0; t < plan.PLANE_LOOP; t += 0.25) {
+    const p = plan.planePose(t);
+    if (p.visible) poses.push({ t, m: new T.Matrix4().makeRotationFromEuler(new T.Euler(-p.pitch, p.heading, p.bank, 'YXZ')).setPosition(p.x, p.y, p.z) });
+  }
+  let shown = 0;
+  for (const { W, H, copy: [cx0, cy0, cx1, cy1], news: [nx0, nx1] } of screens) {
+    const vertical = Math.max(53, (76 * H) / W),
+      view = new T.OrthographicCamera((-vertical * W) / H / 2, (vertical * W) / H / 2, vertical / 2, -vertical / 2, -200, 180),
+      shifted = new T.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(-0.06 * (view.right - view.left)),
+      boxes = { 'hero copy': [cx0 - 8, cy0 - 8, cx1 + 8, cy1 + 8], 'News card': [nx0 - 8, H / 2 - 0.42 * 400 - 8, nx1 + 8, H / 2 + 0.58 * 400 + 8] };
+    for (const drift of [-0.16, 0, 0.16]) {
+      view.position.copy(shifted).add(new T.Vector3(Math.sin(yaw + drift) * 38, 35, Math.cos(yaw + drift) * 38));
+      view.lookAt(shifted);
+      view.updateMatrixWorld();
+      for (const { t, m } of poses) {
+        let left = Infinity,
+          right = -Infinity,
+          top = Infinity,
+          bottom = -Infinity;
+        for (let i = 0; i < 8; i++) {
+          corner.set(i & 1 ? P.span / 2 + 0.07 : -P.span / 2 - 0.07, i & 2 ? P.fin : 0, i & 4 ? P.length / 2 : -P.length / 2 - 0.08).applyMatrix4(m).project(view);
+          const x = ((corner.x + 1) / 2) * W,
+            y = ((1 - corner.y) / 2) * H;
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
+        }
+        if (!(right > 0 && left < W && bottom > 0 && top < H)) continue;
+        shown++;
+        for (const [name, [x0, y0, x1, y1]] of Object.entries(boxes))
+          assert(right < x0 || left > x1 || bottom < y0 || top > y1, `At t=${t} the plane flies behind the ${name} on the ${W} x ${H} opening view.`);
+        assert(left > W / 2 && bottom < H / 3, `At t=${t} the plane shows outside the ${W} x ${H} opening view's top right corner.`);
+      }
+    }
+  }
+  assert(shown > 0, 'The opening view never shows the plane.');
+}
+// Reduced motion and Pause keep the plane on its stand: the scene's clock for it goes back to its
+// loop's start while either holds (a flight under way ends on the stand; Play picks the loop up from
+// there), and otherwise runs with town time; the frame loop drives it that way and poses it with
+// posePlane, which hides it while it is away and leaves its steady lights alone.
+{
+  const { planeClock, posePlane } = await load('city-scene'),
+    { PLANE_LIGHT } = await load('town-movers'),
+    P = plan.PLANE_LOOP,
+    stand = plan.planePose(0);
+  for (let t = 0; t < 3 * P; t += 0.7) {
+    const held = plan.planePose(planeClock(t, 1 / 60, true));
+    assert(held.phase === 'parked' && held.x === stand.x && held.z === stand.z && held.heading === stand.heading, `Paused at t=${t.toFixed(1)} the plane is not on its stand.`);
+    assert(Math.abs(planeClock(t, 1 / 60, false) - t - 1 / 60) < 1e-9, 'The plane\'s clock does not run with town time.');
+  }
+  // Held for a while and let go, it waits on its stand for its pushback.
+  let clock = 97.3;
+  for (let f = 0; f < 30; f++) clock = planeClock(clock, 1 / 60, true);
+  for (let f = 0; f < 60; f++) clock = planeClock(clock, 1 / 60, false);
+  assert.equal(plan.planePose(clock).phase, 'parked', 'Let go, the plane does not wait on its stand.');
+  const source = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8');
+  assert(/planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);\s*posePlane\(plane, planeTime\);/.test(source), 'The frame loop no longer holds the plane on its stand when paused or under reduced motion.');
+  const plane = model.plane,
+    lights = plane.getObjectByName('plane-lights').children;
+  for (const t of [10, 45, 75, 100, 125, 143]) {
+    const p = posePlane(plane, t);
+    assert(plane.position.x === p.x && plane.position.y === p.y && plane.position.z === p.z && plane.rotation.order === 'YXZ' && plane.rotation.y === p.heading && plane.rotation.x === -p.pitch && plane.rotation.z === p.bank && plane.visible === p.visible, `posePlane does not pose the plane as planePose has it at t=${t}.`);
+    assert(lights.every((l) => l.visible && l.material.emissiveIntensity === PLANE_LIGHT), 'The plane\'s lights flash.');
+  }
+  posePlane(plane, 0);
+  plane.rotation.order = 'XYZ';
+  plane.updateMatrixWorld(true);
+}
 // The windsock sways as the washing does: the frame loop swings its sock (one group, batched on its
 // own into one mesh that casts nothing) round the swivel and lifts and drops it a little, turning
 // the group and never a vertex; at every moment the sock streams east, downwind, over the deck, high

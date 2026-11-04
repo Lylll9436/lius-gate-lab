@@ -144,6 +144,28 @@ export function followMovingParts(pairs: [T.Object3D, T.Object3D][]) {
 }
 
 /**
+ * The plane's own clock after a frame `dt` long. It runs with town time, but while `held` (paused,
+ * or for a visitor who prefers reduced motion) it goes back to the start of the plane's loop, where
+ * the plane stands on its stand: so it is parked for as long as it is held, a flight under way when
+ * Pause is pressed ends at once on the stand, and Play takes the loop up from there.
+ */
+export function planeClock(clock: number, dt: number, held: boolean) {
+  return held ? Math.floor(clock / plan.PLANE_LOOP) * plan.PLANE_LOOP : clock + dt;
+}
+/**
+ * Pose the plane at `clock` (plan.planePose): its middle, its heading, then its pitch and bank about
+ * its own axes; hidden while it is away, lost in the haze. Its navigation lights are left as they
+ * are: steady, never flashing.
+ */
+export function posePlane(plane: T.Object3D, clock: number) {
+  const p = plan.planePose(clock);
+  plane.position.set(p.x, p.y, p.z);
+  plane.rotation.set(-p.pitch, p.heading, p.bank, 'YXZ');
+  plane.visible = p.visible;
+  return p;
+}
+
+/**
  * Pointer picking's broad phase: one invisible box per building (its bounds in the town, which
  * stands untransformed under `parent`), set as the model's `hit`. The airport's deck is part of
  * the airport (pointing at the runway or the apron finds it too): a slab of the deck's footprint
@@ -645,6 +667,7 @@ export async function createCity(
     raf = 0,
     last = 0,
     time = 0,
+    planeTime = 0,
     targetZoom = 1,
     shownZoom = 1,
     tween = true,
@@ -1346,9 +1369,11 @@ export async function createCity(
     const pose = plan.boatPose(time);
     boat.position.set(pose.x, model.waterLevel + pose.y, pose.z);
     boat.rotation.set(0, pose.heading, pose.roll);
-    // The plane waits on its stand, nose east to the jet bridge. It never follows the idle drift.
-    plane.position.set(plan.STAND.x, plan.AIRSIDE, plan.STAND.z);
-    plane.rotation.set(0, plan.STAND.heading, 0);
+    // The plane flies its loop on a clock of its own that runs with town time; paused, or for a
+    // visitor who prefers reduced motion, it stands parked on its stand (planeClock). It never
+    // follows the idle drift.
+    planeTime = planeClock(planeTime, dt, paused || reduced);
+    posePlane(plane, planeTime);
     for (const entry of animated) entry.update(time, night, rain);
     if (now - clockChecked > 15000) {
       clockChecked = now;
@@ -1791,6 +1816,12 @@ export async function createCity(
         let t = last || performance.now();
         for (let i = 0; i < frames; i++) step((t += 1000 / 60), true);
       },
+      /** Set town time (and the plane's clock with it) to `seconds`, to look at a moment of the loops. */
+      setTime(seconds: number) {
+        time = planeTime = seconds;
+      },
+      /** Town time and the plane's clock. */
+      time: () => ({ time, planeTime }),
     };
   return api;
 }

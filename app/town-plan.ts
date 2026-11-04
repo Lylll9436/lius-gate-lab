@@ -1197,6 +1197,325 @@ export function cyclistPose(time: number) {
     t = Math.min(1, Math.max(0, k + 0.6));
   return { ...p, lean: 0.13 * t * t * (3 - 2 * t), crank: 3.3 * (d - CYCLIST_START) + Math.PI / 2 };
 }
+
+/* ------------------------------------------------------------------ */
+/* The plane's loop                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The plane's loop, in seconds: three of the tram's laps. It stands on its stand, pushes back,
+ * taxis out, turns onto runway 27 at its east end and takes off westbound, climbing out west and
+ * then west-north-west over the sea until it is lost in the haze; it comes back from the east, lands
+ * on 27, rolls out, taxis back and parks. Like the tram's timetable it is a pure function of time
+ * and the same every loop; reduced motion and Pause keep it on its stand (city-scene).
+ */
+export const PLANE_LOOP = 3 * LAP;
+/**
+ * The loop's timetable (seconds into it): pushback, taxi, the turn onto 27, the take-off roll (it
+ * lifts off at its end, its rotation starting a little before), the climb out until it is lost,
+ * then back: the start of the approach, touchdown, the end of the roll-out (taxi speed) and the stand.
+ */
+export const PLANE_TIMES = { pushback: [18, 28], taxi: [30, 54], turn: [54, 58], roll: [58, 64], lost: 88, approach: 112, touchdown: 140, rollOut: 145, parked: 161 };
+/**
+ * Where it goes. Its wings (3.8 across, their tips' lights 1.97 out) overhang the 0.9 taxiway by 1.5
+ * either side, and the jet bridge's north side and the hall's north wall stand 2.15 and 1.4 off the
+ * taxiway's centre line: taxiing past them it would run its starboard wing into both. So it uses the
+ * taxiway only west of them, as at a small airfield with no taxiway to the threshold: it pushes back
+ * along the lead-in line to `pushback` (its middle), turns out onto the taxiway, taxis west and
+ * through the west stub onto the runway, backtracks east to the runway's end and turns about there on
+ * its main gear (at x `pivot`) to line up on 27; landing, it rolls out to the west stub, turns off
+ * through it onto the taxiway and taxis back east along it and the lead-in line to the stand. Its
+ * turns through the stub are centred at x `stub`, so its main gear runs down the stub's centre line
+ * (its wingtip swings round 0.3 clear of the hangar), and the S-bend onto the lead-in line starts at
+ * x `bend`. On the runway it keeps to `track`, a quarter south of the centre line, so its starboard
+ * wingtip's light stays 0.3 inside the deck's north edge even as it swings out turning off at the
+ * stub; its main gear stops at x `pivot`, its nose wheel still on the runway's end, to turn about,
+ * and touches down at x `touchdown`, just past the threshold. It comes back from `far` east along
+ * the track, and on the way out is lost about as far west-north-west (`climb`: where it turns, over
+ * how long and how far round).
+ */
+export const PLANE_ROUTE = {
+  pushback: -9.75,
+  pivot: 2.3,
+  touchdown: 2.8,
+  stub: TAXIWAY.stubs[0] + (TAXIWAY.z - RUNWAY.z - 0.25) / 2,
+  bend: -10.2,
+  track: RUNWAY.z + 0.25,
+  far: 150,
+  climb: { at: -40, over: 34, turn: 0.4 },
+};
+/**
+ * Speeds (units per second): taxiing through the turns and along the runway, at lift-off and on
+ * the climb, on the approach and at touchdown; the climb's and the approach's gradients; the
+ * heights it climbs to and comes in at; its pitch at rotation and in the flare; and how far it
+ * banks for each radian a second it turns (never past `bank`).
+ */
+export const PLANE_FLIGHT = {
+  turning: 1.0,
+  liftOff: 3.6,
+  climbing: 6.0,
+  approach: 6.0,
+  touchdown: 3.2,
+  climb: 0.16,
+  glide: 0.09,
+  cruise: 12,
+  inbound: 7,
+  rotate: 0.14,
+  flare: 0.09,
+  bankRate: 0.95,
+  bank: 0.12,
+};
+/** The plane's nose wheels' distance ahead of its main wheels, and its middle's ahead of them (plan.PLANE). */
+const PLANE_WHEELBASE = PLANE.nose - PLANE.main,
+  PLANE_BACK = -PLANE.main;
+/** A polyline the plane's main gear follows, sampled by distance (past either end, straight on). */
+function planeRoute(points: XZ[]) {
+  const along = [0];
+  for (let i = 1; i < points.length; i++) along.push(along[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]));
+  const length = along[along.length - 1];
+  return {
+    length,
+    /** The distance along it of point `i`. */
+    along: (i: number) => along[i],
+    at(d: number): XZ {
+      let lo = 1,
+        hi = points.length - 1;
+      if (d >= length) lo = hi;
+      else if (d > 0)
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (along[mid] < d) lo = mid + 1;
+          else hi = mid;
+        }
+      const a = points[lo - 1],
+        b = points[lo],
+        t = (d - along[lo - 1]) / (along[lo] - along[lo - 1] || 1);
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    },
+  };
+}
+/** An arc about (cx, cz) of radius r from angle a0 to a1 (x = cos, z = sin), about 0.05 apart; its first point left off. */
+function planeArc(cx: number, cz: number, r: number, a0: number, a1: number): XZ[] {
+  const n = Math.max(2, Math.ceil((Math.abs(a1 - a0) * r) / 0.05));
+  return Array.from({ length: n }, (_, k): XZ => {
+    const a = a0 + ((a1 - a0) * (k + 1)) / n;
+    return [cx + Math.cos(a) * r, cz + Math.sin(a) * r];
+  });
+}
+/**
+ * Distance covered `t` seconds into a leg whose speed eases (a smoothstep in time, as the tram's
+ * does) from each knot's speed to the next's: [time, speed] pairs, the first at the leg's start.
+ * Past the last knot it holds the last speed.
+ */
+function planeEase(knots: [number, number][], t: number) {
+  let s = 0;
+  for (let i = 0; i + 1 < knots.length; i++) {
+    const [t0, v0] = knots[i],
+      [t1, v1] = knots[i + 1];
+    if (t <= t0) return s;
+    const span = t1 - t0,
+      x = Math.min(1, (t - t0) / span);
+    s += span * (v0 * x + (v1 - v0) * (x * x * x - (x * x * x * x) / 2));
+  }
+  const [tn, vn] = knots[knots.length - 1];
+  return s + vn * Math.max(0, t - tn);
+}
+/** The speed `t` seconds into such a leg. */
+function planeSpeed(knots: [number, number][], t: number) {
+  for (let i = 0; i + 1 < knots.length; i++) {
+    const [t0, v0] = knots[i],
+      [t1, v1] = knots[i + 1];
+    if (t <= t1) {
+      const x = Math.max(0, (t - t0) / (t1 - t0));
+      return v0 + (v1 - v0) * x * x * (3 - 2 * x);
+    }
+  }
+  return knots[knots.length - 1][1];
+}
+/**
+ * The plane's routes (its main gear's paths) and each leg's speeds. Taxiing out: east from where
+ * pushback leaves it, so its nose wheel runs straight into the turn north onto the taxiway (round the
+ * stand's lead-in line's offset to it, 3.4), west along the taxiway, round through the west stub
+ * onto the track and east to the pivot. Climbing out: west along the track from the pivot, easing
+ * round to west-north-west. Coming in: west along the track from far out, round through the west
+ * stub onto the taxiway, east along it, the S-bend onto the lead-in line and on to the stand.
+ */
+export const PLANE_PATHS = (() => {
+  const R = PLANE_ROUTE,
+    lead = STAND.z,
+    taxiway = TAXIWAY.z,
+    bend = (lead - taxiway) / 2,
+    stubTurn = (taxiway - R.track) / 2,
+    turnOut = R.pushback - PLANE_BACK + PLANE_WHEELBASE,
+    out: XZ[] = [[R.pushback - PLANE_BACK, lead], [turnOut, lead], ...planeArc(turnOut, lead - bend, bend, Math.PI / 2, -Math.PI / 2)];
+  out.push([R.stub, taxiway], ...planeArc(R.stub, taxiway - stubTurn, stubTurn, Math.PI / 2, (3 * Math.PI) / 2));
+  const stubEnd = out.length - 1;
+  out.push([R.pivot + PLANE_WHEELBASE + 4, R.track]);
+  const taxiOut = planeRoute(out);
+  // The climb out: past x `at` the heading eases from west round toward the north by `turn`, over `over` units.
+  const { at, over, turn } = R.climb,
+    up: XZ[] = [[R.pivot, R.track]];
+  for (let d = 0, x = R.pivot, z = R.track; d < 400; d += 0.5) {
+    const s = Math.min(1, Math.max(0, (d + 0.25 - (R.pivot - at)) / over)),
+      heading = -Math.PI / 2 - turn * s * s * (3 - 2 * s);
+    x += Math.sin(heading) * 0.5;
+    z += Math.cos(heading) * 0.5;
+    up.push([x, z]);
+  }
+  const climbOut = planeRoute(up);
+  const back: XZ[] = [[R.far, R.track], [R.stub, R.track], ...planeArc(R.stub, R.track + stubTurn, stubTurn, -Math.PI / 2, (-3 * Math.PI) / 2)];
+  back.push([R.bend, taxiway], ...planeArc(R.bend, taxiway + bend, bend, -Math.PI / 2, 0), ...planeArc(R.bend + 2 * bend, taxiway + bend, bend, Math.PI, Math.PI / 2));
+  back.push([STAND.x + PLANE_WHEELBASE + 4, lead]);
+  const comeIn = planeRoute(back);
+  return {
+    taxiOut,
+    climbOut,
+    comeIn,
+    /** Along the taxi out: where the main gear leaves the turn through the stub, and stops at the pivot. */
+    stubEnd: taxiOut.along(stubEnd),
+    pivot: taxiOut.length - PLANE_WHEELBASE - 4,
+    /** Along the way in: touchdown (the main gear's) and the stand. */
+    touchdown: R.far - R.touchdown,
+    stand: comeIn.length - PLANE_WHEELBASE - 4 - PLANE_BACK,
+  };
+})();
+/**
+ * Each leg's speeds, as planeEase's knots in the loop's seconds. Pushback eases to its pace and back
+ * to a stop over 2.5 s at either end. The taxi out goes at `turning` through the turns and faster
+ * along the runway, braking to a stop at the pivot over its last 3 s. The take-off roll eases from
+ * rest to `liftOff` and the climb on to `climbing`. Coming in it holds `approach`, eases to
+ * `touchdown` by touchdown, and to taxi speed over the roll-out, which it holds back to the stand.
+ */
+export const PLANE_LEGS = (() => {
+  const T = PLANE_TIMES,
+    F = PLANE_FLIGHT,
+    W = PLANE_PATHS,
+    [p0, p1] = T.pushback,
+    pace = (STAND.x - PLANE_ROUTE.pushback) / (p1 - p0 - 2.5),
+    [t0, t1] = T.taxi,
+    v1 = F.turning,
+    out = t0 + 2 + (W.stubEnd - v1) / v1,
+    runway = (W.pivot - W.stubEnd - v1) / (t1 - 3 - (out + 2) + 2.5),
+    [r0, r1] = T.roll,
+    // The approach holds its speed until it must start slowing to touch down on time.
+    ease = (2 * (W.touchdown + T.approach * F.approach - (T.touchdown * (F.approach + F.touchdown)) / 2)) / (F.approach - F.touchdown),
+    taxi = (W.stand - W.touchdown - (F.touchdown * (T.rollOut - T.touchdown)) / 2) / ((T.rollOut - T.touchdown) / 2 + (T.parked - 2 - T.rollOut) + 1);
+  return {
+    pushback: [[p0, 0], [p0 + 2.5, pace], [p1 - 2.5, pace], [p1, 0]] as [number, number][],
+    taxi: [[t0, 0], [t0 + 2, v1], [out, v1], [out + 2, runway], [t1 - 3, runway], [t1, 0]] as [number, number][],
+    climb: [[r0, 0], [r1, F.liftOff], [r1 + 10, F.climbing]] as [number, number][],
+    land: [[T.approach, F.approach], [ease, F.approach], [T.touchdown, F.touchdown], [T.rollOut, taxi], [T.parked - 2, taxi], [T.parked, 0]] as [number, number][],
+  };
+})();
+/** Where the plane is on a route with its main gear `d` along it: that point, the way its nose points (toward its nose wheels, PLANE_WHEELBASE on) and that heading. */
+function planeOn(route: (typeof PLANE_PATHS)['taxiOut'], d: number) {
+  const [mx, mz] = route.at(d),
+    [nx, nz] = route.at(d + PLANE_WHEELBASE),
+    l = Math.hypot(nx - mx, nz - mz) || 1;
+  return { mx, mz, ux: (nx - mx) / l, uz: (nz - mz) / l, heading: Math.atan2(nx - mx, nz - mz) };
+}
+const planeStep = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
+/**
+ * The main gear's height over the runway `u` past lift-off: the climb's gradient eases in over the
+ * first 6 units, and the climb levels off toward `cruise` (a tanh, so it never kinks). Also how
+ * steep it still is, as a share of the full gradient.
+ */
+function planeClimb(u: number) {
+  const { climb, cruise } = PLANE_FLIGHT,
+    straight = u < 6 ? (climb * u * u) / 12 : climb * (u - 3),
+    k = Math.tanh(straight / cruise);
+  return { y: cruise * k, steep: (u < 6 ? u / 6 : 1) * (1 - k * k) };
+}
+/**
+ * The main gear's height on the way in, `r` short of touchdown: the glide's gradient, rounded off into
+ * the flare over the last 3 units (it touches down sinking at a sixth of the glide's rate) and, far
+ * out, levelling off at `inbound`.
+ */
+function planeDescent(r: number) {
+  const { glide, inbound } = PLANE_FLIGHT,
+    x = r / 3,
+    straight = r < 3 ? glide * 3 * (-0.85 * x * x * x + 1.7 * x * x + 0.15 * x) : glide * r;
+  return inbound * Math.tanh(straight / inbound);
+}
+export type PlanePhase = 'parked' | 'pushback' | 'taxi' | 'turn' | 'take-off' | 'climb' | 'away' | 'approach' | 'roll-out' | 'taxi-in';
+/**
+ * Where the plane is in its loop at `time`: on which leg (pushback, the taxi out, the climb out
+ * from the take-off roll on, the way in from the approach on, or none: parked, the wait after
+ * pushback, the turn onto 27) and how far its main gear has come along it (for pushback, how far
+ * back it has been pushed), with its speed. Like the tram's distance, each only ever grows.
+ */
+export function planeTravel(time: number) {
+  const P = PLANE_LOOP,
+    t = ((time % P) + P) % P,
+    T = PLANE_TIMES,
+    L = PLANE_LEGS,
+    leg = (name: 'pushback' | 'taxi' | 'climb' | 'land', s: number) => ({ leg: name, t, d: planeEase(L[name], s), speed: planeSpeed(L[name], s) });
+  if (t >= T.pushback[0] && t < T.pushback[1]) return leg('pushback', t);
+  if (t >= T.taxi[0] && t < T.taxi[1]) return leg('taxi', t);
+  if (t >= T.roll[0] && t < T.approach) return leg('climb', Math.min(t, T.lost));
+  if (t >= T.approach && t < T.parked) return leg('land', t);
+  return { leg: null, t, d: 0, speed: 0 };
+}
+/**
+ * The plane at `time` (seconds of town time; city-scene holds it at 0, on its stand, under reduced
+ * motion and while paused): its middle (x, y, z; y the airside's top when it stands on its wheels),
+ * its heading (rotation.y, the nose along (sin, cos)), its pitch (nose up) and bank (port wing up)
+ * in radians, whether it is on its wheels and whether it is to be drawn (not while it is away, lost
+ * in the haze between climbing out and coming back). On the ground its main gear follows the
+ * routes (PLANE_PATHS) and it faces its nose wheels a wheelbase further on, as the tram faces from
+ * its rear bogie to its front one, so it turns smoothly however the route bends; it pivots about its
+ * main gear to line up; it pitches about its main gear (rotating to take off, flaring to land) and
+ * banks with its rate of turn in the air. Periodic: ((time % PLANE_LOOP) + PLANE_LOOP) % PLANE_LOOP.
+ */
+export function planePose(time: number): { x: number; y: number; z: number; heading: number; pitch: number; bank: number; ground: boolean; visible: boolean; phase: PlanePhase } {
+  const T = PLANE_TIMES,
+    R = PLANE_ROUTE,
+    F = PLANE_FLIGHT,
+    W = PLANE_PATHS,
+    { leg, t, d, speed } = planeTravel(time);
+  const at = (on: ReturnType<typeof planeOn>, gear: number, pitch: number, bank: number, ground: boolean, phase: PlanePhase, visible = true) => ({
+    x: on.mx + on.ux * PLANE_BACK * Math.cos(pitch),
+    y: gear + PLANE_BACK * Math.sin(pitch),
+    z: on.mz + on.uz * PLANE_BACK * Math.cos(pitch),
+    heading: on.heading,
+    pitch,
+    bank,
+    ground,
+    visible,
+    phase,
+  });
+  // Pushed straight back along the lead-in line, nose still east (then a moment's wait there).
+  if (leg === 'pushback' || (t >= T.pushback[1] && t < T.taxi[0]))
+    return { x: STAND.x - (leg ? d : STAND.x - R.pushback), y: AIRSIDE, z: STAND.z, heading: STAND.heading, pitch: 0, bank: 0, ground: true, visible: true, phase: 'pushback' };
+  if (leg === 'taxi') return at(planeOn(W.taxiOut, d), AIRSIDE, 0, 0, true, 'taxi');
+  // The turn about onto 27: round through the south (clear of the deck's north edge), on its main gear.
+  if (t >= T.turn[0] && t < T.roll[0]) {
+    const heading = Math.PI / 2 - Math.PI * planeStep((t - T.turn[0]) / (T.turn[1] - T.turn[0]));
+    return at({ mx: R.pivot, mz: R.track, ux: Math.sin(heading), uz: Math.cos(heading), heading }, AIRSIDE, 0, 0, true, 'turn');
+  }
+  if (leg === 'climb') {
+    // The take-off roll, rotation (the nose up over the last 1.6 units of it and the first 2.5 of the
+    // climb) and the climb out, banking into the turn; held where it is lost once it is away.
+    const lift = (F.liftOff * (T.roll[1] - T.roll[0])) / 2,
+      { y, steep } = planeClimb(Math.max(0, d - lift)),
+      pitch = planeStep((d - lift + 1.6) / 4.1) * (0.03 + (F.rotate - 0.03) * steep),
+      wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a)),
+      turning = (wrap(planeOn(W.climbOut, d + 1).heading - planeOn(W.climbOut, d - 1).heading) / 2) * speed,
+      bank = d > lift ? Math.max(-F.bank, Math.min(F.bank, -F.bankRate * turning)) : 0;
+    return at(planeOn(W.climbOut, d), AIRSIDE + y, pitch, bank, d <= lift, t >= T.lost ? 'away' : d <= lift ? 'take-off' : 'climb', t < T.lost);
+  }
+  if (leg === 'land') {
+    // Coming in: the approach, touchdown with the nose up in the flare, lowering it over the first
+    // 2.5 of the roll-out, and the taxi back.
+    const r = W.touchdown - d,
+      pitch = r > 0 ? 0.02 + (F.flare - 0.02) * (1 - planeStep(r / 6)) : F.flare * (1 - planeStep(-r / 2.5));
+    return at(planeOn(W.comeIn, d), AIRSIDE + (r > 0 ? planeDescent(r) : 0), pitch, 0, r <= 0, r > 0 ? 'approach' : t < T.rollOut ? 'roll-out' : 'taxi-in');
+  }
+  return { x: STAND.x, y: AIRSIDE, z: STAND.z, heading: STAND.heading, pitch: 0, bank: 0, ground: true, visible: true, phase: 'parked' };
+}
 /**
  * The dog walk: a slim lap of the open lawn between the corner park's east edge and the south
  * avenue's trees, 0.4 off the park, clear of the trunks and the pavements. The dog trots on a
