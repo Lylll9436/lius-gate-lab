@@ -8,11 +8,14 @@ import {
   type LabCatalog,
   type LabRecord,
   type Localized,
+  type NeighbourPlace,
   type NeighbourRecord,
   type NoteRecord,
   type OutputRecord,
   type PersonRecord,
 } from './content-schema';
+// Type-only, so it is erased and adds no import cycle at run time (city-data imports this module).
+import type { BuildingId } from './city-data';
 const loaded = migrateCatalog(raw);
 assertCatalog(loaded);
 export const catalog: LabCatalog = loaded;
@@ -90,22 +93,34 @@ export const noteRecords = catalog.notes
   .sort((a, b) => b.date.localeCompare(a.date) || a.order - b.order);
 /**
  * The neighbours published, in their order: researchers beside the town who are not part of Liu’s
- * Gate, with their groups (Alison Heppenstall and UIA, on the sky island). They are not people:
- * nothing that lists people, members, leavers, residents, homes, People cards, departures or an
- * event's People reads them, nor the supervisor's email, and no address opens one (getRecord does
- * not know them). A place's file shows its neighbour: neighbourFor.
+ * Gate, with their groups (Alison Heppenstall and UIA, whose place is the sky island). They are not
+ * people: nothing that lists people, members, leavers, residents, homes, People cards, departures
+ * or an event's People reads them, nor the supervisor's email, and no address opens one (getRecord
+ * does not know them). Their place's file is to show them (neighbourFor), but nothing on the site
+ * reads them yet: the sky island's file and the reading page's Neighbours card come later (P2).
  */
 export const neighbourRecords: NeighbourRecord[] = catalog.neighbours
   .filter((n) => n.visibility === 'published')
   .sort((a, b) => a.order - b.order);
 /**
- * The published neighbour a place's file shows, or undefined: the sky island's is Alison
+ * The published neighbour a place's file is to show, or undefined: the sky island's is Alison
  * Heppenstall. A place has at most one (content-schema checks it).
- * TODO(P2): type placeId as BuildingId once S1's 'sky-island' has landed (see NeighbourPlace).
+ * TODO(P2): type placeId as BuildingId once S1's 'sky-island' has landed (see P2Tighten below).
  */
 export function neighbourFor(placeId: string): NeighbourRecord | undefined {
   return neighbourRecords.find((n) => n.buildingId === placeId);
 }
+/** A place in the town, checked against BuildingId when the type is made. */
+type Place<T extends BuildingId> = T;
+/**
+ * TODO(P2), a tripwire. 'sky-island' is not a BuildingId until lane S1 lands, so the next line is
+ * a type error, expected and silenced. Once S1's head is merged in, the error is gone and
+ * `pnpm typecheck` fails here instead (an unused '@ts-expect-error' directive). Then type
+ * NeighbourRecord.buildingId (content-schema.ts) and neighbourFor's placeId as BuildingId, and
+ * delete Place and P2Tighten.
+ */
+// @ts-expect-error TODO(P2): 'sky-island' is not a BuildingId until S1 lands; once this fails, tighten the neighbours' place to BuildingId
+export type P2Tighten = Place<NeighbourPlace>;
 /** The supervisor's address, taken from their catalogue record so it is maintained in one place. */
 export function supervisorEmail() {
   const link = peopleRecords
@@ -169,7 +184,7 @@ export function personContentId(p: PersonRecord): string {
 }
 /**
  * The record an address names: a person, a research project, an event, an output or a note.
- * Neighbours have no address of their own (neighbourRecords): their place's file shows them.
+ * Neighbours have no address of their own (neighbourRecords): their place's file is to show them.
  */
 export function getRecord(
   id: string,

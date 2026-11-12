@@ -26,6 +26,14 @@ for (const visibility of [['published'], { value: 'published' }, null]) {
     validateCatalog(malformed).some((error) => error.includes('visibility')),
   );
 }
+// English text has no Chinese in any collection: no Han character, and no Chinese or full-width
+// punctuation pasted from the Chinese copy either.
+for (const en of ['Urban Studies，University of Glasgow', 'Spatial statistics。', 'A 「group」', 'Leeds、Glasgow', 'Alison \u{20000}'])
+  assert.deepEqual(
+    validateCatalog({ ...catalog, people: catalog.people.map((p, i) => (i ? p : { ...p, summary: { ...p.summary, en } })) }),
+    ['people[0].summary: supply en and zh (English must contain no Chinese).'],
+    'English text with Chinese in it passes: ' + en,
+  );
 const text = (en) => ({ en, zh: '测试内容' });
 // Who is still at the Gate depends on the day: people leave on their departure's UTC day, the day
 // Gate's News counts by. Every helper that decides it takes that day, and these checks pass fixed
@@ -182,6 +190,19 @@ assert.deepEqual(migrateCatalog(legacy), { ...catalog, outputs: [], notes: [], n
   assert.deepEqual(validateCatalog(early), ['neighbours must be an array.']);
   assert.deepEqual(validateCatalog(migrateCatalog({ ...catalog, neighbours: null })), ['neighbours must be an array.']);
   assert.equal(migrateCatalog(catalog), catalog);
+}
+// The catalogue holds its schemaVersion and its collections, and nothing else. A collection whose
+// name is misspelt is refused, migrated or not, by name, and is never taken for a file from before
+// the neighbours: the sky island would have none. Nor is a stray key beside the real one kept.
+{
+  const typo = structuredClone(catalog);
+  typo.neighbors = typo.neighbours;
+  delete typo.neighbours;
+  assert.deepEqual(validateCatalog(migrateCatalog(typo)), ['catalog: unknown field "neighbors".']);
+  assert.deepEqual(validateCatalog(typo), ['catalog: unknown field "neighbors".', 'neighbours must be an array.']);
+  assert.deepEqual(validateCatalog(migrateCatalog({ ...legacy, neighbors: [] })), ['catalog: unknown field "neighbors".']);
+  assert.deepEqual(validateCatalog({ ...catalog, neighbor: [] }), ['catalog: unknown field "neighbor".']);
+  assert.deepEqual(validateCatalog({ ...catalog, event: [] }), ['catalog: unknown field "event".']);
 }
 
 assert.throws(
@@ -355,7 +376,10 @@ assert.equal(alison.group.site.url, 'https://urban-ai.uk/');
 assert.deepEqual(alison.links.map((l) => l.url), ['https://www.gla.ac.uk/schools/socialpolitical/staff/alisonheppenstall/']);
 // The wording rules for her copy. She has no Chinese name, so hers stays in Latin script in the
 // Chinese copy, and UIA keeps its own name. The one tie the sources state is that Pengyuan Liu is
-// listed as an Associate of UIA: nothing stronger is said.
+// listed as an Associate of UIA, and the connection line says so. That nothing stronger is said,
+// that her name and UIA's are never written in Chinese characters, and that Liu’s Gate is never
+// called a lab or a group are checked in every sentence of her copy, whatever its field (the copy
+// scan, below).
 assert(alison.title.zh === alison.title.en && !/[㐀-鿿]/.test(alison.title.zh), 'Her name stays in Latin script in Chinese.');
 assert.deepEqual(
   [alison.group.name.zh, alison.group.fullName.zh],
@@ -365,13 +389,8 @@ assert.deepEqual(
 {
   const tie = alison.group.connection;
   assert(
-    tie.en.includes('Pengyuan Liu') &&
-      /\bAssociates?\b/.test(tie.en) &&
-      tie.zh.includes('刘鹏远') &&
-      tie.zh.includes('Associate') &&
-      !/\b(part of|belongs? to|members?|co-?supervis\w*|affiliated)\b/i.test(tie.en) &&
-      !/(属于|隶属|成员|共同指导|联合指导)/.test(tie.zh),
-    'The tie to UIA is that Pengyuan Liu is listed as an Associate, and nothing stronger.',
+    tie.en.includes('Pengyuan Liu') && /\bAssociates?\b/.test(tie.en) && tie.zh.includes('刘鹏远') && tie.zh.includes('Associate'),
+    'The tie to UIA is that Pengyuan Liu is listed as an Associate.',
   );
 }
 /** The real catalogue with Alison Heppenstall's record changed by `edit`. */
@@ -399,6 +418,19 @@ for (const [why, edit, message] of [
   ['a blank zh', (n) => (n.role.zh = ' '), herAt + '.role.zh is missing: supply en and zh.'],
   ['a missing en', (n) => delete n.sections[1].heading.en, herAt + '.sections[1].heading.en is missing: supply en and zh.'],
   ['Chinese in the group’s English', (n) => (n.group.connection.en += ' 刘家门'), herAt + '.group.connection.en contains Chinese: English text must have none.'],
+  // Chinese punctuation pasted from the Chinese copy is Chinese too.
+  [
+    'a full-width comma in English text',
+    (n) => (n.affiliation.en = 'Urban Studies & Social Policy，University of Glasgow'),
+    herAt + '.affiliation.en contains Chinese: English text must have none.',
+  ],
+  ['an ideographic full stop in English text', (n) => (n.role.en = 'PROFESSOR OF GEOCOMPUTATION。'), herAt + '.role.en contains Chinese: English text must have none.'],
+  ['full-width brackets in English text', (n) => (n.group.summary.en = 'A group leader of UIA（Urban Intelligence & Analytics）.'), herAt + '.group.summary.en contains Chinese: English text must have none.'],
+  // A Chinese text is translated: the English pasted in is refused, save her name and UIA's.
+  ['an untranslated summary', (n) => (n.summary.zh = n.summary.en), herAt + '.summary.zh has no Chinese: translate it.'],
+  ['an untranslated connection', (n) => (n.group.connection.zh = n.group.connection.en), herAt + '.group.connection.zh has no Chinese: translate it.'],
+  ['an untranslated link label', (n) => (n.links[0].label.zh = n.links[0].label.en), herAt + '.links[0].label.zh has no Chinese: translate it.'],
+  ['an untranslated section heading', (n) => (n.sections[0].heading.zh = 'Background'), herAt + '.sections[0].heading.zh has no Chinese: translate it.'],
   ['a text that is not en and zh', (n) => (n.title = 'Alison Heppenstall'), herAt + '.title must be a text with en and zh.'],
   ['a language beside en and zh', (n) => (n.title.fr = 'Alison Heppenstall'), herAt + '.title: unknown field "fr".'],
   ['UIA’s website not on HTTPS', (n) => (n.group.site.url = 'http://urban-ai.uk/'), herAt + '.group.site.url must be an HTTPS address.'],
@@ -1954,21 +1986,77 @@ assert(
   const neighbourTexts = neighbourCopy(catalog);
   assert(neighbourTexts.length >= 18 * catalog.neighbours.length, 'The copy scan read the neighbours’ text (' + neighbourTexts.length + ' pieces).');
   for (const text of neighbourTexts) assert(!lab(text), 'content/lab.json’s neighbours use a lab word: ' + text);
-  // In the neighbours' copy Liu’s Gate is never called a lab or a group: no sentence that names it
-  // calls anything one. UIA, a group by its own word, and the university's research groups are
-  // named in sentences of their own.
-  const gateSentences = (texts) =>
-    texts.flatMap((t) => t.split(/(?<=[.!?。！？])\s*/)).filter((s) => /Liu[’']s Gate|LIU[’']S GATE|刘家门/.test(s));
+  // The wording rules, read in every sentence of the neighbours' copy, whatever its field:
+  // - Liu’s Gate is never called a lab or a group: no sentence that names it calls anything one.
+  //   UIA, a group by its own word, and the university's research groups are named in sentences
+  //   of their own.
+  // - Nor is it one by its supervisor's name: no "Pengyuan Liu’s research group", "the Liu group"
+  //   or 刘鹏远老师的课题组, in any sentence.
+  // - The one tie the sources state is that Pengyuan Liu is listed as an Associate of UIA: no
+  //   sentence that names the Gate or a Liu (Liu, 刘) says part of, belongs to, member,
+  //   co-supervises or affiliated (属于, 隶属, 成员, 共同指导, 联合指导).
+  // - Her name and UIA's stay in Latin script: no text writes them in Chinese characters. A
+  //   heuristic: the usual transliterations of Alison and Heppenstall, and UIA's name translated.
+  const sentences = (texts) => texts.flatMap((t) => t.split(/(?<=[.!?。！？])\s*/)).filter(Boolean);
+  const namesTheGate = (s) => /Liu[’']s Gate|LIU[’']S GATE|刘家门/.test(s);
+  const namesALiu = (s) => /\bLiu\b/i.test(s) || /刘/.test(s);
   const callsAGroup = (s) => /\b(?:labs?|laborator(?:y|ies)|groups?|teams?)\b/i.test(s) || /实验室|研究组|课题组|团队|小组/.test(s);
-  assert(
-    gateSentences(['UIA is a group. Liu’s Gate is a research group too.']).some(callsAGroup) &&
-      gateSentences(['刘家门是一个研究团队。']).some(callsAGroup) &&
-      !gateSentences(['UIA is a group. Pengyuan Liu, the supervisor of Liu’s Gate, is an Associate.']).some(callsAGroup),
-    'The sentence rule reads what it should.',
-  );
-  assert(gateSentences(neighbourTexts).length, 'The neighbours’ copy names Liu’s Gate (the connection line).');
-  for (const sentence of gateSentences(neighbourTexts))
-    assert(!callsAGroup(sentence), 'content/lab.json’s neighbours call Liu’s Gate a lab or a group: ' + sentence);
+  const callsHisPeopleAGroup = (s) =>
+    /\bLiu(?:[’']s)?\s+(?:research\s+)?(?:labs?|laborator(?:y|ies)|groups?|teams?)\b/i.test(s) ||
+    /刘(?:鹏远)?(?:老师|教授|博士)?的?(?:研究)?(?:实验室|研究组|课题组|团队|小组)/.test(s);
+  const strongerTie = (s) =>
+    /\b(?:part of|belongs? to|member(?:s|ship)?|co-?supervis\w*|affiliat\w*)\b/i.test(s) || /属于|隶属|成员|共同指导|联合指导/.test(s);
+  const namesInChinese = (s) => /[艾爱](?:莉|利|丽)森|[赫海](?:彭|本|朋|普)斯(?:托|通|塔|特|顿)尔|城市智能(?:与|和|及)?分析/.test(s);
+  /** What the copy says that the wording rules forbid: each sentence, with the rule it breaks. */
+  const wordingFaults = (texts) =>
+    sentences(texts).flatMap((s) => [
+      ...(namesTheGate(s) && callsAGroup(s) ? ['calls Liu’s Gate a lab or a group: ' + s] : []),
+      ...(callsHisPeopleAGroup(s) ? ['calls its supervisor’s people a lab, a group or a team: ' + s] : []),
+      ...(namesALiu(s) && strongerTie(s) ? ['states a tie stronger than Associate: ' + s] : []),
+      ...(namesInChinese(s) ? ['writes her name or UIA’s in Chinese characters: ' + s] : []),
+    ]);
+  // The rules read what they should: these are caught, wherever in her copy they stand, and the
+  // real tie, UIA as a group and her university's research groups are not.
+  for (const [text, caught] of [
+    ['UIA is a group. Liu’s Gate is a research group too.', true],
+    ['刘家门是一个研究团队。', true],
+    ['Pengyuan Liu’s research group works on cities too.', true],
+    ['刘鹏远老师的课题组也研究城市。', true],
+    ['刘鹏远的研究团队与 UIA 合作。', true],
+    ['She works with the Liu group.', true],
+    ['Liu’s Gate is part of UIA.', true],
+    ['刘家门隶属于 UIA。', true],
+    ['She co-supervises PhD students with Pengyuan Liu.', true],
+    ['她与刘鹏远联合指导博士生。', true],
+    ['Dr Liu is a member of UIA.', true],
+    ['Pengyuan Liu is an affiliate of UIA.', true],
+    ['Liu’s Gate holds a UIA membership.', true],
+    ['赫彭斯托尔教授是格拉斯哥大学地理计算教授。', true],
+    ['艾莉森是 UIA 的团队负责人之一。', true],
+    ['UIA（城市智能与分析）用数据理解城市。', true],
+    ['UIA is a group. Pengyuan Liu, the supervisor of Liu’s Gate, is an Associate.', false],
+    [alison.group.connection.en, false],
+    [alison.group.connection.zh, false],
+    ['UIA 是一个研究团队。', false],
+    ['At Glasgow she is listed in two research groups, Urban Analytics and Just Cities & Societies.', false],
+    ['Alison Heppenstall 是 UIA（Urban Intelligence & Analytics）的团队负责人之一。', false],
+  ])
+    assert.equal(wordingFaults([text]).length > 0, caught, 'The wording rules read: ' + text);
+  // And the rules see every field: a fault set in any of her texts is caught.
+  for (const [where, edit] of [
+    ['her summary', (n) => (n.summary.en += ' She works with the Liu group.')],
+    ['her Background', (n) => (n.sections[0].body.en += ' Liu’s Gate is part of UIA.')],
+    ['her Research', (n) => (n.sections[1].body.zh += '她与刘鹏远联合指导博士生。')],
+    ['UIA’s summary', (n) => (n.group.summary.zh += '刘家门隶属于 UIA。')],
+    ['her role', (n) => (n.role.zh = '赫彭斯托尔教授')],
+    ['her staff page’s label', (n) => (n.links[0].label.zh = '艾莉森的格拉斯哥大学教师主页')],
+  ]) {
+    const cat = structuredClone(catalog);
+    edit(cat.neighbours.find((n) => n.id === alison.id));
+    assert.equal(wordingFaults(neighbourCopy(cat)).length, 1, 'The wording rules miss a fault in ' + where + '.');
+  }
+  assert(sentences(neighbourTexts).some(namesTheGate), 'The neighbours’ copy names Liu’s Gate (the connection line).');
+  assert.deepEqual(wordingFaults(neighbourTexts), [], 'content/lab.json’s neighbours break a wording rule.');
 }
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');
@@ -2042,6 +2130,20 @@ assert.equal(
   await fs.readFile(path.join(root, 'content/lab.json'), 'utf8'),
   original,
 );
+// The command, which reads the file migrated as the build and the site do, refuses a catalogue
+// whose neighbours are misspelt, by name, and does not take it for one with no neighbours.
+{
+  const typo = structuredClone(catalog);
+  typo.neighbors = typo.neighbours;
+  delete typo.neighbours;
+  await fs.writeFile(path.join(sandbox, 'content/lab.json'), JSON.stringify(typo, null, 2));
+  const result = spawnSync(process.execPath, ['--experimental-strip-types', path.join(sandbox, 'scripts/content.mjs'), 'validate'], {
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1, 'The command validates a catalogue whose neighbours are spelt "neighbors".');
+  assert.match(result.stderr, /catalog: unknown field "neighbors"\./);
+  assert.doesNotMatch(result.stdout, /Catalog valid/);
+}
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command), and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
 );

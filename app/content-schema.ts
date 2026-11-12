@@ -66,13 +66,14 @@ export type NoteRecord = RecordBase & {
   buildingId: string | null;
 };
 /**
- * The place a neighbour belongs to, whose City file shows them: the sky island.
+ * The place a neighbour belongs to, whose City file is to show them: the sky island.
  *
  * TODO(P2), tighten to BuildingId: 'sky-island' is not a BuildingId yet. Lane S1 adds it to
- * city-data's BuildingId and to buildingIds below. Once it has landed, type
- * NeighbourRecord.buildingId as BuildingId (`import type { BuildingId } from './city-data'`), and
- * neighbourFor's placeId in lab-records.ts with it. neighbourPlaces stays the list of the places
- * that may hold a neighbour (never a member's home or the residence).
+ * city-data's BuildingId and to buildingIds below, and then `pnpm typecheck` fails on purpose at
+ * P2Tighten in lab-records.ts. Type NeighbourRecord.buildingId as BuildingId
+ * (`import type { BuildingId } from './city-data'`), and neighbourFor's placeId in lab-records.ts
+ * with it, and delete Place and P2Tighten there. neighbourPlaces stays the list of the places that
+ * may hold a neighbour (never a member's home or the residence).
  */
 export type NeighbourPlace = 'sky-island';
 const neighbourPlaces: NeighbourPlace[] = ['sky-island'];
@@ -153,8 +154,16 @@ const homeIds = ['pengyuan-liu', 'yunlong-liu', 'qin-li'];
 export const RESIDENCE_ID = 'visiting-phd';
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
-/** Chinese characters: English text has none, in every collection. */
-const chinese = /[\u3400-\u9fff]/;
+/**
+ * Chinese, which English text has none of, in every collection: a Han character (with the radicals,
+ * the compatibility ideographs and those beyond the BMP), or Chinese or full-width punctuation and
+ * forms pasted from the Chinese copy: the full-width comma and brackets, the ideographic comma and
+ * full stop, corner brackets.
+ */
+const chinese =
+  /[\u2e80-\u2fdf\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]|[\u{20000}-\u{323af}]/u;
+/** A Han character: a neighbour's Chinese text has one, save the names that stay in Latin script. */
+const han = /[\u3400-\u9fff\uf900-\ufaff]|[\u{20000}-\u{323af}]/u;
 const localized = (v: unknown) =>
   object(v) &&
   typeof v.en === 'string' &&
@@ -254,9 +263,11 @@ const neighbourKeys = [
 const groupKeys = ['name', 'fullName', 'summary', 'connection', 'site'];
 /**
  * What is wrong with a neighbour's text, each fault in words of its own: a language missing or
- * blank, Chinese in the English, or a field that is neither en nor zh.
+ * blank, Chinese in the English, a Chinese text with no Chinese in it (the English pasted in,
+ * untranslated), or a field that is neither en nor zh. `latin`: a name that stays in Latin script
+ * in Chinese too (hers, UIA's and its full name), so its zh needs no Han character.
  */
-function textErrors(at: string, v: unknown): string[] {
+function textErrors(at: string, v: unknown, latin = false): string[] {
   if (!object(v)) return [at + ' must be a text with en and zh.'];
   const errors = unknownKeys(at, v, ['en', 'zh']);
   for (const lang of ['en', 'zh']) {
@@ -266,6 +277,8 @@ function textErrors(at: string, v: unknown): string[] {
   }
   if (typeof v.en === 'string' && chinese.test(v.en))
     errors.push(at + '.en contains Chinese: English text must have none.');
+  if (!latin && typeof v.zh === 'string' && v.zh.trim() && !han.test(v.zh))
+    errors.push(at + '.zh has no Chinese: translate it.');
   return errors;
 }
 /** What is wrong with a link off the site: its label, and an HTTPS address by safeLink's rules (no mailto). */
@@ -320,8 +333,11 @@ function neighbourErrors(value: Record<string, unknown>): string[] {
             ' is in people too. A neighbour is not a member: keep them in neighbours only.',
         );
     }
+    // A neighbour's name (title) stays in Latin script in Chinese; the rest is translated.
     for (const field of ['title', 'summary', 'role', 'affiliation'])
-      errors.push(...textErrors(at + '.' + field, row[field]));
+      errors.push(
+        ...textErrors(at + '.' + field, row[field], field === 'title'),
+      );
     if (
       typeof row.visibility !== 'string' ||
       !['draft', 'published'].includes(row.visibility)
@@ -359,8 +375,15 @@ function neighbourErrors(value: Record<string, unknown>): string[] {
       );
     else {
       errors.push(...unknownKeys(at + '.group', group, groupKeys));
+      // The group's names stay as it writes them (UIA, Urban Intelligence & Analytics).
       for (const field of ['name', 'fullName', 'summary', 'connection'])
-        errors.push(...textErrors(at + '.group.' + field, group[field]));
+        errors.push(
+          ...textErrors(
+            at + '.group.' + field,
+            group[field],
+            field === 'name' || field === 'fullName',
+          ),
+        );
       errors.push(...outboundErrors(at + '.group.site', group.site));
     }
     if (!Array.isArray(row.sections))
@@ -388,6 +411,11 @@ export function validateCatalog(value: unknown): string[] {
   const errors: string[] = [];
   if (!object(value) || value.schemaVersion !== 2)
     return ['schemaVersion must be 2.'];
+  // The catalogue holds its schemaVersion and its collections, and nothing else: a collection whose
+  // name is misspelt (the US `neighbors`) is refused, not read as a file without it.
+  errors.push(
+    ...unknownKeys('catalog', value, ['schemaVersion', ...collections]),
+  );
   const bound = new Set<string>();
   for (const collection of gateCollections) {
     const rows = value[collection];
@@ -611,7 +639,9 @@ export function removeRecord(
 /**
  * Upgrade a file from before a collection existed, before validation; never invent published
  * records. v1 had no outputs, notes or neighbours. The neighbours came later within v2 and only
- * add a list, so a v2 file written before them gains an empty one and schemaVersion stays 2.
+ * add a list, so a v2 file written before them gains an empty one and schemaVersion stays 2. A
+ * file that spells the key otherwise (`neighbors`) gains one too, and validateCatalog refuses its
+ * unknown key.
  */
 export function migrateCatalog(value: unknown): unknown {
   if (object(value) && value.schemaVersion === 1)
