@@ -43,7 +43,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/city-water.ts` `app/city-ink.ts` | 水面着色器；最终合成（多重采样、接触阴影、选中光圈），深度方法参考 xi4u，MIT，见 THIRD_PARTY_NOTICES.md |
 | `app/city-materials.ts` `app/city-people.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、路灯、近看取景、悬停状态 |
 | `app/city-data.ts` `app/city-districts.ts` `app/lab-navigation.ts` `app/lab-records.ts` `app/content-schema.ts` | 建筑文案、分区、地址与章节映射、内容目录与校验 |
-| `content/lab.json` | 人员、研究、活动、成果、研究记录（见 MAINTENANCE.md） |
+| `content/lab.json` | 人员、研究、活动、成果、研究记录，以及近邻（`neighbours`：Alison Heppenstall 和她的团队 UIA，不是成员）；见 MAINTENANCE.md |
 
 ## 校验
 

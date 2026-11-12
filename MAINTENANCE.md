@@ -4,7 +4,7 @@
 
 ## 日常内容入口
 
-主文件：`content/lab.json`，分为 `people`、`research`、`events`、`outputs`、`notes`，`schemaVersion` 为 2。
+主文件：`content/lab.json`，分为 `people`、`research`、`events`、`outputs`、`notes`，以及近邻 `neighbours`（见下面「近邻」），`schemaVersion` 为 2。
 
 | 字段 | 用途 |
 | --- | --- |
@@ -39,6 +39,11 @@
 - 研究额外字段：`status`（`active` / `completed`）、`people`、`buildingId`。`active` 进入研究工作室，`completed` 自动进入档案馆，并保留与成员和成果的关联。
 - 活动额外字段：`date`（真实 YYYY-MM-DD）、`category`（`group-photo` / `celebration` / `milestone`）、`people`、`image`（`public/media/` 下的图片或 `null`）。活动按日期倒序进入街角公园。
 - 成果（`outputs`）：`type` 为 `paper` / `dataset` / `software` / `report`，加 `date`、`people`、`researchId`、`buildingId`。研究记录（`notes`）同样有 `date`、`people`、`researchId`、`buildingId`。
+- 近邻（`neighbours`）：小城旁边、不属于刘家门的研究者和她们的团队，现在只有一条 `alison-heppenstall`（Alison Heppenstall 和她的团队 UIA，在天空之岛上）。她不是成员：不在 `people` 里，所以不会出现在「成员」一章、名字标签、住宅和公寓、出发屏和活动的「相关成员」按钮里，也不影响导师邮箱；她没有自己的地址（`getRecord` 不认识近邻），她的记录按 `buildingId` 归到那个地点，供那个地点的资料显示（`app/lab-records.ts` 的 `neighbourRecords` 与 `neighbourFor(地点编号)`）。同一个编号不能同时写进 `people` 和 `neighbours`，活动、研究、成果和研究记录的 `people` 也不能写她，校验都会拒绝；`check-content` 还检查网站上列出成员、住户或离开的人的地方都没有她。
+  - 字段（全部要写，拼错或多余的字段会被拒绝；没有 `properties`）：`id`；`title` 是姓名，她没有中文名，中文也写 “Alison Heppenstall”；`summary` 是一段简介；`role` 是职位（“PROFESSOR OF GEOCOMPUTATION / 地理计算教授”）；`affiliation` 是学院与大学；`photo` 填 `null`，网站上不放她的照片；`buildingId` 是她所在的地点 `sky-island`，一个地点最多一位已发布的近邻；`visibility`、`order` 与其他集合相同（`draft` 不展示）；`sections` 是「完整简介」里的段落，现在是「经历 / Background」和「研究 / Research」；`links` 是她的格拉斯哥大学教师主页；`group` 见下一条。
+  - `group` 是她的团队：`name` 是简称 “UIA”，`fullName` 是全称 “Urban Intelligence & Analytics”，两者中文都照写英文；`summary` 写团队做什么；`connection` 写团队与刘家门的关系，只写来源里说过的：刘鹏远老师在 UIA 官网上列为 Associate，不写“属于”“成员”“联合指导”之类更强的说法（`check-content` 会核对）；`site` 是团队官网，`label` 加 `url`（`https://urban-ai.uk/`），是天空之岛最主要的外链。UIA 可以叫 group / 团队，这是它自己的叫法；刘家门始终是师门，不叫实验室或研究组：近邻文案里提到刘家门的句子不能出现 lab、group、团队、研究组一类的词。
+  - 链接与文本：`links` 和 `group.site` 都只收 HTTPS 地址（`safeLink` 的规则，但不收 mailto）。每段文本都要有 en 和 zh，英文里不能有中文；缺一种语言、英文里有中文、不是 HTTPS 的链接和多余的字段各报各的错（例如 `neighbours[0].group.summary.zh is missing: supply en and zh.`）。近邻的文案是网站自己写的，所以和代码里的文案一起接受 lab 检查；成员的简介是本人的话，不检查。文案只用她的教师主页和 UIA 官网上核实过的事实，转述，不照抄原句。
+  - 修改：直接改 `content/lab.json`，或用维护命令 `pnpm content upsert neighbours 文件.json`（整条替换），改完运行 `pnpm content validate` 和 `pnpm check`。
 - 研究工作室和档案馆还没有记录时，显示 `app/city-data.ts` 里写给访客的说明（`sections`）；发布第一条记录后说明自动隐藏。这些说明只写给访客，维护方法写在本文件里。
 - 首屏「刘家门快讯」自动取最近 12 个月内的活动、成果与研究记录，按日期倒序最多 3 条（`app/lab-records.ts` 的 `recentNews`），过期自动下架，不用手动删除；一年内都没有新记录时，首屏卡片只保留「加入我们」。街角公园仍列出全部活动，日期按「3 Oct 2026」/「2026年10月3日」显示。
 - 「加入我们」（首屏卡片与页脚）的邮箱取自导师记录里的 mailto 链接，并自动带上邮件主题「PhD enquiry — Liu’s Gate」/「博士申请咨询 — 刘家门」（`app/lab-records.ts` 的 `joinUsMailto`）。

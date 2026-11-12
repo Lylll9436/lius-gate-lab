@@ -8,6 +8,7 @@ import {
   type LabCatalog,
   type LabRecord,
   type Localized,
+  type NeighbourRecord,
   type NoteRecord,
   type OutputRecord,
   type PersonRecord,
@@ -87,6 +88,24 @@ export const outputRecords = catalog.outputs
 export const noteRecords = catalog.notes
   .filter((p) => p.visibility === 'published')
   .sort((a, b) => b.date.localeCompare(a.date) || a.order - b.order);
+/**
+ * The neighbours published, in their order: researchers beside the town who are not part of Liu’s
+ * Gate, with their groups (Alison Heppenstall and UIA, on the sky island). They are not people:
+ * nothing that lists people, members, leavers, residents, homes, People cards, departures or an
+ * event's People reads them, nor the supervisor's email, and no address opens one (getRecord does
+ * not know them). A place's file shows its neighbour: neighbourFor.
+ */
+export const neighbourRecords: NeighbourRecord[] = catalog.neighbours
+  .filter((n) => n.visibility === 'published')
+  .sort((a, b) => a.order - b.order);
+/**
+ * The published neighbour a place's file shows, or undefined: the sky island's is Alison
+ * Heppenstall. A place has at most one (content-schema checks it).
+ * TODO(P2): type placeId as BuildingId once S1's 'sky-island' has landed (see NeighbourPlace).
+ */
+export function neighbourFor(placeId: string): NeighbourRecord | undefined {
+  return neighbourRecords.find((n) => n.buildingId === placeId);
+}
 /** The supervisor's address, taken from their catalogue record so it is maintained in one place. */
 export function supervisorEmail() {
   const link = peopleRecords
@@ -148,6 +167,10 @@ export function personContentId(p: PersonRecord): string {
     ? p.id
     : 'person:' + p.id;
 }
+/**
+ * The record an address names: a person, a research project, an event, an output or a note.
+ * Neighbours have no address of their own (neighbourRecords): their place's file shows them.
+ */
 export function getRecord(
   id: string,
 ): { kind: RecordKind; record: LabRecord } | undefined {
