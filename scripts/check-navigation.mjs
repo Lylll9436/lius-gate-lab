@@ -1508,10 +1508,15 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         return out;
       };
     assert(filePitch > (28 * Math.PI) / 180 - 1e-9 && filePitch < (34 * Math.PI) / 180 && scene.TOWN_PITCH === Math.atan2(35, 38), 'The sky island\'s file no longer comes down to about 30 degrees, or the town\'s pitch moved.');
-    // (Its idle drift turns SKY_DRIFT as far as the town's: city-scene reads it off the pitch.)
+    // (Its idle drift turns SKY_DRIFT as far as the town's: city-scene reads it off the pitch. Its
+    // own drift code (driftAt, above) run idle through the drift's minute and a half, a second
+    // apart, each frame long enough to reach its target (blend 3): at the town's pitch it swings
+    // 0.16 either way (drifts, above), at the island's (pitch 1) SKY_DRIFT of that throughout.)
     const SKY_DRIFT = Number(/\bSKY_DRIFT = ([\d.]+)[,;]/.exec(source)?.[1]),
-      fileDrifts = drifts.map((d) => d * SKY_DRIFT);
-    assert(SKY_DRIFT > 0.4 && SKY_DRIFT <= 1 && /Math\.sin\(time \* 0\.07\) \* 0\.16 \* \(1 \+ \(SKY_DRIFT - 1\) \* Math\.min\(1, pitch\)\)/.test(source), 'The idle drift no longer keeps SKY_DRIFT of its angle at the sky island\'s pitch.');
+      fileDrifts = drifts.map((d) => d * SKY_DRIFT),
+      swing = (pitch) => Array.from({ length: 90 }, (_, time) => driftAt(false, { time, pitch, SKY_DRIFT, blend: 3 })),
+      [townSwing, skySwing] = [swing(0), swing(1)];
+    assert(SKY_DRIFT > 0.4 && SKY_DRIFT <= 1 && Math.abs(Math.max(...townSwing.map(Math.abs)) - 0.16) < 2e-4 && skySwing.every((d, k) => Math.abs(d - SKY_DRIFT * townSwing[k]) < 1e-12), 'The idle drift no longer keeps SKY_DRIFT of its angle at the sky island\'s pitch.');
     for (const [w, h] of [[1024, 768], [1280, 800], [1366, 768], [1440, 900], [1536, 864], [1920, 1080], [2560, 1440]]) {
       const { zoom, centre, subject, ground, reach, held } = fileAt(w, h, 492 / (2 * w), 0),
         out = Math.hypot(ground.x - S.x, ground.z - S.z);
