@@ -122,7 +122,8 @@ const YAW_RATE = 2.5,
  * across the frame about as far as before. And it is the island's close view only: zoomed out
  * past SKY_CLOSE (from the second zoom down to the first) the camera rises back to the town's
  * pitch, so the widest views from the file see the town as every other view does (its file frames
- * it at 1.69 to 2.6).
+ * it at 1.69 to 2.6 on desktops and upright phones; where it frames it lower, a phone on its side
+ * at 1.21 to 1.24, from that fit down to three quarters of it: aim).
  */
 export const TOWN_PITCH = Math.atan2(35, 38),
   SKY_PITCH = (30 * Math.PI) / 180,
@@ -468,15 +469,17 @@ export function skyFit() {
 /**
  * The sun's shadow when the view is close in on the sky island (skyShadowWanted): its box, round
  * the island's own frame (`centre`, `radius`), in which the island casts on itself; the zoom from
- * which the view counts as close in (the second, and down to the first once it is); how many marks
- * of the land that must not show at all may show meanwhile (`land`, likewise up to the first once it
- * is) and how much of the free part of the frame the town's own island may take (`shore`, likewise:
- * a portrait phone's file shows a sliver of its north-west coast in the corner above the sheet, its
- * beach and the grass behind it, the corner of a roof at the idle drift's extreme, 2.8% of the free
- * part at rest and 3.9% through the drift at most); and how long the shadows take to fade out
- * before the box moves and to fade back in after.
+ * which the view counts as close in (the second, and down to the first once it is), or how far the
+ * camera must have come down to the island's own pitch (`low`, likewise: a phone on its side frames
+ * the island's file at 1.21 to 1.24, under that zoom, and the camera comes down there all the same:
+ * aim); how many marks of the land that must not show at all may show meanwhile (`land`, likewise
+ * up to the first once it is) and how much of the free part of the frame the town's own island may
+ * take (`shore`, likewise: a portrait phone's file shows a sliver of its north-west coast in the
+ * corner above the sheet, its beach and the grass behind it, the corner of a roof at the idle
+ * drift's extreme, 2.8% of the free part at rest and 3.9% through the drift at most); and how long
+ * the shadows take to fade out before the box moves and to fade back in after.
  */
-export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], land: [4, 2], shore: [0.05, 0.04], fade: 0.18 };
+export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], low: [0.75, 0.9], land: [4, 2], shore: [0.05, 0.04], fade: 0.18 };
 /** The town's island out to its waterline (3.3 past its outline), as skyShadowWanted measures it. */
 const TOWN_WATERLINE = plan.islandOutline.map(([x, z]) => new T.Vector3(x, 0, z).multiplyScalar(1 + 3.3 / Math.hypot(x, z)));
 /**
@@ -516,17 +519,18 @@ function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom
  * Whether the sun's shadow should frame the sky island rather than the town. The island lies
  * outside the town's shadow box at most suns and bearings, and a box wide enough for both would
  * cost the whole town a fifth of its shadows' sharpness; so one box serves whichever the view is
- * on. It is the island's while the view is close in on it (SKY_SHADOW.zoom), its middle in the
- * frame, and the town is next to absent from the part of the frame the file's panel (`shift`) or
- * sheet (`drop`) leaves free: no more than SKY_SHADOW.land of `land`'s marks (the lighthouse's rock
- * and the airport's island in the town's frames), and its own island (TOWN_WATERLINE) at most a
- * sliver of it (SKY_SHADOW.shore), whose beach and grass go without shadows meanwhile. That is the
- * island's own file, and a view panned or zoomed about it. `on` says it is the island's now, which
- * it stays a little longer either way.
+ * on. It is the island's while the view is close in on it (SKY_SHADOW.zoom, or the camera come down
+ * `low` of the way to the island's own pitch: city-scene's pitch), its middle in the frame, and the
+ * town is next to absent from the part of the frame the file's panel (`shift`) or sheet (`drop`)
+ * leaves free: no more than SKY_SHADOW.land of `land`'s marks (the lighthouse's rock and the
+ * airport's island in the town's frames), and its own island (TOWN_WATERLINE) at most a sliver of
+ * it (SKY_SHADOW.shore), whose beach and grass go without shadows meanwhile. That is the island's
+ * own file, and a view panned or zoomed about it. `on` says it is the island's now, which it stays
+ * a little longer either way.
  */
-export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[], shift: number, drop: number, on: boolean) {
+export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[], shift: number, drop: number, on: boolean, low = 0) {
   const Z = SKY_SHADOW;
-  if (camera.zoom < Z.zoom[on ? 0 : 1]) return false;
+  if (camera.zoom < Z.zoom[on ? 0 : 1] && low < Z.low[on ? 0 : 1]) return false;
   const p = new T.Vector3().copy(Z.centre).project(camera);
   if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) return false;
   const right = 1 - 4 * Math.max(0, shift),
@@ -1235,12 +1239,22 @@ export async function createCity(
    * The pitch the view heads for (viewOffset's `low`) at `zoom` (the zoom the view heads for, by
    * default): in the sky island's own file (the island framed alone, or panned and zoomed about
    * since) all the way down to SKY_PITCH close in, back up to the town's zoomed out past SKY_CLOSE;
-   * the town's everywhere else. The panel offset is measured at it, as it is at the bearing and the
-   * zoom it heads for; the camera itself follows it, at its own zoom, at the bearing's pace (the
-   * frame loop). (The island's file is framed at its own pitch: focusSky.)
+   * the town's everywhere else. Where the file's own fit (the zoom it frames the island at for the
+   * frame as it is: skyFitZoom) falls inside SKY_CLOSE, which leaves it short of the island's pitch,
+   * the fit makes the shortfall up, eased back over the same share of zoom below it as SKY_CLOSE's
+   * (to three quarters of it): a phone on its side fits the island at 1.21 to 1.24, where SKY_CLOSE
+   * kept the town's pitch and its rock read as a thin plate under the deck. A fit of 1.6 or more
+   * (every desktop, a phone upright) is left exactly as SKY_CLOSE has it, and one of 1.4 or more
+   * settles where SKY_CLOSE puts it (the 768 x 1024 tablet's 1.53 at 0.91 of the way down). The
+   * panel offset is measured at it, as it is at the bearing and the zoom it heads for; the camera
+   * itself follows it, at its own zoom, at the bearing's pace (the frame loop). (The island's file is
+   * framed at its own pitch: focusSky.)
    */
   function aim(zoom = targetZoom) {
-    return focusedIds.length === 1 && focusedIds[0] === 'sky-island' && !overviewFit && !inspect && !parkSelected ? T.MathUtils.smoothstep(zoom, SKY_CLOSE[0], SKY_CLOSE[1]) : 0;
+    if (!(focusedIds.length === 1 && focusedIds[0] === 'sky-island' && !overviewFit && !inspect && !parkSelected)) return 0;
+    const fit = skyFitZoom(),
+      short = 1 - T.MathUtils.smoothstep(fit, SKY_CLOSE[0], SKY_CLOSE[1]);
+    return Math.max(T.MathUtils.smoothstep(zoom, SKY_CLOSE[0], SKY_CLOSE[1]), short * T.MathUtils.smoothstep(zoom, (fit * SKY_CLOSE[0]) / SKY_CLOSE[1], fit));
   }
   /**
    * The panel offset: the view centre sits this far right of the subject (and above it, for
@@ -1369,20 +1383,12 @@ export async function createCity(
     tween = true;
   }
   /**
-   * A group of buildings (the People chapter's homes and the residence, a long row): fitted by
-   * their bounds as seen from the bearing they are framed at, as the overview is, in the part of
-   * the frame a side panel, a phone's sheet or bars, the masthead and the controls leave free. A
-   * row seen along its length takes less of the frame than the one-building rule (which is blind
-   * to the bearing) allows for, and on a phone that crowded the roofs' name tags together. The zoom
-   * stays within `near` and `far` (the airport's island takes 0.95 to 2.6). Beside a panel that
-   * starts at `edge` (a share of the width), left of where the frame shift puts the free space's
-   * edge, the group is fitted into the space the panel really leaves, PANEL_CLEAR px clear of it
-   * and of the frame's left edge, the view's centre moved just as far as it must be: the reading
-   * page's panel is half the window wide from 1180 px down and starts at about 46% of it (45% with
-   * a scrollbar), where the shift's 0.21 assumes 52%, and at 1024 x 768 it covered the airport's
-   * island's east end by 30 px.
+   * How fitGroup frames a group's bounds, without framing them: the screen's axes from the bearing
+   * the view heads for at `low` of the way down to the sky island's pitch (viewOffset), the bounds'
+   * extent along them, the room beside a panel that starts at `edge`, and the zoom that fits them
+   * between `far` and `near` in the part of the frame left free.
    */
-  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4, edge = 1, low = 0) {
+  function groupFrame(bounds: T.Box3, far: number, near: number, edge: number, low: number) {
     const back = viewOffset(targetYaw, new T.Vector3(), low).normalize(),
       right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
       up = new T.Vector3().crossVectors(back, right),
@@ -1406,7 +1412,7 @@ export async function createCity(
       freeWidth = Math.max(1, Math.min(Math.max(0.3, 1 - 2.5 * Math.abs(frameShift)) * width - 48, room)),
       shownHeight = Math.max(0.3, 1 - 2 * Math.abs(frameDrop)) * height,
       freeHeight = Math.max(shownHeight * 0.6, shownHeight - 152);
-    targetZoom = T.MathUtils.clamp(
+    const zoom = T.MathUtils.clamp(
       Math.min(
         ((freeWidth / width) * (camera.right - camera.left)) / (maxX - minX),
         ((freeHeight / height) * (camera.top - camera.bottom)) / (maxY - minY),
@@ -1414,6 +1420,25 @@ export async function createCity(
       far,
       near,
     );
+    return { back, right, up, minX, maxX, minY, maxY, room, zoom };
+  }
+  /**
+   * A group of buildings (the People chapter's homes and the residence, a long row): fitted by
+   * their bounds as seen from the bearing they are framed at, as the overview is, in the part of
+   * the frame a side panel, a phone's sheet or bars, the masthead and the controls leave free. A
+   * row seen along its length takes less of the frame than the one-building rule (which is blind
+   * to the bearing) allows for, and on a phone that crowded the roofs' name tags together. The zoom
+   * stays within `near` and `far` (the airport's island takes 0.95 to 2.6). Beside a panel that
+   * starts at `edge` (a share of the width), left of where the frame shift puts the free space's
+   * edge, the group is fitted into the space the panel really leaves, PANEL_CLEAR px clear of it
+   * and of the frame's left edge, the view's centre moved just as far as it must be: the reading
+   * page's panel is half the window wide from 1180 px down and starts at about 46% of it (45% with
+   * a scrollbar), where the shift's 0.21 assumes 52%, and at 1024 x 768 it covered the airport's
+   * island's east end by 30 px.
+   */
+  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4, edge = 1, low = 0) {
+    const { back, right, up, minX, maxX, minY, maxY, room, zoom } = groupFrame(bounds, far, near, edge, low);
+    targetZoom = zoom;
     // Centre the group's outline (on the ground, as the overview does).
     target
       .copy(right)
@@ -1456,6 +1481,10 @@ export async function createCity(
         pivot = skyPivot(subject, targetYaw);
       target.copy(subject.sub(pivot).applyAxisAngle(new T.Vector3(0, 1, 0), left).add(pivot)).add(shiftApplied);
     }
+  }
+  /** The zoom the sky island's own file frames it at (focusSky's fit), for the frame as it is and the bearing the view heads for. */
+  function skyFitZoom() {
+    return groupFrame(SKY_FIT, 0.95, 2.6, panelEdge, 1).zoom;
   }
   /** Whether the view is the sky island's own file: the island framed alone, or panned and zoomed about since (as aim() has it). */
   function skyFile() {
@@ -1529,7 +1558,7 @@ export async function createCity(
       return;
     }
     camera.updateMatrixWorld();
-    const wanted = skyShown && skyShadowWanted(camera, LAND_MARKS, frameShift, frameDrop, skyCast);
+    const wanted = skyShown && skyShadowWanted(camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch);
     if (wanted === skyCast) shadowFade = Math.min(1, shadowFade + dt / SKY_SHADOW.fade);
     else {
       shadowFade = reduced ? 0 : Math.max(0, shadowFade - dt / SKY_SHADOW.fade);

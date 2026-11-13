@@ -794,14 +794,14 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
 {
   const pieces = [];
   const collect = (node) => {
-    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'fitFocused', 'skyMarks', 'skyFit', 'focusSky', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
+    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
     if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 23, 'The pan and fit check must find every piece it runs.');
+  assert.equal(pieces.length, 25, 'The pan and fit check must find every piece it runs.');
   assert(/controls\.minZoom = 0\.45;/.test(source), 'The town\'s widest zoom is no longer 0.45.');
   const view = {
     T,
@@ -828,7 +828,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // The camera's pitch as it stands (0, the town's: viewOffset), unless a check brings it down.
     pitch: 0,
   };
-  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH });`,
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH });`,
     scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
@@ -1559,6 +1559,88 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         assert(x0 >= 12 && x1 <= w - 12 && y0 >= 76 + 12 && y1 <= sheet - 12, `Drifted ${d.toFixed(2)}, the sky island's file on a ${w} x ${h} phone spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
       }
     }
+    // Where the camera settles in the file (aim at the file's own zoom): at the island's pitch on
+    // desktops and phones upright, and where it did on the 768 x 1024 tablet, its fit inside SKY_CLOSE
+    // (0.908 of the way down at 1.525, above its sheet: fileFrame's drop of -0.2629). On a phone on its
+    // side the file is a panel down the right (min(340, 42vw) wide, 12 from the edge: fileFrame's
+    // shift is that and its 28 px of margin and gutter over twice the width) and the bars' rows take
+    // the stage's foot (their top 124 above it, the masthead's foot at 58: a drop of -33 / h). Its fit,
+    // 1.20 to 1.25, fell inside SKY_CLOSE too, which kept it at the town's pitch, its rock a thin plate
+    // under the deck (the 3D review's fifth finding): aim() makes the shortfall up from the fit, so the
+    // camera settles at the island's pitch near enough (0.95 of the way down at least) and the island,
+    // its clouds and rocks with it, stays whole between the masthead and the bars and clear of the
+    // panel (8 px), at every Rotate stop and through the idle drift.
+    const settles = (w, h, shift, drop, bearing = fileBearing) => {
+        frame(w, h, shift, bearing);
+        Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
+        scene.focusSky();
+        const out = { zoom: view.targetZoom, centre: view.target.clone(), low: scene.aim(view.targetZoom) };
+        // (aim's fit is the very zoom focusSky frames the island at.)
+        assert(Math.abs(scene.skyFitZoom() - out.zoom) < 1e-12, `At ${w} x ${h} the sky island's fit for its pitch (${scene.skyFitZoom().toFixed(4)}) is not the zoom its file frames it at (${out.zoom.toFixed(4)}).`);
+        Object.assign(view, { frameDrop: 0, focusedIds: [], pitch: 0 });
+        return out;
+      },
+      landscapeFiles = [[667, 375], [740, 360], [812, 375], [844, 390], [852, 393], [896, 414], [915, 412], [932, 430]].map(([w, h]) => [w, h, (Math.min(340, 0.42 * w) + 28) / (2 * w), -33 / h]);
+    for (const [w, h, shift, drop, zoom, low] of [[1440, 900, 492 / 2880, 0, 2.035, 1], [1366, 657, 492 / 2732, 0, 1.882, 1], [768, 1024, 0, -0.2629, 1.525, 0.908], [390, 844, 0, -100.95 / 844, 2.6, 1]]) {
+      const at = settles(w, h, shift, drop);
+      assert(Math.abs(at.zoom - zoom) < 0.01 && Math.abs(at.low - low) < 0.01, `The sky island's file at ${w} x ${h} settles at zoom ${at.zoom.toFixed(3)}, ${at.low.toFixed(3)} of the way down to its pitch (${zoom}, ${low} before).`);
+    }
+    let sidewaysLow = 1;
+    for (const [w, h, shift, drop] of landscapeFiles)
+      for (let stop = 0; stop < 4; stop++) {
+        const bearing = fileBearing + (stop * Math.PI) / 2,
+          { zoom, centre, low } = settles(w, h, shift, drop, bearing),
+          elevation = scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low;
+        sidewaysLow = Math.min(sidewaysLow, low);
+        assert(zoom > 1.19 && zoom < 1.26 && low >= 0.95, `The sky island's file on a ${w} x ${h} phone on its side${stop ? ` at Rotate stop ${stop}` : ''} fits at ${zoom.toFixed(3)} and settles ${low.toFixed(3)} of the way down to its pitch.`);
+        for (const d of [0, ...fileDrifts]) {
+          const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p, elevation)));
+          assert(x0 >= 12 && x1 <= w - Math.min(340, 0.42 * w) - 12 - 8 && y0 >= 58 + 8 && y1 <= h - 124 - 8, `Drifted ${d.toFixed(2)}${stop ? ` at Rotate stop ${stop}` : ''}, the sky island's file on a ${w} x ${h} phone on its side spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
+        }
+      }
+    // Zoomed out of the file (the zoom easing as a glide eases it, to under SKY_CLOSE and under three
+    // quarters of the fit), the frame loop's own pitch step, heading for aim at the camera's zoom each
+    // frame, takes the camera back up to the town's pitch: every frame a little higher, none more than
+    // a twenty-fifth of the way, on a phone on its side as on a desktop; and zoomed back in, down
+    // again to where the file settles.
+    {
+      let pitchSource;
+      (function find(node) {
+        if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+        ts.forEachChild(node, find);
+      })(syntax);
+      assert(pitchSource, 'The zoom-out check must find the frame loop\'s pitch step.');
+      for (const [w, h, shift, drop] of [[1440, 900, 492 / 2880, 0], [1280, 720, 492 / 2560, 0], landscapeFiles[0], landscapeFiles[3], landscapeFiles[7]]) {
+        const { zoom: fit, low } = settles(w, h, shift, drop);
+        frame(w, h, shift, fileBearing);
+        Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'] });
+        const step = { Math, T, reduced: false, dt: 1 / 60, YAW_RATE: 2.5, pitch: low, camera: { zoom: fit }, align() {}, aim: (zoom) => scene.aim(zoom) },
+          pitchStep = runInNewContext(`${ts.transpileModule(pitchSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};pitchStep;`, step),
+          blend = 1 - Math.exp(-5.5 / 60),
+          ease = (goal, way) => {
+            let most = 0,
+              steady = true;
+            for (let f = 0; f < 600; f++) {
+              step.camera.zoom += (goal - step.camera.zoom) * blend;
+              const was = step.pitch;
+              pitchStep();
+              most = Math.max(most, Math.abs(step.pitch - was));
+              steady &&= way * (step.pitch - was) >= -1e-12;
+            }
+            return { most, steady };
+          },
+          out = ease(Math.min(1.15, 0.7 * fit), -1),
+          rest = step.pitch,
+          back = ease(fit, 1);
+        // (And what it heads for has no step in it: aim at the zoom, from half the fit to past it.)
+        let slope = 0;
+        for (let zoom = 0.5 * fit; zoom < 1.1 * fit; zoom += 0.001) slope = Math.max(slope, Math.abs(scene.aim(zoom + 0.001) - scene.aim(zoom)) / 0.001);
+        assert(slope < 10, `In the sky island's file at ${w} x ${h} the pitch the camera heads for changes ${slope.toFixed(1)} times as fast as the zoom.`);
+        assert(out.steady && out.most < 0.045 && rest < 0.005, `Zoomed out of the sky island's file at ${w} x ${h}, the camera's pitch ends ${rest.toFixed(3)} of the way down, or turns back, or ${out.most.toFixed(3)} in a frame.`);
+        assert(back.steady && back.most < 0.045 && Math.abs(step.pitch - low) < 0.005, `Zoomed back into the sky island's file at ${w} x ${h}, the camera's pitch ends at ${step.pitch.toFixed(3)} for ${low.toFixed(3)}.`);
+        Object.assign(view, { frameDrop: 0, focusedIds: [] });
+      }
+    }
 
     // (c2) From the file, at its pitch (the pocket as far out as skyReach has it there): a drag out to
     // sea is held in its pocket and a drag toward the town gets there along the link, never jumping
@@ -1586,34 +1668,68 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           if (!x && !z) assert(Math.hypot(end.x, end.z) < DISC, `A drag from the sky island's file at its pitch back to the town at bearing ${yaw.toFixed(2)} stops at ${end.x.toFixed(1)}, ${end.z.toFixed(1)}.`);
         }
       const { SEA_SIZE } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
-        [fogFar] = /new T\.Fog\('#[0-9a-f]+', \d+, (\d+)\)/.exec(source).slice(1).map(Number);
+        [fogNear, fogFar] = /new T\.Fog\('#[0-9a-f]+', (\d+), (\d+)\)/.exec(source).slice(1).map(Number);
+      // One frame at `zoom` and `low` of the way down to the file's pitch, from bearing `b`, its view
+      // centre the panel offset (`shift`, `drop`: panelOffset) from a ground point `reach` out from
+      // the island at angle `a`: how far out its corners see the sea short of the fog and the near
+      // plane, and how deep into the fog its farthest corner lies with the target lifted as far as the
+      // pan limit lets it (which only moves the depths).
       let seaReach = 0;
+      const seaFrame = (w, h, shift, drop, zoom, low, b, a, reach) => {
+        const aspect = w / h,
+          vertical = Math.max(53, 76 / aspect),
+          halfW = (vertical * aspect) / 2 / zoom,
+          halfH = vertical / 2 / zoom,
+          back = scene.viewOffset(b, new T.Vector3(), low),
+          right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
+          up = new T.Vector3().crossVectors(back.clone().normalize(), right),
+          forward = back.clone().normalize().negate(),
+          eye = new T.Vector3(S.x + Math.cos(a) * reach, 0, S.z + Math.sin(a) * reach).addScaledVector(right, shift * 2 * halfW).addScaledVector(up, drop * 2 * halfH).add(back);
+        let fog = 0;
+        for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const from = eye.clone().addScaledVector(right, u * halfW).addScaledVector(up, v * halfH),
+            t = (0.07 - from.y) / forward.y;
+          fog = Math.max(fog, (t + scene.PAN.lift / -forward.y - fogNear) / (fogFar - fogNear));
+          if (t <= -200 || t >= fogFar) continue;
+          const x = from.x + forward.x * t,
+            z = from.z + forward.z * t;
+          seaReach = Math.max(seaReach, Math.abs(x), Math.abs(z));
+        }
+        return fog;
+      };
       for (const zoom of [1.2, 1.4, 1.6, 2.6]) {
         const low = T.MathUtils.smoothstep(zoom, 1.2, 1.6),
           reach = 16 * (low ? Math.tan(scene.TOWN_PITCH) / Math.tan(scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low) : 1) + 0.5;
         for (const [w, h, drop] of [[390, 844, -0.26], [430, 932, -0.26], [820, 1180, -0.2], [1024, 768, 0], [1440, 900, 0], [2560, 1440, 0]])
-          for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) {
-            const aspect = w / h,
-              vertical = Math.max(53, 76 / aspect),
-              halfW = (vertical * aspect) / 2 / zoom,
-              halfH = vertical / 2 / zoom,
-              back = scene.viewOffset(b, new T.Vector3(), low),
-              right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
-              up = new T.Vector3().crossVectors(back.clone().normalize(), right),
-              forward = back.clone().normalize().negate();
-            for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) {
-              const eye = new T.Vector3(S.x + Math.cos(a) * reach, 0, S.z + Math.sin(a) * reach).addScaledVector(up, drop * 2 * halfH).add(back);
-              for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-                const from = eye.clone().addScaledVector(right, u * halfW).addScaledVector(up, v * halfH),
-                  t = (0.07 - from.y) / forward.y;
-                if (t <= -200 || t >= fogFar) continue;
-                const x = from.x + forward.x * t,
-                  z = from.z + forward.z * t;
-                seaReach = Math.max(seaReach, Math.abs(x), Math.abs(z));
-              }
-            }
-          }
+          for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) seaFrame(w, h, 0, drop, zoom, low, b, a, reach);
       }
+      // And on a phone on its side, where the file now comes down at its own fit (aim): from that fit
+      // down to seven tenths of it, the camera at the pitch it heads for there, every bearing a turn or
+      // the idle drift can bring and its ground point anywhere on that pitch's pocket's edge. The sea
+      // fills the frame, and the fog closes in on no corner of it further than on the corners of the
+      // same phone's own widest view of the town (zoom 0.45, at the town's pitch).
+      const sideways = { fog: 0, town: 0 };
+      for (const [w, h, shift, drop] of landscapeFiles) {
+        frame(w, h, shift, fileBearing);
+        Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
+        scene.focusSky();
+        const fit = view.targetZoom,
+          widest = seaFrame(w, h, 0, 0, 0.45, 0, fileBearing, 0, 0);
+        sideways.town = Math.max(sideways.town, widest);
+        for (const k of [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7]) {
+          const zoom = fit * k,
+            low = scene.aim(zoom),
+            reach = 16 * (low ? Math.tan(scene.TOWN_PITCH) / Math.tan(scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low) : 1) + 0.5;
+          for (let b = 0; b < 2 * Math.PI; b += Math.PI / 48)
+            for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) {
+              const fog = seaFrame(w, h, shift, drop, zoom, low, b, a, reach);
+              sideways.fog = Math.max(sideways.fog, fog);
+              assert(fog < widest, `On a ${w} x ${h} phone on its side, the sky island's file zoomed to ${zoom.toFixed(3)} (${low.toFixed(2)} of the way down) at bearing ${b.toFixed(2)} sees a corner ${(fog * 100).toFixed(0)}% into the fog, ${(widest * 100).toFixed(0)}% at its widest view of the town.`);
+            }
+        }
+        Object.assign(view, { frameDrop: 0, focusedIds: [], pitch: 0 });
+      }
+      skyNav.sideways = `on phones on their side at its own fit, ${(sidewaysLow * 100).toFixed(1)}% of the way down at least, the island whole and its corners ${(sideways.fog * 100).toFixed(0)}% into the fog at most (${(sideways.town * 100).toFixed(0)}% in their widest view of the town)`;
       assert(seaReach < SEA_SIZE / 2 - 10, `Close in on the sky island at its pitch the frame sees ${seaReach.toFixed(0)} out, past the sea's ${SEA_SIZE / 2}.`);
       skyNav.file = `at its own pitch (${((filePitch * 180) / Math.PI).toFixed(0)} degrees, its ground point ${D.toFixed(1)} out in a pocket of ${((16 * Math.tan(scene.TOWN_PITCH)) / Math.tan(filePitch)).toFixed(1)})`;
     }
@@ -1635,7 +1751,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     //   free part, no frame moves its silhouette's box further than the turn itself turns it, and once
     //   the bearing has arrived no frame moves it more than half a pixel: no swing, no jump at the end.
     {
-      const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'focusSky', 'skyFile', 'skyPivot', 'turnSky', 'aim', 'elevationAt', 'skyFit', 'skyMarks'],
+      const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'aim', 'elevationAt', 'skyFit', 'skyMarks'],
         vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_FIT', 'YAW_RATE'],
         code = [];
       (function collect(node) {
@@ -1815,7 +1931,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         ts.forEachChild(node, collect);
       })(syntax);
       assert.equal(shadowPieces.length, 7, 'The shadow box check must find every piece it runs.');
-      assert(/skyShadowWanted\(camera, LAND_MARKS, frameShift, frameDrop, skyCast\)/.test(source), 'followSky no longer asks skyShadowWanted about the camera as it stands.');
+      assert(/skyShadowWanted\(camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch\)/.test(source), 'followSky no longer asks skyShadowWanted about the camera as it stands, its pitch included.');
       const sun = runInNewContext(`${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyShadowWanted, bandShare, SKY_SHADOW, TOWN_WATERLINE, LAND_MARKS })`, { T, Math, plan }),
         // The scene's camera for a w x h stage (resize()), looking at `centre` from `bearing` at `low` of the way down to the file's pitch.
         lens = (w, h) => {
@@ -1830,15 +1946,6 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           camera.updateProjectionMatrix();
           camera.updateMatrixWorld(true);
           return camera;
-        },
-        // The island's file framed at a bearing, and the pitch the camera settles at there (aim at the file's zoom).
-        fileView = (w, h, shift, drop, bearing) => {
-          frame(w, h, shift, bearing);
-          Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
-          scene.focusSky();
-          const out = { zoom: view.targetZoom, centre: view.target.clone(), low: scene.aim(view.targetZoom) };
-          Object.assign(view, { frameDrop: 0, focusedIds: [], pitch: 0 });
-          return out;
         },
         right = (shift) => 1 - 4 * Math.max(0, shift),
         bottom = (drop) => -1 - 4 * Math.min(0, drop),
@@ -1862,27 +1969,27 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           ),
         desktopFiles = [[1024, 768], [1280, 720], [1280, 800], [1366, 657], [1440, 900], [1920, 1080], [2560, 1440]].map(([w, h]) => [w, h, 492 / (2 * w), 0]),
         portraitFiles = [[360, 640], [360, 740], [375, 667], [375, 812], [390, 844], [393, 852], [412, 915], [414, 896], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]),
-        files = [...desktopFiles, ...portraitFiles, [768, 1024, 0, -0.2629]],
+        files = [...desktopFiles, ...portraitFiles, ...landscapeFiles, [768, 1024, 0, -0.2629]],
         worst = { rest: 0, drift: 0 };
       assert(sun.SKY_SHADOW.shore[1] < sun.SKY_SHADOW.shore[0], 'The sun\'s shadow box changes hands over the town\'s shore without slack.');
       for (const [w, h, shift, drop] of files)
         for (let stop = 0; stop < 4; stop++) {
           const bearing = fileBearing + (stop * Math.PI) / 2,
-            { zoom, centre, low } = fileView(w, h, shift, drop, bearing),
+            { zoom, centre, low } = settles(w, h, shift, drop, bearing),
             camera = look(lens(w, h), centre, bearing, low, zoom),
             at = `${w} x ${h}${stop ? ` at Rotate stop ${stop}` : ''}`;
           if (stop < 2) {
             worst.rest = Math.max(worst.rest, shore(camera, shift, drop));
-            assert(sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, false), `The sky island's file at ${at} does not take the sun's shadow box as it settles (the town's island takes ${(shore(camera, shift, drop) * 100).toFixed(1)}% of the free part of the frame).`);
+            assert(sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, false, low), `The sky island's file at ${at} does not take the sun's shadow box as it settles (the town's island takes ${(shore(camera, shift, drop) * 100).toFixed(1)}% of the free part of the frame).`);
             for (const d of fileDrifts) {
               look(camera, centre, bearing + d, low, zoom);
               worst.drift = Math.max(worst.drift, shore(camera, shift, drop));
-              assert(sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `The sky island's file at ${at}, drifted ${d.toFixed(3)}, gives the sun's shadow box back to the town (its island takes ${(shore(camera, shift, drop) * 100).toFixed(1)}% of the free part).`);
+              assert(sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true, low), `The sky island's file at ${at}, drifted ${d.toFixed(3)}, gives the sun's shadow box back to the town (its island takes ${(shore(camera, shift, drop) * 100).toFixed(1)}% of the free part).`);
             }
           } else
             for (const d of [0, ...fileDrifts]) {
               look(camera, centre, bearing + d, low, zoom);
-              assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `The sky island's file at ${at}, drifted ${d.toFixed(3)}, keeps the sun's shadow box with the town in view.`);
+              assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true, low), `The sky island's file at ${at}, drifted ${d.toFixed(3)}, keeps the sun's shadow box with the town in view.`);
             }
         }
       // Every other place's file, from its own front (City mode's frameCity), and City mode's overview.
@@ -1902,7 +2009,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           }),
       );
       let others = 0;
-      for (const [w, h, shift, drop] of [...desktopFiles, ...portraitFiles]) {
+      for (const [w, h, shift, drop] of [...desktopFiles, ...portraitFiles, ...landscapeFiles]) {
         for (const id of view.models.keys()) {
           const bearing = plan.chapterBearings[nav.facingChapter(nav.contentForBuilding(id))] ?? Math.PI / 4;
           frame(w, h, shift, bearing);
@@ -1914,14 +2021,14 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           for (const d of [0, ...drifts]) {
             look(camera, view.target, bearing + d, 0, view.targetZoom);
             others++;
-            assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `${id}'s file at ${w} x ${h}, drifted ${d.toFixed(2)}, gives the sun's shadow box to the sky island.`);
+            assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true, 0), `${id}'s file at ${w} x ${h}, drifted ${d.toFixed(2)}, gives the sun's shadow box to the sky island.`);
           }
         }
         frame(w, h, shift, Math.PI / 4);
         Object.assign(view, { frameDrop: drop, focusedIds: [], cityMode: true, overviewFit: true });
         scene.fitOverview();
         const camera = look(lens(w, h), view.target, Math.PI / 4, 0, view.targetZoom);
-        assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `City mode's overview at ${w} x ${h} gives the sun's shadow box to the sky island.`);
+        assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true, 0), `City mode's overview at ${w} x ${h} gives the sun's shadow box to the sky island.`);
         Object.assign(view, { frameDrop: 0, cityMode: false, overviewFit: false });
       }
       view.models = new Map();
@@ -1930,9 +2037,9 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       // and the airport (the ground point slides there, the target keeping its lift): the hand-over
       // run frame by frame.
       let pans = 0;
-      for (const [w, h, shift, drop] of [desktopFiles[1], desktopFiles[4], desktopFiles[5], portraitFiles[4], portraitFiles[8]])
+      for (const [w, h, shift, drop] of [desktopFiles[1], desktopFiles[4], desktopFiles[5], portraitFiles[4], portraitFiles[8], landscapeFiles[3]])
         for (const goal of [new T.Vector3(0, 0, 0), new T.Vector3(-22, 0, 1), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z)]) {
-          const { zoom, centre, low } = fileView(w, h, shift, drop, fileBearing),
+          const { zoom, centre, low } = settles(w, h, shift, drop, fileBearing),
             camera = lens(w, h);
           let on = true,
             handed = false;
@@ -1940,7 +2047,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
             look(camera, centre.clone().add(new T.Vector3(goal.x - centre.x, 0, goal.z - centre.z).multiplyScalar(k / 400)), fileBearing, low, zoom);
             const share = shore(camera, shift, drop),
               whole = wholeIn(camera, shift, drop);
-            on = sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, on);
+            on = sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, on, low);
             handed ||= !on;
             assert(!on || (share <= sun.SKY_SHADOW.shore[0] && !whole), `Panning the sky island's file at ${w} x ${h} toward ${goal.x}, ${goal.z}, the island keeps the sun's shadow box with ${(share * 100).toFixed(1)}% of the free part of the frame the town's${whole ? ` and ${whole.id} whole in it` : ''}.`);
           }
@@ -1982,6 +2089,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           frameShift: 0,
           frameDrop: 0,
           SKY_SHADOW: { fade: 0.18 },
+          pitch: 0,
           reduced: false,
           shadowFocus() {},
         },
@@ -2036,6 +2144,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           frameShift: 0,
           frameDrop: 0,
           SKY_SHADOW: { fade: 0.18 },
+          pitch: 0,
           reduced: false,
           shadowFocus() {},
         },
@@ -2617,5 +2726,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.sideways}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
