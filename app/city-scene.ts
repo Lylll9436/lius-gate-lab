@@ -1129,6 +1129,9 @@ export async function createCity(
     skyShown = false,
     skyCast = false,
     shadowFade = 1,
+    // A turn the sky island's file makes from where it stands (Rotate, or its bearing set again, with
+    // the view in the file), until it ends: the sun's box is decided at the framing it heads for.
+    skyTurn = false,
     // How far the camera's pitch has come down from the town's toward the sky island's file's: 0 to 1 (viewOffset).
     pitch = 0;
   // The windows' night: the clock the panes are heading for (from the sky's hours) and the one
@@ -1567,6 +1570,24 @@ export async function createCity(
     shiftApplied.applyAxisAngle(up, turn);
     return true;
   }
+  const ahead = { camera: new T.OrthographicCamera(), centre: new T.Vector3(), pivot: new T.Vector3(), offset: new T.Vector3() };
+  /**
+   * The camera as the turn in hand will leave it in the sky island's own file: the glide's target
+   * turned about the island (skyPivot, as turnSky turns it) by what is left of the turn, seen from
+   * the bearing, at the zoom and from the pitch the view heads for (the idle drift as it stands).
+   */
+  function skyAhead() {
+    const { camera: view, centre, pivot, offset: back } = ahead;
+    skyPivot(centre.copy(target).sub(shiftApplied), yaw, pivot);
+    centre.copy(target).sub(pivot).applyAxisAngle(UP, targetYaw - yaw).add(pivot);
+    view.copy(camera);
+    view.zoom = targetZoom;
+    view.position.copy(centre).add(viewOffset(targetYaw + driftAngle, back, aim()));
+    view.lookAt(centre);
+    view.updateProjectionMatrix();
+    view.updateMatrixWorld();
+    return view;
+  }
   /** A place's root in the town: a building's model, or the sky island's own. */
   const rootOf = (id: BuildingId) => (id === 'sky-island' ? island.root : models.get(id)?.root);
   /**
@@ -1628,7 +1649,15 @@ export async function createCity(
    * And the sun's shadow box changes hands (skyShadowWanted): while it frames the island, the
    * island casts on itself; everywhere else it casts nothing, so every Rotate stop shows it alike.
    * The shadows fade out before the box moves and back in after (a cut under reduced motion), so
-   * neither the island's nor the town's ever pop.
+   * neither the island's nor the town's ever pop. While the island's file turns from where it stands
+   * (skyTurn: Rotate, a pan or a zoom since or not, or the file's bearing set again; not the glide that
+   * brings the view to it from elsewhere, which hands over as it closes in, nor a press while that glide
+   * is under way), the box is decided at the framing the turn heads for (skyAhead), not at the frames it
+   * sweeps through: on a portrait phone the turn from the file's bearing to the next stop swept a strip
+   * of the town's coast through the foot of the free band (6.2-7.6% of it, over the 5% the island keeps
+   * it to), and the box went to the town and back mid-turn, two fades and two new shadow maps. A turn
+   * that ends where the town has the box hands it over once, as it starts; one that ends where the
+   * island has it never lets it go.
    */
   function followSky(dt: number) {
     const hiding = skyHidden();
@@ -1654,7 +1683,8 @@ export async function createCity(
       return;
     }
     camera.updateMatrixWorld();
-    const wanted = skyShown && skyShadowWanted(camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch);
+    if (skyTurn && (!skyFile() || Math.abs(targetYaw - yaw) <= 0.0001)) skyTurn = false;
+    const wanted = skyShown && skyShadowWanted(skyTurn ? skyAhead() : camera, LAND_MARKS, frameShift, frameDrop, skyCast, skyTurn ? aim() : pitch);
     if (wanted === skyCast) shadowFade = Math.min(1, shadowFade + dt / SKY_SHADOW.fade);
     else {
       shadowFade = reduced ? 0 : Math.max(0, shadowFade - dt / SKY_SHADOW.fade);
@@ -2339,6 +2369,8 @@ export async function createCity(
       // A quarter turn more, never more than a full turn still to go.
       if (targetYaw - yaw <= (Math.PI * 3) / 2 + 1e-6) targetYaw += Math.PI / 2;
       inspectionAutoFit = true;
+      // A turn of the island's file from where the view stands (or on top of one), not mid-glide into it (followSky).
+      skyTurn = skyFile() && (skyTurn || !tween || !autoFocus);
       if (overviewFit) fitOverview();
       // The sky island's own file frames it again for the new bearing, and turns there about the
       // island (focusSky, turnSky). Panned or zoomed about since, it does so at the visitor's zoom
@@ -2411,6 +2443,7 @@ export async function createCity(
     setYaw(angle) {
       targetYaw = yaw + shortestAngle(yaw, angle);
       inspectionAutoFit = true;
+      skyTurn = skyFile() && (skyTurn || !tween || !autoFocus);
       if (overviewFit) fitOverview();
       else if (autoFocus && skyFile()) focusSky();
     },

@@ -1894,6 +1894,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           parkSelected: false,
           autoFocus: true,
           inspectionAutoFit: true,
+          skyTurn: false,
           lastInteraction: 0,
           performance: { now: () => 0 },
           CITY_MAX_ZOOM: 4,
@@ -2090,6 +2091,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
               parkSelected: false,
               autoFocus: true,
               inspectionAutoFit: true,
+              skyTurn: false,
               cityMode: true,
               lastInteraction: 0,
               performance: { now: () => 0 },
@@ -2202,7 +2204,13 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // - every other place's file and City mode's overview keep the town's box, through the drift;
     // - a pan from the file toward the town hands the box back to the town by the time a twentieth
     //   of the free part of the frame is its land, and before any of its buildings (their sites'
-    //   boxes, at full height) stands whole in it.
+    //   boxes, at full height) stands whole in it;
+    // - (c4b) mid-turn, frame by frame: Rotate round the four stops on portrait phones and desktops
+    //   hands the box over once at most a turn, as the turn starts (the final review's fourth finding:
+    //   on 390-430 px phones the turn to the next stop swept a strip of the town's coast through the
+    //   band's foot, and the box went to the town and back mid-turn, two fades and two new maps), and
+    //   the glide that brings the view into the file from elsewhere hands it over only once the view
+    //   it stands at is close in on the island.
     {
       const shadowPieces = [];
       (function collect(node) {
@@ -2215,10 +2223,10 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         // (By the syntax tree, so that a formatter's line breaks change nothing.)
         const asked = [];
         (function find(node, inFollow) {
-          if (inFollow && ts.isCallExpression(node) && node.expression.getText(syntax) === 'skyShadowWanted') asked.push(node.arguments.map((a) => a.getText(syntax)).join(', '));
+          if (inFollow && ts.isCallExpression(node) && node.expression.getText(syntax) === 'skyShadowWanted') asked.push(node.arguments.map((a) => unformatted(a.getText(syntax))).join(', '));
           ts.forEachChild(node, (child) => find(child, inFollow || (ts.isFunctionDeclaration(node) && node.name?.text === 'followSky')));
         })(syntax, false);
-        assert(asked.length === 1 && asked[0] === 'camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch', 'followSky no longer asks skyShadowWanted about the camera as it stands, its pitch included.');
+        assert(asked.length === 1 && asked[0] === 'skyTurn?skyAhead():camera, LAND_MARKS, frameShift, frameDrop, skyCast, skyTurn?aim():pitch', 'followSky no longer asks skyShadowWanted about the camera as it stands (its pitch included), or, mid-turn in the island\'s file, about the framing the turn heads for (and the pitch it heads for).');
       }
       const sun = runInNewContext(`${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyShadowWanted, bandShare, SKY_SHADOW, TOWN_WATERLINE, LAND_MARKS })`, { T, Math, plan }),
         // The scene's camera for a w x h stage (resize()), looking at `centre` from `bearing` at `low` of the way down to the file's pitch.
@@ -2342,6 +2350,180 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           pans++;
           assert(handed && !on, `Panning the sky island's file at ${w} x ${h} toward ${goal.x}, ${goal.z} never gives the town its shadow box back.`);
         }
+      // (c4b) Mid-turn, frame by frame: city-scene's own followSky (with skyAhead, skyShadowWanted and
+      // the hand-over's fade), Rotate method, focusSky, turnSky and frame loop (followPanel, the turn,
+      // the pitch step, the glide) on a camera of the stage's size, the file's framing as fileFrame
+      // measures it, its shadow maps counted where followSky lays them (shadowFocus): from the file's
+      // bearing, Rotate pressed four times, each turn run to rest. Every turn hands the box over once at
+      // most, within the fade's own frames after the press (as the turn starts), and ends with the box
+      // the stop keeps when it is reached at rest (the checks above); so a turn that ends with the
+      // island's box never lets it go. And from the Town Hall's file, the glide into the island's file
+      // (its turn and its zoom with it) hands the box to the island only on a frame whose own view is
+      // close in on it (skyShadowWanted on the camera as it stands).
+      {
+        const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'fitFocused', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'skyAhead', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'skyExtent', 'skyHidden', 'skyOnScreen', 'followSky', 'align', 'select', 'skyShadowWanted', 'bandShare'],
+          vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_HIDES', 'SKY_EXTENT', 'onScreen', 'YAW_RATE', 'SKY_SHADOW', 'TOWN_WATERLINE', 'LAND_MARKS', '[rockX, rockZ]', 'ahead', 'UP', 'AIRPORT_FIT'],
+          code = [];
+        let pitchSource;
+        (function collect(node) {
+          if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+          if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+          if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+          ts.forEachChild(node, collect);
+        })(syntax);
+        const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+        assert(code.length === want.length + vars.length && turning && glideSource && pitchSource && rotateSource, 'The mid-turn shadow box check must find every piece it runs.');
+        const { WATER } = await import(pathToFileURL(path.join(output, 'town-shared.mjs')).href),
+          { createSeaShadow } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
+          script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, rotateSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ followPanel, turnStep, glideStep, pitchStep, align, followSky, focusSky, select, rotate, aim })`,
+          models = new Map(
+            buildings
+              .filter((b) => b.model !== 'sky')
+              .map((b) => {
+                const s = plan.sites[b.id],
+                  root = new T.Group(),
+                  mesh = new T.Mesh(new T.BoxGeometry(s.w, s.height, s.d));
+                mesh.position.y = s.height / 2;
+                root.add(mesh);
+                root.position.set(s.x, 0, s.z);
+                root.rotation.y = s.rotation;
+                root.updateMatrixWorld(true);
+                return [b.id, { root, center: new T.Vector3(s.x, s.height / 2, s.z) }];
+              }),
+          ),
+          early = Math.ceil(sun.SKY_SHADOW.fade * 60) + 1,
+          turns = { count: 0, handed: 0, latest: 0 };
+        // A scene of a w x h stage beside the file or above its sheet, in City mode.
+        const stage = (w, h, shift, drop) => {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect),
+            maps = [],
+            ctx = {
+              T,
+              Math,
+              plan,
+              camera: new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+              controls: { target: new T.Vector3(), minZoom: 0.45 },
+              target: new T.Vector3(),
+              shiftApplied: new T.Vector3(),
+              screenRight: new T.Vector3(),
+              screenUp: new T.Vector3(),
+              offset: new T.Vector3(),
+              width: w,
+              height: h,
+              frameShift: shift,
+              frameDrop: drop,
+              panelEdge: 1,
+              yaw: fileBearing,
+              targetYaw: fileBearing,
+              targetZoom: 1,
+              pitch: 0,
+              driftAngle: 0,
+              tween: false,
+              reduced: false,
+              dt: 1 / 60,
+              blend: 1 - Math.exp(-5.5 / 60),
+              focusedIds: [],
+              overviewFit: false,
+              inspect: null,
+              parkSelected: false,
+              autoFocus: false,
+              inspectionAutoFit: true,
+              cityMode: true,
+              lastInteraction: 0,
+              performance: { now: () => 0 },
+              CITY_MAX_ZOOM: 4,
+              STUDY_MAX_ZOOM: 8,
+              models,
+              city: { updateMatrixWorld() {} },
+              island: { root: { visible: true } },
+              skyShown: true,
+              skyCast: false,
+              shadowFade: 1,
+              skyTurn: false,
+              skyCasters: [],
+              seaShadow: createSeaShadow(WATER),
+              frame: 0,
+              // Each new framing of the sun's box, the island's or the town's: a new map where its size changes.
+              shadowFocus(centre) {
+                maps.push({ frame: ctx.frame, island: !!centre });
+              },
+              placeSun() {},
+              clearHover() {},
+              exitInspection() {},
+              fitOverview() {},
+            },
+            run = runInNewContext(script, ctx),
+            step = () => {
+              ctx.frame++;
+              run.followPanel();
+              run.turnStep();
+              run.pitchStep();
+              run.glideStep();
+              if (!ctx.tween) ctx.target.copy(ctx.controls.target);
+              run.align();
+              ctx.camera.updateMatrixWorld();
+              run.followSky(1 / 60);
+            },
+            rests = () => !ctx.tween && Math.abs(ctx.targetYaw - ctx.yaw) <= 0.0001 && Math.abs(run.aim(ctx.camera.zoom) - ctx.pitch) <= 0.0001;
+          return { ctx, run, step, rests, maps };
+        };
+        for (const [w, h, shift, drop] of [portraitFiles[4], portraitFiles[7], portraitFiles[8], desktopFiles[4], desktopFiles[5]]) {
+          const { ctx, run, step, rests, maps } = stage(w, h, shift, drop);
+          run.select('sky-island');
+          ctx.controls.target.copy(ctx.target);
+          ctx.camera.zoom = ctx.targetZoom;
+          ctx.camera.updateProjectionMatrix();
+          ctx.pitch = run.aim(ctx.targetZoom);
+          ctx.tween = false;
+          for (let f = 0; f < 120; f++) step();
+          assert(ctx.skyCast, `The sky island's file at ${w} x ${h} does not take the sun's shadow box as it settles.`);
+          for (let stop = 1; stop <= 4; stop++) {
+            const from = ctx.frame,
+              had = ctx.skyCast,
+              before = maps.length;
+            run.rotate();
+            for (let f = 0, still = 0; f < 900 && still < 30; f++) {
+              step();
+              still = rests() ? still + 1 : 0;
+            }
+            const handed = maps.slice(before),
+              at = `Rotate stop ${stop % 4 || 4} at ${w} x ${h}`,
+              keeps = stop % 4 < 2;
+            turns.count++;
+            turns.handed += handed.length;
+            turns.latest = Math.max(turns.latest, ...handed.map((m) => m.frame - from));
+            assert(handed.length <= 1, `${at}: the sun's shadow box changes hands ${handed.length} times in the turn (frames ${handed.map((m) => m.frame - from).join(', ')} after the press).`);
+            assert(handed.every((m) => m.frame - from <= early), `${at}: the sun's shadow box changes hands at frame ${handed.map((m) => m.frame - from).join(', ')} of the turn, past its first ${early}.`);
+            assert(ctx.skyCast === keeps && (handed.length === 1) === (had !== keeps), `${at}: the turn ends with the ${ctx.skyCast ? 'island' : 'town'}'s box (${handed.length} hand-overs), where the stop keeps the ${keeps ? 'island' : 'town'}'s.`);
+          }
+        }
+        // The glide into the file from the Town Hall's file (and with Rotate pressed as it starts, before
+        // the view is in the file): the island takes the box only on a frame whose own view is close in
+        // on it.
+        for (const [w, h, shift, drop, press] of [desktopFiles[4], portraitFiles[4], [...desktopFiles[4], 0], [...portraitFiles[4], 0]]) {
+          const { ctx, run, step, rests, maps } = stage(w, h, shift, drop);
+          Object.assign(ctx, { yaw: plan.chapterBearings['town-hall'], targetYaw: plan.chapterBearings['town-hall'] });
+          run.select('town-hall');
+          ctx.controls.target.copy(ctx.target);
+          ctx.camera.zoom = ctx.targetZoom;
+          ctx.camera.updateProjectionMatrix();
+          ctx.tween = false;
+          for (let f = 0; f < 60; f++) step();
+          ctx.targetYaw = ctx.yaw + Math.atan2(Math.sin(fileBearing - ctx.yaw), Math.cos(fileBearing - ctx.yaw));
+          run.select('sky-island');
+          for (let f = 0, still = 0; f < 900 && still < 30; f++) {
+            const before = maps.length;
+            if (f === press) run.rotate();
+            step();
+            still = rests() ? still + 1 : 0;
+            if (maps.length > before && maps[maps.length - 1].island)
+              assert(sun.skyShadowWanted(ctx.camera, sun.LAND_MARKS, shift, drop, true, ctx.pitch), `Glided into the sky island's file from the Town Hall's at ${w} x ${h}, the island takes the sun's shadow box at frame ${f} with the view not yet close in on it.`);
+          }
+          assert(press !== undefined || (ctx.skyCast && maps.filter((m) => m.island).length === 1), `Glided into the sky island's file from the Town Hall's at ${w} x ${h}, the island does not take the sun's shadow box once.`);
+        }
+        skyNav.turns = `${turns.count} Rotate turns of its file on portrait phones and desktops handing the sun's box over ${turns.handed} times, each once at most and within ${turns.latest} frames of the press`;
+      }
       skyNav.shadow = `the sun's shadow box the sky island's own in its file on ${files.length} framings (the town's island at most ${(worst.rest * 100).toFixed(1)}% of the free part at rest, ${(worst.drift * 100).toFixed(1)}% through the drift), the town's in ${others} frames of its other files and its overview and on ${pans} pans from the file`;
     }
 
@@ -2454,6 +2636,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           skyShown: false,
           skyCast: false,
           shadowFade: 1,
+          skyTurn: false,
           skyCasters: [],
           skyShadowWanted: () => false,
           LAND_MARKS: [],
@@ -3293,5 +3476,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.turns}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
