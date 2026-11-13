@@ -175,7 +175,7 @@ export function CityStage({
       )}
       <div className="map-labels">
         {buildings.map((item) => {
-          // The airport stands in no district: its label ends at its category.
+          // The airport and the sky island stand in no district: their labels end at their category.
           const district = districts.find((d) => d.buildings.includes(item.id));
           return (
             <div
@@ -497,7 +497,8 @@ export function CityStage({
               />
             </div>
             <div className="dossier-foot">
-              {b && (
+              {/* The sky island has no Inspect: its copy would stand on the floor by its rock's tip. */}
+              {b && b.model !== 'sky' && (
                 <button
                   ref={inspectButton}
                   onClick={ctl.inspectBuilding}

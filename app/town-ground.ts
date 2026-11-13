@@ -121,7 +121,8 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
 
   // Footprint pads under the island's buildings. Not the airport's: its deck stands clear of the
   // ground, and its grass takes no mask shade (the grid stopped short of it until its shallows).
-  for (const s of plan.siteList) if (!plan.onAirport(s.x, s.z)) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
+  // Nor the sky island's villa: under it is open sea, 10 below its deck.
+  for (const s of plan.siteList) if (!plan.onAirport(s.x, s.z) && !s.y) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
   for (const c of plan.cottages) rect(c.x, c.z, 3.0, 2.6, c.rotation, 1, 0.5);
   const plot = plan.reservedPlot;
   rect(plot.x, plot.z, CRANE_BASE, CRANE_BASE, 0, 0.9, 0.4);

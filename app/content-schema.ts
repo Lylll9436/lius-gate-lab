@@ -87,6 +87,7 @@ const buildingIds = [
   'yunlong-liu',
   'qin-li',
   'visiting-phd',
+  'sky-island',
   'airport',
   'research-studio',
   'city-archive',

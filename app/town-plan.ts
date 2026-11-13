@@ -241,6 +241,41 @@ export type Site = {
   w: number;
   d: number;
   height: number;
+  /** The level its foot stands on: 0, the town's ground, unless given (the sky island's deck). */
+  y?: number;
+};
+/**
+ * The sky island's datum (sky-placement.md section 1; its outline, lawn, stations and slots are in
+ * its own section below): a floating island for a neighbour of the town, off the north-west
+ * headland, its middle at x, z. `top` is its deck's level, the lawn's highest point, where the
+ * villa stands: the sea's level (town-shared's WATER) and `H`. The deck is an ellipse of half-axes
+ * `a` and `b` turned by `heading` (rotation.y, the long axis on its local x): the long axis runs
+ * north-south. The lawn falls by `dome` from the middle to the rim, where the coping's widest ring
+ * lies `ring` under `top` (the placement's ring, 10.21); the rock under it tapers to its tip
+ * `depth` below `top`, at the placement's 2.35, 2.4 over the sea.
+ */
+export const SKY = { x: -52, z: -24, H: 10.5, top: 10.472, heading: Math.PI / 2, a: 7.5, b: 6, dome: 0.3, ring: 0.26, depth: 8.12 };
+/**
+ * The villa's site on the deck, in the villa's own frame (front +z, y 0 the deck's level, the
+ * footprint's middle at the origin: the frame lane V's buildSkyVilla works in, and these are its
+ * VILLA measures). The footprint, `w` across and `d` deep, holds the house, the raised terrace
+ * before it and the steps down to the lawn; nothing reaches over `height` (the placement's cap is
+ * the deck plus 8.2, so the villa's y 0 may stand no higher than 10.50). The house block
+ * (`house`: its half width, its back and front walls, the top of its cornice and the flat of its
+ * hipped roof) stands with its middle `back` north of the island's, front due south; then the
+ * terrace's top, its front edge and its half width; the steps' half width and their foot; and the
+ * chimney stacks either side (`x`, `z`, the shaft's half sizes and its top), their copes (half
+ * sizes, top) and their cans' tops.
+ */
+export const SKY_VILLA = {
+  back: 0.8,
+  w: 6.9,
+  d: 6.8,
+  height: 8.18,
+  house: { hw: 3.2, back: -3.145, front: 1.255, cornice: 5.42, flat: 6.98 },
+  terrace: { top: 0.5, front: 2.855, hw: 3.3 },
+  steps: { hw: 0.67, front: 3.355, risers: 3 },
+  chimneys: { x: 2.8, z: -0.945, hw: 0.5, hd: 0.31, top: 7.6, cope: { hw: 0.58, hd: 0.39, top: 7.76 }, cans: 8.164 },
 };
 /**
  * The three homes stand side by side in a straight row, fronts in one line facing the ring
@@ -284,6 +319,18 @@ export const sites: Record<BuildingId, Site> = {
   'yunlong-liu': rowUnit('yunlong-liu', 0),
   'qin-li': rowUnit('qin-li', 1),
   'visiting-phd': residenceSite,
+  // On the sky island (onSky, not onIsland), its foot on the deck (y): the villa's footprint, set
+  // so that the house block's middle lies SKY_VILLA.back north of the island's, front due south.
+  'sky-island': {
+    id: 'sky-island',
+    x: SKY.x,
+    z: SKY.z - SKY_VILLA.back - (SKY_VILLA.house.back + SKY_VILLA.house.front) / 2,
+    rotation: 0,
+    w: SKY_VILLA.w,
+    d: SKY_VILLA.d,
+    height: SKY_VILLA.height,
+    y: SKY.top,
+  },
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
   // On the airport's island (onAirport, not onIsland): the Departures Hall (x -1.6..2.6, centred on
@@ -318,6 +365,10 @@ export const chapterBearings: Record<string, number> = {
   // The gate's bearing again (so no new bearing enters the per-bearing checks): the hall's front
   // and its arch are seen 35 degrees off, the island and the causeway's far half whole.
   airport: Math.PI / 4 - 0.18,
+  // The sky island's own file (City mode only: no reading chapter frames it). The gate's bearing
+  // once more, so again no new bearing: the villa's south front is seen 35 degrees off, turned to
+  // the camera's left, the side the key light is on.
+  'sky-island': Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -327,6 +378,7 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
   'city-archive': ['city-archive'],
   'lius-gate': ['lius-gate'],
   airport: ['airport'],
+  'sky-island': ['sky-island'],
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
@@ -348,13 +400,13 @@ export const cottages: { n: number; x: number; z: number; rotation: number; colo
 ];
 /**
  * Where the planting was first laid out round: the seven sites before the residence (and the
- * airport, out at sea), and every cottage's spot with the north cottage's among them. The tree and
- * heather rules keep reading these, and the trees on ground built on since (residencePlot) are
- * dropped afterwards, by id, so new building never moves, adds or re-species another tree (as the
- * paddock's tree was dropped).
+ * airport, out at sea, and the sky island, over it), and every cottage's spot with the north
+ * cottage's among them. The tree and heather rules keep reading these, and the trees on ground
+ * built on since (residencePlot) are dropped afterwards, by id, so new building never moves, adds
+ * or re-species another tree (as the paddock's tree was dropped).
  */
 const PLANTED = {
-  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport'),
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island'),
   cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
 };
 /**
@@ -578,6 +630,317 @@ export const APRON_KIT = {
   train: { x0: -12.4, x1: -9.2, z: -44.53, width: 0.62 },
   cones: { at: [[-3.35, -49.3], [-2.9, -49.3], [-2.45, -49.3]] as XZ[], base: 0.26 },
 };
+
+/* ------------------------------------------------------------------ */
+/* The sky island                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The sky island (SKY and SKY_VILLA, above the sites): a small island of its own that floats off
+ * the north-west headland, 57 from the plaza, its rim 15 from the town's waterline and 32 from the
+ * airport's armour, its deck 10.5 over the sea. A red-brick villa stands on its lawn, front due
+ * south, and Alison Heppenstall's figure goes about the garden. Nothing joins it to the town.
+ * Bearings here are the scene's: a bearing b points along (sin b, cos b), so 0 is south, pi/2 east
+ * and pi north, as a site's rotation is.
+ */
+/** A world point in the deck's own frame (from the island's middle, its long axis on x). */
+export function skyLocal(x: number, z: number): XZ {
+  const c = Math.cos(SKY.heading),
+    s = Math.sin(SKY.heading),
+    dx = x - SKY.x,
+    dz = z - SKY.z;
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+/** A direction or an offset in the deck's frame, in the world's. */
+function skyWorld(lx: number, lz: number): XZ {
+  const c = Math.cos(SKY.heading),
+    s = Math.sin(SKY.heading);
+  return [lx * c + lz * s, -lx * s + lz * c];
+}
+/** A point of the deck's own frame (x along its long axis, from the island's middle) in the world's x, z. */
+export function skyPoint(lx: number, lz: number): XZ {
+  const [wx, wz] = skyWorld(lx, lz);
+  return [SKY.x + wx, SKY.z + wz];
+}
+/** How far out from the island's middle a point lies, as a share of the way to the rim: 0 at the middle, 1 on the rim. */
+export function skyRadius(x: number, z: number) {
+  const [lx, lz] = skyLocal(x, z);
+  return Math.hypot(lx / SKY.a, lz / SKY.b);
+}
+/**
+ * Signed distance from the deck's rim (the ellipse of its widest ring): negative on the deck,
+ * positive out in the air. The nearest point of the ellipse is found by iteration (four steps
+ * leave an error well under a millimetre at this ellipse's proportions).
+ */
+export function skyDistance(x: number, z: number) {
+  const [lx, lz] = skyLocal(x, z),
+    { a, b } = SKY,
+    px = Math.abs(lx),
+    pz = Math.abs(lz);
+  let tx = Math.SQRT1_2,
+    tz = Math.SQRT1_2;
+  for (let i = 0; i < 4; i++) {
+    const ex = ((a * a - b * b) * tx ** 3) / a,
+      ez = ((b * b - a * a) * tz ** 3) / b,
+      rx = a * tx - ex,
+      rz = b * tz - ez,
+      qx = px - ex,
+      qz = pz - ez,
+      r = Math.hypot(rx, rz),
+      q = Math.hypot(qx, qz) || 1;
+    tx = Math.min(1, Math.max(0, ((qx * r) / q + ex) / a));
+    tz = Math.min(1, Math.max(0, ((qz * r) / q + ez) / b));
+    const t = Math.hypot(tx, tz) || 1;
+    tx /= t;
+    tz /= t;
+  }
+  const d = Math.hypot(px - a * tx, pz - b * tz);
+  return (px / a) ** 2 + (pz / b) ** 2 <= 1 ? -d : d;
+}
+/**
+ * On the sky island's deck, inside the `margin` level of skyDistance (a signed distance, as
+ * onAirport's is): onSky(x, z, -1) keeps 1 in from the rim.
+ */
+export function onSky(x: number, z: number, margin = 0) {
+  return skyDistance(x, z) <= margin;
+}
+/** How the lawn falls away from the island's middle: as this power of skyRadius, so its inner half is all but level. */
+const SKY_DOME_POWER = 2.6;
+/**
+ * The deck's height at (x, z): the lawn, a soft dome that stands at SKY.top in the middle and has
+ * fallen by SKY.dome at the rim (and stays at that level beyond it). What stands on the island
+ * stands on this, her figure too, and batch() bakes the island's contact shade from it.
+ */
+export function skyTop(x: number, z: number) {
+  return SKY.top - SKY.dome * Math.min(1, skyRadius(x, z)) ** SKY_DOME_POWER;
+}
+/**
+ * The rim point on a bearing from the island's middle, moved `offset` along the rim's outward
+ * normal there (negative: in over the deck), with that normal.
+ */
+export function skyRim(bearing: number, offset = 0) {
+  const [lx, lz] = skyLocal(SKY.x + Math.sin(bearing), SKY.z + Math.cos(bearing)),
+    t = 1 / Math.hypot(lx / SKY.a, lz / SKY.b),
+    [wx, wz] = skyWorld(lx * t, lz * t),
+    [gx, gz] = skyWorld((lx * t) / SKY.a ** 2, (lz * t) / SKY.b ** 2),
+    l = Math.hypot(gx, gz),
+    nx = gx / l,
+    nz = gz / l;
+  return { x: SKY.x + wx + nx * offset, z: SKY.z + wz + nz * offset, nx, nz };
+}
+/**
+ * `count` points round the rim, each moved `offset` along its outward normal (negative inside),
+ * clockwise seen from above as roundedRect's and airportOutline's are, with that normal.
+ */
+export function skyOutline(offset = 0, count = 96) {
+  return Array.from({ length: count }, (_, i) => {
+    const u = (i / count) * TAU,
+      lx = SKY.a * Math.cos(u),
+      lz = SKY.b * Math.sin(u),
+      [wx, wz] = skyWorld(lx, lz),
+      [gx, gz] = skyWorld(lx / SKY.a ** 2, lz / SKY.b ** 2),
+      l = Math.hypot(gx, gz),
+      nx = gx / l,
+      nz = gz / l;
+    return { x: SKY.x + wx + nx * offset, z: SKY.z + wz + nz * offset, nx, nz };
+  });
+}
+/** A point of the villa's own frame (SKY_VILLA's: x along its front, z out of it) in the world's x, z. */
+export function skyVillaPoint(x: number, z: number): XZ {
+  const s = sites['sky-island'],
+    c = Math.cos(s.rotation),
+    n = Math.sin(s.rotation);
+  return [s.x + x * c + z * n, s.z - x * n + z * c];
+}
+/**
+ * The two short falls (sky-placement.md section 1; built by lane G's fall(), whose numbers these
+ * mirror: town-sky-garden's FALL). Each leaves the rim on its bearing, east by north and west by
+ * north: never the north rim, where the plane passes, nor the south and east-south-east faces,
+ * where it would hang before the facade. Its frame's origin is the rim point at the deck's level
+ * there (skyTop), +z out along the rim's normal; the stone spout's pool lies `pool` inland. The
+ * water falls `drop` and ends in a matte cloud puff of radius `puff.r` whose middle hangs `out`
+ * beyond the rim, `puff.rise` over it and `puff.sink` under it (a flat base). `width` is the
+ * sheet's. No water reaches the sea.
+ */
+export const SKY_FALLS = {
+  bearings: [(105 * Math.PI) / 180, (265 * Math.PI) / 180],
+  drop: 4.5,
+  width: 0.82,
+  out: 0.67,
+  pool: 1.08,
+  puff: { r: 1.3, rise: 0.85, sink: 0.62 },
+};
+/**
+ * Each fall's slot, as fall() is stood in it: the rim point (`x`, `z`) at the deck's level there
+ * (`y`), turned to the rim's outward normal (`ry`, rotation.y: the fall's +z, out over the sea);
+ * `rise`, how much higher the deck is under the pool than at the rim (fall()'s option of that
+ * name: the water lies level, so the spout stands that much taller at the rim); and its puff's
+ * middle, reach, top and flat base, in the world.
+ */
+export const skyFalls = SKY_FALLS.bearings.map((bearing) => {
+  const { x, z, nx, nz } = skyRim(bearing),
+    y = skyTop(x, z),
+    pool = skyRim(bearing, -SKY_FALLS.pool),
+    puffY = y - SKY_FALLS.drop;
+  return {
+    bearing,
+    x,
+    y,
+    z,
+    ry: Math.atan2(nx, nz),
+    rise: skyTop(pool.x, pool.z) - y,
+    puff: { x: x + nx * SKY_FALLS.out, y: puffY, z: z + nz * SKY_FALLS.out, r: SKY_FALLS.puff.r, top: puffY + SKY_FALLS.puff.rise, bottom: puffY - SKY_FALLS.puff.sink },
+  };
+});
+/**
+ * The island's one tree, on the north-east lawn behind the villa's east end: from the City view
+ * and the island's own file it shows beside the villa, never before its facade. `top` is how high
+ * its crown may reach over SKY.top (the overview is fitted to it).
+ */
+export const SKY_TREE = { x: -49.4, z: -29, top: 4.53 };
+/**
+ * The flower borders at the foot of the terrace's front wall, either side of the steps (world
+ * rectangles, `depth` deep, `gap` clear of the steps and stopping `short` of the house's ends, so
+ * the walk can turn up to the telescope past the east one): the east one is the border she waters.
+ */
+export const SKY_BORDERS = (() => {
+  const { terrace, steps, house } = SKY_VILLA,
+    depth = 0.55,
+    gap = 0.28,
+    short = 0.35,
+    [, z0] = skyVillaPoint(0, terrace.front),
+    strip = (x0: number, x1: number) => ({ x0: SKY.x + x0, x1: SKY.x + x1, z0, z1: z0 + depth });
+  return { east: strip(steps.hw + gap, house.hw - short), west: strip(-house.hw + short, -steps.hw - gap) };
+})();
+/** A place on the lawn where her figure stops, or a seat: where her root goes, and the bearing she faces. */
+export type SkyStation = { x: number; z: number; facing: number };
+/**
+ * Where a figure's root goes at the garden kit's furniture (lane G's town-sky-garden and the
+ * town's bench), from the piece's own origin: `tea`, either chair of the tea table, along the
+ * table's local x (its TEA.radius + TEA.gap + TEA.setback); `bench`, the park bench's seat, along
+ * its local +z, the way it faces (its front edge 0.215 out, less F1a's setback 0.09); `telescope`,
+ * behind the tripod's middle along its line of sight, stooped to the eyepiece (its userData.stand
+ * at the default tilt, 0.42). Seats are 0.44 up, the park bench's.
+ */
+export const SKY_SEATS = { tea: 0.61, bench: 0.125, telescope: 0.697, height: 0.44 };
+/** The point `d` along a bearing from (x, z). */
+const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Math.sin(bearing) * d, z + Math.cos(bearing) * d];
+/**
+ * Her stations (F1b's pose loop walks between them), on the lawn south of the villa, each at least
+ * 1 in from the rim and none where she would hide the facade from the island's file. Each is a
+ * piece's place (its origin, `ry` its rotation.y as lane G's builders take it) and where she
+ * stands or sits there (SkyStation):
+ * - `tea`: the tea table on the south-west lawn before the terrace. Its two chairs lie on the
+ *   table's local x, so `ry` is her facing less a quarter turn. `seats[0]` is hers (the garden
+ *   kit's -x chair), looking across the table toward the town and the cameras that show the island
+ *   (the file's and the opening bearing); `seats[1]` is the guest's, opposite.
+ * - `watering`: the stretch of path she walks along the east border at the terrace's foot, `from`
+ *   one end `to` the other, facing the border (north).
+ * - `telescope`: the telescope on the east-south-east rim. It looks at the Town Hall (`look`, the
+ *   bearing; `dip`, the true depression of that line from its eyepiece to the hall's middle), and
+ *   she stands at `stand`, stooped to its eyepiece.
+ * - `bench`: the bench on the south-east lawn beside the paths' round landing, facing the town;
+ *   `seat` is where she sits to read.
+ * She stands on skyTop at each (a seat: SKY_SEATS.height over it).
+ */
+export const SKY_STATIONS = (() => {
+  const hall = sites['town-hall'],
+    rad = Math.PI / 180;
+  // The tea table: she faces the town, between the opening bearing and the hall's.
+  const table = { x: -54.2, z: -18.95 },
+    facing = 65 * rad,
+    seat = (side: number): SkyStation => {
+      const [x, z] = along(table.x, table.z, facing, side * SKY_SEATS.tea);
+      return { x, z, facing: side < 0 ? facing : facing + Math.PI };
+    };
+  // The telescope: on the rim where it faces the town (south of the terrace's front, at the walk's
+  // east end), its tripod a unit in, looking at the hall.
+  const rim = skyRim(50 * rad, -1.0),
+    look = Math.atan2(hall.x - rim.x, hall.z - rim.z),
+    [sx, sz] = along(rim.x, rim.z, look, -SKY_SEATS.telescope),
+    eye = skyTop(rim.x, rim.z) + 0.65,
+    dip = Math.atan2(eye - hall.height / 2, Math.hypot(hall.x - rim.x, hall.z - rim.z));
+  // The watering stretch, on the walk along the borders (its line is SKY_PATHS.walk's).
+  const border = SKY_BORDERS.east,
+    line = border.z1 + 0.32;
+  // The bench, facing the town.
+  const bench = { x: -50.45, z: -18.6 },
+    towards = 60 * rad,
+    [bx, bz] = along(bench.x, bench.z, towards, SKY_SEATS.bench);
+  return {
+    tea: { x: table.x, z: table.z, ry: facing - Math.PI / 2, seats: [seat(-1), seat(1)] as [SkyStation, SkyStation] },
+    watering: { from: { x: border.x0 + 0.15, z: line }, to: { x: border.x1 - 0.2, z: line }, facing: Math.PI },
+    telescope: { x: rim.x, z: rim.z, ry: look, look, dip, stand: { x: sx, z: sz, facing: look } as SkyStation },
+    bench: { x: bench.x, z: bench.z, ry: towards, seat: { x: bx, z: bz, facing: towards } as SkyStation },
+  };
+})();
+/**
+ * The gravel paths, laid on the lawn (`lift` over it), `width` wide with round ends: the walk
+ * along the borders at the terrace's foot (`walk`), from beside the tea table past the steps and
+ * on, easing round to where she stands at the telescope (one smooth line through its points); and
+ * the stem from the steps down the middle of the lawn to a round landing (`landing`), which the
+ * bench stands beside.
+ */
+export const SKY_PATHS = (() => {
+  const { watering, telescope, tea } = SKY_STATIONS,
+    z = watering.from.z,
+    landing = { x: SKY.x, z: -18.65, r: 0.8 };
+  return {
+    width: 0.56,
+    lift: 0.025,
+    walk: [[tea.x - 0.5, z], [SKY.x, z], [watering.to.x, z], [telescope.stand.x, telescope.stand.z]] as XZ[],
+    stem: [[SKY.x, z], [landing.x, landing.z]] as XZ[],
+    landing,
+  };
+})();
+/**
+ * The garden lamps (lane G's gardenLamps, one set): their feet, on the lawn either side of the
+ * stem where it leaves the walk, past the walk's west end by the tea table, and between the bench
+ * and the telescope. Every one lies south of AIRPORT_ROAD.beach, so check-town's count of the
+ * airport's own lamps stays theirs.
+ */
+export const SKY_LAMPS: XZ[] = [
+  [SKY.x - 0.72, -19.6],
+  [SKY.x + 0.72, -19.6],
+  [-55.35, -20.1],
+  [-49.4, -19.45],
+];
+/** A piece that hangs in the air by the island (lane G's cloud() or floatingRock()): its origin, its turn, its size and its seed. */
+export type SkyFloat = { x: number; y: number; z: number; ry: number; size: number; seed: number };
+/**
+ * Where the clouds and floating rocks may hang (check-town holds the slots below, and whatever
+ * the garden stands in them, to these and to the island's own rules: its sea kept from land on
+ * screen at every Rotate stop, the movers' clearances, the chapters' subjects):
+ * - beside the island, over the sea: tucked at most `tuck` in under the rim, and `clear` from the
+ *   rock;
+ * - lower than the rim's lawn (`top`): higher, on the town's side, they cover the north-west
+ *   headland's beach at the north-west Rotate stop;
+ * - on the town's side and the south (south of `north` and east of `west`, inside the rain's
+ *   square): on the north they meet the plane's rule (20), and on the west and north-west they
+ *   would widen the City overview, which is fitted to the island's own marks (and the rain stops
+ *   at x -58).
+ */
+export const SKY_FLOAT_LIMITS = { tuck: 0.5, clear: 0.4, top: SKY.top - SKY.dome, north: SKY.z - 5, west: -58 };
+/**
+ * The clouds (lane G's cloud(): its origin the middle of its flat base, long along its x, about
+ * 3.6 x 1.3 x 2 at size 1, drifting 0.4 x size either way along its length): one low off the
+ * south-east rim, toward the town, and one smaller off the south-west, both under the deck's level.
+ */
+export const SKY_CLOUDS: SkyFloat[] = [
+  { x: -44.9, y: 8.9, z: -19.2, ry: -0.75, size: 0.8, seed: 1 },
+  { x: -55.6, y: 8.2, z: -16.6, ry: 0.5, size: 0.7, seed: 2 },
+];
+/**
+ * The floating rocks (lane G's floatingRock(): its origin its middle, about 2.1 across, 0.8 over
+ * and 1.6 under it at size 1, bobbing 0.12 x size): by the east shoulder, off the north-east flank
+ * (clear of the east fall's puff) and by the south-west shoulder. None hangs low off the south
+ * rim: from the file's bearing it would sit down by the bottom bar.
+ */
+export const SKY_ROCKS: SkyFloat[] = [
+  { x: -45.3, y: 6.6, z: -21.2, ry: 0, size: 0.55, seed: 1 },
+  { x: -44.6, y: 7.6, z: -28.2, ry: 0.6, size: 0.45, seed: 2 },
+  { x: -55.9, y: 6, z: -17.4, ry: 1.1, size: 0.45, seed: 3 },
+];
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import * as T from 'three';
 
-// Build the town in Node and check what a visitor relies on: nine places (eight on the island, the airport on its own), finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
+// Build the town in Node and check what a visitor relies on: ten places (eight on the island, the airport on its own, the sky island over the sea), finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work', 'town-check');
 await fs.mkdir(output, { recursive: true });
@@ -55,9 +55,10 @@ const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
 
-assert.equal(new Set(buildings.map((b) => b.id)).size, 9);
-// The Directory's (and the tour's) order: the airport comes after the residence, before the studio.
-assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'airport', 'research-studio', 'city-archive']);
+assert.equal(new Set(buildings.map((b) => b.id)).size, 10);
+// The Directory's (and the tour's) order: the sky island comes after the residence and the airport
+// after it (they share a bearing, so the tour turns no more for it), before the studio.
+assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'sky-island', 'airport', 'research-studio', 'city-archive']);
 // The People chapter's places: the three homes (the row's own checks below read plan.terraceHomes)
 // and the Visiting PhD Residence at the row's north end.
 assert.deepEqual(plan.chapterSubjects.people, [...plan.terraceHomes, 'visiting-phd']);
@@ -79,11 +80,12 @@ for (const b of buildings) {
       assert(section.heading[locale] && section.body[locale]);
   }
 }
-// Sites sit on the island (the airport's on its own island, inside its deck), off the streets, and
-// never overlap one another.
+// Sites sit on the island (the airport's on its own island, inside its deck; the sky island's on
+// its own deck, up in the air), off the streets, and never overlap one another.
 for (const site of plan.siteList) {
   if (site.id === 'airport') assert(plan.onAirport(site.x, site.z, -2) && !plan.onIsland(site.x, site.z), 'The airport is not on its own island.');
-  else assert(plan.onIsland(site.x, site.z, 2), 'Site in the sea: ' + site.id);
+  else if (site.id === 'sky-island') assert(plan.onSky(site.x, site.z, -2) && !plan.onIsland(site.x, site.z, -3.3) && !plan.onAirport(site.x, site.z, 5) && site.y === plan.SKY.top, 'The sky island\'s villa is not on its own deck.');
+  else assert(plan.onIsland(site.x, site.z, 2) && !site.y, 'Site in the sea: ' + site.id);
   if (site.id !== 'lius-gate')
     for (const [sx, sz] of [
       [-1, -1],
@@ -677,7 +679,9 @@ console.warn = originalWarn;
 console.error = originalError;
 assert.deepEqual(warnings, []);
 const { city, models, walkers, lamps, clocks } = model;
+// Nine models: the sky island is a place of its own (model.sky), not one of the town's models.
 assert.equal(models.size, 9);
+assert(model.sky && !models.has('sky-island'), 'The sky island is built as a model of the town\'s.');
 assert.equal(walkers.length, 7);
 assert.equal(clocks.length, 4, 'The town hall keeps four clock faces.');
 assert(lamps.length >= 20, 'Lanterns light the town: ' + lamps.length);
@@ -5115,6 +5119,798 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(new Set([...onJib].map((m) => `${m.material.userData.surfaceKind}|${m.castShadow && !m.userData.noShadow && m.material.userData.surfaceKind !== 'glass'}`)).size <= 5, 'The slewing part batches into more than five meshes.');
   }
 }
+// The sky island: a floating island of its own off the north-west headland (plan.SKY), built in its
+// own groups and phases. Its deck, lawn, paths, coping and rock; its villa's stand-in; the slots and
+// stations its garden and her figure are to take; its pointer volume, its overview marks, its own
+// frame and its shadows; and its clearances from the coast, the land on screen and everything that
+// moves. (check-navigation holds its framings: the overview, its file, the tour and where it is hidden.)
+let skyReport = '';
+{
+  const { WATER } = await load('town-shared'),
+    { SKY_LOOK, SKY_LAWN, SKY_COPING, SKY_ROCK, skySlots } = await load('town-sky'),
+    { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted } = await load('city-scene'),
+    { palette } = await load('town-shared'),
+    S = plan.SKY,
+    V = plan.SKY_VILLA,
+    site = plan.sites['sky-island'],
+    sky = model.sky,
+    deg = Math.PI / 180,
+    v = new T.Vector3(),
+    each = (group, visit) =>
+      group.traverse((o) => {
+        if (!o.isMesh) return;
+        const p = o.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) visit(v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld), o, i);
+      }),
+    // A point in the deck's own frame (x along its long axis).
+    local = (x, z) => [(x - S.x) * Math.cos(S.heading) - (z - S.z) * Math.sin(S.heading), (x - S.x) * Math.sin(S.heading) + (z - S.z) * Math.cos(S.heading)],
+    stops = [0, 1, 2, 3].map((k) => Math.PI / 4 + (k * Math.PI) / 2),
+    file = plan.chapterBearings['sky-island'],
+    drifts = [-0.16, -0.08, 0, 0.08, 0.16],
+    // A view's axes at a bearing (city-scene's viewOffset): the way back to the camera, screen right and up.
+    axes = (bearing) => {
+      const back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+        right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+        up = new T.Vector3().crossVectors(back, right);
+      return { back, right, up, flat: (p) => [p.x * right.x + p.z * right.z, p.x * up.x + p.y * up.y + p.z * up.z] };
+    };
+  /** The convex outline of points [u, v] (anticlockwise). */
+  const hullOf = (points) => {
+    const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+      cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]),
+      half = (list) => {
+        const out = [];
+        for (const p of list) {
+          while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+          out.push(p);
+        }
+        out.pop();
+        return out;
+      };
+    return [...half(sorted), ...half(sorted.reverse())];
+  };
+  /** How far a point lies outside a convex outline (negative: that far inside its nearest edge). */
+  const outside = (hull, [x, y]) => {
+    let inside = Infinity,
+      beyond = Infinity,
+      out = false;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i],
+        b = hull[(i + 1) % hull.length],
+        ex = b[0] - a[0],
+        ey = b[1] - a[1],
+        l = Math.hypot(ex, ey) || 1,
+        // Positive to the left of the edge: inside an anticlockwise outline.
+        side = (ex * (y - a[1]) - ey * (x - a[0])) / l,
+        t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (y - a[1]) * ey) / (l * l)));
+      if (side < 0) out = true;
+      inside = Math.min(inside, side);
+      beyond = Math.min(beyond, Math.hypot(x - a[0] - ex * t, y - a[1] - ey * t));
+    }
+    return out ? beyond : -inside;
+  };
+  const areaOf = (hull) => Math.abs(hull.reduce((sum, a, i) => sum + a[0] * hull[(i + 1) % hull.length][1] - hull[(i + 1) % hull.length][0] * a[1], 0)) / 2;
+  /**
+   * The clouds and floating rocks the garden is to hang in their slots (plan.SKY_CLOUDS and
+   * SKY_ROCKS), as points on a generous volume each (lane G's at the slot's size, with the drift's
+   * or the bob's reach): a cloud 2.2 x size along its length either way, 1.0 x size across and up to
+   * 1.3 x size over its base; a rock 1.05 x size across, 0.92 x size over its middle and 1.72 x size
+   * under it. They stand in for the pieces in every check below that measures the island's shape on
+   * screen or in the air, so the slots are sound before anything is built in them.
+   */
+  const floatPoints = (f, kind) => {
+    const out = [],
+      m = new T.Matrix4().makeRotationY(f.ry).setPosition(f.x, f.y, f.z);
+    for (let a = 0; a < 24; a++)
+      for (let b = 0; b <= 8; b++) {
+        const u = (a / 24) * Math.PI * 2,
+          w = (b / 8) * Math.PI - Math.PI / 2,
+          p =
+            kind === 'cloud'
+              ? new T.Vector3(Math.cos(w) * Math.cos(u) * 2.2, Math.max(0, 0.6 + Math.sin(w) * 0.75), Math.cos(w) * Math.sin(u))
+              : new T.Vector3(Math.cos(w) * Math.cos(u) * 1.05, Math.sin(w) * (w > 0 ? 0.92 : 1.72), Math.cos(w) * Math.sin(u) * 1.05);
+        out.push(p.multiplyScalar(f.size).applyMatrix4(m));
+      }
+    return out;
+  };
+  const floats = [...plan.SKY_CLOUDS.map((f) => floatPoints(f, 'cloud')), ...plan.SKY_ROCKS.map((f) => floatPoints(f, 'rock'))];
+
+  /* ---------------- the spot, the deck's maths and the sea below ---------------- */
+  assert(S.x === -52 && S.z === -24 && S.H === 10.5 && Math.abs(S.top - (WATER + S.H)) < 1e-9 && S.a === 7.5 && S.b === 6 && Math.abs(S.heading - Math.PI / 2) < 1e-12, 'The sky island is off its decided spot, height or outline.');
+  assert(Math.abs(S.top - S.depth - 2.352) < 1e-9, 'The rock\'s tip is no longer 2.4 above the sea.');
+  // The villa: front due south (turned more than about 15 degrees toward the camera's right at the
+  // opening bearing, it loses the key light there and in its file), its house block's middle 0.8
+  // north of the island's, its foot on the deck. Its file is seen from the gate's bearing (no new
+  // bearing), the front 35 degrees off and turned to the camera's left, the lit side.
+  const [houseX, houseZ] = plan.skyVillaPoint(0, (V.house.back + V.house.front) / 2);
+  assert(site.rotation === 0 && site.y === S.top && V.back === 0.8 && Math.abs(houseX - S.x) < 1e-9 && Math.abs(houseZ - (S.z - V.back)) < 1e-9, 'The villa is off its place on the deck, or no longer faces due south.');
+  assert(site.w === V.w && site.d === V.d && site.height === V.height && V.house.front - V.house.back === 4.4 && 2 * V.house.hw === 6.4, 'The villa\'s site is not its footprint.');
+  // Lane V's villa reaches 8.164 over its y 0 and the placement caps the island's roofline at the
+  // deck plus 8.2, so its y 0 may stand no higher than 10.50 (on the dome's crest, not above it).
+  assert(site.y <= 10.5 && V.chimneys.cans <= V.height && V.height <= 8.2, 'The villa\'s foot or its chimneys stand over the placement\'s cap.');
+  assert.equal(file, plan.chapterBearings['lius-gate'], 'The sky island\'s file brings a new bearing.');
+  assert(Math.abs(plan.angleDiff(file, site.rotation) - 34.7 * deg) < 0.01, 'The sky island\'s file no longer sees the villa\'s front 35 degrees off, on its lit side.');
+  // The rim: skyDistance is the distance from the ellipse itself (a fine polyline of it), signed.
+  {
+    const fine = plan.skyOutline(0, 3000).map((p) => [p.x, p.z]);
+    let worst = 0;
+    for (let x = S.x - 9; x <= S.x + 9; x += 0.75)
+      for (let z = S.z - 10.5; z <= S.z + 10.5; z += 0.75) {
+        const d = plan.distanceToPolyline([x, z], fine, true) * (plan.skyRadius(x, z) <= 1 ? -1 : 1);
+        worst = Math.max(worst, Math.abs(plan.skyDistance(x, z) - d));
+      }
+    assert(worst < 0.01, `skyDistance is ${worst.toFixed(3)} off the deck's true outline.`);
+    // Its long axis runs north-south; onSky's margin is a level of that distance.
+    assert(Math.abs(plan.skyDistance(S.x, S.z - S.a)) < 1e-6 && Math.abs(plan.skyDistance(S.x + S.b, S.z)) < 1e-6 && Math.abs(plan.skyDistance(S.x, S.z) + S.b) < 1e-6, 'The deck is not 12 across and 15 long, north to south.');
+    assert(plan.onSky(S.x + S.b - 1.01, S.z, -1) && !plan.onSky(S.x + S.b - 0.99, S.z, -1) && plan.onSky(S.x + S.b + 0.4, S.z, 0.5) && !plan.onSky(S.x + S.b + 0.6, S.z, 0.5), 'onSky\'s margin is not a level of the signed distance.');
+    for (let b = 0; b < Math.PI * 2; b += 0.13) {
+      const p = plan.skyRim(b),
+        q = plan.skyRim(b, 1),
+        r = plan.skyRim(b, -1);
+      assert(Math.abs(plan.skyDistance(p.x, p.z)) < 1e-3 && Math.abs(plan.skyDistance(q.x, q.z) - 1) < 0.01 && Math.abs(plan.skyDistance(r.x, r.z) + 1) < 0.01, `skyRim is off the rim at bearing ${b.toFixed(2)}.`);
+      assert(Math.abs(Math.hypot(p.nx, p.nz) - 1) < 1e-9 && Math.abs(plan.angleDiff(Math.atan2(p.x - S.x, p.z - S.z), b)) < 1e-6, `skyRim's point is not on bearing ${b.toFixed(2)}.`);
+    }
+    // The outline runs clockwise seen from above (north, east, south, west), as the airport's does.
+    const ring = plan.skyOutline(0, 8);
+    assert(ring[0].z < S.z && ring[2].x > S.x && ring[4].z > S.z && ring[6].x < S.x, 'The deck\'s outline does not run clockwise from its north end.');
+    // The lawn: a soft dome from the deck's level at the middle down to SKY.dome below it at the rim.
+    assert.equal(plan.skyTop(S.x, S.z), S.top);
+    assert(Math.abs(plan.skyTop(S.x + S.b, S.z) - (S.top - S.dome)) < 1e-9 && Math.abs(plan.skyTop(S.x + 20, S.z - 3) - (S.top - S.dome)) < 1e-9 && S.dome >= 0.2 && S.dome <= 0.3, 'The lawn does not fall to its rim level, or the dome is steeper than the villa\'s foot allows.');
+    for (let b = 0; b < Math.PI * 2; b += 0.4)
+      for (let k = 0.05; k <= 1; k += 0.05) {
+        const a = plan.skyRim(b, 0),
+          at = (f) => plan.skyTop(S.x + (a.x - S.x) * f, S.z + (a.z - S.z) * f);
+        assert(at(k) <= at(k - 0.05) + 1e-12, 'The lawn rises toward the rim.');
+      }
+    // Half way out it has fallen by under a sixth of the dome: the lawn before the terrace is all but level.
+    assert(S.top - plan.skyTop(S.x, S.z + S.a / 2) < S.dome / 6, 'The lawn is not level enough before the terrace.');
+  }
+  // The sea below: the rim 12 or more from the town's waterline and 28 from the airport's armour, and
+  // the rim grown by 2 over no land at all.
+  const waterline = (x, z) => plan.distanceToPolyline([x, z], plan.islandOutline, true) * (plan.onIsland(x, z) ? -1 : 1) - 3.3;
+  let coast = Infinity,
+    armour = Infinity;
+  for (const p of plan.skyOutline(0, 240)) {
+    coast = Math.min(coast, waterline(p.x, p.z));
+    armour = Math.min(armour, plan.airportDistance(p.x, p.z) - plan.AIRPORT.armour);
+  }
+  assert(coast >= 12 && armour >= 28, `The sky island's rim is ${coast.toFixed(1)} from the town's waterline and ${armour.toFixed(1)} from the airport's armour.`);
+  for (const p of plan.skyOutline(2, 240)) assert(waterline(p.x, p.z) > 0 && plan.airportDistance(p.x, p.z) > plan.AIRPORT.armour, 'The sky island hangs over land.');
+  // The ground masks know nothing of it: no pad under its villa, no shallows, no lawn (the sea under it stays deep).
+  {
+    const { MASK_EXTENT, MASK_SIZE } = await load('town-shared'),
+      data = model.groundMasks.image.data;
+    for (let x = S.x - S.b - 2; x <= S.x + S.b + 2; x += 0.3)
+      for (let z = S.z - S.a - 2; z <= S.z + S.a + 2; z += 0.3) {
+        const i = Math.floor(((x + MASK_EXTENT) / (2 * MASK_EXTENT)) * MASK_SIZE),
+          j = Math.floor(((z + MASK_EXTENT) / (2 * MASK_EXTENT)) * MASK_SIZE);
+        for (let c = 0; c < 4; c++) assert.equal(data[(j * MASK_SIZE + i) * 4 + c], 0, `The ground masks carry something under the sky island at ${x.toFixed(1)}, ${z.toFixed(1)}.`);
+      }
+  }
+
+  /* ---------------- its groups, phases, materials and budget ---------------- */
+  assert(sky.root.name === 'sky-island' && sky.root.userData.buildingId === 'sky-island' && sky.root.parent === city, 'The sky island has no root of its own in the town.');
+  assert.deepEqual(sky.root.children, [sky.land, sky.rock, sky.air, sky.shell], 'The sky island\'s root holds something else than its ground, its rock, its air and its villa.');
+  assert(sky.shell.position.equals(new T.Vector3(site.x, site.y, site.z)) && sky.shell.rotation.y === site.rotation && sky.land.position.lengthSq() === 0 && sky.rock.position.lengthSq() === 0, 'The villa\'s shell is not in its own frame on the deck.');
+  // Built and batched in phases of its own (never in 'batch land', the longest), each well under a fifth of a second.
+  assert.equal(phaseNames[phaseNames.indexOf('airport ground') + 1], 'sky ground', 'The sky island\'s ground is not built after the airport\'s.');
+  assert.equal(phaseNames[phaseNames.indexOf('sky ground') + 1], 'sky rock', 'The sky island\'s rock is not sculpted in a phase of its own.');
+  assert.equal(phaseNames[phaseNames.indexOf('batch airport') + 1], 'batch sky', 'The sky island is not batched right after the airport.');
+  assert(phaseNames.includes('batch sky villa'), 'The sky island\'s villa is not batched in a phase of its own.');
+  for (const name of ['sky ground', 'sky rock', 'batch sky', 'batch sky villa']) assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
+  each(model.land, (p) => assert(Math.abs(p.x - S.x) > S.b + 4 || Math.abs(p.z - S.z) > S.a + 4, 'Something of the sky island is in the land\'s batch.'));
+  // Nothing two-sided, nothing that cuts holes, nothing see-through (its water, foam and clouds are
+  // to be opaque too); every mesh batched, with a surface kind; within its own caps.
+  let skyMeshes = 0,
+    skyTriangles = 0;
+  const skyKinds = new Set();
+  sky.root.traverse((o) => {
+    if (!o.isMesh) return;
+    skyMeshes++;
+    skyTriangles += o.geometry.attributes.position.count / 3;
+    skyKinds.add(o.material.userData.surfaceKind);
+    assert(o.material.userData.surfaceKind && o.material.vertexColors, 'A mesh of the sky island has no surface kind, or is not batched.');
+    assert.notEqual(o.material.side, T.DoubleSide, `${o.material.name} on the sky island is two-sided.`);
+    assert(!o.material.transparent && o.material.opacity === 1 && !o.material.alphaTest, `${o.material.name} on the sky island is see-through.`);
+    assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} on the sky island cuts holes.`);
+    assert(o.receiveShadow, 'A mesh of the sky island takes no shadow.');
+  });
+  // Its ground is grass and gravel (and the terrace's flags, paving): never sand, asphalt or water.
+  for (const kind of skyKinds) assert(!['sand', 'asphalt', 'water', 'soil'].includes(kind), `The sky island has a ${kind} surface.`);
+  // The finished island's caps: the villa (lane V: up to 16 meshes and 45,000 triangles), the
+  // garden, its water and clouds (lane G: 14 and 16,000) and her figure (lane F: 14 and 5,000) are
+  // still to come.
+  const SKY_CAP = { meshes: 50, triangles: 90000 };
+  assert(skyMeshes <= SKY_CAP.meshes && skyTriangles <= SKY_CAP.triangles, `The sky island costs ${skyMeshes} meshes and ${skyTriangles} triangles.`);
+  // Its colours: each no more saturated than its family (the rock's greys than the armour's darkest,
+  // its seams than the kerb's buff).
+  for (const [name, colour, family] of [
+    ['coping', SKY_LOOK.coping, palette.kerb],
+    ['path', SKY_LOOK.path, palette.path],
+    ...SKY_LOOK.earth.map((c, k) => ['earth ' + k, c, palette.soil]),
+    ['seam', SKY_LOOK.seam, palette.kerb],
+    ...SKY_LOOK.rock.map((c, k) => ['rock ' + k, c, palette.kerb]),
+    ['dressing', SKY_LOOK.dressing, palette.render],
+  ])
+    assert(hsv(colour).s <= hsv(family).s + 1e-9, `The sky island's ${name} (${colour}) is more saturated than its family.`);
+  // The earth's beds are brown and step darker downward; the rock is a warm grey, far greyer than
+  // the earth; both are near the armour's greys in value (no black, no pale cream under the island).
+  {
+    const look = (hex) => ({ ...hsv(hex), v: Math.max(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)) }),
+      earth = SKY_LOOK.earth.map(look),
+      rock = SKY_LOOK.rock.map(look);
+    assert(earth.every((c, k) => !k || c.v < earth[k - 1].v) && earth.every((c) => c.s > 0.3 && c.v > 0.35 && c.v < 0.6), 'The earth\'s beds are not browns that darken downward.');
+    assert(rock.every((c) => c.s < 0.15 && c.v > 0.4 && c.v < 0.65) && hsv(SKY_LOOK.seam).s < 0.15, 'The rock is not a warm grey.');
+  }
+  assert.deepEqual(SKY_LOOK.lawn, [palette.grassDark, palette.grassLight]);
+  assert(SKY_LOOK.brick === palette.brick && SKY_LOOK.slate === palette.slate && SKY_LOOK.base === palette.kerb && SKY_LOOK.pots === palette.pantile, 'The stand-in villa left the town\'s palette.');
+
+  /* ---------------- the deck: lawn and paths ---------------- */
+  const grounds = sky.land.children.filter((o) => o.isMesh),
+    lawn = grounds.find((o) => o.material.userData.surfaceKind === 'grass'),
+    gravel = grounds.find((o) => o.material.userData.surfaceKind === 'gravel');
+  assert(grounds.length === 2 && lawn && gravel && !lawn.castShadow && !gravel.castShadow, 'The deck is not a lawn and its paths, neither casting.');
+  {
+    // The lawn: on the dome, out to SKY_LAWN.edge under the coping, mown in stripes each one flat
+    // colour (no texture to shimmer), alternately the lawn's two greens, 0.5 wide or more.
+    const p = lawn.geometry.attributes.position,
+      c = lawn.geometry.attributes.color,
+      stripes = new Map(),
+      tones = new Set();
+    let reach = 0;
+    for (let t = 0; t < p.count; t += 3) {
+      const tone = [c.getX(t), c.getY(t), c.getZ(t)].map((n) => n.toFixed(4)).join();
+      let mid = 0;
+      for (let k = 0; k < 3; k++) {
+        v.fromBufferAttribute(p, t + k);
+        assert(Math.abs(v.y - plan.skyTop(v.x, v.z)) < 1e-4, 'The lawn is off its dome.');
+        assert([c.getX(t + k), c.getY(t + k), c.getZ(t + k)].map((n) => n.toFixed(4)).join() === tone, 'A triangle of the lawn is not one flat colour.');
+        reach = Math.max(reach, plan.skyRadius(v.x, v.z));
+        mid += local(v.x, v.z)[1] / 3;
+      }
+      tones.add(tone);
+      const stripe = Math.floor(mid / SKY_LAWN.stripe);
+      assert((stripes.get(stripe) ?? tone) === tone, 'A stripe of the lawn is in two colours.');
+      stripes.set(stripe, tone);
+    }
+    assert(tones.size === 2 && SKY_LAWN.stripe >= 0.5 && Math.abs(reach - SKY_LAWN.edge) < 1e-6, `The lawn is not two greens in stripes, or stops ${reach.toFixed(3)} of the way to the rim.`);
+    const order = [...stripes.keys()].sort((a, b) => a - b);
+    assert(order.length >= 12 && order.every((k, i) => !i || (k === order[i - 1] + 1 && stripes.get(k) !== stripes.get(k - 1))), 'The lawn\'s stripes do not alternate.');
+    // The outermost stripe that shows beside the coping is no sliver.
+    const shows = S.b + SKY_COPING.profile[0][0];
+    assert(shows - Math.floor(shows / SKY_LAWN.stripe) * SKY_LAWN.stripe >= 0.5, 'The lawn ends in a sliver of a stripe beside the coping.');
+    // The paths: gravel ribbons 0.5 wide or more laid on the lawn, clear of the coping and the villa.
+    assert(plan.SKY_PATHS.width >= 0.5 && plan.SKY_PATHS.lift >= 0.02 && 2 * plan.SKY_PATHS.landing.r >= 1, 'The paths are thinner than half a unit.');
+    each(gravel, (q) => {
+      assert(Math.abs(q.y - plan.skyTop(q.x, q.z) - plan.SKY_PATHS.lift) < 1e-4, 'A path is off the lawn.');
+      assert(plan.onSky(q.x, q.z, SKY_COPING.profile[0][0] - 0.3), `A path runs under the coping at ${q.x.toFixed(2)}, ${q.z.toFixed(2)}.`);
+      // (In the villa's own frame: clear of the house and its terrace, and of the steps.)
+      const [fx, fz] = [q.x - site.x, q.z - site.z];
+      assert(!(Math.abs(fx) < V.terrace.hw && fz < V.terrace.front) && !(Math.abs(fx) < V.steps.hw + 0.2 && fz < V.steps.front), `A path runs under the villa at ${q.x.toFixed(2)}, ${q.z.toFixed(2)}.`);
+      // (And off the flower borders at the terrace's foot.)
+      for (const b of Object.values(plan.SKY_BORDERS)) assert(!(q.x > b.x0 && q.x < b.x1 && q.z > b.z0 && q.z < b.z1), `A path runs through a flower border at ${q.x.toFixed(2)}, ${q.z.toFixed(2)}.`);
+    });
+  }
+
+  /* ---------------- the underside: coping and rock ---------------- */
+  const undersides = sky.rock.children.filter((o) => o.isMesh);
+  assert(undersides.length === 1 && undersides[0].material.userData.surfaceKind === 'stone' && undersides[0].castShadow, 'The rock and the coping are not one stone mesh.');
+  {
+    // The coping is everything above the rock's flat top: its top SKY's 0.14 under the deck's level,
+    // 0.11 proud of the lawn beside it, its nose the deck's widest ring, on the rim's line and no further.
+    const copingTop = Math.max(...SKY_COPING.profile.map(([, y]) => y)),
+      flat = S.top - SKY_ROCK.cone.top;
+    let top = -Infinity,
+      widest = -Infinity,
+      widestY = 0,
+      proud = 0,
+      north = -Infinity;
+    const tip = new T.Vector3(0, Infinity, 0);
+    each(sky.rock, (p) => {
+      const d = plan.skyDistance(p.x, p.z);
+      // Inside the coping's inner face, nothing of the underside comes within 0.08 of the lawn: no
+      // rock shows through the turf.
+      if (d < SKY_COPING.profile[0][0] - 0.05) assert(p.y < plan.skyTop(p.x, p.z) - 0.08, `The rock rises through the turf at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+      if (p.y > flat + 0.02) {
+        top = Math.max(top, p.y);
+        if (d > widest) {
+          widest = d;
+          widestY = p.y;
+        }
+      } else if (p.y < S.top - 0.52) {
+        proud = Math.max(proud, d);
+        if (p.z < S.z - S.a + 2) north = Math.max(north, d);
+        if (p.y < tip.y) tip.copy(p);
+      }
+    });
+    assert(Math.abs(top - (S.top + copingTop)) < 1e-4 && Math.abs(widest) < 0.01 && Math.abs(widestY - (S.top - S.ring)) < 0.03, `The coping's top is at ${top.toFixed(3)} and its nose ${widest.toFixed(3)} from the rim at ${widestY.toFixed(3)}.`);
+    const inner = plan.skyRim(0, SKY_COPING.profile[0][0]);
+    assert(S.top + copingTop - plan.skyTop(inner.x, inner.z) > 0.08 && S.top + SKY_COPING.profile[0][1] < plan.skyTop(inner.x, inner.z) - 0.04, 'The coping no longer stands proud of the lawn, or its foot shows.');
+    assert(SKY_COPING.joint >= 0.03 && SKY_COPING.joint + SKY_COPING.set <= 0.08 && SKY_COPING.stones >= 36 && SKY_COPING.stones <= 56, 'The coping\'s stones are no longer chunky ones with soft joints.');
+    // The rock: its flat top hidden under the turf (below the lawn's lowest), its shoulders proud of
+    // the rim by 0.4 at most and not at all on the north tip (the plane's side), its tip where the
+    // overview is fitted to it.
+    assert(flat < S.top - S.dome - 0.1 && S.top + SKY_COPING.profile.at(-1)[1] < flat - 0.05, 'The rock\'s flat top is not under the turf, or the coping\'s underside no longer ends inside it.');
+    assert(proud > 0.1 && proud <= 0.4 && north <= 0, `The rock stands ${proud.toFixed(2)} proud of the rim (${north.toFixed(2)} at the north tip).`);
+    assert(Math.abs(tip.y - (S.top - S.depth)) < 0.1 && Math.hypot(tip.x - S.x, tip.z - S.z) < 0.4, `The rock's tip is at ${tip.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+    // Smooth, never faceted: wherever triangles meet at a point they share one normal there (a
+    // faceted mesh has one a face), each a unit long and close to its faces' own. Sculpted on a grid
+    // no finer than 0.2 (chunky: nothing under about half a unit survives it).
+    const p = undersides[0].geometry.attributes.position,
+      n = undersides[0].geometry.attributes.normal,
+      seen = new Map(),
+      a = new T.Vector3(),
+      b = new T.Vector3(),
+      c = new T.Vector3(),
+      face = new T.Vector3(),
+      own = new T.Vector3();
+    let corners = 0,
+      lean = 0,
+      worst = 1,
+      rockTriangles = 0;
+    for (let t = 0; t < p.count; t += 3) {
+      a.fromBufferAttribute(p, t);
+      b.fromBufferAttribute(p, t + 1);
+      c.fromBufferAttribute(p, t + 2);
+      if (Math.max(a.y, b.y, c.y) > S.top - 0.56) continue;
+      rockTriangles++;
+      face.subVectors(b, a).cross(own.subVectors(c, a));
+      if (face.lengthSq() < 1e-14) continue;
+      face.normalize();
+      for (let k = 0; k < 3; k++) {
+        own.fromBufferAttribute(n, t + k);
+        assert(Math.abs(own.length() - 1) < 1e-3, 'A normal of the rock is not a unit long.');
+        const key = [p.getX(t + k), p.getY(t + k), p.getZ(t + k)].map((q) => Math.round(q * 2000)).join(),
+          first = seen.get(key);
+        if (first) assert(first.dot(own) > 0.999, 'The rock is faceted: two normals at one point.');
+        else seen.set(key, own.clone());
+        lean += own.dot(face);
+        worst = Math.min(worst, own.dot(face));
+        corners++;
+      }
+    }
+    assert(corners / seen.size > 4, 'The rock\'s triangles share no corners.');
+    assert(lean / corners > 0.97 && worst > 0.3, `The rock's normals lean ${(lean / corners).toFixed(3)} on average (${worst.toFixed(2)} at worst) from its faces.`);
+    assert(rockTriangles >= 8000 && rockTriangles <= 16000 && SKY_ROCK.grid >= 0.2, `The rock costs ${rockTriangles} triangles.`);
+    // Chunky shoulders hung under the rim: on the east and west flanks (45 degrees from every Rotate
+    // stop) the earth stands proud of the rim and hangs 2 or more under the deck; at the deck's
+    // north and south ends, which stand furthest out toward the cameras, what hangs within half a
+    // unit of the rim is shallow, so the spike is the lowest thing on screen (checked below).
+    let flank = 0,
+      ends = 0;
+    each(sky.rock, (q) => {
+      const bearing = Math.atan2(q.x - S.x, q.z - S.z),
+        d = plan.skyDistance(q.x, q.z),
+        depth = S.top - q.y;
+      if (d > 0 && Math.abs(Math.abs(bearing) - Math.PI / 2) < 20 * deg) flank = Math.max(flank, depth);
+      if (d > -0.5 && (Math.abs(bearing) < 25 * deg || Math.abs(bearing) > 155 * deg)) ends = Math.max(ends, depth);
+    });
+    assert(flank >= 2 && ends <= 1.3, `The rock's shoulders hang ${flank.toFixed(2)} under the deck on its flanks and ${ends.toFixed(2)} at its ends.`);
+    // The earth in beds, darker downward, each change a paler seam; down the spike the earth gives
+    // way to rock, far greyer than it.
+    {
+      const colour = undersides[0].geometry.attributes.color,
+        bands = { top: [], mid: [], low: [], seam: [] },
+        mean = (list) => list.reduce((s, c) => s.add(c), new T.Color(0, 0, 0)).multiplyScalar(1 / list.length),
+        grey = (c) => (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)) / Math.max(c.r, c.g, c.b);
+      for (let i = 0; i < p.count; i += 3) {
+        const depth = S.top - p.getY(i),
+          c = new T.Color().fromBufferAttribute(colour, i);
+        if (depth > 0.6 && depth < 1.2) bands.top.push(c);
+        else if (depth > 2.3 && depth < 3.1) bands.mid.push(c);
+        else if (depth > 4.6 && depth < 6) bands.low.push(c);
+        if (Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) bands.seam.push(c);
+      }
+      const [top, mid, low, seam] = [bands.top, bands.mid, bands.low, bands.seam].map(mean),
+        luma = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+      assert(luma(top) > luma(mid) && luma(seam) > (luma(top) + luma(mid)) / 2, 'The underside\'s beds do not read as strata.');
+      assert(grey(top) > 0.25 && grey(mid) > 0.2 && grey(low) < grey(mid) / 2, 'The earth under the deck is not brown, or the spike is not rock.');
+    }
+    skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles so far of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles})`;
+  }
+
+  /* ---------------- the villa's stand-in ---------------- */
+  {
+    // Inside its footprint on the deck, a unit or more in from the rim, from just under the turf up
+    // to its cans (lane V's measures, under the placement's cap); its chimney copes where the
+    // overview's marks have them.
+    const bounds = new T.Box3().setFromObject(sky.shell),
+      C = V.chimneys;
+    assert(Math.abs(bounds.max.y - (site.y + C.cans)) < 0.01 && bounds.min.y < S.top - 0.2 && bounds.min.y > S.top - 0.5, `The stand-in villa reaches from ${bounds.min.y.toFixed(2)} to ${bounds.max.y.toFixed(2)}.`);
+    each(sky.shell, (p) => {
+      assert(plan.onSky(p.x, p.z, -1), `The villa stands ${(-plan.skyDistance(p.x, p.z)).toFixed(2)} from the rim.`);
+      assert(Math.abs(p.x - site.x) <= V.w / 2 + 1e-3 && Math.abs(p.z - site.z) <= V.d / 2 + 1e-3, `The villa leaves its footprint at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
+    });
+    const copes = [];
+    each(sky.shell, (p) => p.y > site.y + C.top + 0.02 && p.y < site.y + C.cope.top + 1e-3 && copes.push(p.clone()));
+    const [cx, cz] = plan.skyVillaPoint(C.x, C.z);
+    assert(copes.length && Math.abs(Math.max(...copes.map((p) => p.x)) - (cx + C.cope.hw)) < 0.02 && Math.abs(Math.min(...copes.map((p) => p.z)) - (cz - C.cope.hd)) < 0.02, 'The chimney copes are off the overview\'s marks.');
+    // The terrace and its steps are on the front, to the south; the lawn at the steps' foot is the deck's level, near enough.
+    const [, stepsZ] = plan.skyVillaPoint(0, V.steps.front);
+    assert(stepsZ > houseZ && S.top - plan.skyTop(S.x, stepsZ) < 0.08 && Math.abs(bounds.max.z - stepsZ) < 0.01, 'The steps do not come down to the lawn on the south side.');
+  }
+
+  /* ---------------- slots and stations ---------------- */
+  {
+    const { tea, watering, telescope, bench } = plan.SKY_STATIONS,
+      SEATS = plan.SKY_SEATS,
+      slots = skySlots(),
+      hall = plan.sites['town-hall'],
+      towards = (p, q) => Math.atan2(q.x - p.x, q.z - p.z),
+      ahead = (p, bearing, d) => ({ x: p.x + Math.sin(bearing) * d, z: p.z + Math.cos(bearing) * d }),
+      near = (p, q, d = 1e-9) => Math.hypot(p.x - q.x, p.z - q.z) < d,
+      // A piece's corner (local x, z in the frame its slot turns) in the world.
+      corner = (slot, x, z) => ({ x: slot.x + x * Math.cos(slot.ry) + z * Math.sin(slot.ry), z: slot.z - x * Math.sin(slot.ry) + z * Math.cos(slot.ry) }),
+      // How far a point lies from the nearest path's edge (negative: on a path).
+      offPath = (p) => {
+        const P = plan.SKY_PATHS,
+          line = (points) => plan.distanceToPolyline([p.x, p.z], points, false) - P.width / 2;
+        return Math.min(line(P.walk), line(P.stem), Math.hypot(p.x - P.landing.x, p.z - P.landing.z) - P.landing.r);
+      },
+      stations = { 'her chair': tea.seats[0], 'the guest\'s chair': tea.seats[1], 'the watering stretch\'s start': watering.from, 'the watering stretch\'s end': watering.to, 'the telescope\'s stand': telescope.stand, 'the bench\'s seat': bench.seat };
+    const [, terraceZ] = plan.skyVillaPoint(0, V.terrace.front);
+    // Each a unit or more in from the rim, on the lawn south of the villa (south of its terrace's
+    // front, 0.3 clear of the terrace and its steps), and never where she would hide the facade:
+    // from the file's bearing and the opening one, the line of sight past the top of her (1.2 up,
+    // hair and all) comes down to the terrace's level before it reaches the house.
+    for (const [name, p] of Object.entries(stations)) {
+      const [fx, fz] = [Math.abs(p.x - site.x), p.z - site.z];
+      assert(plan.onSky(p.x, p.z, -1), `${name} is ${(-plan.skyDistance(p.x, p.z)).toFixed(2)} from the rim.`);
+      assert(p.z > terraceZ && !(fx < V.terrace.hw + 0.3 && fz < V.terrace.front + 0.3) && !(fx < V.steps.hw + 0.3 && fz < V.steps.front + 0.3), `${name} is not on the lawn south of the villa.`);
+      for (const bearing of [file, Math.PI / 4]) {
+        const { back } = axes(bearing),
+          drop = (1.2 - V.terrace.top) / (back.y / Math.hypot(back.x, back.z)),
+          behind = [p.x - (back.x / Math.hypot(back.x, back.z)) * drop, p.z - (back.z / Math.hypot(back.x, back.z)) * drop],
+          [fx, fz] = [behind[0] - site.x, behind[1] - site.z];
+        assert(!(Math.abs(fx) < V.house.hw && fz > V.house.back && fz < V.house.front), `${name} hides the facade at bearing ${bearing.toFixed(2)}.`);
+      }
+    }
+    // The tea table: on the lawn before the terrace, turned so lane G's -x chair (hers) faces as she
+    // does; both seats SKY_SEATS.tea from its middle, hers looking across the table toward the town,
+    // never with her back to the file's camera or the opening one. The whole set (its chairs' backs
+    // 0.98 out along its x, the table 0.42 across) keeps off the paths and 0.6 from the rim.
+    assert(tea.z > terraceZ + 1, 'The tea table is not on the lawn before the terrace.');
+    assert(near(corner(tea, -SEATS.tea, 0), tea.seats[0]) && near(corner(tea, SEATS.tea, 0), tea.seats[1]) && Math.abs(plan.angleDiff(tea.ry + Math.PI / 2, tea.seats[0].facing)) < 1e-9 && Math.abs(plan.angleDiff(tea.seats[1].facing, tea.seats[0].facing + Math.PI)) < 1e-9, 'The tea table\'s chairs are not lane G\'s, either side of it along its x, facing it.');
+    assert(Math.abs(plan.angleDiff(towards(tea.seats[0], hall), tea.seats[0].facing)) < 20 * deg && [file, Math.PI / 4].every((camera) => Math.abs(plan.angleDiff(tea.seats[0].facing, camera)) < 45 * deg), 'Seated at tea she does not look toward the town, or has her back to a camera.');
+    for (const [x, z] of [[-0.98, -0.42], [0.98, -0.42], [0.98, 0.42], [-0.98, 0.42], [0, 0.42], [0, -0.42]]) {
+      const q = corner(tea, x, z);
+      assert(plan.onSky(q.x, q.z, -0.6) && offPath(q) > 0.05, `The tea set's corner at ${q.x.toFixed(2)}, ${q.z.toFixed(2)} crowds the rim or a path.`);
+    }
+    // The watering stretch: along the east border at the terrace's foot, on the walk's line, facing
+    // the border (her can's rose reaches about half a unit ahead of her: lane F's ALISON.rose).
+    const border = plan.SKY_BORDERS.east;
+    assert(watering.from.z === watering.to.z && watering.from.z === plan.SKY_PATHS.walk[0][1] && watering.from.x >= border.x0 && watering.to.x <= border.x1 && watering.to.x - watering.from.x >= 1.5 && watering.from.z - border.z1 > 0.2 && watering.from.z - border.z1 < 0.6 && Math.abs(plan.angleDiff(watering.facing, Math.PI)) < 1e-9, 'The watering stretch is off the east border.');
+    assert(Math.abs(border.z0 - terraceZ) < 1e-9 && border.z1 - border.z0 >= 0.5 && Math.abs(plan.SKY_BORDERS.west.x0 + border.x1 - 2 * S.x) < 1e-9 && border.x0 - S.x > V.steps.hw + 0.2, 'The flower borders are not at the terrace\'s foot either side of the steps.');
+    // The telescope: on the rim's town side, south of the terrace's front, looking at the Town Hall
+    // and a little down (the true depression from its eyepiece); she stands behind it, stooped to the
+    // eyepiece, where lane G's telescope puts her; its tripod's three feet are on the lawn, clear of
+    // the coping.
+    const rimBearing = Math.atan2(telescope.x - S.x, telescope.z - S.z);
+    assert(Math.abs(plan.angleDiff(telescope.look, towards(telescope, hall))) < 1e-9 && telescope.ry === telescope.look && telescope.dip > 0.05 && telescope.dip < 0.25, 'The telescope does not look down at the Town Hall.');
+    assert(rimBearing > 40 * deg && rimBearing < 80 * deg && telescope.z > terraceZ && near(ahead(telescope, telescope.look, -SEATS.telescope), telescope.stand) && Math.abs(plan.angleDiff(telescope.stand.facing, telescope.look)) < 1e-9, 'The telescope is off the rim on the town\'s side, or she does not stand behind it.');
+    for (let k = 0; k < 3; k++) {
+      const foot = ahead(telescope, telescope.look + (k * 2 * Math.PI) / 3, 0.27);
+      assert(plan.onSky(foot.x, foot.z, -0.6), `The telescope's foot ${k} is ${(-plan.skyDistance(foot.x, foot.z)).toFixed(2)} from the rim.`);
+    }
+    // The bench: on the south-east lawn beside the landing, facing the town; she sits SKY_SEATS.bench
+    // in front of its middle; it keeps off the paths.
+    assert(bench.x > S.x && bench.z > terraceZ + 1 && Math.abs(plan.angleDiff(bench.ry, towards(bench, hall))) < 25 * deg && Math.hypot(bench.x - plan.SKY_PATHS.landing.x, bench.z - plan.SKY_PATHS.landing.z) < plan.SKY_PATHS.landing.r + 1.2, 'The bench is off the south-east lawn by the landing, or turned from the town.');
+    assert(near(ahead(bench, bench.ry, SEATS.bench), bench.seat) && Math.abs(plan.angleDiff(bench.seat.facing, bench.ry)) < 1e-9, 'Her seat on the bench is off it.');
+    for (const [x, z] of [[-0.62, -0.25], [0.62, -0.25], [0.62, 0.25], [-0.62, 0.25]]) {
+      const q = corner(bench, x, z);
+      assert(plan.onSky(q.x, q.z, -0.8) && offPath(q) > 0.05, `The bench's corner at ${q.x.toFixed(2)}, ${q.z.toFixed(2)} crowds the rim or a path.`);
+    }
+    // The slots lane G's pieces take: on the lawn at the stations, turned as they face.
+    for (const [name, slot, at] of [
+      ['tea', slots.tea, tea],
+      ['bench', slots.bench, bench],
+      ['telescope', slots.telescope, telescope],
+      ['tree', slots.tree, { ...plan.SKY_TREE, ry: 0 }],
+    ])
+      assert(slot.x === at.x && slot.z === at.z && slot.y === plan.skyTop(at.x, at.z) && slot.ry === at.ry, `The ${name}'s slot is off its station.`);
+    assert(slots.borders.length === 2 && slots.borders.every((b) => b.y === plan.skyTop(b.x, b.z) && b.w >= 1.5 && b.d >= 0.5), 'The borders\' slots are not their strips.');
+    // The lamps: one set at the island's middle (south of the airport's lamps' line), each foot on
+    // the lawn, a unit from the rim, off the paths and clear of her stations.
+    assert(slots.lamps.z > plan.AIRPORT_ROAD.beach && slots.lamps.spots.length === plan.SKY_LAMPS.length, 'The lamps\' set stands where check-town counts the airport\'s lamps.');
+    for (const spot of slots.lamps.spots) {
+      const q = { x: slots.lamps.x + spot.x, z: slots.lamps.z + spot.z };
+      assert(Math.abs(slots.lamps.y + spot.y - plan.skyTop(q.x, q.z)) < 1e-9 && plan.onSky(q.x, q.z, -1) && offPath(q) > 0.15 && Object.values(stations).every((p) => Math.hypot(p.x - q.x, p.z - q.z) > 0.5), `A lamp at ${q.x.toFixed(2)}, ${q.z.toFixed(2)} crowds the rim, a path or a station.`);
+    }
+    // The tree: on the north-east lawn behind the villa's east end, its crown's top where the overview is fitted to it.
+    assert(plan.onSky(plan.SKY_TREE.x, plan.SKY_TREE.z, -1) && plan.SKY_TREE.x > S.x + 2 && plan.SKY_TREE.z < site.z - V.d / 2 - 1 && Math.abs(S.top + plan.SKY_TREE.top - 15) < 0.01, 'The tree is off the north-east lawn behind the villa.');
+    // The falls (lane G's fall()): two, short. Each leaves the rim east by north or west by north
+    // (never within 40 degrees of the north, the plane's side, nor before the facade at the opening
+    // bearing): its slot is the rim point at the deck's level there, turned out along the rim's
+    // normal, with the deck's rise to its pool; its puff's middle hangs 0.67 out and 4.5 down, its
+    // flat base where the placement has it (5.0) and well clear of the sea. No water reaches it.
+    assert.equal(plan.skyFalls.length, 2);
+    for (const [k, f] of plan.skyFalls.entries()) {
+      const rim = plan.skyRim(f.bearing),
+        pool = plan.skyRim(f.bearing, -plan.SKY_FALLS.pool),
+        slot = slots.falls[k];
+      assert(Math.abs(plan.angleDiff(f.bearing, Math.PI)) > 40 * deg && Math.abs(plan.angleDiff(f.bearing, 45 * deg)) > 55 * deg, `Fall ${k} leaves the rim on the north or before the facade.`);
+      assert(near(f, rim) && f.y === plan.skyTop(rim.x, rim.z) && Math.abs(plan.angleDiff(f.ry, Math.atan2(rim.nx, rim.nz))) < 1e-9 && Math.abs(f.rise - (plan.skyTop(pool.x, pool.z) - f.y)) < 1e-9 && f.rise > 0 && f.rise < 0.2, `Fall ${k}'s slot is off the rim.`);
+      assert(slot.x === f.x && slot.y === f.y && slot.z === f.z && slot.ry === f.ry && slot.rise === f.rise, `Fall ${k}'s garden slot is not its plan.`);
+      assert(Math.abs(f.puff.x - (f.x + rim.nx * 0.67)) < 1e-9 && Math.abs(f.puff.y - (f.y - 4.5)) < 1e-9 && f.puff.r === 1.3 && Math.abs(f.puff.bottom - 5) < 0.1 && f.puff.bottom > WATER + 4.9, `Fall ${k}'s cloud puff is off its place.`);
+    }
+    assert(plan.SKY_FALLS.width >= 0.5 && plan.SKY_FALLS.drop === 4.5, 'The falls are hairlines, or no longer short.');
+    // The clouds and floating rocks (their proxies, floatPoints): beside the island, tucked no more
+    // than SKY_FLOAT_LIMITS.tuck under the rim and `clear` of the rock, under the rim's lawn, south
+    // of `north`, inside the rain's square, and nowhere in the villa's box.
+    const L = plan.SKY_FLOAT_LIMITS,
+      rockPoints = [];
+    each(sky.rock, (p) => rockPoints.push(p.clone()));
+    const villaBox = new T.Box3().setFromObject(sky.shell).expandByScalar(0.3);
+    for (const [k, points] of floats.entries())
+      for (const q of points) {
+        assert(plan.skyDistance(q.x, q.z) >= -L.tuck && q.y <= L.top && q.z >= L.north && q.x >= L.west && Math.abs(q.x) <= 58 && Math.abs(q.z) <= 58 && !villaBox.containsPoint(q), `Float ${k} leaves its limits at ${q.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+        assert(rockPoints.every((r) => r.distanceToSquared(q) >= L.clear ** 2), `Float ${k} touches the rock at ${q.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+      }
+  }
+
+  /* ---------------- the overview's marks and its own frame ---------------- */
+  // Every other point of what is built, for the screen checks below; and with the floats' proxies,
+  // the island's whole shape in the air.
+  const built = [];
+  let nth = 0;
+  each(sky.root, (p) => nth++ % 5 === 0 && built.push(p.clone()));
+  const shape = [...built, ...floats.flat()],
+    marks = skyMarks(),
+    fit = skyFit();
+  {
+    // Thirty-eight silhouette points: sixteen round the rim's widest ring, the eight chimney-cope
+    // corners at the cans' height, the tree's top, the rock's tip and six to each fall's cloud puff.
+    const C = V.chimneys;
+    assert.equal(marks.length, 16 + 8 + 1 + 1 + 2 * 6);
+    assert(marks.slice(0, 16).every((m) => Math.abs(plan.skyDistance(m.x, m.z)) < 1e-6 && Math.abs(m.y - (S.top - S.ring)) < 1e-9), 'The rim\'s marks are off its widest ring.');
+    assert(marks.slice(16, 24).every((m) => Math.abs(m.y - (site.y + C.cans)) < 1e-6 && Math.abs(Math.abs(Math.abs(m.x - S.x) - C.x) - C.cope.hw) < 1e-9 && Math.abs(Math.abs(m.z - (site.z + C.z)) - C.cope.hd) < 1e-9), 'The chimneys\' marks are off the copes.');
+    assert(marks[24].distanceTo(new T.Vector3(-49.4, 15.002, -29)) < 1e-6 && marks[25].distanceTo(new T.Vector3(-52, 2.352, -24)) < 1e-6, 'The tree\'s or the tip\'s mark moved.');
+    // They hold what is built: the overview is fitted to their box on screen, and from the four
+    // Rotate stops and the file's bearing nothing of the island shows more than 0.3 outside it (the
+    // rock's shoulders, a little proud of the rim). (The floats hang on the town's side, inside the
+    // town's own marks: check-navigation holds them to that.)
+    let worst = -Infinity;
+    for (const bearing of [...stops, file]) {
+      const { flat } = axes(bearing),
+        edges = (points) => points.map(flat).reduce(([u0, w0, u1, w1], [u, w]) => [Math.min(u0, u), Math.min(w0, w), Math.max(u1, u), Math.max(w1, w)], [Infinity, Infinity, -Infinity, -Infinity]),
+        marked = edges(marks),
+        island = edges(built);
+      worst = Math.max(worst, marked[0] - island[0], marked[1] - island[1], island[2] - marked[2], island[3] - marked[3]);
+    }
+    assert(worst <= 0.3, `The sky island shows ${worst.toFixed(2)} outside the overview's marks.`);
+    // The underside tapers to a point for the eye: from each of those bearings its tip is the lowest
+    // thing of it on screen by half a unit or more (a deep shoulder toward the camera would hang as
+    // low as the tip and hide the point behind a flat, lumpy bottom).
+    let spike = Infinity;
+    const tip = new T.Vector3(S.x, S.top - S.depth, S.z);
+    for (const bearing of [...stops, file]) {
+      const { flat } = axes(bearing),
+        low = flat(tip)[1];
+      each(sky.rock, (p) => {
+        if (p.y > tip.y + 2.5) spike = Math.min(spike, flat(p)[1] - low);
+      });
+    }
+    assert(spike >= 0.5, `A shoulder of the rock hangs within ${spike.toFixed(2)} of its tip on screen.`);
+    skyReport += `, its spike ${spike.toFixed(2)} below its shoulders on screen`;
+    // Its own frame: the deck less its rounded ends, from 1.5 above the rock's tip to the pots.
+    assert(fit.min.distanceTo(new T.Vector3(-57.5, 3.852, -30)) < 1e-6 && fit.max.distanceTo(new T.Vector3(-46.5, 18.652, -18)) < 1e-6, 'The sky island\'s own frame moved.');
+    assert(SKY_SHADOW.centre.distanceTo(fit.getCenter(new T.Vector3())) < 1e-9 && SKY_SHADOW.radius === 14, 'The sky island\'s shadow box is off its frame.');
+    // That box holds the whole island and what hangs by it at any sun: nothing further than its
+    // half-size from the middle.
+    let far = 0;
+    for (const p of shape) far = Math.max(far, p.distanceTo(SKY_SHADOW.centre));
+    for (const f of plan.skyFalls) far = Math.max(far, Math.hypot(f.puff.x - SKY_SHADOW.centre.x, f.puff.bottom - SKY_SHADOW.centre.y, f.puff.z - SKY_SHADOW.centre.z) + f.puff.r);
+    assert(far < SKY_SHADOW.radius, `The sky island reaches ${far.toFixed(1)} from the middle of its shadow box.`);
+  }
+
+  /* ---------------- the pointer ---------------- */
+  {
+    // Its pointer volume: its own, not a box from the sea up. The deck's slab, the rock's hull and
+    // the villa's bounds (and a box for whatever on the deck rises over the slab: the tree, once it
+    // is planted), each invisible, under one parent that names it.
+    const holder = new T.Group(),
+      hit = addSkyHit(holder, sky),
+      pick = { hit, root: sky.root },
+      parts = hit.children,
+      corners = [];
+    assert(hit.userData.buildingId === 'sky-island' && hit.parent === holder && parts.length >= 3 && parts.every((o) => o.isMesh && !o.material.visible), 'The sky island\'s pointer volume is not its own invisible parts.');
+    each(hit, (p) => corners.push(p.clone()));
+    const volume = new T.Box3().setFromPoints(corners);
+    assert(volume.min.y > S.top - S.depth - 0.5 && volume.max.y < S.top + V.height + 0.3 && Math.abs(parts[0].position.y + (SKY_HIT.above + SKY_HIT.below) / 2 - (S.top + SKY_HIT.above)) < 1e-9, `The sky island's pointer volume runs from ${volume.min.y.toFixed(2)} to ${volume.max.y.toFixed(2)}.`);
+    const dir = new T.Vector3(),
+      from = new T.Vector3(),
+      roots = [...Array.from(models.values(), (m) => m.root), sky.root],
+      through = (point) => ray.set(from.copy(point).addScaledVector(dir, -200), dir),
+      land = [];
+    // The town's land, to its waterline, and the airport's to its armour's toe.
+    for (let x = -40; x <= 40; x += 0.6) for (let z = -62; z <= 40; z += 0.6) if (waterline(x, z) <= 0 || plan.airportDistance(x, z) <= plan.AIRPORT.armour) land.push(new T.Vector3(x, 0, z));
+    let tightest = 0,
+      seenAll = 0,
+      nearestLand = Infinity,
+      hitLand = Infinity;
+    for (const bearing of [...stops, file])
+      for (const drift of bearing === file ? [0] : drifts) {
+        const { back, right, up, flat } = axes(bearing + drift);
+        dir.copy(back).negate();
+        // (a) Wherever its own surface is the first thing on a view ray, the pointer is on the island.
+        if (!drift) {
+          let seen = 0;
+          for (let k = 0; k < built.length; k += 9) {
+            through(built[k]);
+            if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(built[k]) ?? 1) > 0.01) continue;
+            seen++;
+            const picked = pickTarget(ray, models, model.parkHit, pick);
+            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${built[k].toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
+          }
+          assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
+          seenAll += seen;
+          // (b) The open sky beside it, over it and under it answers nothing of it: a unit clear of
+          // its volume's outline all round, and from a unit straight under the rock's tip (nearer,
+          // the pointer is within the slack the volume keeps round the tip, as round any building).
+          const outline = hullOf(corners.map(flat)),
+            mid = outline.reduce((sum, p) => [sum[0] + p[0] / outline.length, sum[1] + p[1] / outline.length], [0, 0]),
+            centre = SKY_SHADOW.centre,
+            [cu, cv] = flat(centre);
+          for (const [u, w] of outline) {
+            const l = Math.hypot(u - mid[0], w - mid[1]),
+              beside = centre.clone().addScaledVector(right, mid[0] + ((u - mid[0]) * (l + 1)) / l - cu).addScaledVector(up, mid[1] + ((w - mid[1]) * (l + 1)) / l - cv);
+            through(beside);
+            assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the open sky beside the sky island answers as it.`);
+          }
+          for (const below of [1, 1.6, 2.4]) {
+            through(new T.Vector3(S.x, S.top - S.depth - below, S.z));
+            assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the air ${below} under the rock's tip answers as the sky island.`);
+          }
+          // (c) It hugs the island: the volume's outline is about a third bigger than the island's own
+        // at most (the villa's box over its terrace and the slab over the lawn are most of that).
+          tightest = Math.max(tightest, areaOf(outline) / areaOf(hullOf(built.map(flat))));
+        }
+        // (d) No land behind it at any Rotate stop, through the idle drift: the island's own outline,
+        // with the clouds and rocks that hang by it, keeps half a unit of sea from the town's land and
+        // the airport's, and its pointer volume covers none of either (a click on the empty beach must
+        // never open its file).
+        const island = hullOf(shape.map(flat)),
+          volumeOutline = hullOf(corners.map(flat));
+        for (const p of land) {
+          const q = flat(p);
+          nearestLand = Math.min(nearestLand, outside(island, q));
+          const over = outside(volumeOutline, q);
+          hitLand = Math.min(hitLand, over);
+          if (over > 0) continue;
+          ray.set(p, back);
+          assert.equal(ray.intersectObject(hit, true).length, 0, `At bearing ${bearing.toFixed(2)} drifted ${drift} the sky island's pointer volume covers land at ${p.x.toFixed(1)}, ${p.z.toFixed(1)}.`);
+        }
+      }
+    assert(nearestLand >= 0.5, `The sky island comes within ${nearestLand.toFixed(2)} of land on screen at a Rotate stop.`);
+    assert(tightest < 1.36, `The sky island's pointer volume is ${tightest.toFixed(2)} times its own outline.`);
+    // Hidden (the reading frames that would cut a slice of it), it answers nothing.
+    dir.copy(axes(file).back).negate();
+    through(new T.Vector3(S.x, S.top + 6, houseZ));
+    assert.equal(pickTarget(ray, models, model.parkHit, pick), 'sky-island');
+    sky.root.visible = false;
+    assert.equal(pickTarget(ray, models, model.parkHit, pick), null, 'Hidden, the sky island still answers the pointer.');
+    sky.root.visible = true;
+    // And without it (the checks' town, a scene with none) the pointer is as it was.
+    assert.equal(pickTarget(ray, models, model.parkHit), null);
+    skyReport += `, its rim ${coast.toFixed(1)} from the waterline, ${nearestLand.toFixed(2)} of sea kept from land on screen (its pointer volume ${Math.max(0, hitLand).toFixed(2)}) and the pointer on it at ${seenAll} points`;
+  }
+
+  /* ---------------- its shadows ---------------- */
+  {
+    // The sun's box is the island's only while the view is close in on it with the town out of the
+    // frame (check-navigation tries the real framings): never from afar, never with land in view.
+    const camera = new T.OrthographicCamera(-44, 44, 27.5, -27.5, -200, 180),
+      landMarks = plan.islandOutline.map(([x, z]) => new T.Vector3(x * (1 + 3.3 / Math.hypot(x, z)), 0, z * (1 + 3.3 / Math.hypot(x, z)))),
+      look = (at, zoom, bearing = file) => {
+        camera.position.copy(at).add(new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38));
+        camera.lookAt(at);
+        camera.zoom = zoom;
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+      };
+    look(SKY_SHADOW.centre, 2);
+    assert(skyShadowWanted(camera, landMarks, 0, 0, false) && skyShadowWanted(camera, landMarks, 0, 0, true), 'Close in on the sky island, the sun\'s shadow is not its own.');
+    look(SKY_SHADOW.centre, 1.3);
+    assert(!skyShadowWanted(camera, landMarks, 0, 0, false), 'From zoom 1.3 the sun\'s shadow leaves the town for the sky island.');
+    look(new T.Vector3(-40, 5, -22), 1.5);
+    assert(Math.abs(SKY_SHADOW.centre.clone().project(camera).x) < 1 && Math.abs(SKY_SHADOW.centre.clone().project(camera).y) < 1, 'The check\'s view of the island and the headland together has lost the island.');
+    assert(!skyShadowWanted(camera, landMarks, 0, 0, false) && !skyShadowWanted(camera, landMarks, 0, 0, true), 'With the headland in view the sun\'s shadow stays on the sky island.');
+    look(new T.Vector3(0, 0, 0), 2.4);
+    assert(!skyShadowWanted(camera, landMarks, 0, 0, true), 'With the sky island out of view the sun\'s shadow stays on it.');
+    assert(SKY_SHADOW.zoom[0] < SKY_SHADOW.zoom[1] && SKY_SHADOW.zoom[1] > 1 && SKY_SHADOW.land[0] > SKY_SHADOW.land[1] && SKY_SHADOW.fade > 0.05 && SKY_SHADOW.fade < 0.4, 'The shadow box changes hands at the City overview\'s zoom, without slack, or abruptly.');
+  }
+
+  /* ---------------- everything that moves ---------------- */
+  {
+    // The island as points: what is built (a share of it, and its rim, its chimney tops and its
+    // tip whole), its falls' ribbons and their cloud puffs, and the clouds and rocks by it.
+    const body = [...built.filter((_, k) => k % 14 === 0), ...plan.skyOutline(0, 72).map((p) => new T.Vector3(p.x, S.top - S.ring, p.z)), ...marks.slice(16, 26), ...floats.flat().filter((_, k) => k % 3 === 0)];
+    for (const f of plan.skyFalls) {
+      for (let k = 0; k <= 8; k++) body.push(new T.Vector3(f.x + (f.puff.x - f.x) * (k / 8), f.y - (f.y - f.puff.y) * (k / 8), f.z + (f.puff.z - f.z) * (k / 8)));
+      for (let a = 0; a < 12; a++)
+        for (const y of [f.puff.bottom, f.puff.y, f.puff.top]) {
+          const r = y === f.puff.y ? f.puff.r : 0.5 * f.puff.r;
+          body.push(new T.Vector3(f.puff.x + Math.cos((a / 12) * Math.PI * 2) * r, y, f.puff.z + Math.sin((a / 12) * Math.PI * 2) * r));
+        }
+    }
+    const nearest = (x, y, z) => {
+      let best = Infinity;
+      for (const p of body) best = Math.min(best, Math.hypot(p.x - x, p.y - y, p.z - z));
+      return best;
+    };
+    const flat2 = (x, z) => {
+      let best = Infinity;
+      for (const p of body) best = Math.min(best, Math.hypot(p.x - x, p.z - z));
+      return best;
+    };
+    const gaps = { plane: Infinity, balloon: Infinity, gulls: Infinity, beam: Infinity, boat: Infinity, crane: Infinity };
+    // The plane's middle through its whole visible loop. It passes the deck's north tip climbing out:
+    // nearer than the 30 it keeps from the things it passes in the air, so the island has a rule of
+    // its own, as the coast has its 12.
+    for (let t = 0; t < plan.PLANE_LOOP; t += 0.25) {
+      const p = plan.planePose(t);
+      if (p.visible) gaps.plane = Math.min(gaps.plane, nearest(p.x, p.y + plan.PLANE.axis, p.z));
+    }
+    // The balloon's lap, turned either way with the idle drift about each view's centre (the plaza,
+    // the shadow's home, the airport, the island and its file's ground point): its envelope's axis, less its radius.
+    const { createGulls } = await load('city-atmosphere'),
+      birds = createGulls(),
+      [rockX, rockZ] = plan.lighthouseRock,
+      centres = [[0, 0], [-3.5, -13.5], [plan.AIRPORT.x, plan.AIRPORT.z], [S.x, S.z], [-59, -34.1]];
+    for (let t = 0; t < 900; t += 1.5) {
+      balloon.update(t, 0);
+      const b = balloon.object.position;
+      for (const [cx, cz] of centres)
+        for (const drift of [-0.16, 0, 0.16]) {
+          const c = Math.cos(drift),
+            s = Math.sin(drift),
+            x = cx + (b.x - cx) * c + (b.z - cz) * s,
+            z = cz - (b.x - cx) * s + (b.z - cz) * c;
+          for (const y of [b.y, b.y + 1.7, b.y + 3.4, b.y + 5.06]) gaps.balloon = Math.min(gaps.balloon, nearest(x, y, z) - 1.6);
+        }
+      birds.update(t, 1);
+      for (const g of birds.object.children) gaps.gulls = Math.min(gaps.gulls, nearest(g.position.x, g.position.y, g.position.z));
+      beam.update(t, 1);
+      const a = beam.object.rotation.y,
+        tip = [rockX + Math.cos(a) * 18, rockZ - Math.sin(a) * 18],
+        boat = plan.boatPose(t);
+      for (const p of body) gaps.beam = Math.min(gaps.beam, plan.distanceToSegment([p.x, p.z], [rockX, rockZ], tip) - 3.6);
+      gaps.boat = Math.min(gaps.boat, flat2(boat.x, boat.z) - 2.1);
+    }
+    balloon.update(0, 0);
+    beam.update(3, 0);
+    birds.dispose();
+    // The crane's whole reach round its mast on the reserved plot.
+    gaps.crane = flat2(plan.reservedPlot.x, plan.reservedPlot.z) - 6.47;
+    for (const [name, least] of Object.entries({ plane: 20, balloon: 24, gulls: 50, beam: 50, boat: 70, crane: 55 }))
+      assert(gaps[name] >= least, `The ${name} comes within ${gaps[name].toFixed(1)} of the sky island (${least} at least).`);
+    skyReport += `; the plane passes ${gaps.plane.toFixed(1)} from it and the balloon ${gaps.balloon.toFixed(1)}`;
+  }
+
+  /* ---------------- the reading chapters' subjects ---------------- */
+  {
+    // From no chapter's bearing, through the idle drift, does the island (with what hangs by it)
+    // stand before (or behind) the chapter's own buildings or the park: it keeps 2 units from them
+    // on screen.
+    const subjects = { ...plan.chapterSubjects, 'corner-park': ['corner-park'] },
+      pointsOf = (id) => {
+        const out = [];
+        let k = 0;
+        each(id === 'corner-park' ? model.parkGroup : models.get(id).root, (p) => k++ % 40 === 0 && out.push(p.clone()));
+        return out;
+      };
+    let least = Infinity;
+    for (const [chapter, ids] of Object.entries(subjects)) {
+      if (chapter === 'sky-island') continue;
+      for (const drift of drifts) {
+        const { flat } = axes(plan.chapterBearings[chapter] + drift),
+          island = hullOf(shape.map(flat));
+        for (const id of ids) for (const p of pointsOf(id)) least = Math.min(least, outside(island, flat(p)));
+      }
+    }
+    assert(least >= 2, `The sky island stands ${least.toFixed(1)} from a chapter's subject on screen.`);
+  }
+}
 console.log(
-  `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

@@ -22,6 +22,7 @@ import { createHarbour } from './town-harbour';
 import { createHomes } from './town-homes';
 import { createResidence } from './town-residence';
 import { createAirport } from './town-airport';
+import { createSkyIsland } from './town-sky';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
@@ -32,7 +33,7 @@ export { BALLOON, followDrift } from './town-movers';
 
 /**
  * The town itself: terrain, streets, nine buildings, trees,
- * street furniture, the harbour, the lighthouse, the airport's island and the things that move.
+ * street furniture, the harbour, the lighthouse, the airport's island, the sky island and the things that move.
  * Everything is procedural and merged into a few draw calls per surface family.
  *
  * This file assembles the town; each part lives in its own module:
@@ -54,6 +55,8 @@ export { BALLOON, followDrift } from './town-movers';
  * - town-residence.ts: the Visiting PhD Residence at the row's north end;
  * - town-airport.ts: the airport's island off the north shore (its deck, armour, runway, apron and
  *   the road and causeway out to it, in its own group, `airportLand`) and its Departures Hall;
+ * - town-sky.ts: the sky island off the north-west headland (its lawn and paths, the rock under it
+ *   and its coping, and its villa's stand-in massing, in its own groups under `sky.root`);
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
  * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
@@ -77,6 +80,14 @@ export type Model = {
   hit?: T.Mesh;
 };
 export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: number };
+/**
+ * The sky island: a place of its own, not one of the town's models (it floats 10.5 up, so the
+ * models' rules, framing and Inspect do not fit it). Everything of it hangs under `root`, which the
+ * scene picks, rings, shades and hides as one: `land` its deck (the lawn, the paths and what stands
+ * on them), `rock` its underside (the rock and the coping), `air` what hangs off the deck or beside
+ * it, and `shell` its villa, in the villa's own frame (front +z, y 0 the deck's level).
+ */
+export type SkyIsland = { root: T.Group; land: T.Group; rock: T.Group; air: T.Group; shell: T.Group };
 
 type TownOptions = {
   library?: ReturnType<typeof createCityMaterials>;
@@ -106,11 +117,20 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const city = new T.Group(),
     land = new T.Group(),
     // The airport's ground: its own group, built and batched in its own phases, never in the land's.
-    airportLand = new T.Group();
+    airportLand = new T.Group(),
+    // The sky island, likewise: its groups under one root.
+    sky: SkyIsland = { root: new T.Group(), land: new T.Group(), rock: new T.Group(), air: new T.Group(), shell: new T.Group() };
   city.name = 'town';
   land.name = 'land';
   airportLand.name = 'airport-land';
-  city.add(land, airportLand);
+  sky.root.name = 'sky-island';
+  sky.root.userData.buildingId = 'sky-island';
+  sky.land.name = 'sky-land';
+  sky.rock.name = 'sky-rock';
+  sky.air.name = 'sky-air';
+  sky.shell.name = 'sky-villa';
+  sky.root.add(sky.land, sky.rock, sky.air, sky.shell);
+  city.add(land, airportLand, sky.root);
   const lamps: T.Mesh[] = [],
     clocks: { hour: T.Object3D; minute: T.Object3D }[] = [],
     animated: { object: T.Object3D; update: (time: number, night: number, rain?: number) => void }[] = [];
@@ -122,6 +142,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildTerrace, buildCottage } = createHomes(ctx, kit, nature);
   const { buildResidence } = createResidence(ctx, kit, nature, props);
   const { airportGround, buildAirport } = createAirport(ctx, kit, props, nature);
+  const skyIsland = createSkyIsland(ctx, kit, props, nature);
+  // The sky island's villa: a stand-in massing until the villa itself is wired in (this one line).
+  const buildSkyVilla = skyIsland.villaMassing;
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
@@ -228,9 +251,23 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // The airport's island, its road and causeway (the Departures Hall is a building, below).
   airportGround(airportLand);
   yield 'airport ground';
+  // The sky island: its deck, and its villa in the shell's own frame on it; then the rock under it,
+  // sculpted from a distance grid (tens of ms), in a phase of its own.
+  skyIsland.skyGround(sky.land, sky.air);
+  {
+    const site = plan.sites['sky-island'];
+    sky.shell.position.set(site.x, site.y ?? 0, site.z);
+    sky.shell.rotation.y = site.rotation;
+    buildSkyVilla(sky.shell, site);
+  }
+  yield 'sky ground';
+  skyIsland.skyUnderside(sky.rock);
+  yield 'sky rock';
 
   const models = new Map<BuildingId, Model>();
   for (const b of buildings) {
+    // The sky island is no model: it is built above, in groups of its own.
+    if (b.model === 'sky') continue;
     const site = plan.sites[b.id];
     const root = new T.Group(),
       shell = new T.Group();
@@ -374,6 +411,13 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // Contact shade from the airport's own deck and causeway, not the sea under them.
   batch(airportLand, { floor: plan.deckHeight });
   yield 'batch airport';
+  // The sky island: contact shade from its own lawn for what stands on it; none for its underside,
+  // where every height is below the lawn (it would all bake to the darkest foot), nor for what
+  // hangs in the air beside it.
+  batch(sky.land, { floor: plan.skyTop });
+  batch(sky.rock, { contact: 'none' });
+  batch(sky.air, { contact: 'none' });
+  yield 'batch sky';
   batch(parkGroup);
   yield 'batch park';
   // Each glass pane carries its own night light in aWindow (batch() draws it; see town-batch.ts).
@@ -384,6 +428,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     // (Its ground's phase is 'batch airport'.)
     yield id === 'airport' ? 'batch departures hall' : `batch ${id}`;
   }
+  // The sky island's villa, on its deck.
+  batch(sky.shell, { place: 'sky-island', floor: plan.skyTop });
+  yield 'batch sky villa';
   /** A figure batched part by part (the body, each hip and knee, each arm), so its joints still bend. */
   function batchFigure(root: T.Object3D) {
     for (const part of root.children) {
@@ -419,6 +466,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     city,
     land,
     airportLand,
+    sky,
     models,
     walkers,
     tram,
