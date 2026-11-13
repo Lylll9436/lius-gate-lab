@@ -2267,6 +2267,29 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       // City mode (its overview, a place's file, the island's own) and Inspect always show it.
       assert(shown({ parkSelected: false, cityMode: true, tween: true }) && shown({ cityMode: true, overviewFit: true }), 'The sky island is hidden in City mode.');
       assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: [] }), 'The sky island is hidden in Inspect.');
+      // Its pool on the sea goes and comes with it (the 3D review's first finding: in the phone hero
+      // the dark pool showed behind the wordmark's pill): the frame loop lays the sea shadow with
+      // skyShown (city-water's update hides the pool when it is false: check-town), once a frame and
+      // after followSky has set skyShown for that frame.
+      {
+        const updates = [],
+          order = [];
+        (function find(node) {
+          if (ts.isCallExpression(node) && node.expression.getText(syntax) === 'seaShadow.update') updates.push(node);
+          ts.forEachChild(node, find);
+        })(syntax);
+        (function walk(node) {
+          if (ts.isFunctionDeclaration(node) && node.name?.text === 'step')
+            for (const statement of node.body.statements)
+              if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) order.push(statement.expression.expression.getText(syntax));
+          ts.forEachChild(node, walk);
+        })(syntax);
+        const [update] = updates;
+        assert(
+          updates.length === 1 && update.arguments.length === 4 && ts.isIdentifier(update.arguments[3]) && update.arguments[3].text === 'skyShown' && order.indexOf('followSky') >= 0 && order.indexOf('followSky') < order.indexOf('animateExtras'),
+          'The sky island\'s sea shadow no longer follows skyShown, set for the same frame.',
+        );
+      }
       // Where it was cut: the opening view (the island's centre at zoom 1, no frame shift on a narrow
       // page) on phones and upright tablets, whose reading page docks the stage 46% of the screen
       // tall (320 px at the least: globals.css), at some moment of the idle drift.
