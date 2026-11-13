@@ -4401,13 +4401,24 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 //   vertices. She stands as tall as a resident (from the shortest walker to the helmeted rider),
 //   her soles on y 0, inside the walkers' 0.27.
 // - Colour: everything on her stays at or under the figures' 0.55 (HSV, sRGB) BUT HER HAIR, the
-//   one named exception to that rule: a muted copper that may reach HAIR_SATURATION, 0.62 (her hair
-//   is her likeness, and copper held to 0.55 reads as brown). It must be copper: over 0.55, its hue
-//   between 15 and 32 degrees.
+//   one named exception to that rule: a ginger that may reach HAIR_SATURATION, 0.70 (her hair is her
+//   likeness; held to 0.55 it reads brown, and at F1a's 0.62 it rendered a salmon brown beside the
+//   portrait under the town's 0.72 grade). It must be copper to ginger: over 0.55, every shade's hue
+//   between 15 and 32 degrees, and its median the portrait's orange, 20 to 28 (F1a's salmon copper
+//   is 19).
+// - Hair: long, loose locks falling past her shoulders, never again a cluster of small balls (F1a's
+//   34 lobes, none over 0.16 long) or a hood. Standing: its pieces (runs of joined faces) of 12
+//   triangles or more number 8 to 20, and four fifths of its triangles lie in pieces 0.25 or more
+//   long; from in front it is at most 1.5 times her head's width at her cheeks, at least 1.2 times
+//   (so it still frames her face), and no wider below them; behind her it reaches below 0.5, well
+//   under her shoulders (0.6), and stops above 0.36 (about mid-back); and from the town camera's
+//   height, from in front to 40 degrees either side, a ray at each of her eyes meets her glasses
+//   band at the eye, not her hair.
 // - Thickness: every joined piece of her props, her glasses and her pendant is 0.07 or more across
 //   every way (thinner ones twinkle as the view moves). Her nose is a resident's, a 0.04 bump sunk
-//   in her face; her hair's lobes run into one another and the cap, so what shows of one is not a
-//   piece of its own.
+//   in her face. Each of her hair's locks is 0.072 or more through as built (sky-figure's line());
+//   they run into one another and the crown, so the bits of one that show between others are not
+//   pieces of their own.
 // - Poses, each over a sweep of phases: nothing non-finite; standing, walking, watering and at the
 //   telescope her lower sole is on her floor; seated, her thighs rest on the seat (the park
 //   bench's, which ALISON.seat must be, and any other she is given) and her shins hang clear of
@@ -4418,7 +4429,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 //   and at the telescope her eye is behind the eyepiece ALISON places, looking down its tube.
 {
   const { createAlison, poseAlison, alisonHand, ALISON, ALISON_POSES, ALISON_HOLDS, ALISON_TELESCOPE, HAIR_SATURATION } = await load('sky-figure'),
-    { createResident, animateResident } = await load('city-people'),
+    { createResident, animateResident, HEAD } = await load('city-people'),
     { createProps } = await load('town-props'),
     { createKit } = await load('town-kit'),
     { createCityMaterials } = await load('city-materials'),
@@ -4461,8 +4472,10 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       const max = Math.max(c.r, c.g, c.b);
       return max ? (max - Math.min(c.r, c.g, c.b)) / max : 0;
     },
-    colour = new T.Color();
-  assert.equal(HAIR_SATURATION, 0.62, 'Her hair’s exception is 0.62, and no more.');
+    colour = new T.Color(),
+    hues = [];
+  // 0.70, raised from F1a's 0.62 so her hair reads the portrait's ginger after the town's grade.
+  assert.equal(HAIR_SATURATION, 0.7, 'Her hair’s exception is 0.70, and no more.');
   for (const m of meshes) {
     const kind = m.material.userData.surfaceKind,
       c = m.geometry.getAttribute('color'),
@@ -4480,10 +4493,15 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       assert(s <= (hair ? HAIR_SATURATION : 0.55) + 1e-4, `Her ${label(m)} wears a colour louder than ${hair ? 'her hair may be' : "the town's figures"} (${colour.getHexString()}, ${s.toFixed(3)}).`);
       if (hair) {
         const hue = (60 * (colour.g - colour.b)) / (colour.r - colour.b);
-        assert(colour.r > colour.g && colour.g > colour.b && hue >= 15 && hue <= 32, `Her hair is not copper (${colour.getHexString()}, hue ${hue.toFixed(0)}).`);
+        assert(colour.r > colour.g && colour.g > colour.b && hue >= 15 && hue <= 32, `Her hair is not copper to ginger (${colour.getHexString()}, hue ${hue.toFixed(0)}).`);
+        hues.push(hue);
       }
     }
-    if (hair) assert(loudest > 0.55, `Her hair is no louder than a resident's (${loudest.toFixed(3)}): the exception is not needed, or the copper has gone brown.`);
+    if (hair) {
+      assert(loudest > 0.55, `Her hair is no louder than a resident's (${loudest.toFixed(3)}): the exception is not needed, or the ginger has gone brown.`);
+      const median = hues.sort((a, b) => a - b)[hues.length >> 1];
+      assert(median >= 20 && median <= 28, `Her hair's median hue is ${median.toFixed(1)}, not the portrait's orange (20 to 28).`);
+    }
   }
   // Each run of joined faces in a mesh, as its box in the mesh's own frame.
   const pieces = (m) => {
@@ -4496,13 +4514,15 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
     for (let i = 0; i < n; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
     for (let i = 0; i + 2 < n; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
-    const boxes = new Map();
+    const boxes = new Map(),
+      counts = new Map();
     for (let i = 0; i < n; i++) {
       const piece = find(key(i));
       if (!boxes.has(piece)) boxes.set(piece, new T.Box3());
       boxes.get(piece).expandByPoint(v.fromBufferAttribute(q, at(i)));
+      counts.set(piece, (counts.get(piece) ?? 0) + 1 / 3);
     }
-    return [...boxes.values()].map((b) => ({ size: b.getSize(new T.Vector3()), centre: b.getCenter(new T.Vector3()) }));
+    return [...boxes].map(([piece, b]) => ({ size: b.getSize(new T.Vector3()), centre: b.getCenter(new T.Vector3()), triangles: Math.round(counts.get(piece)) }));
   };
   const thin = (p) => Math.min(p.size.x, p.size.y, p.size.z) < 0.07 - 1e-3,
     sized = (p) => p.size.toArray().map((n) => n.toFixed(3)).join(' x ');
@@ -4540,6 +4560,48 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   assert(Math.abs(box.max.y - ALISON.height) < 0.005, `ALISON.height is ${ALISON.height}, and she stands ${box.max.y.toFixed(3)}.`);
   assert(Math.abs(box.min.y) < 0.004, `Standing, her soles are at ${box.min.y.toFixed(3)}.`);
   assert(Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) < 0.27, 'Alison is wider than the walkers’ clearances allow.');
+  // Her hair's shape, standing (see above): locks, not balls or a hood; its width at her cheeks and
+  // below; how far down her back it falls; and her eyes clear of it from the town camera.
+  {
+    const hair = meshes.find((m) => m.name === 'alison-hair'),
+      lumps = pieces(hair).filter((p) => p.triangles >= 12),
+      length = (p) => Math.max(p.size.x, p.size.y, p.size.z),
+      inLocks = lumps.filter((p) => length(p) >= 0.25).reduce((n, p) => n + p.triangles, 0) / lumps.reduce((n, p) => n + p.triangles, 0);
+    assert(lumps.length >= 8 && lumps.length <= 20, `Her hair is ${lumps.length} pieces: locks number 10 to 16, a cluster of balls many more, a hood one.`);
+    assert(inLocks >= 0.8, `Only ${(inLocks * 100).toFixed(0)}% of her hair lies in pieces 0.25 or more long: it is balls, not locks.`);
+    const q = hair.geometry.getAttribute('position'),
+      width = (lo, hi) => {
+        let min = Infinity,
+          max = -Infinity;
+        for (let i = 0; i < q.count; i++) {
+          v.fromBufferAttribute(q, i).applyMatrix4(hair.matrixWorld);
+          if (v.y >= lo && v.y < hi) {
+            min = Math.min(min, v.x);
+            max = Math.max(max, v.x);
+          }
+        }
+        return max - min;
+      },
+      head = 2 * HEAD.r[0],
+      cheeks = width(0.68, 0.74);
+    assert(cheeks <= 1.5 * head && cheeks >= 1.2 * head, `At her cheeks her hair is ${(cheeks / head).toFixed(2)} times her head's width, not 1.2 to 1.5.`);
+    for (const [lo, hi] of [[0.6, 0.68], [0.5, 0.6], [0.4, 0.5]]) assert(width(lo, hi) <= cheeks + 0.005, `Her hair is wider from ${lo} to ${hi} (${width(lo, hi).toFixed(3)}) than at her cheeks (${cheeks.toFixed(3)}).`);
+    let back = Infinity;
+    for (let i = 0; i < q.count; i++) if (v.fromBufferAttribute(q, i).applyMatrix4(hair.matrixWorld).z < -0.06) back = Math.min(back, v.y);
+    assert(back < 0.5 && back > 0.36, `Behind her, her hair reaches down to ${back.toFixed(3)}: not past her shoulders to mid-back.`);
+    // Her eyes as drawn on the glasses band: 0.054 either side of the bridge, 0.772 up, just in front of it.
+    const ray = new T.Raycaster(),
+      rise = Math.atan2(35, 38);
+    for (let deg = -40; deg <= 40; deg += 10)
+      for (const side of [-1, 1]) {
+        const turn = (deg * Math.PI) / 180,
+          look = new T.Vector3(-Math.sin(turn) * Math.cos(rise), -Math.sin(rise), -Math.cos(turn) * Math.cos(rise)),
+          eye = new T.Vector3(side * 0.054, 0.772, 0.145);
+        ray.set(eye.clone().addScaledVector(look, -3), look);
+        const first = ray.intersectObjects([hair, face])[0];
+        assert(first && first.object === face && first.point.distanceTo(eye) < 0.012, `From ${deg} degrees her ${side < 0 ? 'right' : 'left'} eye is hidden by her hair.`);
+      }
+  }
   // The seat she sits at is the park bench's: the top of its seat's slats, under its back's.
   const ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
     bench = createProps(ctx, createKit(ctx)).bench(new T.Group(), 0, 0, 0);

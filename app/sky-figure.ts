@@ -1,12 +1,12 @@
 import * as T from 'three';
 import type { SurfaceKind } from './city-materials';
 import { animateResident, blob, DEPTH, HEAD, lathe, paint, part, shade, taper, TORSO, torsoAt } from './city-people';
-import { ellipsoid, sculpt, type Shape } from './town-sculpt';
+import { ellipsoid, sculpt } from './town-sculpt';
 
 /*
  * Alison Heppenstall's little figure for the sky island, built like the town's residents
  * (city-people.ts: the same kit, scale and joints, so their walk code drives her) but as one named
- * person: long, loose, curly copper hair, dark rectangular glasses, a black long-sleeved top with a
+ * person: long, loose, curly ginger hair, dark rectangular glasses, a black long-sleeved top with a
  * small pale pendant, fair skin, dark trousers. Her hands carry a watering can, or a teacup and its
  * saucer, or a book; poseAlison() sets every joint and prop for a pose and a phase, from nothing
  * else, so town time can drive it and a paused town holds it. Nothing in the town builds her yet:
@@ -17,12 +17,13 @@ type V3 = [number, number, number];
 
 /**
  * Her colours (sRGB). Like the residents', every one stays at or under HSV saturation 0.55, but for
- * the hair: one muted copper, in shades, just under HAIR_SATURATION (the hair is the likeness, and
- * copper held to 0.55 reads as brown). check-town names that exception and holds everything else
- * to 0.55.
+ * the hair: one ginger, the portrait's orange (hue 25), in shades of its one saturation, just under
+ * HAIR_SATURATION, its hue turning between copper and a golden ginger with the light each face gets
+ * (HAIR_TURN; the hair is the likeness, and held to 0.55 it reads brown). check-town names that
+ * exception and holds everything else to 0.55.
  */
 export const ALISON_LOOK = {
-  hair: '#d27e50',
+  hair: '#cc793e',
   skin: '#f0cba9',
   top: '#2d2b2e',
   trousers: '#3b4552',
@@ -38,8 +39,19 @@ export const ALISON_LOOK = {
   cover: '#6f4a44',
   pages: '#efe7d6',
 };
-/** The hair's saturation cap (HSV, sRGB): her one exception to the figures' 0.55. */
-export const HAIR_SATURATION = 0.62;
+/**
+ * The hair's saturation cap (HSV, sRGB): her one exception to the figures' 0.55. It is 0.70, not the
+ * 0.62 it was: under the town's 0.72 grade a copper held to 0.62 rendered a salmon brown beside the
+ * portrait's ginger.
+ */
+export const HAIR_SATURATION = 0.7;
+/**
+ * How many degrees the hair's hue turns from ALISON_LOOK.hair's: more golden on what faces straight
+ * up, more coppery on what faces straight down and as a shade deepens to black (see hair()); and the
+ * band every shade's hue stays in, from a copper to a golden ginger.
+ */
+const HAIR_TURN = [5, 8, 10],
+  HAIR_HUES = [16, 32];
 
 /* ------------------------------------------------------------------ */
 /* Measures (the residents', see city-people.ts)                       */
@@ -58,8 +70,8 @@ const EYE: V3 = [0, 0.772, 0.137];
 const PENDANT_Y = 0.565;
 /** The teacup's axis stands this far from its handle (the cup's origin), along its +x. */
 const CUP_AXIS = 0.058;
-/** The spacing of the distance grid the hair's cap is meshed on: its triangles go as 1/h² (about 550 show at this spacing). */
-const HAIR_GRID = 0.04;
+/** The spacing of the distance grid the hair's crown is meshed on: its triangles go as 1/h² (about 460 show at this spacing). */
+const HAIR_GRID = 0.034;
 
 /**
  * The seat she sits on, its top above her floor: the town's park bench (town-props' bench: slats
@@ -98,7 +110,21 @@ function sRGB(hex: string): V3 {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-const UP = new T.Vector3(0, 1, 0);
+/** A hex colour as HSV: hue in degrees, saturation and value 0..1. */
+function toHsv(hex: string): V3 {
+  const [r, g, b] = sRGB(hex),
+    max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  return [max === min ? 0 : (60 * (g - b)) / (max - min), max ? (max - min) / max : 0, max];
+}
+/** HSV (hue in degrees, saturation and value 0..1) as sRGB components. */
+function hsv(h: number, sat: number, v: number): V3 {
+  const f = (k: number) => {
+    const m = (k + h / 60) % 6;
+    return v - v * sat * Math.max(0, Math.min(m, 4 - m, 1));
+  };
+  return [f(5), f(3), f(1)];
+}
 /** Whether a point is hidden inside her head or her torso (a little under their surfaces). */
 function insideBody(x: number, y: number, z: number) {
   const [a, b, c] = HEAD.r;
@@ -125,108 +151,355 @@ function shown(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: num
   g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
   return g;
 }
-/** A curl: an ellipsoid of radii r at c, turned by rot, as the kit's small spheres are (an icosahedron of detail 1, its normals the ellipsoid's own). */
-function lobe(r: V3, c: V3, rot: V3) {
-  const g = new T.IcosahedronGeometry(1, 1);
-  g.scale(r[0], r[1], r[2]);
-  g.applyMatrix4(new T.Matrix4().makeRotationFromEuler(new T.Euler(...rot)));
-  return g.translate(c[0], c[1], c[2]);
+/**
+ * Which way a point of the hair faces: out from the head's middle above it and the body's upright
+ * axis below, or, below the jaw, towards `face` if a lock is given one (a lock hanging in front of
+ * the shoulder turns its flat side forward).
+ */
+function away(q: T.Vector3, out: T.Vector3, face?: V3) {
+  out.set(q.x, q.y - Math.min(q.y, HEAD.y), q.z - (q.y < HEAD.y ? -0.02 : 0.005)).normalize();
+  if (face) out.lerp(new T.Vector3(...face), 1 - T.MathUtils.smoothstep(q.y, 0.6, 0.7)).normalize();
+  return out;
 }
 /**
- * The hair, blocked out from the portrait for a camera that looks down on her: two kinds of form,
- * every normal an exact one, so nothing is faceted.
- * - A smooth cap from town-sculpt's distance grid: the crown close over the skull (under the tallest
- *   resident's head), parted on her right (-x), its volume swept over to her left in broad soft
- *   waves, with one down over her left temple; the nape filled in and a thin curtain down her back;
- *   and the face carved out of it, from a hairline above the glasses down past the chin.
- * - On it the curls: 34 chunky ellipsoid lobes 0.08 to 0.13 across (each a little longer down the
- *   lock's fall than across it) in ringlets that wave from side to side. One hangs from each temple,
- *   widening down past the jaw (where the hair is widest, as hers is) and on behind the arm, with a
- *   second, outer one for the volume, fuller on her left; three hang down her back past the
- *   shoulder blades to a ragged hem, out of step with one another; and a lock lies over each
- *   collarbone onto the top's front (longer on her left), so from in front the copper runs on past
- *   her shoulders. The lobes meet one another and the cap in crisp creases: at the town's scale that
- *   is what reads as curls, where lobes blended into one soft solid read as a hood.
- * Whatever a lobe, the cap, the head or the torso hides is left out. Below the shoulders' pivots
- * the side ringlets lie behind her arms and the front locks inside them, so the arms swing free of
- * the hair and a reaching arm comes out from under it. The whole stays inside the walkers' 0.27,
- * and no lobe is under 0.08 across. Returns the pieces, and `covers`: whether a point lies under
- * the hair.
+ * A lock of hair: a smooth tube along a centripetal Catmull-Rom curve through `p`, its section an
+ * ellipse lying on the mass (half-width `a` across it, half-thickness `b` along `out`, the way it
+ * faces, all running smoothly through their lists, one a point), closed at each end by a half
+ * ellipsoid, so its tip is round. Rings about `step` apart along it, `radial` points round each,
+ * `tip` more rings in the round end; every normal is the surface's own (the section's, tilted as
+ * the lock narrows), so it shades round at any size and has no seams along it. `shape` is the same
+ * solid as a field: the nearest point of its axis, and the ellipse round it.
+ */
+function lock(p: V3[], a: number[], b: number[], out: V3[], radial = 10, step = 0.036, tip = 2) {
+  const curve = new T.CatmullRomCurve3(p.map((q) => new T.Vector3(...q)), false, 'centripetal'),
+    length = curve.getLength(),
+    n = Math.max(4, Math.ceil(length / step)),
+    m = a.length - 1,
+    // A list's value at curve parameter t: a Catmull-Rom through it (point k is at t = k / m), held at the ends.
+    spline = (r: number[], t: number) => {
+      const f = Math.min(m - 1e-9, Math.max(0, t * m)),
+        i = Math.floor(f),
+        s = f - i,
+        r0 = r[Math.max(0, i - 1)],
+        r1 = r[i],
+        r2 = r[i + 1],
+        r3 = r[Math.min(m, i + 2)];
+      return r1 + 0.5 * s * (r2 - r0 + s * (2 * r0 - 5 * r1 + 4 * r2 - r3 + s * (3 * (r1 - r2) + r3 - r0)));
+    },
+    c: T.Vector3[] = [],
+    t: T.Vector3[] = [],
+    N: T.Vector3[] = [],
+    S: T.Vector3[] = [],
+    A: number[] = [],
+    B: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const u = i / n,
+      q = curve.getPointAt(u),
+      tt = curve.getTangentAt(u),
+      k = curve.getUtoTmapping(u, u * length),
+      // The way it faces, square to the lock (or the last ring's, where the lock runs out along it).
+      o = new T.Vector3(...([0, 1, 2].map((j) => spline(out.map((v) => v[j]), k)) as V3));
+    o.addScaledVector(tt, -o.dot(tt));
+    if (o.lengthSq() < 0.04 && i) o.copy(N[i - 1]).addScaledVector(tt, -N[i - 1].dot(tt));
+    o.normalize();
+    c.push(q);
+    t.push(tt);
+    N.push(o);
+    S.push(new T.Vector3().crossVectors(o, tt));
+    A.push(spline(a, k));
+    B.push(Math.min(spline(b, k), spline(a, k)));
+  }
+  const slope = (r: number[], i: number) => {
+      const i0 = Math.max(0, i - 1),
+        i1 = Math.min(n, i + 1);
+      return T.MathUtils.clamp(((r[i1] - r[i0]) * n) / ((i1 - i0) * length), -0.8, 0.8);
+    },
+    pos: number[] = [],
+    nor: number[] = [],
+    idx: number[] = [],
+    rings: number[] = [],
+    d = new T.Vector3();
+  /**
+   * A ring of ellipsoid points round ring i's centre: at latitude `lat` towards `end` (+1 the tip,
+   * -1 the root; 0 is the tube's own section), the ellipsoid's third half-axis `along`.
+   */
+  const ring = (i: number, lat: number, end: number, along: number) => {
+    rings.push(pos.length / 3);
+    const ca = Math.cos(lat),
+      sa = Math.sin(lat),
+      sA = slope(A, i),
+      sB = slope(B, i);
+    for (let j = 0; j < radial; j++) {
+      const th = (j / radial) * Math.PI * 2,
+        x = Math.cos(th),
+        y = Math.sin(th);
+      // The point, and the ellipsoid's normal there (its gradient); on the tube, tilted by the section's narrowing.
+      d.copy(S[i]).multiplyScalar(A[i] * x * ca).addScaledVector(N[i], B[i] * y * ca).addScaledVector(t[i], along * sa * end).add(c[i]);
+      pos.push(d.x, d.y, d.z);
+      d.copy(S[i]).multiplyScalar((x * ca) / A[i]).addScaledVector(N[i], (y * ca) / B[i]);
+      const l = d.length();
+      d.multiplyScalar(1 / l).addScaledVector(t[i], lat ? ((sa * end) / along) / l : -(sA * x * x + sB * y * y)).normalize();
+      nor.push(d.x, d.y, d.z);
+    }
+  };
+  const pole = (i: number, end: number, along: number) => {
+    pos.push(c[i].x + t[i].x * along * end, c[i].y + t[i].y * along * end, c[i].z + t[i].z * along * end);
+    nor.push(t[i].x * end, t[i].y * end, t[i].z * end);
+    return pos.length / 3 - 1;
+  };
+  // The root's end, the tube, and the tip's end: each end half an ellipsoid as deep as the section is thick.
+  const pole0 = pole(0, -1, B[0]);
+  ring(0, Math.PI / 4, -1, B[0]);
+  for (let i = 0; i <= n; i++) ring(i, 0, 1, 1);
+  for (let k = 1; k <= tip; k++) ring(n, ((Math.PI / 2) * k) / (tip + 1), 1, B[n]);
+  const pole1 = pole(n, 1, B[n]);
+  for (let k = 0; k < rings.length; k++)
+    for (let j = 0; j < radial; j++) {
+      const v0 = rings[k] + j,
+        v1 = rings[k] + ((j + 1) % radial);
+      if (k === 0) idx.push(pole0, v1, v0);
+      if (k === rings.length - 1) idx.push(v0, v1, pole1);
+      else idx.push(v0, v1, v1 + radial, v0, v1 + radial, v0 + radial);
+    }
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  geometry.setIndex(idx);
+  // The field: from the nearest point of the axis (each segment's frame and half-axes blended
+  // along it), the ellipsoid bound of the section there (its third half-axis the thickness, so
+  // the ends come out round).
+  const lo = [1e3, 1e3, 1e3],
+    hi = [-1e3, -1e3, -1e3],
+    reach = Math.max(...A);
+  for (const q of c)
+    q.toArray().forEach((v, k) => {
+      lo[k] = Math.min(lo[k], v - reach);
+      hi[k] = Math.max(hi[k], v + reach);
+    });
+  const shape = {
+    d(x: number, y: number, z: number) {
+      let best = 1e3;
+      for (let i = 0; i < n; i++) {
+        const P = c[i],
+          Q = c[i + 1],
+          sx = Q.x - P.x,
+          sy = Q.y - P.y,
+          sz = Q.z - P.z,
+          f = T.MathUtils.clamp(((x - P.x) * sx + (y - P.y) * sy + (z - P.z) * sz) / (sx * sx + sy * sy + sz * sz), 0, 1),
+          px = x - P.x - sx * f,
+          py = y - P.y - sy * f,
+          pz = z - P.z - sz * f,
+          ra = A[i] + (A[i + 1] - A[i]) * f;
+        // Too far from this segment to be nearer than the best so far.
+        if (Math.sqrt(px * px + py * py + pz * pz) - ra > best) continue;
+        const rb = B[i] + (B[i + 1] - B[i]) * f,
+          g = (V: T.Vector3[]) => [V[i].x + (V[i + 1].x - V[i].x) * f, V[i].y + (V[i + 1].y - V[i].y) * f, V[i].z + (V[i + 1].z - V[i].z) * f],
+          [ux, uy, uz] = g(S),
+          [vx, vy, vz] = g(N),
+          [wx, wy, wz] = g(t),
+          u = (px * ux + py * uy + pz * uz) / ra,
+          v = (px * vx + py * vy + pz * vz) / rb,
+          w = (px * wx + py * wy + pz * wz) / rb,
+          k0 = Math.sqrt(u * u + v * v + w * w),
+          k1 = Math.sqrt((u / ra) ** 2 + (v / rb) ** 2 + (w / rb) ** 2);
+        best = Math.min(best, k1 < 1e-9 ? -rb : (k0 * (k0 - 1)) / k1);
+      }
+      return best;
+    },
+    min: lo as unknown as V3,
+    max: hi as unknown as V3,
+  };
+  return { geometry, shape };
+}
+/**
+ * The triangles of an indexed geometry that are not wholly `hidden`, un-indexed, with colours on
+ * their vertices from `colour` (sRGB, from each vertex's position and normal).
+ */
+function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean, colour: (p: T.Vector3, n: T.Vector3) => V3) {
+  const p = geometry.getAttribute('position'),
+    nrm = geometry.getAttribute('normal'),
+    index = geometry.index!,
+    gone = new Uint8Array(p.count),
+    rgb = new Float32Array(p.count * 3),
+    v = new T.Vector3(),
+    n = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    gone[i] = hidden(p.getX(i), p.getY(i), p.getZ(i)) ? 1 : 0;
+    const [r, g, b] = colour(v.fromBufferAttribute(p, i), n.fromBufferAttribute(nrm, i));
+    srgb.setRGB(r, g, b, T.SRGBColorSpace).toArray(rgb, i * 3);
+  }
+  const pos: number[] = [],
+    nor: number[] = [],
+    col: number[] = [];
+  for (let k = 0; k < index.count; k += 3) {
+    const tri = [index.getX(k), index.getX(k + 1), index.getX(k + 2)];
+    if (tri.every((i) => gone[i])) continue;
+    for (const i of tri) {
+      pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      nor.push(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+      col.push(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+    }
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+  return g;
+}
+/**
+ * A lock's line and section, from its spine `p` (inside the crown down to where its curl begins)
+ * and its half-width `r` at each spine point: resampled to `k` points, each moved across the fall
+ * by a gentle wave (`wave` across the mass, half as much out from it, a quarter turn behind, so the
+ * lock winds a little as a ringlet does), `turns` waves over its length from `phase`, faded in from
+ * the root so it stays in the crown; its width swells a little with the wave, and it is `flat` as
+ * thick as it is wide (never under 0.072 through). Then the curl: the line turns towards `curl`
+ * through `hook` radians on a bend of radius `bend`, rounding as it goes, so the tip ends in a
+ * round curl. Returns the line, the section's half-width and half-thickness along it, and the way
+ * it faces (away(), with the lock's `face`).
+ */
+function line(spec: Lock, k = 12): [V3[], number[], number[], V3[]] {
+  const { p, r, flat = 0.62, wave = 0.026, phase = 0, turns = 1.5, curl, hook = 1.4, bend = 0.032, face } = spec,
+    curve = new T.CatmullRomCurve3(p.map((q) => new T.Vector3(...q)), false, 'centripetal'),
+    length = curve.getLength(),
+    m = r.length - 1,
+    pts: V3[] = [],
+    wide: number[] = [],
+    thick: number[] = [],
+    outs: V3[] = [],
+    o = new T.Vector3(),
+    s = new T.Vector3();
+  for (let i = 0; i < k; i++) {
+    const u = i / (k - 1),
+      q = curve.getPointAt(u),
+      tt = curve.getTangentAt(u),
+      f = curve.getUtoTmapping(u, u * length) * m,
+      j = Math.min(m - 1, Math.floor(f)),
+      a = (phase + turns * u) * Math.PI * 2,
+      fade = T.MathUtils.smoothstep(u, 0, 0.35),
+      w = (r[j] + (r[j + 1] - r[j]) * (f - j)) * (1 + 0.07 * fade * Math.cos(a));
+    away(q, o, face);
+    outs.push([o.x, o.y, o.z]);
+    o.addScaledVector(tt, -o.dot(tt)).normalize();
+    s.crossVectors(o, tt);
+    q.addScaledVector(s, wave * fade * Math.sin(a)).addScaledVector(o, 0.5 * wave * fade * Math.cos(a));
+    pts.push([q.x, q.y, q.z]);
+    wide.push(w);
+    thick.push(Math.max(0.036, w * flat));
+  }
+  // The curl: an arc from the end, leaving along the line's last direction and turning towards `curl`.
+  const end = new T.Vector3(...pts[k - 1]),
+    dir = end.clone().sub(new T.Vector3(...pts[k - 2])).normalize(),
+    side = new T.Vector3(...curl).addScaledVector(dir, -new T.Vector3(...curl).dot(dir)).normalize(),
+    centre = end.clone().addScaledVector(side, bend),
+    w0 = wide[k - 1],
+    b0 = thick[k - 1];
+  for (let i = 1; i <= 4; i++) {
+    const a = (hook * i) / 4,
+      q = centre.clone().addScaledVector(side, -bend * Math.cos(a)).addScaledVector(dir, bend * Math.sin(a));
+    pts.push([q.x, q.y, q.z]);
+    wide.push(Math.max(b0, w0 + (b0 - w0) * (i / 4)));
+    thick.push(b0);
+    outs.push(outs[k - 1]);
+  }
+  return [pts, wide, thick, outs];
+}
+/** A lock's spec for line(): see there. `radial` is its points round, for lock(). */
+type Lock = { p: V3[]; r: number[]; curl: V3; flat?: number; wave?: number; phase?: number; turns?: number; hook?: number; bend?: number; face?: V3; radial?: number };
+/**
+ * The hair, blocked out from the portrait for a camera that looks down on her: a smooth crown and
+ * ten big locks, every normal an exact one, so nothing is faceted.
+ * - The crown, from town-sculpt's distance grid: close over the skull (under the tallest
+ *   resident's head), with the face carved out of it from a hairline well above the glasses, so
+ *   her forehead and face stay clear; and a curtain down her back, so no gap between the locks
+ *   shows her top.
+ * - The locks (LOCKS, lock()): each one smooth form, flat as hair lies, tapering from the crown to
+ *   a round curl at its tip and waving gently from side to side as it falls, neighbours out of
+ *   step. The first is the swoop: from her parting, on her right, over the top of her head to her
+ *   left temple, then down past her cheek onto her chest; on the parting's other side one falls
+ *   down her right temple and cheek. Those two frame her face and lie in over her collarbones, so
+ *   a reaching arm comes out beside them rather than through them. The rest fall from the crown
+ *   down the sides and back, past her shoulders and behind her arms, to mid-back. The locks meet
+ *   one another and the crown in crisp creases: at the town's scale that is what reads as curls,
+ *   where a blended mass reads as a hood and a cluster of small balls as bubbles.
+ * From in front the hair is widest at her cheeks, about 1.4 times her head, and narrows below.
+ * Whatever another part of the hair, the head or the torso hides is left out. Returns the pieces
+ * (the crown, then each lock) and `covers`: whether a point lies under the hair.
  */
 function hair() {
-  const s = sculpt([-0.29, 0.38, -0.28], [0.29, 0.96, 0.2], HAIR_GRID),
-    e = (c: V3, r: V3, rot?: V3) => ellipsoid(c, r, rot),
-    lobes: { c: V3; r: V3; rot: V3; shape: Shape }[] = [];
-  /** A ringlet: a lobe at each point, its radius from r, turned to lie along the lock. */
-  const ringlet = (p: V3[], r: number[]) =>
-    p.forEach((c, i) => {
-      const a = new T.Vector3(...p[Math.max(0, i - 1)]),
-        b = new T.Vector3(...p[Math.min(p.length - 1, i + 1)]),
-        turn = new T.Euler().setFromQuaternion(new T.Quaternion().setFromUnitVectors(UP, a.sub(b).normalize())),
-        rr: V3 = [r[i], r[i] * 1.22, r[i] * 0.94],
-        rot: V3 = [turn.x, turn.y, turn.z];
-      lobes.push({ c, r: rr, rot, shape: e(c, rr, rot) });
-    });
-  // The cap: the crown over the skull, the nape, and a thin curtain down her back.
-  s.add(e([0.004, 0.758, -0.012], [0.166, 0.156, 0.163]));
-  s.add(e([0, 0.69, -0.1], [0.15, 0.1, 0.09]), 0.04);
-  s.add(e([0, 0.59, -0.128], [0.15, 0.17, 0.055]), 0.04);
-  // The parting, on her right: the hair rises from it and sweeps over the crown to her left in
-  // broad soft waves, and falls the short way to her right.
-  s.add(e([0.052, 0.86, 0.012], [0.118, 0.06, 0.13], [0.05, 0, -0.28]), 0.02);
-  s.add(e([0.085, 0.848, -0.1], [0.1, 0.052, 0.07], [0, 0.35, -0.3]), 0.014);
-  s.add(e([-0.03, 0.846, -0.125], [0.085, 0.05, 0.062], [0.1, -0.2, 0.1]), 0.014);
-  s.add(e([-0.118, 0.832, -0.005], [0.058, 0.052, 0.118], [0, 0, 0.45]), 0.016);
-  // The face, carved out from the hairline down past the chin (tilted, so the hairline rises
-  // towards her parting); then, laid after the carving so they stay, the wave down over her left
-  // temple and the hair's root at the parting, which keeps the hairline one arch.
-  s.cut(e([-0.004, 0.735, 0.148], [0.117, 0.126, 0.128], [0, 0, 0.24]), 0.024);
-  s.add(e([0.078, 0.852, 0.104], [0.074, 0.033, 0.044], [0.15, 0.35, -0.48]), 0.02);
-  s.add(e([-0.072, 0.862, 0.09], [0.05, 0.028, 0.04], [0.2, -0.3, 0.3]), 0.02);
-  // A ringlet from each temple, close to the head, widening down past the jaw and on behind the
-  // arm, and a second, outer one on each side for the volume; her left (+x) is the fuller side.
-  for (const [side, k] of [[1, 1], [-1, 0.93]] as const) {
-    const x = (v: number) => side * (side > 0 ? v : v - 0.008);
-    ringlet([[x(0.162), 0.809, 0.014], [x(0.2), 0.727, 0], [x(0.2), 0.635, -0.03], [x(0.19), 0.545, -0.085], [x(0.18), 0.47, -0.12]], [0.058, 0.065, 0.066, 0.06, 0.048].map((r) => r * k));
-    ringlet([[x(0.146), 0.797, -0.098], [x(0.187), 0.698, -0.105], [x(0.19), 0.602, -0.125]], [0.059, 0.064, 0.06].map((r) => r * k));
-  }
-  // Three down her back to a ragged hem, the outer two half a curl out of step with the middle one.
-  ringlet([[0.006, 0.81, -0.15], [-0.01, 0.715, -0.178], [0.012, 0.62, -0.185], [-0.01, 0.525, -0.18], [0.008, 0.445, -0.165]], [0.058, 0.064, 0.066, 0.062, 0.05]);
-  for (const side of [-1, 1])
-    ringlet([[side * 0.1, 0.782, -0.128], [side * 0.118, 0.675, -0.155], [side * 0.104, 0.577, -0.165], [side * 0.114, 0.482 + side * 0.008, -0.16]], [0.06, 0.066, 0.064, 0.052]);
-  // The locks in front, as in the portrait: on her left a long one over the collarbone onto her
-  // chest, on her right a shorter one. Both lie inside the shoulders, clear of the arms.
-  ringlet([[0.15, 0.686, 0.044], [0.124, 0.602, 0.094], [0.12, 0.516, 0.114]], [0.056, 0.057, 0.048]);
-  ringlet([[-0.146, 0.688, 0.038], [-0.122, 0.61, 0.086]], [0.052, 0.049]);
-  /** The hair's distance field: the cap (unless `cap` is false) and every lobe but `skip`. */
+  const s = sculpt([-0.24, 0.42, -0.26], [0.24, 0.97, 0.21], HAIR_GRID),
+    e = (c: V3, r: V3, rot?: V3) => ellipsoid(c, r, rot);
+  // The crown, close over the skull, and a thin curtain down her back, behind the locks.
+  s.add(e([0.002, 0.758, -0.01], [0.168, 0.162, 0.165]));
+  s.add(e([0, 0.6, -0.12], [0.12, 0.16, 0.05]), 0.05);
+  // The face, carved out from a hairline well above the glasses down past the chin, tilted so the
+  // hairline rises towards her parting.
+  s.cut(e([0, 0.735, 0.15], [0.118, 0.14, 0.13], [0, 0, 0.15]), 0.015);
+  const locks = LOCKS.map((spec) => lock(...line(spec), spec.radial ?? 10, 0.04));
+  /** The hair's distance field: the crown (unless `cap` is false) and every lock but `skip`. */
   const field = (x: number, y: number, z: number, skip = -1, cap = true) => {
     let d = cap ? s.exact(x, y, z) : 1e3;
-    for (let i = 0; i < lobes.length; i++) if (i !== skip) d = Math.min(d, lobes[i].shape.d(x, y, z));
+    for (let i = 0; i < locks.length; i++) {
+      if (i === skip) continue;
+      const shape = locks[i].shape,
+        { min, max } = shape,
+        ox = Math.max(min[0] - x, 0, x - max[0]),
+        oy = Math.max(min[1] - y, 0, y - max[1]),
+        oz = Math.max(min[2] - z, 0, z - max[2]);
+      if (ox * ox + oy * oy + oz * oz < d * d) d = Math.min(d, shape.d(x, y, z));
+    }
     return d;
   };
-  const base = sRGB(ALISON_LOOK.hair),
-    copper = (g: T.BufferGeometry) =>
-      tint(g, (p, n) => {
-        // How far the field opens out along the normal (a distance-field occlusion): the creases
-        // between curls and the hair's own underside come out deeper, so the curls read.
-        let shut = 0;
-        for (const [d, w] of [[0.012, 0.5], [0.028, 0.35], [0.05, 0.2]])
-          shut += (w * Math.max(0, d - field(p.x + n.x * d, p.y + n.y * d, p.z + n.z * d))) / d;
-        // One copper, in shades (a scale of it keeps its saturation): deeper towards the hem and in
-        // the creases, and a little deeper on what faces the sky, where the key light would
-        // otherwise bleach the crown to a pale salmon beside curls in copper.
-        const k = T.MathUtils.lerp(0.84, 1, T.MathUtils.smoothstep(p.y, 0.44, 0.84)) * (1 - 0.36 * Math.min(1, shut)) * (1 - 0.14 * T.MathUtils.smoothstep(n.y, 0.3, 0.95));
-        return [base[0] * k, base[1] * k, base[2] * k];
-      });
+  const [hue, sat, value] = toHsv(ALISON_LOOK.hair),
+    copper = (p: T.Vector3, n: T.Vector3): V3 => {
+      // How far the field opens out along the normal (a distance-field occlusion): the creases
+      // between locks and the hair's own underside come out deeper, so the locks read.
+      let shut = 0;
+      for (const [d, w] of [[0.012, 0.5], [0.028, 0.35], [0.05, 0.2]])
+        shut += (w * Math.max(0, d - field(p.x + n.x * d, p.y + n.y * d, p.z + n.z * d))) / d;
+      // One ginger, in shades of one saturation (ALISON_LOOK.hair's): deeper towards the hem and in
+      // the creases. Its hue turns with the light each face gets, against what the town's light
+      // does to it, so the hair reads ginger in sun and copper in shade, never salmon or brown: in
+      // sun (what faces the sky) the key light, the grade and the tone curve pull an orange towards
+      // salmon, so it is more golden there, and a touch deeper; in shade the sky's blue and the
+      // ground's olive bounce pull it towards brown, so it warms towards copper on what faces down
+      // and as it deepens in the creases.
+      const up = T.MathUtils.smoothstep(n.y, 0.2, 0.9),
+        down = T.MathUtils.smoothstep(-n.y, 0.1, 0.8),
+        k = T.MathUtils.lerp(0.84, 1, T.MathUtils.smoothstep(p.y, 0.44, 0.84)) * (1 - 0.42 * Math.min(1, shut));
+      return hsv(T.MathUtils.clamp(hue + HAIR_TURN[0] * up - HAIR_TURN[1] * down - HAIR_TURN[2] * (1 - k), HAIR_HUES[0], HAIR_HUES[1]), sat, value * k * (1 - 0.12 * up));
+    };
   // Every triangle that shows: not wholly inside another part of the hair, the head or the torso.
   return {
     pieces: [
-      copper(shown(s.mesh(), (x, y, z) => insideBody(x, y, z) || field(x, y, z, -1, false) < -0.004)),
-      ...lobes.map((l, i) => copper(shown(lobe(l.r, l.c, l.rot), (x, y, z) => insideBody(x, y, z) || field(x, y, z, i) < -0.004))),
+      kept(s.mesh(), (x, y, z) => insideBody(x, y, z) || field(x, y, z, -1, false) < -0.004, copper),
+      ...locks.map((l, i) => kept(l.geometry, (x, y, z) => insideBody(x, y, z) || field(x, y, z, i) < -0.004, copper)),
     ],
     covers: (x: number, y: number, z: number) => field(x, y, z) < -0.004,
   };
 }
+/**
+ * Her locks (line() has the fields): each spine runs from inside the crown down to where its curl
+ * begins. Her left is +x.
+ */
+const LOCKS: Lock[] = [
+  // The swoop: from her parting (on her right) over the top of her head to her left temple, then
+  // down past her cheek and in over the collarbone onto her chest; on the parting's other side, a
+  // lock falls down her right temple and cheek and in onto her right collarbone. Below the jaw
+  // both turn their flat side forward.
+  { p: [[-0.045, 0.88, 0.03], [0.01, 0.893, 0.035], [0.078, 0.872, 0.05], [0.13, 0.815, 0.072], [0.148, 0.735, 0.07], [0.128, 0.66, 0.088], [0.1, 0.6, 0.106], [0.085, 0.55, 0.118]], r: [0.04, 0.048, 0.054, 0.058, 0.055, 0.05, 0.046, 0.042], curl: [1, 0.3, 0.2], phase: 0.1, wave: 0.022, turns: 1.25, face: [0.25, 0, 1] },
+  { p: [[-0.09, 0.86, 0.01], [-0.135, 0.815, 0.045], [-0.15, 0.748, 0.066], [-0.135, 0.675, 0.082], [-0.108, 0.615, 0.1], [-0.092, 0.57, 0.112]], r: [0.04, 0.05, 0.055, 0.052, 0.047, 0.043], curl: [-1, 0.3, 0.2], phase: 0.6, wave: 0.022, turns: 1.25, face: [-0.25, 0, 1] },
+  // Over each ear, behind the face's lock and further out, falling onto the back of the shoulder.
+  { p: [[0.112, 0.835, 0.005], [0.152, 0.785, 0.02], [0.16, 0.72, 0.012], [0.153, 0.648, -0.035], [0.142, 0.594, -0.082]], r: [0.045, 0.056, 0.06, 0.056, 0.052], curl: [0.2, 0.3, -1], phase: 0.35, wave: 0.02 },
+  { p: [[-0.112, 0.835, 0.003], [-0.151, 0.785, 0.018], [-0.158, 0.722, 0.01], [-0.152, 0.652, -0.037], [-0.14, 0.602, -0.082]], r: [0.044, 0.054, 0.058, 0.054, 0.05], curl: [-0.2, 0.3, -1], phase: 0.85, wave: 0.02 },
+  // Down each side, from above the ear on behind the shoulder.
+  { p: [[0.105, 0.83, -0.04], [0.154, 0.785, -0.058], [0.158, 0.71, -0.08], [0.146, 0.63, -0.115], [0.127, 0.55, -0.15], [0.115, 0.49, -0.168]], r: [0.045, 0.056, 0.06, 0.058, 0.054, 0.05], curl: [-0.6, 0.3, -1], phase: 0.7 },
+  { p: [[-0.105, 0.83, -0.04], [-0.154, 0.785, -0.058], [-0.158, 0.712, -0.08], [-0.146, 0.634, -0.115], [-0.127, 0.556, -0.15], [-0.116, 0.498, -0.168]], r: [0.044, 0.055, 0.059, 0.057, 0.053, 0.049], curl: [0.6, 0.3, -1], phase: 0.2 },
+  // Down her back: four, out of step with one another, to a ragged hem at mid-back, curling to the side.
+  { p: [[0.065, 0.83, -0.085], [0.102, 0.79, -0.135], [0.108, 0.715, -0.156], [0.1, 0.635, -0.163], [0.09, 0.555, -0.174], [0.085, 0.495, -0.178]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [1, 0.4, 0.3], phase: 0.45, radial: 9 },
+  { p: [[0.022, 0.83, -0.09], [0.034, 0.79, -0.148], [0.036, 0.715, -0.168], [0.034, 0.635, -0.172], [0.03, 0.555, -0.178], [0.028, 0.48, -0.182]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [-1, 0.4, 0.3], phase: 0.95, radial: 9 },
+  { p: [[-0.022, 0.83, -0.09], [-0.034, 0.79, -0.148], [-0.036, 0.715, -0.168], [-0.034, 0.635, -0.172], [-0.03, 0.555, -0.178], [-0.028, 0.488, -0.182]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [1, 0.4, 0.3], phase: 0.25, radial: 9 },
+  { p: [[-0.065, 0.83, -0.085], [-0.102, 0.79, -0.135], [-0.108, 0.715, -0.156], [-0.1, 0.635, -0.163], [-0.09, 0.555, -0.174], [-0.085, 0.5, -0.178]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [-1, 0.4, 0.3], phase: 0.7, radial: 9 },
+];
 
 /** The glasses' band: its middle's height, half-height, how far it stands proud of the face and sinks into it, and its half-length round the face. */
 const GLASSES = { y: 0.776, half: 0.036, out: 0.006, sink: 0.064, reach: 0.135 };
