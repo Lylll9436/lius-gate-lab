@@ -2219,8 +2219,11 @@ export async function createCity(
     // The frame for what settles in real time while town time stands still (Alison, town-sky's
     // alison()): held on Pause only, so under reduced motion Play brings her back with the people
     // and the tram (the plane alone stays parked); reduced motion makes her settle nearly a cut.
+    // Whatever moved in real time while held (her settle, her water running on) has its shadow
+    // drawn again at once, as the plane's is: a paused frame redraws the shadows only every 30th.
     const frameState = animationFrame(paused, reduced, dt);
     for (const entry of animated) entry.update(time, night, rain, frameState);
+    if (frameState.moved) shadowDirty = true;
     if (now - clockChecked > 15000) {
       clockChecked = now;
       setClocks();

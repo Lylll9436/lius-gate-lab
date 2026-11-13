@@ -119,15 +119,19 @@ export const MASK_EXTENT = 44 + 48 * (88 / 256),
  * town is held (Pause: a visitor who prefers reduced motion gets a town paused from the start, and
  * Play brings the people back, Alison among them, as it does the walkers and the tram); `cut`,
  * reduced motion (a settle nearly a cut); `dt`, the frame's own seconds (they pass while town time
- * stands still).
+ * stands still); `moved`, raised by a part that moved in real time this frame while the town is held
+ * (Alison settling, or the water from her can running on), so that the loop draws the shadows again
+ * that frame (held, it otherwise draws them only every 30th frame, and her shadow kept the pose she
+ * had and then snapped to the new one).
  */
-export type AnimationFrame = { held: boolean; cut: boolean; dt: number };
+export type AnimationFrame = { held: boolean; cut: boolean; dt: number; moved: boolean };
 /**
  * The frame city-scene's loop passes to every moving part, from its own state (pure: the loop builds
- * one a frame from `paused`, `reduced` and its `dt`, and check-town holds the loop to it).
+ * one a frame from `paused`, `reduced` and its `dt`, its `moved` down, and check-town holds the loop
+ * to it).
  */
 export function animationFrame(paused: boolean, reduced: boolean, dt: number): AnimationFrame {
-  return { held: paused, cut: reduced, dt };
+  return { held: paused, cut: reduced, dt, moved: false };
 }
 /**
  * A moving part's update: at town `time`, the night's level, `rain` (0..1, for those that answer the

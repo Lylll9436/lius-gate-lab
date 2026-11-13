@@ -1264,11 +1264,17 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
       } else if (frame.held || settled > 0) lag += step;
       const clock = time - lag,
         live = plan.alisonDay(clock),
-        settle = frame?.cut ? H.reduced : live.pose === 'take' ? H.take : H.settle;
-      settled = frame?.held ? Math.min(1, settled + dt / settle) : Math.max(0, settled - dt / settle);
+        settle = frame.cut ? H.reduced : live.pose === 'take' ? H.take : H.settle,
+        was = settled;
+      settled = frame.held ? Math.min(1, settled + dt / settle) : Math.max(0, settled - dt / settle);
       if (!settled && !water) return pose(live);
-      const day = plan.alisonBlend(live, plan.alisonStill(clock), T.MathUtils.smoothstep(settled, 0, 1));
-      water = plan.alisonStream(water ?? { front: live.front, tail: live.tail }, day.pour, (dt * H.settle) / settle);
+      const day = plan.alisonBlend(live, plan.alisonStill(clock), T.MathUtils.smoothstep(settled, 0, 1)),
+        from = water ?? { front: live.front, tail: live.tail };
+      water = plan.alisonStream(from, day.pour, (dt * H.settle) / settle);
+      // Held, and moving in real time (settling, or her water going on down into the bed while some
+      // of it shows): the loop draws her shadow again this frame (the frame's `moved`).
+      const flowing = (water.front !== from.front || water.tail !== from.tail) && !(hidden(water) && hidden(from));
+      if (frame.held && (settled !== was || flowing)) frame.moved = true;
       Object.assign(day, water);
       // Let go, and her day's water where this is: hers again.
       if (!settled && ((hidden(water) && hidden(live)) || (Math.abs(water.front - live.front) < 1e-6 && Math.abs(water.tail - live.tail) < 1e-6))) water = null;

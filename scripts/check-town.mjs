@@ -8729,6 +8729,11 @@ let skyReport = '';
       //   her side), or watering held (so, but her can held out level over the bed and her free hand
       //   where it is as she waters), or stooped to the telescope (so, her eye at its eyepiece, her
       //   hand on its tube). Neither a stride nor a sidestep, a crouch nor a reach rests in any;
+      // - her shadow (the final review's missed finding: held, the loop draws the shadows only every
+      //   30th frame, so through her settle her shadow kept her old pose and then snapped): held,
+      //   every frame in which anything of hers moves raises the frame's `moved`, which the loop
+      //   turns into a shadow pass that frame, and none does once she and her water have been still
+      //   for a second; let go (the town playing, its shadows every other frame), none does;
       // - held from time 0 (reduced motion at load, which pauses the town), she is the frozen frame,
       //   and never moves;
       // - under reduced motion with Play (lane F2: she follows the people, not the parked plane) she
@@ -8738,7 +8743,8 @@ let skyReport = '';
       //   frame is held on Pause only and cut under reduced motion, a new one each frame; and
       //   city-scene's step(), found through its syntax tree (a formatter may wrap the call), builds
       //   it as animationFrame(paused, reduced, dt) and passes it as the fourth argument of the one
-      //   update call in its loop over the animated parts.
+      //   update call in its loop over the animated parts, and right after that loop draws the
+      //   shadows again if the frame's `moved` is up.
       {
         const { animationFrame } = await load('town-shared'),
           frame = 1 / 60,
@@ -8878,16 +8884,20 @@ let skyReport = '';
             let prev = sample(),
               far = 0,
               tuck = waterTuck();
-            // (`rested`: the last frame in which anything of hers moved.)
+            // (`rested`: the last frame in which anything of hers moved; `unsaid`, frames in which she
+            // moved without raising the frame's `moved`, so the paused loop kept her old shadow;
+            // `late`, frames in the last 60 held ones that raised it, still drawing shadows a second
+            // after she and her water are still.)
             const start = prev.root.clone(),
-              out = { settle: { root: 0, parts: 0 }, release: { root: 0, parts: 0 }, rested: 0, pose: '' },
+              out = { settle: { root: 0, parts: 0 }, release: { root: 0, parts: 0 }, rested: 0, pose: '', unsaid: 0, late: 0, said: 0 },
               flip = (t, was) => {
                 const is = waterTuck();
                 assert((was === 'hidden') === (is === 'hidden') || (was === 'hidden' ? is === 'rose' : was === 'rose' || was === 'bed'), `Held or let go at ${t.toFixed(2)} s, her water ${is === 'hidden' ? 'goes from ' + was : 'comes ' + is}.`);
                 return is;
               };
             for (let k = 1; k <= frames; k++) {
-              entry[0].update(t0, 0, 0, animationFrame(true, cut, frame));
+              const fr = animationFrame(true, cut, frame);
+              entry[0].update(t0, 0, 0, fr);
               const now = sample(),
                 m = moved(now, prev);
               tuck = flip(t0, tuck);
@@ -8895,13 +8905,21 @@ let skyReport = '';
               out.settle.root = Math.max(out.settle.root, m.root);
               out.settle.parts = Math.max(out.settle.parts, m.parts);
               far = Math.max(far, now.root.distanceTo(start));
-              if (m.root > 1e-12 || m.parts > 1e-12) out.rested = k;
+              if (m.root > 1e-12 || m.parts > 1e-12) {
+                out.rested = k;
+                if (!fr.moved) out.unsaid++;
+              }
+              if (fr.moved) out.said++;
+              if (fr.moved && k > frames - 60) out.late++;
               prev = now;
             }
             out.pose = still();
             // Let go: town time goes on from where it stood.
             for (let k = 1; k <= release; k++) {
-              entry[0].update(t0 + k * frame, 0, 0, animationFrame(false, cut, frame));
+              const fr = animationFrame(false, cut, frame);
+              entry[0].update(t0 + k * frame, 0, 0, fr);
+              // (Playing, the loop draws the shadows every other frame anyway.)
+              assert(!fr.moved, `Let go at ${t0.toFixed(2)} s, she asks for her shadow to be drawn again while the town plays.`);
               const now = sample(),
                 m = moved(now, prev);
               tuck = flip(t0 + k * frame, tuck);
@@ -8912,11 +8930,14 @@ let skyReport = '';
             }
             return { ...out, far };
           },
-          worst = { settle: { root: 0, parts: 0 }, release: { root: 0, parts: 0 }, rested: 0 },
+          worst = { settle: { root: 0, parts: 0 }, release: { root: 0, parts: 0 }, rested: 0, said: 0 },
           kinds = new Map();
         for (let n = 0, t0 = 0.37; t0 < D.period; t0 += 0.61, n++) {
           const h = hold(t0, false);
           assert(h.rested <= 60, `Held at ${t0.toFixed(2)} s, she is still moving a second later.`);
+          // (Her shadow: every frame she moves in, held, says so, and none a second after she is still.)
+          assert(h.unsaid === 0 && h.late === 0, `Held at ${t0.toFixed(2)} s, she moves in ${h.unsaid} frames without the loop drawing her shadow again, or asks for it ${h.late} times once still.`);
+          worst.said = Math.max(worst.said, h.said);
           assert(['seated', 'standing', 'watering held', 'at the telescope'].includes(h.pose), `Held at ${t0.toFixed(2)} s (${plan.alisonDay(t0).pose}), she rests ${h.pose}.`);
           assert(h.settle.root <= 0.015 && h.settle.parts <= 0.025 && h.release.root <= 0.015 && h.release.parts <= 0.025, `Held at ${t0.toFixed(2)} s, she settles by ${fmt3(h.settle.root)} and ${fmt3(h.settle.parts)} a frame, or comes back by ${fmt3(h.release.root)} and ${fmt3(h.release.parts)}.`);
           for (const k of ['settle', 'release']) for (const j of ['root', 'parts']) worst[k][j] = Math.max(worst[k][j], h[k][j]);
@@ -8925,7 +8946,7 @@ let skyReport = '';
           // Under reduced motion (at every other moment): nearly a cut, in place.
           if (n % 2) continue;
           const r = hold(t0, true, 45, 0);
-          assert(r.rested <= 15 && r.pose === h.pose && r.far <= 0.25 + 1e-9, `Under reduced motion, held at ${t0.toFixed(2)} s, she rests after ${r.rested} frames, ${r.pose}, ${fmt3(r.far)} from where she was.`);
+          assert(r.rested <= 15 && r.pose === h.pose && r.far <= 0.25 + 1e-9 && r.unsaid === 0, `Under reduced motion, held at ${t0.toFixed(2)} s, she rests after ${r.rested} frames, ${r.pose}, ${fmt3(r.far)} from where she was, or moves in ${r.unsaid} frames without her shadow drawn again.`);
         }
         assert(['seated', 'standing', 'watering held', 'at the telescope'].every((k) => kinds.has(k)), `Held through her day, she rests only ${[...kinds.keys()].join(', ')}.`);
         // Held from the first frame at time 0 (reduced motion at load: the page starts the town paused):
@@ -8994,9 +9015,14 @@ let skyReport = '';
           assert(loops.length === 1 && calls.length === 1, `step() has ${loops.length} loops over its animated parts and ${calls.length} update calls in them, not one.`);
           const [args] = calls;
           assert(args.length === 4 && args.slice(0, 3).join(',') === 'time,night,rain' && made.get(args[3]) === 'paused,reduced,dt', `step()'s loop calls each animated part's update with (${args.join(', ')}), not (time, night, rain, animationFrame(paused, reduced, dt)).`);
+          // Right after it, a frame that moved in real time while held has the shadows drawn again
+          // (the final review's missed finding: held, the loop draws them every 30th frame, and her
+          // shadow kept her old pose through the settle, then snapped).
+          const after = loops[0].parent.statements?.[loops[0].parent.statements.indexOf(loops[0]) + 1];
+          assert(after && ts.isIfStatement(after) && text(after.expression) === `${args[3]}.moved` && text(after.thenStatement).replace(/[{}]/g, '') === 'shadowDirty=true;' && !after.elseStatement, `step() does not draw the shadows again right after its animated parts when one of them moved in real time while held (${after ? after.getText(scene) : 'nothing after the loop'}).`);
         }
         at(0);
-        skyReport += `; held at ${[...kinds.values()].reduce((n, c) => n + c, 0)} moments of her day (${[...kinds].map(([k, n]) => `${k} ${n}`).join(', ')}) she settles within ${(worst.rested / 60).toFixed(2)} s and then never moves, by ${fmt3(worst.settle.root)} and ${fmt3(worst.settle.parts)} a frame at most, and comes back by ${fmt3(worst.release.root)} and ${fmt3(worst.release.parts)}; under reduced motion with Play she goes about her day; the loop gives her animationFrame(paused, reduced, dt)`;
+        skyReport += `; held at ${[...kinds.values()].reduce((n, c) => n + c, 0)} moments of her day (${[...kinds].map(([k, n]) => `${k} ${n}`).join(', ')}) she settles within ${(worst.rested / 60).toFixed(2)} s and then never moves, by ${fmt3(worst.settle.root)} and ${fmt3(worst.settle.parts)} a frame at most, and comes back by ${fmt3(worst.release.root)} and ${fmt3(worst.release.parts)}, her shadow drawn again in every frame she moves while held (at most ${worst.said} frames a hold); under reduced motion with Play she goes about her day; the loop gives her animationFrame(paused, reduced, dt)`;
       }
 
       // The garden lamps never stand in front of her or behind her on screen (the art review's third
