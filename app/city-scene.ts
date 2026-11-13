@@ -1402,6 +1402,49 @@ export async function createCity(
     fitGroup(SKY_FIT, 0.95, 2.6, panelEdge, 1);
     const back = viewOffset(targetYaw, new T.Vector3(), 1).normalize();
     target.addScaledVector(back, SKY_LIFT / back.y);
+    // A turn still to come (Rotate, or the file opened from another bearing) turns the view about the
+    // island (turnSky): the framing just set, the one for the bearing the turn ends at, is turned back
+    // about the island by what is left of the turn, so the turn itself carries it there. (The panel
+    // offset in the target is already the present bearing's.)
+    const left = yaw - targetYaw;
+    if (Math.abs(left) > 1e-9 && skyFile()) {
+      const subject = target.clone().sub(shiftApplied),
+        pivot = skyPivot(subject, targetYaw);
+      target.copy(subject.sub(pivot).applyAxisAngle(new T.Vector3(0, 1, 0), left).add(pivot)).add(shiftApplied);
+    }
+  }
+  /** Whether the view is the sky island's own file: the island framed alone, or panned and zoomed about since (as aim() has it). */
+  function skyFile() {
+    return focusedIds.length === 1 && focusedIds[0] === 'sky-island' && !overviewFit && !inspect && !parkSelected;
+  }
+  /**
+   * What the sky island's own file turns about: the point at the height of the island's own middle
+   * (SKY_FIT's) on the line of sight through `subject` (a framing's target less its panel offset), seen
+   * from `bearing` at the pitch the view heads for. In the file as it frames the island that is the
+   * island's middle itself, so a turn turns the island where it stands in the frame; panned or zoomed
+   * about since, it is the point of the island's height where the visitor looks.
+   */
+  function skyPivot(subject: T.Vector3, bearing: number, out = new T.Vector3()) {
+    const back = viewOffset(bearing, out, aim()).normalize();
+    return back.multiplyScalar(((SKY_FIT.max.y + SKY_FIT.min.y) / 2 - subject.y) / back.y).add(subject);
+  }
+  /**
+   * A turning frame in the sky island's own file (the frame loop's turn, `turn` radians of it): the
+   * view turns about the island (skyPivot), not about its target, which stands on the line of sight
+   * 7.4 beyond the island (SKY_LIFT): each quarter turn about that point swung the island into a corner
+   * of the frame, its roof under the masthead or its side against the file. The glide's target, the
+   * view centre and the panel offset (which turns with the camera, as it does everywhere) turn about
+   * it together, so the island holds its place beside the file all through the turn, the glide easing
+   * in only what the new bearing's framing changes (focusSky). Anywhere else it does nothing and
+   * returns false.
+   */
+  function turnSky(turn: number) {
+    if (!skyFile()) return false;
+    const pivot = skyPivot(target.clone().sub(shiftApplied), yaw - turn),
+      up = new T.Vector3(0, 1, 0);
+    for (const point of [target, controls.target]) point.sub(pivot).applyAxisAngle(up, turn).add(pivot);
+    shiftApplied.applyAxisAngle(up, turn);
+    return true;
   }
   /** A place's root in the town: a building's model, or the sky island's own. */
   const rootOf = (id: BuildingId) => (id === 'sky-island' ? island.root : models.get(id)?.root);
@@ -1754,18 +1797,22 @@ export async function createCity(
       // The bearing eases in more slowly than the glide and never whips round; a reduced-motion
       // turn is a cut. The bearings asked for already take the shortest way round; quick Rotate
       // presses queue their quarter turns, which keep turning the way the button turns.
-      const left = targetYaw - yaw;
+      const left = targetYaw - yaw,
+        from = yaw;
       if (reduced || Math.abs(left) < 0.0005) yaw = targetYaw = yaw + left;
       else
         yaw +=
           Math.sign(left) *
           Math.min(Math.abs(left) * (1 - Math.exp(-dt * YAW_RATE)), YAW_SPEED * dt);
       // The panel offset turns with the camera, so the subject keeps its place beside the
-      // panel all through the turn instead of swinging behind it.
-      const shift = panelOffset(new T.Vector3());
-      controls.target.add(shift).sub(shiftApplied);
-      target.add(shift).sub(shiftApplied);
-      shiftApplied.copy(shift);
+      // panel all through the turn instead of swinging behind it. (The sky island's own file
+      // turns about the island itself: turnSky.)
+      if (!turnSky(yaw - from)) {
+        const shift = panelOffset(new T.Vector3());
+        controls.target.add(shift).sub(shiftApplied);
+        target.add(shift).sub(shiftApplied);
+        shiftApplied.copy(shift);
+      }
       align();
     }
     // The pitch eases toward the one the view heads for at the camera's own zoom, as the bearing does
@@ -2115,6 +2162,9 @@ export async function createCity(
       if (targetYaw - yaw <= (Math.PI * 3) / 2 + 1e-6) targetYaw += Math.PI / 2;
       inspectionAutoFit = true;
       if (overviewFit) fitOverview();
+      // The sky island's own file frames it again for the new bearing, and turns there about the
+      // island (focusSky, turnSky); panned or zoomed about, it keeps the visitor's view and turns.
+      else if (autoFocus && skyFile()) focusSky();
       lastInteraction = performance.now();
     },
     zoom(f) {
@@ -2178,6 +2228,7 @@ export async function createCity(
       targetYaw = yaw + shortestAngle(yaw, angle);
       inspectionAutoFit = true;
       if (overviewFit) fitOverview();
+      else if (autoFocus && skyFile()) focusSky();
     },
     setFrameShift(fraction, down = 0, edge = 1) {
       frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
