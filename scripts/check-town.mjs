@@ -5602,14 +5602,15 @@ let skyReport = '';
     const [, terraceZ] = plan.skyVillaPoint(0, V.terrace.front);
     // Each a unit or more in from the rim, on the lawn south of the villa (south of its terrace's
     // front, 0.3 clear of the terrace and its steps), and never where she would hide the facade:
-    // from the file's bearing and the opening one, the line of sight past the top of her (1.2 up,
-    // hair and all) comes down to the terrace's level before it reaches the house.
+    // from the file's bearing (at its own lower pitch, city-scene's SKY_PITCH) and the opening one,
+    // the line of sight past the top of her (1.2 up, hair and all) comes down to the terrace's level
+    // before it reaches the house.
     for (const [name, p] of Object.entries(stations)) {
       const [fx, fz] = [Math.abs(p.x - site.x), p.z - site.z];
       assert(plan.onSky(p.x, p.z, -1), `${name} is ${(-plan.skyDistance(p.x, p.z)).toFixed(2)} from the rim.`);
       assert(p.z > terraceZ && !(fx < V.terrace.hw + 0.3 && fz < V.terrace.front + 0.3) && !(fx < V.steps.hw + 0.3 && fz < V.steps.front + 0.3), `${name} is not on the lawn south of the villa.`);
       for (const bearing of [file, Math.PI / 4]) {
-        const { back } = axes(bearing),
+        const { back } = axes(bearing, bearing === file ? SKY_PITCH : TOWN_PITCH),
           drop = (1.2 - V.terrace.top) / (back.y / Math.hypot(back.x, back.z)),
           behind = [p.x - (back.x / Math.hypot(back.x, back.z)) * drop, p.z - (back.z / Math.hypot(back.x, back.z)) * drop],
           [fx, fz] = [behind[0] - site.x, behind[1] - site.z];
@@ -5814,9 +5815,10 @@ let skyReport = '';
       seenAll = 0,
       nearestLand = Infinity,
       hitLand = Infinity;
+    // (The file's bearing at the file's own lower pitch, as a visitor points at it there.)
     for (const bearing of [...stops, file])
       for (const drift of bearing === file ? [0] : drifts) {
-        const { back, right, up, flat } = axes(bearing + drift);
+        const { back, right, up, flat } = axes(bearing + drift, bearing === file ? SKY_PITCH : TOWN_PITCH);
         dir.copy(back).negate();
         // (a) Wherever its own surface is the first thing on a view ray, the pointer is on the island.
         if (!drift) {
