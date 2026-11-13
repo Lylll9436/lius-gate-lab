@@ -15,7 +15,7 @@ const before = await fs.readFile(file, 'utf8'),
   catalog = migrateCatalog(JSON.parse(before));
 assertCatalog(catalog);
 async function checkAssets(data) {
-  for (const item of [...data.people, ...data.events]) {
+  for (const item of [...data.people, ...data.events, ...data.neighbours]) {
     const asset = item.photo ?? item.image;
     if (asset) await fs.access(path.join(root, 'public', asset.slice(1)));
   }
@@ -30,7 +30,10 @@ try {
         catalog.research.length +
         ' research records, ' +
         catalog.events.length +
-        ' events.',
+        ' events, ' +
+        catalog.neighbours.length +
+        (catalog.neighbours.length === 1 ? ' neighbour' : ' neighbours') +
+        ' (not members).',
     );
   } else if (command === 'list') {
     if (collection && !collections.includes(collection))
@@ -43,7 +46,7 @@ try {
       throw new Error(
         'Usage: content.mjs ' +
           command +
-          ' people|research|events|outputs|notes record.json|id',
+          ' people|research|events|outputs|notes|neighbours record.json|id',
       );
     const next =
       command === 'upsert'

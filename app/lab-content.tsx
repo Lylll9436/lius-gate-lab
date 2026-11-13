@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowUpRight, ChevronDown, Cloud, PlaneTakeoff } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, Cloud, Map, PlaneTakeoff } from 'lucide-react';
 import { publicAsset } from './public-asset';
 import { buildings, type BuildingId, type Locale } from './city-data';
 import { personPhotos } from './people-photos';
@@ -9,6 +9,7 @@ import {
   destinations,
   parseLocation,
   departedOn,
+  chapterFor,
   ADDRESS_EVENT,
   type ContentId,
 } from './lab-navigation';
@@ -30,11 +31,15 @@ import {
   recentNews,
   supervisorEmail,
   joinUsMailto,
+  neighbourFor,
+  neighbourRecords,
   type NewsItem,
 } from './lab-records';
 import type {
   Departure,
   LabRecord,
+  NeighbourRecord,
+  OutboundLink,
   PersonRecord,
   ResearchRecord,
   EventRecord,
@@ -460,7 +465,10 @@ function ProfileBody({
   );
 }
 
-/** Email shows its address and stays in this tab; any other link opens a new one. */
+/**
+ * Email shows its address and stays in this tab; any other link opens a new one, with neither a way
+ * back to this page (noopener) nor its address sent along (noreferrer), as every link off the site.
+ */
 function RecordLink({
   link,
   locale,
@@ -482,9 +490,57 @@ function RecordLink({
     );
   }
   return (
-    <a href={link.url} target="_blank" rel="noreferrer">
+    <a href={link.url} target="_blank" rel="noopener noreferrer">
       {link.label[locale]}
       <ArrowUpRight size={iconSize} />
+    </a>
+  );
+}
+
+/**
+ * A link's host as a visitor reads it, from the address itself: urban-ai.uk. Null if the address
+ * does not parse (safeLink refuses such an address; the button then shows its label alone).
+ */
+const siteHost = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The way out to a neighbour's group's website: the main link off the sky island's file and the
+ * Neighbours card, in the site's primary button with the outbound arrow. `withHost` names the
+ * address on it ("UIA website · urban-ai.uk"); read aloud, it names the address and says it opens
+ * in a new tab.
+ */
+function GroupSiteLink({
+  site,
+  locale,
+  withHost = false,
+}: {
+  site: OutboundLink;
+  locale: Locale;
+  withHost?: boolean;
+}) {
+  const label = site.label[locale],
+    host = siteHost(site.url),
+    named = host ? (locale === 'zh' ? `${label}：${host}` : `${label}: ${host}`) : label;
+  return (
+    <a
+      className="button-primary site-link"
+      href={site.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={
+        locale === 'zh'
+          ? `${named}，在新标签页打开`
+          : `${named}, opens in a new tab`
+      }
+    >
+      {withHost && host ? `${label} · ${host}` : label}
+      <ArrowUpRight size={15} aria-hidden="true" />
     </a>
   );
 }
@@ -659,6 +715,160 @@ function ArchitectureNote({
       </summary>
       <p>{building.architecture[locale]}</p>
     </details>
+  );
+}
+
+/** A place file's last row: the places next to it, each opening its own file. */
+function ContinueExploring({
+  building,
+  locale,
+  onOpen,
+}: {
+  building: (typeof buildings)[number];
+  locale: Locale;
+  onOpen: (id: ContentId) => void;
+}) {
+  return (
+    <div className="record-related">
+      <span className="eyebrow">
+        {locale === 'zh' ? '继续探索' : 'Continue exploring'}
+      </span>
+      <div>
+        {building.related.map((key) => (
+          <button key={key} onClick={() => onOpen(key)}>
+            <PlaceGlyph kind={glyphFor(key)} size={15} />
+            {titleFor(key, locale)}
+            <ArrowUpRight size={13} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The sky island's City file while a neighbour's record is published for it (Alison Heppenstall's).
+ * Under the file's eyebrow (her name and her group's) and title (the island's): her name again, for
+ * screen readers only, then her role and affiliation, her short profile, her group on a flat tint
+ * (its name, the way out to its website, what it does and the one tie), her staff page, her full
+ * profile folded away as on a person's card, the villa, and the places next to it. No photo of her,
+ * nor a monogram in its place: the site shows none.
+ */
+function NeighbourFile({
+  neighbour,
+  building,
+  locale,
+  onOpen,
+}: {
+  neighbour: NeighbourRecord;
+  building: (typeof buildings)[number];
+  locale: Locale;
+  onOpen: (id: ContentId) => void;
+}) {
+  const zh = locale === 'zh',
+    group = neighbour.group;
+  return (
+    <div className="record neighbour-file">
+      <p className="neighbour-role">
+        {/* Her name, for a screen reader that starts at the focused title (the island's): only the
+            eyebrow above it names her. Hidden from view as the stage caption's chip is. */}
+        <span className="neighbour-name">{`${neighbour.title[locale]}${zh ? '，' : ', '}`}</span>
+        <span className="eyebrow">{neighbour.role[locale]}</span>
+        <span className="institution">{neighbour.affiliation[locale]}</span>
+      </p>
+      <p className="record-lead">{neighbour.summary[locale]}</p>
+      {/* The island works as a link to UIA's site: its button comes right under the group's name,
+          on the file's first screen on a laptop, before what the group does and the one tie. */}
+      <section className="neighbour-group">
+        <h3>
+          {group.name[locale]} · {group.fullName[locale]}
+        </h3>
+        <GroupSiteLink site={group.site} locale={locale} withHost />
+        <p>{group.summary[locale]}</p>
+        <p className="neighbour-tie">{group.connection[locale]}</p>
+      </section>
+      {!!neighbour.links.length && (
+        <div className="record-links">
+          {neighbour.links.map((link) => (
+            <RecordLink key={link.url} link={link} locale={locale} iconSize={14} />
+          ))}
+        </div>
+      )}
+      {!!neighbour.sections.length && (
+        <details className="neighbour-profile">
+          <summary>
+            {zh ? '完整简介' : 'Full profile'}
+            <ChevronDown size={15} aria-hidden="true" />
+          </summary>
+          <div className="neighbour-profile-body">
+            {neighbour.sections.map((s, i) => (
+              <section className="record-section" key={i}>
+                <h4>{s.heading[locale]}</h4>
+                <p>{s.body[locale]}</p>
+              </section>
+            ))}
+          </div>
+        </details>
+      )}
+      <ArchitectureNote locale={locale} building={building} />
+      <ContinueExploring building={building} locale={locale} onOpen={onOpen} />
+    </div>
+  );
+}
+
+/**
+ * The reading page's Neighbours card, at the end of the chapter that hosts a neighbour's place
+ * (About, for the sky island), after the chapter's own sections. On a flat tint as the island's
+ * file's group: her group in one line (its intro, a sentence of its own in the record, never cut
+ * from its summary), the neighbour as one of its leaders, the one tie the sources state, and two
+ * ways on: the group's website, and her place in the city. It is that place's reading address
+ * (#read/sky-island), so the island's "Read on the page" lands here, its heading taking the focus.
+ */
+function NeighboursCard({
+  neighbour,
+  locale,
+  onExplore,
+}: {
+  neighbour: NeighbourRecord;
+  locale: Locale;
+  onExplore?: (id: ContentId) => void;
+}) {
+  const zh = locale === 'zh',
+    group = neighbour.group,
+    place = buildings.find((b) => b.id === neighbour.buildingId);
+  return (
+    <section className="neighbours" id={`read-${neighbour.buildingId}`}>
+      <h3 tabIndex={-1}>
+        <PlaceGlyph kind={glyphFor(neighbour.buildingId)} size={15} />
+        {zh ? '近邻 · 小城上空' : 'Neighbours · Above the town'}
+      </h3>
+      <p className="neighbours-group">
+        {group.name[locale]} · {group.fullName[locale]}
+      </p>
+      <p>
+        {zh
+          ? `${group.intro.zh}${neighbour.title.zh} 是 ${group.name.zh} 的团队负责人之一。`
+          : `${group.intro.en} ${neighbour.title.en} is one of its group leaders.`}
+      </p>
+      <p className="neighbour-tie">{group.connection[locale]}</p>
+      <div className="neighbours-actions">
+        <GroupSiteLink site={group.site} locale={locale} />
+        {onExplore && (
+          <button
+            className="link-action"
+            onClick={() => onExplore(neighbour.buildingId)}
+            aria-label={
+              place &&
+              `${zh ? '在小城里打开' : 'Open in the city'}${zh ? '：' : ': '}${place.name[locale]} · ${place.style[locale]}`
+            }
+          >
+            <Map size={14} />
+            {zh ? '在小城里打开' : 'Open in the city'}
+            <ArrowUpRight size={13} />
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1170,6 +1380,7 @@ export function LabContent({
   locale,
   onOpen,
   onHover,
+  onExplore,
   reading = false,
 }: {
   id: ContentId;
@@ -1177,6 +1388,8 @@ export function LabContent({
   onOpen: (id: ContentId) => void;
   /** Ring a place on the model while something in the content points at it (the board's rows). */
   onHover?: (building: BuildingId | null) => void;
+  /** The reading page: open a place in the city (the Neighbours card's way to the sky island). */
+  onExplore?: (id: ContentId) => void;
   reading?: boolean;
 }) {
   const zh = locale === 'zh',
@@ -1259,12 +1472,29 @@ export function LabContent({
     return (
       <p>{tr('This record is no longer available.', '这条记录已移除。')}</p>
     );
+  // The sky island's file is its neighbour's while her record is published; with none, it is the
+  // island's own, as any other place's.
+  const neighbour = neighbourFor(b.id);
+  if (neighbour)
+    return (
+      <NeighbourFile
+        neighbour={neighbour}
+        building={b}
+        locale={locale}
+        onOpen={onOpen}
+      />
+    );
   const person = people.some((p) => p.id === id),
     // The Visiting PhD Residence lists its residents; with none, it says who it is for.
     residents =
       b.model === 'residence'
         ? people.filter((p) => p.buildingId === b.id)
-        : [];
+        : [],
+    // The reading page's chapter that hosts a neighbour's place (About, the sky island's) ends with
+    // her Neighbours card; the place's City file is her own, and the Town Hall's file has none.
+    hosted = reading
+      ? neighbourRecords.find((n) => chapterFor(n.buildingId) === id)
+      : undefined;
   return (
     <div className={`record ${person ? 'record-person' : ''}`}>
       {person ? (
@@ -1334,19 +1564,15 @@ export function LabContent({
           </section>
         ),
       )}
+      {hosted && (
+        <NeighboursCard
+          neighbour={hosted}
+          locale={locale}
+          onExplore={onExplore}
+        />
+      )}
       <ArchitectureNote locale={locale} building={b} />
-      <div className="record-related">
-        <span className="eyebrow">{tr('Continue exploring', '继续探索')}</span>
-        <div>
-          {b.related.map((key) => (
-            <button key={key} onClick={() => onOpen(key)}>
-              <PlaceGlyph kind={glyphFor(key)} size={15} />
-              {titleFor(key, locale)}
-              <ArrowUpRight size={13} />
-            </button>
-          ))}
-        </div>
-      </div>
+      <ContinueExploring building={b} locale={locale} onOpen={onOpen} />
     </div>
   );
 }

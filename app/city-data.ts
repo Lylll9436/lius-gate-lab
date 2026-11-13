@@ -1,4 +1,5 @@
-import { memberRecords, pageDay } from './lab-records';
+import { memberRecords, neighbourFor, pageDay } from './lab-records';
+import type { NeighbourRecord } from './content-schema';
 export type Locale = 'en' | 'zh';
 export type BuildingId =
   | 'lius-gate'
@@ -58,8 +59,8 @@ const places: Building[] = [
       {
         heading: t('Layout', '布局'),
         body: t(
-          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
-          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
+          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. A sky island with a red-brick villa floats above the town. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
+          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。小城上空还漂浮着一座带红砖别墅的天空之岛。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
         ),
       },
       {
@@ -253,7 +254,10 @@ const places: Building[] = [
   // The sky island: a place of its own off the north-west headland, floating over the sea. It is
   // no model of the town's (model 'sky': town-build builds it in its own groups and city-scene
   // frames, picks and shades it its own way), has no reading chapter (lab-navigation files it under
-  // About) and no Inspect. x, z, w, d and height are its villa's site (plan.sites).
+  // About) and no Inspect. x, z, w, d and height are its villa's site (plan.sites). Its category and
+  // summary here are the island's own, for while no neighbour's record is published for it; while
+  // one is (Alison Heppenstall's), buildingsOn names her and her group instead, and its file is
+  // hers (lab-content's NeighbourFile).
   {
     id: 'sky-island',
     name: t('Sky Island', '天空之岛'),
@@ -265,8 +269,8 @@ const places: Building[] = [
     ),
     style: t('Red-brick villa', '红砖别墅'),
     architecture: t(
-      'A red-brick villa under a slate roof, with a raised terrace and steps down to a striped lawn, on a chunk of earth and rock that tapers to a point.',
-      '石板屋顶的红砖别墅，抬高的露台有台阶通向修出条纹的草坪；整座花园托在一块向下收尖的土石上。',
+      'A symmetrical red-brick villa of three storeys under a slate roof with three white dormers: its centre bay steps forward with white-framed French doors and black iron balconies, between white stone bands, a cornice and a tall brick chimney at each end, and a raised terrace steps down to a striped lawn. The garden rides on a chunk of earth and rock that tapers to a point, with thin waterfalls spilling from its edge, a round tree and a rock outcrop.',
+      '一栋对称的三层红砖别墅，石板屋顶上有三扇白色老虎窗：中央一跨向前凸出，每层都是白框落地门和黑色铁艺阳台，墙上有白色石带和檐口，两端各一根高高的砖烟囱；抬高的露台有台阶通向修出条纹的草坪。整座花园托在一块向下收尖的土石上，细细的瀑布从边缘落下，岛上还有一棵圆冠树和一处岩石。',
     ),
     x: -52,
     z: -23.855,
@@ -385,13 +389,26 @@ export const residentsOf = (id: BuildingId, today: Date = pageDay) =>
 /** Where people live: the members' homes and the Visiting PhD Residence (the People chapter's places). */
 export const dwelling = (b: Building | undefined) => !!b && (!!b.variant || b.model === 'residence');
 /**
+ * The category of a place a neighbour's record is published for: her name and her group's, as a
+ * home's is its resident's role ("ALISON HEPPENSTALL · UIA" / "Alison Heppenstall · UIA"). Both
+ * names stay in Latin script in Chinese, as her record writes them.
+ */
+const neighbourCategory = (n: NeighbourRecord): Text => ({
+  en: `${n.title.en} · ${n.group.name.en}`.toUpperCase(),
+  zh: `${n.title.zh} · ${n.group.name.zh}`,
+});
+/**
  * The places on `today` (the page's day unless given). Building slots are independent of their
  * occupants: a home takes the name and file of its first current resident, and reads as an
  * unoccupied terrace house once its resident has left, until someone moves in. The residence
- * keeps its own and lists its residents (lab-content).
+ * keeps its own and lists its residents (lab-content). The sky island keeps its name, and its
+ * category names the neighbour published for it (her file is lab-content's NeighbourFile); with
+ * none, it is the island's own (ABOVE THE TOWN), with its own summary.
  */
 export function buildingsOn(today: Date = pageDay): Building[] {
   return places.map((building) => {
+    const neighbour = neighbourFor(building.id);
+    if (neighbour) return { ...building, category: neighbourCategory(neighbour) };
     if (!building.variant) return building;
     const resident = residentsOf(building.id, today)[0];
     return resident

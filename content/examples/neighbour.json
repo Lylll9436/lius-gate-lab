@@ -1,0 +1,73 @@
+{
+  "id": "example-neighbour",
+  "title": {
+    "en": "Example Neighbour",
+    "zh": "Example Neighbour"
+  },
+  "summary": {
+    "en": "Example description — replace before publishing",
+    "zh": "示例，请替换"
+  },
+  "visibility": "draft",
+  "order": 10,
+  "role": {
+    "en": "EXAMPLE ROLE",
+    "zh": "示例，请替换"
+  },
+  "affiliation": {
+    "en": "Example school, example university",
+    "zh": "示例，请替换"
+  },
+  "photo": null,
+  "buildingId": "sky-island",
+  "group": {
+    "name": {
+      "en": "EXG",
+      "zh": "EXG"
+    },
+    "fullName": {
+      "en": "Example Group",
+      "zh": "Example Group"
+    },
+    "intro": {
+      "en": "Example: the group in one sentence — replace before publishing.",
+      "zh": "示例：用一句话介绍这个团队，请替换。"
+    },
+    "summary": {
+      "en": "Example description of what the group does — replace before publishing",
+      "zh": "示例：这个团队做什么，请替换"
+    },
+    "connection": {
+      "en": "Example tie, only as its own sources state it — replace before publishing",
+      "zh": "示例，请替换"
+    },
+    "site": {
+      "label": {
+        "en": "Example website",
+        "zh": "示例官网"
+      },
+      "url": "https://example.org/"
+    }
+  },
+  "sections": [
+    {
+      "heading": {
+        "en": "Background",
+        "zh": "经历"
+      },
+      "body": {
+        "en": "Example paragraph — replace before publishing",
+        "zh": "示例，请替换"
+      }
+    }
+  ],
+  "links": [
+    {
+      "label": {
+        "en": "Example staff page",
+        "zh": "示例教师主页"
+      },
+      "url": "https://example.org/staff/"
+    }
+  ]
+}

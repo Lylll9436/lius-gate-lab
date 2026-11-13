@@ -1,6 +1,42 @@
 import * as T from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
+/*
+ * The selection ring's depth test, in numbers: both of its mask passes are built from them, and
+ * check-hover holds them and runs the twins below on synthetic depths. A fragment of the selected
+ * building counts as in front where its depth is at most the beauty pass's plus a slack: a fixed
+ * bias, and INK_SLOPE times the depth's slope across the pixel (fwidth), since the beauty pass's
+ * depth is one sample's, taken off the pixel centre (at most half a pixel away, so at least 0.5;
+ * at most 4, or a lamp or a tree before the building no longer counts as in front).
+ */
+export const INK_BIAS = 0.000015;
+export const INK_SLOPE = 2;
+/**
+ * The centre pass keeps a pixel where at least one of the test's samples passed: their resolve is
+ * the share that did (1/samples for one), so anything over half of R8's smallest step counts.
+ */
+export const INK_KEEP = 0.5 / 255;
+/** A number as a GLSL float literal: 2 is written `2.`, 0.000015 as it is. */
+const glsl = (v: number) => (Number.isInteger(v) ? `${v}.` : String(v));
+/**
+ * The test both mask passes share, inFront(): the fragment against the beauty pass's depth, with
+ * the slack worked out before any branch (derivatives need every pixel of the quad).
+ */
+export const INK_DEPTH_TEST = `uniform sampler2D sceneDepth; uniform vec2 resolution; bool inFront(){float slack=${glsl(INK_BIAS)}+${glsl(INK_SLOPE)}*fwidth(gl_FragCoord.z);return gl_FragCoord.z<=texture2D(sceneDepth,gl_FragCoord.xy/resolution).r+slack;}`;
+/**
+ * JS twin of inFront(), for the checks: `depth` the fragment's, `scene` the beauty pass's (both in
+ * the depth buffer's 0 to 1) and `fwidth` the fragment depth's slope across the pixel.
+ */
+export const inkInFront = (depth: number, scene: number, fwidth: number) =>
+  depth <= scene + (INK_BIAS + INK_SLOPE * fwidth);
+/**
+ * JS twin of the centre pass, for the checks: it keeps a pixel the building covers at its centre
+ * where the centre is in front (`front`) or where the test's samples found it so (`tested`, their
+ * resolve: 0, or at least 1/samples).
+ */
+export const inkKeeps = (front: boolean, tested: number) =>
+  front || tested >= INK_KEEP;
+
 /**
  * The final composite: a multisampled beauty pass, a soft vignette and the ring around a
  * selected building. No outlines and no screen-space occlusion: both drew ghost copies of
@@ -22,8 +58,19 @@ export function createCityInk(
   target.depthTexture = new T.DepthTexture(1, 1, T.UnsignedIntType);
   let selected: T.Object3D[] = [],
     mask: T.WebGLRenderTarget | null = null,
+    tested: T.WebGLRenderTarget | null = null,
     pixelWidth = 1,
     pixelHeight = 1;
+  // The ring is drawn round a mask: the selected building's pixels where the beauty pass's depth
+  // says it is in front. That depth is a multisampled buffer's resolve, one sample's depth taken
+  // off the pixel centre, while the mask's fragments sit on the centre. So the tolerance grows
+  // with the depth's slope across the pixel (fwidth): a fixed one failed on every face nearer at
+  // that sample than at the centre, and the ring drew gold squiggles across the building's own
+  // faces. And the test is drawn multisampled like the beauty pass, so a part that covers the
+  // resolved sample but not the centre (a balcony before its wall, the coping before the lawn)
+  // still has a fragment there to answer for its pixel. check-hover holds both (INK_DEPTH_TEST).
+  const vertexShader =
+    'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}';
   const maskMaterial = new T.ShaderMaterial({
     uniforms: {
       sceneDepth: { value: target.depthTexture },
@@ -31,10 +78,22 @@ export function createCityInk(
     },
     depthTest: false,
     depthWrite: false,
-    vertexShader:
-      'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-    fragmentShader:
-      'uniform sampler2D sceneDepth; uniform vec2 resolution; void main(){float z=texture2D(sceneDepth,gl_FragCoord.xy/resolution).r;if(gl_FragCoord.z>z+0.000015)discard;gl_FragColor=vec4(1.);}',
+    vertexShader,
+    fragmentShader: `${INK_DEPTH_TEST} void main(){if(!inFront())discard;gl_FragColor=vec4(1.);}`,
+  });
+  // Then the pixels whose centre the building covers (all the mask ever held, so the ring outside
+  // the silhouette stays where it was) and where either the test's samples or the centre itself
+  // (a sliver can cover the centre and no sample) found it in front.
+  const keepMaterial = new T.ShaderMaterial({
+    uniforms: {
+      sceneDepth: maskMaterial.uniforms.sceneDepth,
+      resolution: maskMaterial.uniforms.resolution,
+      tested: { value: null as T.Texture | null },
+    },
+    depthTest: false,
+    depthWrite: false,
+    vertexShader,
+    fragmentShader: `${INK_DEPTH_TEST} uniform sampler2D tested; void main(){bool front=inFront();if(!front&&texture2D(tested,gl_FragCoord.xy/resolution).r<${glsl(INK_KEEP)})discard;gl_FragColor=vec4(1.);}`,
   });
   const material = new T.ShaderMaterial({
     uniforms: {
@@ -89,6 +148,7 @@ export function createCityInk(
       pixelWidth = Math.max(1, Math.round(width * dpr));
       pixelHeight = Math.max(1, Math.round(height * dpr));
       mask?.setSize(pixelWidth, pixelHeight);
+      tested?.setSize(pixelWidth, pixelHeight);
       maskMaterial.uniforms.resolution.value.set(pixelWidth, pixelHeight);
       // A one-pixel ring just outside the silhouette of the selected building.
       material.uniforms.selectionStep.value.set(
@@ -122,12 +182,24 @@ export function createCityInk(
         renderer.render(scene, camera);
         material.uniforms.hasSelection.value = selected.length ? 1 : 0;
         if (selected.length) {
-          if (!mask)
+          if (!mask || !tested) {
+            // One channel: the composite reads only whether the building is there.
             mask = new T.WebGLRenderTarget(pixelWidth, pixelHeight, {
+              format: T.RedFormat,
               depthBuffer: false,
               minFilter: T.NearestFilter,
               magFilter: T.NearestFilter,
             });
+            // As many samples as the beauty pass, in one channel: it only holds which passed.
+            tested = new T.WebGLRenderTarget(pixelWidth, pixelHeight, {
+              samples: target.samples,
+              format: T.RedFormat,
+              depthBuffer: false,
+              minFilter: T.NearestFilter,
+              magFilter: T.NearestFilter,
+            });
+            keepMaterial.uniforms.tested.value = tested.texture;
+          }
           const savedLayers = camera.layers.mask,
             savedOverride = scene.overrideMaterial,
             savedBackground = scene.background,
@@ -145,10 +217,14 @@ export function createCityInk(
               }),
             );
             camera.layers.set(31);
-            scene.overrideMaterial = maskMaterial;
             scene.background = null;
             renderer.shadowMap.autoUpdate = false;
             renderer.setClearColor(0, 0);
+            scene.overrideMaterial = maskMaterial;
+            renderer.setRenderTarget(tested);
+            renderer.clear();
+            renderer.render(scene, camera);
+            scene.overrideMaterial = keepMaterial;
             renderer.setRenderTarget(mask);
             renderer.clear();
             renderer.render(scene, camera);
@@ -172,7 +248,9 @@ export function createCityInk(
       target.depthTexture?.dispose();
       target.dispose();
       mask?.dispose();
+      tested?.dispose();
       maskMaterial.dispose();
+      keepMaterial.dispose();
       material.dispose();
       quad.dispose();
     },

@@ -43,6 +43,13 @@ export const readingChapters = [
 const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall' };
 /** The chapter that hosts an address's place, if it is a hosted one. */
 const hostOf = (id: ContentId) => HOSTED[id.replace(/^place:/, '') as BuildingId];
+/**
+ * The mode a place picked on the model opens in: the mode it was picked in, but a hosted place (the
+ * sky island) opens its City file from the reading page too. It has no chapter of its own, so on
+ * the page the pick would only scroll to its host chapter.
+ */
+export const modeForPick = (mode: BrowseMode, id: ContentId): BrowseMode =>
+  mode === 'reading' && hostOf(id) ? 'city' : mode;
 const card = (p: PersonRecord) => ({
   ...p,
   id: personContentId(p),
@@ -180,6 +187,18 @@ export function contentForBuilding(id: BuildingId, today: Date = pageDay) {
   if (!isHome(id)) return id;
   const resident = residentsOf(id, today)[0];
   return resident ? personContentId(resident) : 'place:' + id;
+}
+/**
+ * Where a place picked on the model goes, picked in `mode`: the mode to open (modeForPick: the
+ * mode it was picked in, but the sky island opens its City file from the reading page too) and
+ * the address its place opens (contentForBuilding). The page sends every pick through it.
+ */
+export function pickRoute(
+  mode: BrowseMode,
+  id: BuildingId,
+): [BrowseMode, ContentId] {
+  const content = contentForBuilding(id);
+  return [modeForPick(mode, content), content];
 }
 /**
  * The City tour on `today` (the page's day unless given): every place in the Directory's order,

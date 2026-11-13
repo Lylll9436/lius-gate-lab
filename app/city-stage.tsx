@@ -176,6 +176,7 @@ export function CityStage({
       <div className="map-labels">
         {buildings.map((item) => {
           // The airport and the sky island stand in no district: their labels end at their category.
+          // Each name carries its place's glyph, as in the Directory (the sky island's is a cloud).
           const district = districts.find((d) => d.buildings.includes(item.id));
           return (
             <div
@@ -185,7 +186,10 @@ export function CityStage({
               style={{ visibility: 'hidden' }}
               aria-hidden="true"
             >
-              <strong>{item.name[locale]}</strong>
+              <strong>
+                <PlaceGlyph kind={glyphFor(item.id)} size={14} />
+                {item.name[locale]}
+              </strong>
               <span>
                 {item.category[locale]}
                 {district ? ` · ${district.name[locale]}` : null}
@@ -199,7 +203,10 @@ export function CityStage({
           style={{ visibility: 'hidden' }}
           aria-hidden="true"
         >
-          <strong>{tr('Corner park', '街角公园')}</strong>
+          <strong>
+            <PlaceGlyph kind="park" size={14} />
+            {tr('Corner park', '街角公园')}
+          </strong>
           <span>{tr('Life at the Gate · Harbour', '师门生活 · 港口')}</span>
         </div>
         {/* The People chapter's name tags over the roofs of the homes and the residence, placed

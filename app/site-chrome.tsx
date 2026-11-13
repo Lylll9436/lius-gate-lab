@@ -182,14 +182,14 @@ export function SiteFooter({
           {zh ? '小城视图' : 'City view'}
           <ArrowUpRight size={13} />
         </button>
-        <a href="https://www.gla.ac.uk/" target="_blank" rel="noreferrer">
+        <a href="https://www.gla.ac.uk/" target="_blank" rel="noopener noreferrer">
           {zh ? '格拉斯哥大学' : 'University of Glasgow'}
           <ArrowUpRight size={13} />
         </a>
         <a
           href="https://github.com/Lylll9436/lius-gate-lab"
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
         >
           {zh ? '源代码' : 'Source'}
           <ArrowUpRight size={13} />

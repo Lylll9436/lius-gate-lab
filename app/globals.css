@@ -544,11 +544,18 @@ body:has(.mode-explore),
   will-change: transform;
 }
 .building-hover-label strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: 500;
   margin-bottom: 2px;
+}
+/* The place's glyph before its name, quiet beside it, as in the Directory. */
+.building-hover-label .place-glyph {
+  flex: none;
+  color: var(--ink-3);
 }
 .building-hover-label span {
   display: block;
@@ -1545,7 +1552,8 @@ body:has(.mode-explore),
 .person-body:not(:has(> .person-actions)) + .person-profile {
   margin-top: 0;
 }
-.person-profile > summary {
+.person-profile > summary,
+.neighbour-profile > summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1557,18 +1565,22 @@ body:has(.mode-explore),
   cursor: pointer;
   list-style: none;
 }
-.person-profile > summary::-webkit-details-marker {
+.person-profile > summary::-webkit-details-marker,
+.neighbour-profile > summary::-webkit-details-marker {
   display: none;
 }
-.person-profile > summary:hover {
+.person-profile > summary:hover,
+.neighbour-profile > summary:hover {
   text-decoration: underline;
   text-underline-offset: 5px;
   text-decoration-thickness: 1px;
 }
-.person-profile > summary svg {
+.person-profile > summary svg,
+.neighbour-profile > summary svg {
   transition: transform 0.2s ease;
 }
-.person-profile[open] > summary svg {
+.person-profile[open] > summary svg,
+.neighbour-profile[open] > summary svg {
   transform: rotate(180deg);
 }
 .person-profile-body {
@@ -1593,6 +1605,135 @@ body:has(.mode-explore),
 }
 .record-now .eyebrow {
   margin-right: 8px;
+}
+
+/* The sky island's file while a neighbour's record is published for it (lab-content's
+   NeighbourFile): her role and affiliation over her profile, then her group on a flat ink tint as
+   the departures board's (no border, no frost of its own, no glow or shadow on the text), with the
+   way out to its website in the site's primary button and outbound arrow. Her full profile folds
+   out as on a person's card. */
+.neighbour-role {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+/* Her role and affiliation, the first facts in her file, in the text's own ink: the third ink, as on
+   a person's file, measured 2.2 to 2.9:1 over the sea glass by day. */
+.neighbour-role .eyebrow,
+.neighbour-role .institution {
+  color: var(--ink);
+}
+/* Her name, for screen readers only (the eyebrow above the title shows it): hidden as the stage
+   caption's chip is. */
+.neighbour-role .neighbour-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Her profile in the text's own ink, a size down from a record's lead, so the file's first screen
+   holds her group's name and its button below it, in English too. */
+.neighbour-file .record-lead {
+  font-size: 15px;
+  line-height: 1.55;
+  margin-bottom: 16px;
+}
+.neighbour-group {
+  padding: 14px 16px 16px;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--ink) 5%, transparent);
+}
+.neighbour-group h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 19px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+/* In the text's own ink: the tint darkens the glass by day, and the second ink on it measured 2.6:1
+   over the sea. */
+.neighbour-group p {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+/* The one tie the sources state. */
+.neighbour-group .neighbour-tie {
+  margin-top: 10px;
+  font-weight: 500;
+}
+/* The way out to its website comes right under the group's name, so a laptop shows it whole without
+   scrolling (a 1440 × 900 screen's browser is about 1440 × 789; 1280 × 720 too): a row of its own,
+   the button as wide as its label, as the site's primary button is everywhere. */
+.neighbour-group .site-link {
+  display: flex;
+  width: fit-content;
+  margin: 10px 0 14px;
+}
+/* A pill keeps its shape under the keyboard's ring. */
+.site-link:focus-visible {
+  border-radius: 999px;
+}
+.neighbour-profile-body {
+  padding: 8px 0 2px;
+}
+.neighbour-profile-body > :last-child {
+  margin-bottom: 0;
+}
+/* The reading page's Neighbours card, at the end of About after its own sections (lab-content's
+   NeighboursCard): the same flat tint as the island's file's group, its heading in the style of the
+   chapter's place line, the group's name in the display face, and its two ways on in a row. Its
+   heading's line is the second ink, not the third: the tint darkens the glass by day. */
+.neighbours {
+  margin: 4px 0 18px;
+  padding: 16px 18px 18px;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--ink) 5%, transparent);
+  scroll-margin-top: calc(var(--masthead) + 16px);
+}
+.neighbours h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.neighbours h3:focus {
+  outline: none;
+}
+.neighbours .neighbours-group {
+  margin: 10px 0 6px;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.neighbours p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.neighbours .neighbour-tie {
+  margin-top: 8px;
+  font-weight: 500;
+}
+.neighbours-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  margin-top: 14px;
 }
 
 /* Departures: the airport's board, in its chapter and its City file. A split-flap list on a flat

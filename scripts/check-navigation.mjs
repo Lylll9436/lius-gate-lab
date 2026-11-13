@@ -44,6 +44,14 @@ for (const name of [
 }
 // What the sky island's framing checks found, for the summary.
 const skyNav = {};
+/**
+ * Code without its formatting, to look for a statement in: no whitespace, and no trailing comma
+ * before a closing bracket. The repo's formatter (pnpm format, oxfmt) wraps long lines and adds
+ * those commas, and a pin on page.tsx's code must not fail on that.
+ */
+const unformatted = (code) => code.replace(/\s+/g, '').replace(/,(?=[)\]}])/g, '');
+/** Whether `code` holds each statement, formatted however (see unformatted). */
+const holds = (code, ...statements) => statements.every((s) => unformatted(code).includes(unformatted(s)));
 const nav = await import(
     pathToFileURL(path.join(output, 'lab-navigation.mjs')).href
   ),
@@ -108,6 +116,55 @@ assert.equal(nav.readingContent('sky-island', 'town-hall'), 'town-hall');
 assert.deepEqual(nav.sceneTarget('sky-island'), { building: 'sky-island' });
 assert.equal(nav.placeFor('sky-island'), 'sky-island');
 assert(!nav.readingChapters.includes('sky-island') && !nav.destinations.includes('sky-island'), 'The sky island has a reading chapter or a masthead chip of its own.');
+// A place picked on the model opens in the mode it was picked in, but the sky island, with no chapter
+// of its own, opens its City file from the reading page too (#city/sky-island), where its pick would
+// only have scrolled to About. pickRoute says where a pick goes: that mode, and the address the
+// place opens.
+for (const b of buildings) {
+  for (const id of [nav.contentForBuilding(b.id), 'place:' + b.id]) {
+    assert.equal(nav.modeForPick('city', id), 'city', 'A pick in the city leaves the city: ' + id);
+    assert.equal(nav.modeForPick('reading', id), b.id === 'sky-island' ? 'city' : 'reading', 'A reading-page pick of ' + id + ' opens the wrong mode.');
+  }
+  for (const mode of ['city', 'reading'])
+    assert.deepEqual(
+      nav.pickRoute(mode, b.id),
+      [mode === 'reading' && b.id === 'sky-island' ? 'city' : mode, nav.contentForBuilding(b.id)],
+      'A pick of ' + b.id + ' on the ' + mode + ' page goes to the wrong mode or address.',
+    );
+}
+assert.deepEqual(nav.pickRoute('reading', 'sky-island'), ['city', 'sky-island']);
+// The page sends every pick on the model through pickRoute: createCity's pick callback (its second
+// argument) hands navigate the spread of pickRoute(the page's mode, the place picked). Read from
+// page.tsx's syntax tree, so its formatting (pnpm format wraps the call) changes nothing here.
+{
+  const file = 'app/page.tsx',
+    tree = ts.createSourceFile(file, await fs.readFile(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+    text = (node) => node.getText(tree).replace(/\s+/g, ''),
+    under = (node, match, out = []) => {
+      if (match(node)) out.push(node);
+      // (A callback that returns something stops forEachChild.)
+      ts.forEachChild(node, (child) => void under(child, match, out));
+      return out;
+    };
+  const [city, ...more] = under(tree, (n) => ts.isCallExpression(n) && text(n.expression) === 'createCity'),
+    pick = city?.arguments[1],
+    picked = pick && (ts.isArrowFunction(pick) || ts.isFunctionExpression(pick)) && pick.parameters.length === 1 ? text(pick.parameters[0].name) : null;
+  const routed =
+    !more.length &&
+    !!picked &&
+    under(
+      pick.body,
+      (n) =>
+        ts.isCallExpression(n) &&
+        text(n.expression) === 'navigateRef.current' &&
+        n.arguments.length === 1 &&
+        ts.isSpreadElement(n.arguments[0]) &&
+        ts.isCallExpression(n.arguments[0].expression) &&
+        text(n.arguments[0].expression.expression) === 'pickRoute' &&
+        n.arguments[0].expression.arguments.map(text).join(',') === 'viewRef.current.mode,' + picked,
+    ).length === 1;
+  assert(routed, 'A pick on the model no longer goes through pickRoute (page.tsx, createCity’s pick callback): the sky island would not open in the city from the reading page.');
+}
 // The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
 // and the overview's list of places names it there too.
 assert.deepEqual(nav.readingChapters, [
@@ -158,9 +215,7 @@ for (const b of buildings)
     assert.equal(nav.facingChapter(id), b.variant || b.model === 'residence' ? 'people' : b.id, `City mode faces ${id} from the wrong chapter.`);
 assert.deepEqual(['people', 'corner-park', 'overview'].map((id) => nav.facingChapter(id)), ['people', 'corner-park', 'town-hall']);
 assert(
-  /const facing = \(id: ContentId\) => bearings\[facingChapter\(id\)\] \?\? bearings\.overview;/.test(
-    await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
-  ),
+  holds(await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'), 'const facing = (id: ContentId) => bearings[facingChapter(id)] ?? bearings.overview;'),
   'City mode no longer turns to the chapter of the place it frames (facingChapter).',
 );
 for (const stop of nav.tourStops)
@@ -626,8 +681,14 @@ assert(
   assert.equal(motion.reduced, true, 'Reduce Motion switched on while the page is open leaves the plane flying.');
   assert(/planeTime = planeClock\(planeTime, dt, paused \|\| reduced\);/.test(source) && /motionQuery\.removeEventListener\('change', followMotion\);/.test(source), 'The plane no longer parks for the motion preference, or the scene leaves its listener behind.');
   assert(
-    /const media = window\.matchMedia\('\(prefers-reduced-motion: reduce\)'\),\s*follow = \(event: MediaQueryListEvent\) => \{\s*if \(!pauseChosen\.current\) setPaused\(event\.matches\);\s*\};\s*media\.addEventListener\('change', follow\);\s*return \(\) => media\.removeEventListener\('change', follow\);/.test(
+    holds(
       await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+      `const media = window.matchMedia('(prefers-reduced-motion: reduce)'),
+        follow = (event: MediaQueryListEvent) => {
+          if (!pauseChosen.current) setPaused(event.matches);
+        };
+      media.addEventListener('change', follow);
+      return () => media.removeEventListener('change', follow);`,
     ),
     'The page no longer pauses the town, or lets it go, when the motion preference changes.',
   );
@@ -1653,12 +1714,20 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
   // The reading page tells the scene where its panel really starts, measured, as it frames a
   // chapter beside it and again when the window is resized there; City mode's file passes none.
   {
-    const page = await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8');
+    // (The resize's refit sets the edge it has just measured: within 120 characters, as written.)
+    const page = await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+      measured = unformatted('const next = readingEdge(mount.current);'),
+      set = unformatted('engine.setFrameShift(0.21, 0, edge);'),
+      refit = unformatted(page).indexOf(measured);
     assert(
-      /panel = document\.querySelector<HTMLElement>\('\.chapter \.panel'\)\?\.getBoundingClientRect\(\);/.test(page) &&
-        /engine\.setFrameShift\(wide \? 0\.21 : 0, 0, wide \? readingEdge\(mount\.current\) : 1\);/.test(page) &&
-        /const next = readingEdge\(mount\.current\);[\s\S]{0,120}engine\.setFrameShift\(0\.21, 0, edge\);/.test(page) &&
-        /api\.current\?\.setFrameShift\(at\.shift, at\.drop\);/.test(page),
+      holds(
+        page,
+        "panel = document.querySelector<HTMLElement>('.chapter .panel')?.getBoundingClientRect();",
+        'engine.setFrameShift(wide ? 0.21 : 0, 0, wide ? readingEdge(mount.current) : 1);',
+        'api.current?.setFrameShift(at.shift, at.drop);',
+      ) &&
+        refit >= 0 &&
+        unformatted(page).slice(refit, refit + measured.length + 120 + set.length).includes(set),
       'The reading page no longer passes its panel\'s measured edge to the scene (or City mode now does).',
     );
     assert(/panelEdge = T\.MathUtils\.clamp\(edge, 0\.3, 1\);/.test(source), 'The scene no longer keeps the panel\'s edge.');
@@ -2042,7 +2111,8 @@ assert.deepEqual(dipped.changes, [1, 0], 'The governor stepped to and fro.');
 const steps = [[1, 3, 3, 3, 3], [1, 3, 2, 3, 2], [1, 2, 2, 2, 2], [1, 2, 1, 2, 1], [1, 1, 1, 1, 1]],
   slow = runGovernor((quality, frame) => (steps[quality][frame % 5] * 1000) / 60, 300);
 assert.deepEqual(slow.changes, [1, 2], 'A slow machine steps down once to each level it needs, and no further.');
-// Selection adds one depth-aware mask pass; all renderer state survives failure.
+// Selection adds two depth-aware mask passes (the multisampled test, then its pixel centres;
+// check-hover holds their shaders); all renderer state survives failure.
 const { createCityInk } = await import(
   pathToFileURL(path.join(output, 'city-ink.mjs')).href
 );
@@ -2098,7 +2168,7 @@ assert.equal(renders, 2);
 ink.setSelection([selected]);
 renders = 0;
 ink.render();
-assert.equal(renders, 3);
+assert.equal(renders, 4);
 failMask = true;
 assert.throws(() => ink.render(), /mask failure/);
 assert.equal(currentTarget, priorTarget);

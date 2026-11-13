@@ -1,5 +1,14 @@
+// Type-only, so it is erased and adds no import cycle at run time (city-data imports lab-records,
+// which imports this module), nor anything for the maintenance command to load.
+import type { BuildingId } from './city-data';
 export type Localized = { en: string; zh: string };
-export type Collection = 'people' | 'research' | 'events' | 'outputs' | 'notes';
+export type Collection =
+  | 'people'
+  | 'research'
+  | 'events'
+  | 'outputs'
+  | 'notes'
+  | 'neighbours';
 export type RecordBase = {
   id: string;
   title: Localized;
@@ -59,6 +68,45 @@ export type NoteRecord = RecordBase & {
   researchId: string | null;
   buildingId: string | null;
 };
+/** A link off the site: a label in en and zh, and an HTTPS address. */
+export type OutboundLink = { label: Localized; url: string };
+/**
+ * A neighbour's group, as its own site describes it (UIA, for Alison Heppenstall). It may be called
+ * a group, its own word; Liu’s Gate never is: it is a 师门, never a lab or a research group.
+ */
+export type NeighbourGroup = {
+  /** Its short name as it writes it, the same in both languages: UIA. */
+  name: Localized;
+  /** Its full name as it writes it, kept in English in the Chinese copy too. */
+  fullName: Localized;
+  /**
+   * It in one sentence, for the reading page's Neighbours card, which goes on with the neighbour as
+   * one of its leaders: a sentence that stands on its own, ending in a full stop.
+   */
+  intro: Localized;
+  /** What it does, paraphrased from its own site. */
+  summary: Localized;
+  /** Its tie to Liu’s Gate as the sources state it, and nothing stronger. */
+  connection: Localized;
+  /** Its website, the main way out from the neighbour's file. */
+  site: OutboundLink;
+};
+/**
+ * A neighbour of the town: a researcher beside it who is not part of Liu’s Gate, with her group
+ * (Alison Heppenstall and UIA, on the sky island). Not a person: never a member, a leaver, a
+ * resident or someone with a home, and no address of her own (getRecord does not know
+ * neighbours). Her place's file shows her (lab-records' neighbourFor). Her links are HTTPS only,
+ * and there are no properties.
+ */
+export type NeighbourRecord = Omit<RecordBase, 'properties'> & {
+  role: Localized;
+  affiliation: Localized;
+  /** An image under /people/ or /media/, or null. Alison Heppenstall's is null: the site shows no photo of her. */
+  photo: string | null;
+  /** The place whose City file shows them: one of neighbourPlaces (the sky island). */
+  buildingId: BuildingId;
+  group: NeighbourGroup;
+};
 export type LabCatalog = {
   schemaVersion: 2;
   people: PersonRecord[];
@@ -66,21 +114,32 @@ export type LabCatalog = {
   events: EventRecord[];
   outputs: OutputRecord[];
   notes: NoteRecord[];
+  neighbours: NeighbourRecord[];
 };
+/** A record of Liu’s Gate's: one of its people, or their work and life. */
 export type LabRecord =
   | PersonRecord
   | ResearchRecord
   | EventRecord
   | OutputRecord
   | NoteRecord;
-export const collections: Collection[] = [
+/** Any row of the catalogue: a record of Liu’s Gate's, or a neighbour. */
+export type CatalogRecord = LabRecord | NeighbourRecord;
+/** Liu’s Gate's own collections, checked together: its people and their work and life. */
+const gateCollections: Exclude<Collection, 'neighbours'>[] = [
   'people',
   'research',
   'events',
   'outputs',
   'notes',
 ];
-const buildingIds = [
+/** Every collection the maintenance command edits: the Gate's own, then its neighbours. */
+export const collections: Collection[] = [...gateCollections, 'neighbours'];
+/**
+ * The places in the town, every one of city-data's BuildingId (check-content compares the two
+ * lists). A research project, an output or a note may be filed at any of them but a neighbour's.
+ */
+export const buildingIds: readonly string[] = [
   'lius-gate',
   'town-hall',
   'pengyuan-liu',
@@ -91,23 +150,81 @@ const buildingIds = [
   'airport',
   'research-studio',
   'city-archive',
-];
+] satisfies BuildingId[];
+/**
+ * The places that may hold a neighbour, whose City file shows them: the sky island. Never a
+ * member's home or the residence. Each is one of buildingIds (check-content checks it), and none of
+ * the Gate's own work is filed there: the island's file is the neighbour's.
+ */
+export const neighbourPlaces: readonly string[] = [
+  'sky-island',
+] satisfies BuildingId[];
+/**
+ * What is wrong with the place a project, an output or a note is filed at: it is none (null) or one
+ * of the town's places, never a neighbour's, so the Gate's work never reads as UIA's. `unknownError`
+ * is the collection's own message for a place the town does not have.
+ */
+function workPlaceErrors(
+  at: string,
+  place: unknown,
+  unknownError: string,
+): string[] {
+  if (place === null) return [];
+  if (typeof place !== 'string' || !buildingIds.includes(place))
+    return [unknownError];
+  if (neighbourPlaces.includes(place))
+    return [
+      at +
+        '.buildingId: ' +
+        place +
+        ' is a neighbour’s place; file the Gate’s work at one of its own.',
+    ];
+  return [];
+}
 /** A person lives in one of the members' homes (one each) or in the residence (shared). */
 const homeIds = ['pengyuan-liu', 'yunlong-liu', 'qin-li'];
 export const RESIDENCE_ID = 'visiting-phd';
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
+/**
+ * Chinese, which English text has none of, in every collection: a Han character (with the radicals,
+ * the compatibility ideographs and those beyond the BMP), or Chinese or full-width punctuation and
+ * forms pasted from the Chinese copy: the full-width comma and brackets, the ideographic comma and
+ * full stop, corner brackets.
+ */
+const chinese =
+  /[\u2e80-\u2fdf\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]|[\u{20000}-\u{323af}]/u;
+/** A Han character: a neighbour's Chinese text has one, save the names that stay in Latin script. */
+const han = /[\u3400-\u9fff\uf900-\ufaff]|[\u{20000}-\u{323af}]/u;
 const localized = (v: unknown) =>
   object(v) &&
   typeof v.en === 'string' &&
   !!v.en.trim() &&
   typeof v.zh === 'string' &&
   !!v.zh.trim() &&
-  !/[\u3400-\u9fff]/.test(v.en);
-export const safeLink = (v: unknown) =>
-  typeof v === 'string' &&
-  (/^https:\/\/[^/\s]+(?:[/?#][^\s]*)?$/.test(v) ||
-    /^mailto:[^\s@]+@[^\s@]+$/.test(v));
+  !chinese.test(v.en);
+/**
+ * A link the site may open: a mailto address, or an HTTPS address written plainly that a browser
+ * parses as written (the WHATWG URL parser, as the page's own `new URL`), with a host and no user
+ * name or password before it: https://urban-ai.uk@example.org/ goes to example.org, and a bad port
+ * such as https://urban-ai.uk:8o80/ does not parse at all.
+ */
+export const safeLink = (v: unknown) => {
+  if (typeof v !== 'string') return false;
+  if (/^mailto:[^\s@]+@[^\s@]+$/.test(v)) return true;
+  if (!/^https:\/\/[^/?#\s@]+(?:[/?#]\S*)?$/.test(v)) return false;
+  try {
+    const url = new URL(v);
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !!url.hostname
+    );
+  } catch {
+    return false;
+  }
+};
 const asset = (v: unknown) =>
   v === null ||
   (typeof v === 'string' &&
@@ -178,12 +295,192 @@ function departureErrors(at: string, v: unknown): string[] {
     );
   return errors;
 }
+/** A neighbour's fields. No properties: none has a use yet, so adding them is a typo too. */
+const neighbourKeys = [
+  'id',
+  'title',
+  'summary',
+  'visibility',
+  'order',
+  'role',
+  'affiliation',
+  'photo',
+  'buildingId',
+  'group',
+  'sections',
+  'links',
+];
+const groupKeys = [
+  'name',
+  'fullName',
+  'intro',
+  'summary',
+  'connection',
+  'site',
+];
+/**
+ * What is wrong with a neighbour's text, each fault in words of its own: a language missing or
+ * blank, Chinese in the English, a Chinese text with no Chinese in it (the English pasted in,
+ * untranslated), or a field that is neither en nor zh. `latin`: a name that stays in Latin script
+ * in Chinese too (hers, UIA's and its full name), so its zh needs no Han character.
+ */
+function textErrors(at: string, v: unknown, latin = false): string[] {
+  if (!object(v)) return [at + ' must be a text with en and zh.'];
+  const errors = unknownKeys(at, v, ['en', 'zh']);
+  for (const lang of ['en', 'zh']) {
+    const text = v[lang];
+    if (typeof text !== 'string' || !text.trim())
+      errors.push(at + '.' + lang + ' is missing: supply en and zh.');
+  }
+  if (typeof v.en === 'string' && chinese.test(v.en))
+    errors.push(at + '.en contains Chinese: English text must have none.');
+  if (!latin && typeof v.zh === 'string' && v.zh.trim() && !han.test(v.zh))
+    errors.push(at + '.zh has no Chinese: translate it.');
+  return errors;
+}
+/** What is wrong with a link off the site: its label, and an HTTPS address by safeLink's rules (no mailto). */
+function outboundErrors(at: string, v: unknown): string[] {
+  if (!object(v))
+    return [at + ' must be a link with a label and an HTTPS url.'];
+  const errors = [
+    ...unknownKeys(at, v, ['label', 'url']),
+    ...textErrors(at + '.label', v.label),
+  ];
+  if (
+    !(
+      typeof v.url === 'string' &&
+      v.url.startsWith('https://') &&
+      safeLink(v.url)
+    )
+  )
+    errors.push(at + '.url must be an HTTPS address.');
+  return errors;
+}
+/**
+ * What is wrong with the neighbours, field by field. A neighbour is not a person, so their id may not
+ * be in people too; and a place shows one published neighbour, the one its file is about.
+ */
+function neighbourErrors(value: Record<string, unknown>): string[] {
+  const rows = value.neighbours;
+  if (!Array.isArray(rows)) return ['neighbours must be an array.'];
+  const errors: string[] = [],
+    ids = new Set<string>(),
+    shown = new Set<string>(),
+    people: unknown[] = Array.isArray(value.people) ? value.people : [];
+  for (const [i, row] of rows.entries()) {
+    const at = 'neighbours[' + i + ']';
+    if (!object(row)) {
+      errors.push(at + ' must be an object.');
+      continue;
+    }
+    errors.push(...unknownKeys(at, row, neighbourKeys));
+    if (
+      typeof row.id !== 'string' ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(row.id) ||
+      ids.has(row.id)
+    )
+      errors.push(at + ': id must be a unique stable slug.');
+    else {
+      ids.add(row.id);
+      if (people.some((p) => object(p) && p.id === row.id))
+        errors.push(
+          at +
+            ': ' +
+            row.id +
+            ' is in people too. A neighbour is not a member: keep them in neighbours only.',
+        );
+    }
+    // A neighbour's name (title) stays in Latin script in Chinese; the rest is translated.
+    for (const field of ['title', 'summary', 'role', 'affiliation'])
+      errors.push(
+        ...textErrors(at + '.' + field, row[field], field === 'title'),
+      );
+    if (
+      typeof row.visibility !== 'string' ||
+      !['draft', 'published'].includes(row.visibility)
+    )
+      errors.push(at + '.visibility is invalid.');
+    if (!Number.isFinite(row.order))
+      errors.push(at + '.order must be a number.');
+    if (!asset(row.photo))
+      errors.push(
+        at + '.photo must be null or an image under /people/ or /media/.',
+      );
+    const place = row.buildingId;
+    if (typeof place !== 'string' || !neighbourPlaces.includes(place))
+      errors.push(
+        at +
+          '.buildingId must be the place whose file shows them: ' +
+          neighbourPlaces.join(' or ') +
+          '.',
+      );
+    else if (row.visibility === 'published') {
+      if (shown.has(place))
+        errors.push(
+          at +
+            ': ' +
+            place +
+            ' already has a published neighbour; a place’s file shows one.',
+        );
+      shown.add(place);
+    }
+    const group = row.group;
+    if (!object(group))
+      errors.push(
+        at +
+          '.group must be an object with name, fullName, intro, summary, connection and site.',
+      );
+    else {
+      errors.push(...unknownKeys(at + '.group', group, groupKeys));
+      // The group's names stay as it writes them (UIA, Urban Intelligence & Analytics).
+      for (const field of [
+        'name',
+        'fullName',
+        'intro',
+        'summary',
+        'connection',
+      ])
+        errors.push(
+          ...textErrors(
+            at + '.group.' + field,
+            group[field],
+            field === 'name' || field === 'fullName',
+          ),
+        );
+      errors.push(...outboundErrors(at + '.group.site', group.site));
+    }
+    if (!Array.isArray(row.sections))
+      errors.push(at + '.sections must be an array.');
+    else
+      for (const [j, section] of row.sections.entries()) {
+        const where = at + '.sections[' + j + ']';
+        if (!object(section))
+          errors.push(where + ' must be an object with a heading and a body.');
+        else
+          errors.push(
+            ...unknownKeys(where, section, ['heading', 'body']),
+            ...textErrors(where + '.heading', section.heading),
+            ...textErrors(where + '.body', section.body),
+          );
+      }
+    if (!Array.isArray(row.links)) errors.push(at + '.links must be an array.');
+    else
+      for (const [j, link] of row.links.entries())
+        errors.push(...outboundErrors(at + '.links[' + j + ']', link));
+  }
+  return errors;
+}
 export function validateCatalog(value: unknown): string[] {
   const errors: string[] = [];
   if (!object(value) || value.schemaVersion !== 2)
     return ['schemaVersion must be 2.'];
+  // The catalogue holds its schemaVersion and its collections, and nothing else: a collection whose
+  // name is misspelt (the US `neighbors`) is refused, not read as a file without it.
+  errors.push(
+    ...unknownKeys('catalog', value, ['schemaVersion', ...collections]),
+  );
   const bound = new Set<string>();
-  for (const collection of collections) {
+  for (const collection of gateCollections) {
     const rows = value[collection];
     if (!Array.isArray(rows)) {
       errors.push(collection + ' must be an array.');
@@ -287,12 +584,13 @@ export function validateCatalog(value: unknown): string[] {
             !['active', 'completed'].includes(row.status)
           )
             errors.push(at + '.status is invalid.');
-          if (
-            row.buildingId !== null &&
-            (typeof row.buildingId !== 'string' ||
-              !buildingIds.includes(row.buildingId))
-          )
-            errors.push(at + '.buildingId is unknown.');
+          errors.push(
+            ...workPlaceErrors(
+              at,
+              row.buildingId,
+              at + '.buildingId is unknown.',
+            ),
+          );
         } else {
           if (!realDate(row.date))
             errors.push(at + '.date must be a real YYYY-MM-DD date.');
@@ -313,12 +611,13 @@ export function validateCatalog(value: unknown): string[] {
               )
             )
               errors.push(at + ': invalid output type.');
-            if (
-              row.buildingId !== null &&
-              (typeof row.buildingId !== 'string' ||
-                !buildingIds.includes(row.buildingId))
-            )
-              errors.push(at + ': unknown buildingId.');
+            errors.push(
+              ...workPlaceErrors(
+                at,
+                row.buildingId,
+                at + ': unknown buildingId.',
+              ),
+            );
             if (row.researchId !== null) {
               const project = Array.isArray(value.research)
                 ? value.research.find(
@@ -366,6 +665,8 @@ export function validateCatalog(value: unknown): string[] {
               );
           }
     }
+  // The neighbours are checked on their own: never people, so nothing above names them.
+  errors.push(...neighbourErrors(value));
   return errors;
 }
 export function assertCatalog(value: unknown): asserts value is LabCatalog {
@@ -376,10 +677,10 @@ export function assertCatalog(value: unknown): asserts value is LabCatalog {
 export function upsertRecord(
   catalog: LabCatalog,
   collection: Collection,
-  record: LabRecord,
+  record: CatalogRecord,
 ): LabCatalog {
   const next = structuredClone(catalog),
-    rows = next[collection] as LabRecord[];
+    rows = next[collection] as CatalogRecord[];
   const index = rows.findIndex((row) => row.id === record.id);
   if (index < 0) rows.push(record);
   else rows[index] = record;
@@ -392,7 +693,7 @@ export function removeRecord(
   id: string,
 ): LabCatalog {
   const next = structuredClone(catalog),
-    rows = next[collection] as LabRecord[];
+    rows = next[collection] as CatalogRecord[];
   const index = rows.findIndex((row) => row.id === id);
   if (index < 0) throw new Error('Record not found: ' + collection + '/' + id);
   rows.splice(index, 1);
@@ -400,9 +701,23 @@ export function removeRecord(
   return next;
 }
 
-/** Upgrade a v1 file before validation; never invent published records. */
+/**
+ * Upgrade a file from before a collection existed, before validation; never invent published
+ * records. v1 had no outputs, notes or neighbours. The neighbours came later within v2 and only
+ * add a list, so a v2 file written before them gains an empty one and schemaVersion stays 2. A
+ * file that spells the key otherwise (`neighbors`) gains one too, and validateCatalog refuses its
+ * unknown key.
+ */
 export function migrateCatalog(value: unknown): unknown {
   if (object(value) && value.schemaVersion === 1)
-    return { ...value, schemaVersion: 2, outputs: [], notes: [] };
+    return {
+      ...value,
+      schemaVersion: 2,
+      outputs: [],
+      notes: [],
+      neighbours: [],
+    };
+  if (object(value) && value.schemaVersion === 2 && !('neighbours' in value))
+    return { ...value, neighbours: [] };
   return value;
 }
