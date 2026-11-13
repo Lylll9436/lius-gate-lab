@@ -42,6 +42,8 @@ for (const name of [
     .replace(/(['"])\.\/(city-data)\1/g, "'./$2.mjs'");
   await fs.writeFile(path.join(output, name + '.mjs'), result);
 }
+// What the sky island's framing checks found, for the summary.
+const skyNav = {};
 const nav = await import(
     pathToFileURL(path.join(output, 'lab-navigation.mjs')).href
   ),
@@ -86,13 +88,26 @@ assert.deepEqual(nav.tourStops, [
   'corner-park',
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
-// Ten stops: the gate, the hall, the three homes, the residence, then the airport, the studio, the
-// archive and the park.
-assert.equal(nav.tourStops.length, 10);
+// Eleven stops: the gate, the hall, the three homes, the residence, then the sky island (its file's
+// bearing is the airport's, so the tour turns no more for it), the airport, the studio, the archive
+// and the park.
+assert.equal(nav.tourStops.length, 11);
 assert.deepEqual(
   nav.tourStops.slice(5),
-  ['visiting-phd', 'airport', 'research-studio', 'city-archive', 'corner-park'],
+  ['visiting-phd', 'sky-island', 'airport', 'research-studio', 'city-archive', 'corner-park'],
 );
+// The sky island has a City file and a bearing of its own but no reading chapter: its address
+// reads its host chapter, About (the Town Hall's), whose chip it lights in the masthead; City mode
+// faces it from its own bearing; and the reading page never makes it its address, so the reading
+// camera keeps to About's own subject.
+assert.equal(nav.chapterFor('sky-island'), 'town-hall');
+assert.equal(nav.chapterFor('place:sky-island'), 'town-hall');
+assert.equal(nav.facingChapter('sky-island'), 'sky-island');
+assert.equal(nav.facingChapter('place:sky-island'), 'sky-island');
+assert.equal(nav.readingContent('sky-island', 'town-hall'), 'town-hall');
+assert.deepEqual(nav.sceneTarget('sky-island'), { building: 'sky-island' });
+assert.equal(nav.placeFor('sky-island'), 'sky-island');
+assert(!nav.readingChapters.includes('sky-island') && !nav.destinations.includes('sky-island'), 'The sky island has a reading chapter or a masthead chip of its own.');
 // The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
 // and the overview's list of places names it there too.
 assert.deepEqual(nav.readingChapters, [
@@ -656,14 +671,14 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
 {
   const pieces = [];
   const collect = (node) => {
-    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup'].includes(node.name?.text))
-      pieces.push(node.getText(syntax));
-    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR'].includes(d.name.getText(syntax))))
+    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'fitFocused', 'skyMarks', 'skyFit', 'focusSky'].includes(node.name?.text))
+      pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 13, 'The pan and fit check must find every piece it runs.');
+  assert.equal(pieces.length, 19, 'The pan and fit check must find every piece it runs.');
   assert(/controls\.minZoom = 0\.45;/.test(source), 'The town\'s widest zoom is no longer 0.45.');
   const view = {
     T,
@@ -677,8 +692,16 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     screenUp: new T.Vector3(),
     frameDrop: 0,
     tween: false,
+    // The reading page's overview (its last shot) unless a check says City mode.
+    cityMode: false,
+    panelEdge: 1,
+    // A framing of picked buildings (fitFocused): the sky island's checks give it their models.
+    models: new Map(),
+    city: { updateMatrixWorld() {} },
+    focusedIds: [],
+    overviewFit: false,
   };
-  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, islandMarks, AIRPORT_FIT, PAN });`,
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN });`,
     scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
@@ -692,12 +715,21 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       return [r.x + (x - r.x) * k, r.z + (z - r.z) * k];
     },
     // The union, measured from the plan rather than from panRegion: the disc, the capsule round the
-    // causeway's line (x 0.5, from z -20 to the deck's south edge) and the deck's signed distance.
+    // causeway's line (x 0.5, from z -20 to the deck's south edge), the deck's signed distance, and
+    // the sky island's pocket (a disc of 16 round its middle) with the capsule of 8 that links it
+    // back to the town (from 30 out along the line between them).
     beyondDeck = (x, z) => plan.airportDistance(x, z),
+    skyLink = [(plan.SKY.x * 30) / Math.hypot(plan.SKY.x, plan.SKY.z), (plan.SKY.z * 30) / Math.hypot(plan.SKY.x, plan.SKY.z)],
+    beyondSky = (x, z) => Math.min(Math.hypot(x - plan.SKY.x, z - plan.SKY.z) - 16, plan.distanceToSegment([x, z], skyLink, [plan.SKY.x, plan.SKY.z]) - 8),
     // How far a point lies outside the union (negative inside).
     beyond = (x, z) => {
       const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
-      return Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4);
+      return Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4, beyondSky(x, z));
+    },
+    // Whether the sky island's regions are the ones a point is deepest in or nearest to.
+    nearSky = (x, z) => {
+      const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
+      return beyondSky(x, z) < Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4);
     },
     inside = (x, z) => beyond(x, z) <= 1e-6,
     DISC = 36;
@@ -717,15 +749,34 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
   // its deck's edge, as the disc holds it a few units off the island's coast: a pan north of it no
   // longer ends on two thirds of open sea (the capsule of 15 let it run 9 past the north edge). Only
   // 40 out past the deck's east end is the island's disc the nearer region, and there it is held on
-  // the disc's edge, 3.5 off the coast.
+  // the disc's edge, 3.5 off the coast; and 40 out past its west end (from its north-west round to
+  // its west) the sky island's pocket is, and there it is held on that pocket's edge.
   for (let a = Math.PI; a <= 2 * Math.PI + 1e-9; a += Math.PI / 36)
     for (const far of [5, 20, 40]) {
       const x = plan.AIRPORT.x + Math.cos(a) * (plan.AIRPORT.hw + far),
         z = plan.AIRPORT.z + Math.sin(a) * (plan.AIRPORT.hd + far),
         [cx, cz] = clamp(x, z),
-        onDisc = region(x, z).radius === DISC;
-      assert(inside(cx, cz) && (onDisc ? far === 40 && Math.cos(a) > 0.99 && Math.abs(Math.hypot(cx, cz) - DISC) < 1e-6 : beyondDeck(cx, cz) <= 4 + 1e-6), `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
+        onDisc = region(x, z).radius === DISC,
+        onSky = nearSky(x, z);
+      assert(inside(cx, cz) && (onDisc ? far === 40 && Math.cos(a) > 0.99 && Math.abs(Math.hypot(cx, cz) - DISC) < 1e-6 : onSky ? far >= 20 && Math.cos(a) < -0.5 && Math.abs(beyondSky(cx, cz)) < 1e-6 : beyondDeck(cx, cz) <= 4 + 1e-6), `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
     }
+  // The sky island's pocket: the ground point of its own file (12.2 beyond it along the line of
+  // sight at any bearing) lies in it, unclamped; a pan away from it is held to it, or back along its
+  // link to the town, never out to open sea.
+  {
+    const S = plan.SKY;
+    for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) {
+      const x = S.x - Math.sin(b) * 12.2,
+        z = S.z - Math.cos(b) * 12.2;
+      assert(nearSky(x, z) && clamp(x, z).every((c, i) => Math.abs(c - [x, z][i]) < 1e-9), `The sky island's pocket does not hold its file's ground point at bearing ${b.toFixed(2)}.`);
+    }
+    for (const [x, z] of [[-80, -24], [-52, -60], [-52, 10], [-75, 0], [-70, -45]]) {
+      const [cx, cz] = clamp(x, z);
+      assert(inside(cx, cz) && Math.hypot(cx - x, cz - z) > 1, `A pan to ${x}, ${z} is not held to the sky island's pocket.`);
+    }
+    // Its link overlaps both the island's disc and its own pocket, so a visitor can pan back.
+    assert(Math.hypot(...skyLink) + 8 > DISC && beyondSky(...skyLink) < 0 && beyond((skyLink[0] + S.x) / 2, (skyLink[1] + S.z) / 2) < 0, 'The sky island\'s pocket is cut off from the town.');
+  }
   // The limit as the frame loop applies it, through three's real OrbitControls as a drag drives
   // it: each pointer move pans and updates, then each frame holds the limit (holdPan) and updates
   // again, 8 px a frame on a 1440 x 900 frame. Screen-space panning lifts the target 0.74 a unit of
@@ -785,7 +836,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         // Past the deck, where the deck's region is the nearest (neither the disc nor the capsule holds it).
         const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, g.z)),
           deckOut = beyondDeck(g.x, g.z) - 4;
-        if (deckOut < Math.hypot(g.x, g.z) - DISC && deckOut < Math.hypot(g.x - plan.AIRPORT_ROAD.x, g.z - along) - 8) worst.deck = Math.max(worst.deck, deckOut + 4);
+        if (deckOut < Math.hypot(g.x, g.z) - DISC && deckOut < Math.hypot(g.x - plan.AIRPORT_ROAD.x, g.z - along) - 8 && deckOut < beyondSky(g.x, g.z)) worst.deck = Math.max(worst.deck, deckOut + 4);
         worst.lift = Math.max(worst.lift, Math.abs(controls.target.y - held.shiftApplied.y));
         worst.reached = Math.min(worst.reached, beyondDeck(g.x, g.z));
         return g;
@@ -828,6 +879,22 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       for (let f = 0; f < 120; f++) drive.frame();
       assert(drive.worst.deck <= 4.5 && drive.worst.beyond <= 0.5 && drive.worst.move <= 16, `A drag from the airport toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.deck.toFixed(2)} past its deck (or jumps ${drive.worst.move.toFixed(0)} px).`);
     }
+  // From the sky island's file (its ground point 12.2 beyond it), a drag out to sea is held in its
+  // pocket and a drag toward the town gets there along the link, never jumping or lifting the camera.
+  for (const yaw of [Math.PI / 4, plan.chapterBearings['sky-island'], (5 * Math.PI) / 4])
+    for (const [x, z] of [[-95, -24], [-52, -75], [-52, 25], [-90, 15], [0, 0]]) {
+      const drive = drivePan(yaw),
+        ground = new T.Vector3(plan.SKY.x - Math.sin(yaw) * 12.2, 0, plan.SKY.z - Math.cos(yaw) * 12.2);
+      drive.held.controls.target.copy(ground);
+      drive.held.camera.position.copy(ground).add(new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38));
+      drive.held.controls.update();
+      drive.held.camera.updateMatrixWorld();
+      for (let f = 0; f < 500; f++) drive.frame(...drive.toward(x, z));
+      for (let f = 0; f < 120; f++) drive.frame();
+      const end = drive.ground();
+      assert(drive.worst.beyond <= 0.5 && drive.worst.move <= 16 && drive.worst.lift <= scene.PAN.lift + 1, `A drag from the sky island's file toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.beyond.toFixed(2)} out of the pan regions, or jumps ${drive.worst.move.toFixed(0)} px.`);
+      if (!x && !z) assert(Math.hypot(end.x, end.z) < DISC, `A drag from the sky island's file back to the town at bearing ${yaw.toFixed(2)} stops at ${end.x.toFixed(1)}, ${end.z.toFixed(1)}.`);
+    }
   // A straight drag from the plaza toward the airport gets there (measured at the lifted target it
   // stuck on the disc's sphere 30 out), and at the opening bearing a drag kept up against the limit
   // holds the view still.
@@ -860,6 +927,14 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     for (let a = 0; a < 2 * Math.PI; a += Math.PI / 60) edge.push(new T.Vector3(Math.cos(a) * (DISC + 0.5), 0, Math.sin(a) * (DISC + 0.5)));
     for (const o of plan.airportOutline(4.5, 1.5)) edge.push(new T.Vector3(o.x, 0, o.z));
     for (let z = -20; z >= plan.AIRPORT.z + plan.AIRPORT.hd; z -= 2) edge.push(new T.Vector3(plan.AIRPORT_ROAD.x + 8.5, 0, z), new T.Vector3(plan.AIRPORT_ROAD.x - 8.5, 0, z));
+    // The sky island's pocket and the sides of its link back to the town.
+    for (let a = 0; a < 2 * Math.PI; a += Math.PI / 30) edge.push(new T.Vector3(plan.SKY.x + Math.cos(a) * 16.5, 0, plan.SKY.z + Math.sin(a) * 16.5));
+    {
+      const [lx, lz] = skyLink,
+        l = Math.hypot(plan.SKY.x - lx, plan.SKY.z - lz),
+        [nx, nz] = [-(plan.SKY.z - lz) / l, (plan.SKY.x - lx) / l];
+      for (let k = 0; k <= 10; k++) for (const s of [-8.5, 8.5]) edge.push(new T.Vector3(lx + ((plan.SKY.x - lx) * k) / 10 + nx * s, 0, lz + ((plan.SKY.z - lz) * k) / 10 + nz * s));
+    }
     const frames = [
       ...[[360, 640], [360, 800], [375, 667], [390, 844], [412, 915], [430, 932]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0, -0.26]]),
       ...[[768, 1024], [820, 1180]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0, -0.2]]),
@@ -1130,13 +1205,30 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     };
     for (const [w, h] of [...phones, ...upright, ...wide]) {
       const narrow = w < 961;
-      for (const bearing of stops)
-        for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[0, 0], [(460 + 32) / (2 * w), 0], [0.21, 0]]) {
+      // (The overview as the reading page's last shot has it, and as City mode has it: with the sky island.)
+      for (const city of [false, true])
+        for (const bearing of stops)
+          for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[0, 0], [(460 + 32) / (2 * w), 0], [0.21, 0]]) {
+            frame(w, h, shift, bearing);
+            view.frameDrop = drop;
+            view.cityMode = city;
+            scene.fitOverview();
+            hold(`the ${city ? 'City' : 'reading'} overview (shift ${shift.toFixed(2)}, drop ${drop})`, w, h, view.targetZoom, bearing, view.target.clone());
+          }
+      view.cityMode = false;
+      // The sky island's own file, beside its panel or above its sheet, from its own bearing and
+      // every Rotate stop (Rotate keeps it framed); and, but on phones, zoomed out from there to the
+      // widest. (A phone at 5pi/4 zoomed right out over the island would see the plane lost at the
+      // frame's very bottom corner, 0-9 inside it: the timetable has no slack to send it further.)
+      for (const bearing of [plan.chapterBearings['sky-island'], ...stops])
+        for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[(460 + 32) / (2 * w), 0]]) {
           frame(w, h, shift, bearing);
           view.frameDrop = drop;
-          scene.fitOverview();
-          hold(`the City overview (shift ${shift.toFixed(2)}, drop ${drop})`, w, h, view.targetZoom, bearing, view.target.clone());
+          scene.focusSky();
+          hold('the sky island’s file', w, h, view.targetZoom, bearing, view.target.clone());
+          if (w >= 768) hold('the widest zoom on the sky island', w, h, 0.45, bearing, view.target.clone());
         }
+      view.frameDrop = 0;
       for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[0.21, 0], [(460 + 32) / (2 * w), 0]]) {
         frame(w, h, shift, plan.chapterBearings.airport);
         view.frameDrop = drop;
@@ -1153,6 +1245,256 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         for (const bearing of [...stops, plan.chapterBearings.airport]) hold('the widest zoom', w, h, 0.45, bearing, centre);
     }
     assert(frames > 6000, `The plane check looks at only ${frames} frames.`);
+  }
+  // The sky island in the scene's own framings (sky-placement.md sections 2 and 5): the opening
+  // view without it, City mode's overview with it, its own file beside the panel or above the sheet
+  // through the idle drift, and the reading page's frames, which keep it out of sight or hide it.
+  {
+    const S = plan.SKY,
+      fileBearing = plan.chapterBearings['sky-island'],
+      stops = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4],
+      drifts = Array.from({ length: 17 }, (_, k) => -0.16 + k * 0.02),
+      // Its silhouette: the overview's marks, its rim's widest ring dense; and the clouds' and rocks'
+      // slots as the corners of generous boxes round them (lane G's at the slot's size, drift and bob).
+      outline = [...scene.SKY_MARKS, ...plan.skyOutline(0, 64).map((p) => new T.Vector3(p.x, S.top - S.ring, p.z))],
+      floats = [...plan.SKY_CLOUDS.map((f) => [2.2, 0, 1.3, 1, f]), ...plan.SKY_ROCKS.map((f) => [1.05, -1.72, 0.92, 1.05, f])].flatMap(([hx, bottom, top, hz, f]) =>
+        [-1, 1].flatMap((sx) =>
+          [-1, 1].flatMap((sz) =>
+            [bottom, top].map((y) => new T.Vector3(f.x + (sx * hx * Math.cos(f.ry) + sz * hz * Math.sin(f.ry)) * f.size, f.y + y * f.size, f.z + (-sx * hx * Math.sin(f.ry) + sz * hz * Math.cos(f.ry)) * f.size)),
+          ),
+        ),
+      ),
+      shape = [...outline, ...floats],
+      // A point's place (px from the frame's top left) in a w x h frame whose camera looks at `centre` from `bearing` at `zoom`.
+      px = (w, h, zoom, bearing, centre, p) => {
+        const per = (h * zoom) / Math.max(53, (76 * h) / w),
+          back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+          right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+          up = new T.Vector3().crossVectors(back, right),
+          d = p.clone().sub(centre);
+        return [w / 2 + d.dot(right) * per, h / 2 - d.dot(up) * per];
+      },
+      // The convex outline of screen points, and whether it overlaps the rectangle [x0, x1] x [y0, y1] (separating axes).
+      hull = (points) => {
+        const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+          cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]),
+          half = (list) => {
+            const out = [];
+            for (const p of list) {
+              while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+              out.push(p);
+            }
+            out.pop();
+            return out;
+          };
+        return [...half(sorted), ...half(sorted.reverse())];
+      },
+      overlaps = (outlinePx, [x0, y0, x1, y1]) => {
+        const rect = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+          axes = [[1, 0], [0, 1], ...outlinePx.map((p, i) => [outlinePx[(i + 1) % outlinePx.length][1] - p[1], p[0] - outlinePx[(i + 1) % outlinePx.length][0]])];
+        return axes.every(([ax, ay]) => {
+          const a = outlinePx.map(([x, y]) => x * ax + y * ay),
+            b = rect.map(([x, y]) => x * ax + y * ay);
+          return Math.max(...a) > Math.min(...b) && Math.max(...b) > Math.min(...a);
+        });
+      },
+      box = (points) => points.reduce(([x0, y0, x1, y1], [x, y]) => [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)], [Infinity, Infinity, -Infinity, -Infinity]),
+      desktops = [[1024, 768], [1180, 820], [1280, 720], [1280, 800], [1366, 768], [1440, 900], [1536, 864], [1600, 900], [1680, 1050], [1920, 1080], [2560, 1440], [3440, 1440]];
+
+    // (a) The opening view (reset(): the island's centre at zoom 1, the hero's frame shift) never
+    // shows it, on any desktop, laptop or wide tablet, at any moment of the idle drift.
+    for (const [w, h] of desktops) {
+      const centre = new T.Vector3(Math.cos(Math.PI / 4), 0, -Math.sin(Math.PI / 4)).multiplyScalar(-0.06 * ((Math.max(53, (76 * h) / w) * w) / h));
+      for (const d of drifts) assert(!overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, centre, p))), [0, 0, w, h]), `The opening view shows the sky island at ${w} x ${h}, drifted ${d.toFixed(2)}.`);
+    }
+
+    // (b) City mode's overview takes it in (the reading page's last shot does not: see above). Beside
+    // the file at 1440 x 900 at the opening bearing the zoom is today's; 16:9 screens give some up
+    // (0.78 of it at 1920 x 1080), and with the file hidden it is 0.76 at every desktop size; the
+    // other stops lose a tenth at most. At rest the island is whole in the part of the frame the
+    // file and the page's bands leave free, from 1280 wide (at 1024 and 1180 the overviews sit at
+    // the widest zoom, as they did); through the idle drift nine tenths of it stay in the frame (at
+    // the drift's extreme the chimneys slide up past the top edge, under the masthead's band, by 22
+    // px at most, on the widest screens at 3pi/4 with the file hidden). Its clouds and rocks never
+    // widen the overview (they hang on the town's side, inside the town's own box). The fog all but
+    // never touches it: 5% at most at rest; at the opening bearing the drift turns the view about a
+    // centre far east of it (the file's offset), and at the drift's extreme it takes 15% at most.
+    const overviewAt = (w, h, shift, bearing, city) => {
+      frame(w, h, shift, bearing);
+      view.frameDrop = 0;
+      view.cityMode = city;
+      scene.fitOverview();
+      view.cityMode = false;
+      return { zoom: view.targetZoom, centre: view.target.clone() };
+    };
+    const ratio = (w, h, shift, bearing) => overviewAt(w, h, shift, bearing, true).zoom / overviewAt(w, h, shift, bearing, false).zoom;
+    assert(Math.abs(ratio(1440, 900, 492 / 2880, Math.PI / 4) - 1) < 1e-9, 'City mode\'s default view at 1440 x 900 no longer keeps today\'s zoom.');
+    assert(Math.abs(ratio(1920, 1080, 492 / 3840, Math.PI / 4) - 0.783) < 0.01, `City mode's default view at 1920 x 1080 keeps ${ratio(1920, 1080, 492 / 3840, Math.PI / 4).toFixed(3)} of today's zoom.`);
+    const fog = { rest: 0, drift: 0 };
+    let worstCut = 1;
+    for (const [w, h] of desktops)
+      for (const open of [false, true])
+        for (const bearing of stops) {
+          const shift = open ? 492 / (2 * w) : 0,
+            r = ratio(w, h, shift, bearing);
+          assert(r > (bearing === Math.PI / 4 ? 0.75 : 0.88) - 1e-9 && r <= 1 + 1e-9, `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} keeps ${r.toFixed(3)} of today's zoom.`);
+          const { zoom, centre } = overviewAt(w, h, shift, bearing, true),
+            right = w - (open ? 476 : 0);
+          // The floats inside the overview's box: adding them changes nothing.
+          scene.SKY_MARKS.push(...floats);
+          const withFloats = overviewAt(w, h, shift, bearing, true);
+          scene.SKY_MARKS.splice(scene.SKY_MARKS.length - floats.length);
+          assert(Math.abs(withFloats.zoom - zoom) < 1e-9 && withFloats.centre.distanceTo(centre) < 1e-9, `The sky island's clouds and rocks widen City mode's overview at ${w} x ${h} at bearing ${bearing.toFixed(2)}.`);
+          for (const d of [0, -0.16, -0.08, 0.08, 0.16]) {
+            const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p)));
+            if (!d && w >= 1280) assert(x0 >= 0 && x1 <= right && y0 >= 76 - 0.5 && y1 <= h - 76 + 0.5, `In City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} the sky island spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
+            else if (w >= 1280) worstCut = Math.min(worstCut, (Math.min(x1, w) - Math.max(x0, 0)) / (x1 - x0), (Math.min(y1, h) - Math.max(y0, 0)) / (y1 - y0));
+            // The fog (72 to 150 along the line of sight) over its farthest point.
+            const back = new T.Vector3(Math.sin(bearing + d) * 38, 35, Math.cos(bearing + d) * 38);
+            for (const p of shape) {
+              const f = (back.length() - p.clone().sub(centre).dot(back.clone().normalize()) - 72) / (150 - 72);
+              if (d) fog.drift = Math.max(fog.drift, f);
+              else fog.rest = Math.max(fog.rest, f);
+            }
+          }
+        }
+    assert(worstCut >= 0.9, `Through the idle drift only ${(worstCut * 100).toFixed(0)}% of the sky island stays in City mode's overview.`);
+    assert(fog.rest <= 0.05 && fog.drift <= 0.15, `The fog reaches ${fog.rest.toFixed(3)} at rest (and ${fog.drift.toFixed(3)} through the drift) over the sky island in City mode's overview.`);
+    skyNav.overview = `the fog ${(fog.rest * 100).toFixed(1)}% at rest, ${(worstCut * 100).toFixed(0)}% of it in frame through the drift`;
+
+    // (c) Its own file: SKY_FIT fitted like a group between 0.95 and 2.6 (2.02 at 1440 x 900), its
+    // target then raised SKY_LIFT up the line of sight: under the pan limit's lift (a glide's end
+    // never slides the camera) with its ground point in the island's own pocket, unclamped. The
+    // island, its clouds and rocks with it, stay whole beside the file, 24 px clear of the masthead,
+    // the controls and the panel, through the idle drift; on phones, at the zoom's cap, above the
+    // file's sheet (its top at 69% of the stage, as the page lays it out).
+    const fileAt = (w, h, shift, drop) => {
+      frame(w, h, shift, fileBearing);
+      view.frameDrop = drop;
+      view.panelEdge = 1;
+      scene.focusSky();
+      view.frameDrop = 0;
+      return { zoom: view.targetZoom, centre: view.target.clone(), subject: view.target.clone().sub(view.shiftApplied) };
+    };
+    for (const [w, h] of [[1024, 768], [1280, 800], [1366, 768], [1440, 900], [1536, 864], [1920, 1080], [2560, 1440]]) {
+      const { zoom, centre, subject } = fileAt(w, h, 492 / (2 * w), 0),
+        back = new T.Vector3(Math.sin(fileBearing) * 38, 35, Math.cos(fileBearing) * 38).normalize(),
+        ground = subject.clone().addScaledVector(back, -subject.y / back.y);
+      assert(zoom >= 1.65 && zoom <= 2.2 && (w !== 1440 || Math.abs(zoom - 2.019) < 0.01), `The sky island's file fits at ${zoom.toFixed(3)} at ${w} x ${h}.`);
+      assert(Math.abs(subject.y - 6.5) < 1e-9 && subject.y <= scene.PAN.lift - 1 && nearSky(ground.x, ground.z) && clamp(ground.x, ground.z).every((c, i) => Math.abs(c - [ground.x, ground.z][i]) < 1e-9), `The sky island's file at ${w} x ${h} frames ${ground.x.toFixed(1)}, ${ground.z.toFixed(1)} from ${subject.y.toFixed(2)} up, outside its pocket or over the pan limit's lift.`);
+      for (const d of drifts) {
+        const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, fileBearing + d, centre, p)));
+        assert(x0 >= 24 && x1 <= w - 476 - 24 && y0 >= 76 + 24 && y1 <= h - 76 - 24, `Drifted ${d.toFixed(2)}, the sky island's file at ${w} x ${h} spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
+      }
+    }
+    for (const [w, h] of [[390, 844], [430, 932]]) {
+      const sheet = 0.69 * h,
+        { zoom, centre } = fileAt(w, h, 0, ((76 + sheet) / 2 - h / 2) / h);
+      assert(Math.abs(zoom - 2.6) < 1e-9, `The sky island's file on a ${w} x ${h} phone fits at ${zoom.toFixed(3)}.`);
+      for (const d of drifts) {
+        const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, fileBearing + d, centre, p)));
+        assert(x0 >= 12 && x1 <= w - 12 && y0 >= 76 + 12 && y1 <= sheet - 12, `Drifted ${d.toFixed(2)}, the sky island's file on a ${w} x ${h} phone spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
+      }
+    }
+
+    // (d) Hidden where a reading frame would cut a slice of it, and only there: in the People
+    // chapter's frames (its row, and each home or the residence picked from it) and the reading
+    // page's last shot, as the glide into them starts and back once the glide out has ended; never in
+    // City mode or Inspect.
+    {
+      const pieces = [];
+      (function find(node) {
+        if (ts.isFunctionDeclaration(node) && ['skyHidden', 'followSky'].includes(node.name?.text)) pieces.push(node.getText(syntax));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'SKY_HIDES')) pieces.push(node.getText(syntax));
+        ts.forEachChild(node, find);
+      })(syntax);
+      assert.equal(pieces.length, 3, 'The hiding check must find every piece it runs.');
+      const state = {
+          T,
+          Math,
+          plan,
+          cityMode: false,
+          inspect: null,
+          overviewFit: false,
+          focusedIds: [],
+          tween: false,
+          island: { root: { visible: true } },
+          skyShown: true,
+          skyCast: false,
+          shadowFade: 1,
+          skyCasters: [],
+          camera: { updateMatrixWorld() {} },
+          skyShadowWanted: () => false,
+          LAND_MARKS: [],
+          frameShift: 0,
+          frameDrop: 0,
+          SKY_SHADOW: { fade: 0.18 },
+          reduced: false,
+          shadowFocus() {},
+        },
+        hiding = runInNewContext(`${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyHidden, followSky });`, state),
+        shown = (patch) => {
+          Object.assign(state, patch);
+          hiding.followSky(1 / 60);
+          return state.island.root.visible;
+        };
+      assert(shown({ focusedIds: ['town-hall'] }), 'The sky island is hidden in the About chapter.');
+      assert(!shown({ focusedIds: ['yunlong-liu'], tween: true }), 'The sky island shows as the glide into a home of the People chapter starts.');
+      assert(!shown({ focusedIds: [...plan.chapterSubjects.people] }) && !shown({ focusedIds: ['visiting-phd'], tween: false }), 'The sky island shows in the People chapter.');
+      assert(!shown({ focusedIds: [], overviewFit: true }), 'The sky island shows in the reading page\'s last shot.');
+      assert(!shown({ overviewFit: false, focusedIds: ['airport'], tween: true }), 'The sky island comes back before the glide out of the People chapter has ended.');
+      assert(shown({ tween: false }), 'The sky island does not come back once the glide has ended.');
+      assert(shown({ cityMode: true, focusedIds: ['yunlong-liu'], tween: true }) && shown({ overviewFit: true }), 'The sky island is hidden in City mode.');
+      assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: ['qin-li'] }), 'The sky island is hidden in Inspect.');
+    }
+    // Every other reading frame leaves it out of sight through the idle drift: each chapter's
+    // subject framed beside the reading panel from 1024 wide (its buildings as their sites' boxes,
+    // the corner park at its zoom of 2.2), and the narrow page's chapters on tablets and phones.
+    {
+      view.models = new Map(
+        buildings
+          .filter((b) => b.model !== 'sky')
+          .map((b) => {
+            const s = plan.sites[b.id],
+              root = new T.Group(),
+              mesh = new T.Mesh(new T.BoxGeometry(s.w, s.height, s.d));
+            mesh.position.y = s.height / 2;
+            root.add(mesh);
+            root.position.set(s.x, 0, s.z);
+            root.rotation.y = s.rotation;
+            root.updateMatrixWorld(true);
+            return [b.id, { root }];
+          }),
+      );
+      const edgeOf = (vw) => {
+          const pad = Math.min(56, Math.max(16, 0.04 * vw)),
+            wide = vw <= 1180 ? Math.min(600, Math.max(380, 0.5 * vw)) : Math.min(640, Math.max(400, 0.44 * vw));
+          return (vw - pad - Math.min(vw - 2 * pad, wide)) / vw;
+        },
+        subjects = { 'town-hall': 'town-hall', airport: 'airport', 'research-studio': 'research-studio', 'city-archive': 'city-archive', 'lius-gate': 'lius-gate', 'corner-park': null };
+      for (const [w, h, narrow] of [...desktops.map(([w, h]) => [w, h, false]), [768, 1024, true], [820, 1180, true], [390, 844, true], [430, 932, true], [360, 800, true]])
+        for (const [chapter, id] of Object.entries(subjects)) {
+          const bearing = plan.chapterBearings[chapter];
+          frame(w, h, narrow ? 0 : 0.21, bearing);
+          view.frameDrop = 0;
+          view.panelEdge = narrow ? 1 : edgeOf(w);
+          view.overviewFit = false;
+          if (id) {
+            view.focusedIds = [id];
+            view.target.set(0, 0, 0);
+            scene.fitFocused();
+          } else {
+            view.target.set(plan.park.x, 0, plan.park.z);
+            view.targetZoom = 2.2;
+            view.target.add(new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)).multiplyScalar(((narrow ? 0 : 0.21) * (view.camera.right - view.camera.left)) / 2.2));
+          }
+          for (const d of drifts)
+            assert(!overlaps(hull(shape.map((p) => px(w, h, view.targetZoom, bearing + d, view.target, p))), [0, 0, w, h]), `The reading page's ${chapter} chapter shows the sky island at ${w} x ${h}, drifted ${d.toFixed(2)}.`);
+        }
+      view.panelEdge = 1;
+      view.focusedIds = [];
+      view.models = new Map();
+    }
   }
   // That is the framing the Departures chapter gets: the reading camera turns to its chapter's
   // bearing (the gate's) and selects its scene target, the airport, and the scene fits a selected
@@ -1631,5 +1973,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file through the drift, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );

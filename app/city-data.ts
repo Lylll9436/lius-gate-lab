@@ -7,6 +7,7 @@ export type BuildingId =
   | 'yunlong-liu'
   | 'qin-li'
   | 'visiting-phd'
+  | 'sky-island'
   | 'airport'
   | 'research-studio'
   | 'city-archive';
@@ -24,7 +25,7 @@ export type Building = {
   w: number;
   d: number;
   height: number;
-  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'airport' | 'studio' | 'archive';
+  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'sky' | 'airport' | 'studio' | 'archive';
   color: string;
   variant?: 'villa' | 'red-tenement' | 'gabled-house';
   sections: { heading: Text; body: Text }[];
@@ -248,6 +249,34 @@ const places: Building[] = [
       },
     ],
     related: ['town-hall', 'research-studio'],
+  },
+  // The sky island: a place of its own off the north-west headland, floating over the sea. It is
+  // no model of the town's (model 'sky': town-build builds it in its own groups and city-scene
+  // frames, picks and shades it its own way), has no reading chapter (lab-navigation files it under
+  // About) and no Inspect. x, z, w, d and height are its villa's site (plan.sites).
+  {
+    id: 'sky-island',
+    name: t('Sky Island', '天空之岛'),
+    short: t('Sky Island', '天空之岛'),
+    category: t('ABOVE THE TOWN', '小城上空'),
+    summary: t(
+      'A small island that floats above the town, with a red-brick villa on its lawn.',
+      '漂浮在小城上空的一座小岛，草坪上立着一栋红砖别墅。',
+    ),
+    style: t('Red-brick villa', '红砖别墅'),
+    architecture: t(
+      'A red-brick villa under a slate roof, with a raised terrace and steps down to a striped lawn, on a chunk of earth and rock that tapers to a point.',
+      '石板屋顶的红砖别墅，抬高的露台有台阶通向修出条纹的草坪；整座花园托在一块向下收尖的土石上。',
+    ),
+    x: -52,
+    z: -23.855,
+    w: 6.9,
+    d: 6.8,
+    height: 8.18,
+    model: 'sky',
+    color: '#a4452e',
+    sections: [],
+    related: ['town-hall', 'pengyuan-liu'],
   },
   {
     id: 'airport',

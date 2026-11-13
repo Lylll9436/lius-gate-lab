@@ -36,7 +36,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/fonts.css` | 自托管字体（Fontsource 的 Fraunces、Inter、IBM Plex Mono），不依赖 Google Fonts；不要在 globals.css 里 @import（check-pages 会校验） |
 | `app/town-plan.ts` | 小城规划：岛屿轮廓、山丘、街道、建筑位置、港口、植栽（含白桦与花楸）与路灯布置、红绿灯的位置与配时、电车与骑车人遵守信号灯的行驶时刻表、飞机三分钟一圈的滑行与起降航程、井盖雨水口与降低路缘等街道细节 |
 | `app/town-build.ts` | 程序化建模的装配：分阶段调用各部件模块，再按材质家族合批 |
-| `app/town-shared.ts` `app/town-kit.ts` `app/town-ground.ts` `app/town-streets.ts` `app/town-nature.ts` `app/town-props.ts` `app/town-harbour.ts` `app/town-homes.ts` `app/town-residence.ts` `app/town-airport.ts` `app/town-buildings.ts` `app/town-movers.ts` `app/town-country.ts` `app/town-batch.ts` | 小城的各类部件：配色与公用布局、建筑零件、地形与地面贴图、街道与广场、树木与花草、街具与红绿灯、自行车架与塔吊、码头、海滩小景与灯塔、成员住宅与小屋、访问博士公寓、机场小岛（堤道、跑道与出发大厅）、拱门与公共建筑、热气球、车船与自行车、高地牛、池中鸭子与苏格兰小景、合批（含每块玻璃自己的夜间窗灯） |
+| `app/town-shared.ts` `app/town-kit.ts` `app/town-ground.ts` `app/town-streets.ts` `app/town-nature.ts` `app/town-props.ts` `app/town-harbour.ts` `app/town-homes.ts` `app/town-residence.ts` `app/town-airport.ts` `app/town-sky.ts` `app/town-buildings.ts` `app/town-movers.ts` `app/town-country.ts` `app/town-batch.ts` | 小城的各类部件：配色与公用布局、建筑零件、地形与地面贴图、街道与广场、树木与花草、街具与红绿灯、自行车架与塔吊、码头、海滩小景与灯塔、成员住宅与小屋、访问博士公寓、机场小岛（堤道、跑道与出发大厅）、天空之岛（草坪、岩体与别墅的占位体块）、拱门与公共建筑、热气球、车船与自行车、高地牛、池中鸭子与苏格兰小景、合批（含每块玻璃自己的夜间窗灯） |
 | `app/city-scene.ts` | 渲染器、镜头、光照、昼夜 / 天气、悬停与点击、单栋建筑近看 |
 | `app/glasgow-sun.ts` | 格拉斯哥太阳位置、当地时间与季节，以及夜间窗灯随当地时间逐扇熄灭的时钟（`windowClock`）；首屏直接使用，不得引入 three（check-pages 会校验） |
 | `app/city-atmosphere.ts` | 雨、海鸥、主光方向（含晨昏的低角度日光） |
