@@ -758,11 +758,17 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
 // Timed builds. Timed once by the wall clock, a build fails on a busy machine (or a slower one, as a
 // CI runner may be) with no change in its code. So a build timed here runs three times, and each
 // run is timed against a yardstick run just before and just after it (fixed three.js work of the
-// kind the builds do: cylinders turned and merged, their normals and box worked out): its time
-// over the pace those two give (their mean over YARDSTICK, the yardstick's ms when the limits were
-// set, on an Apple M5 Pro) is its time at the limits' pace. The fastest run at that pace is held
-// to the build's limit. A busy or slower machine is slower at both alike, and passes; each limit is
-// about three times what its build took when it was set, so a build five times slower fails.
+// kind the builds do: cylinders turned and merged, their normals and box worked out). The machine's
+// pace for the run is the faster of those two yardsticks over YARDSTICK (a fixed 12 ms, about the
+// yardstick's time in this check, on an Apple M5 Pro under the other lanes' load, when the limits
+// were first set), and the run's ms over that pace is its time at the limits' pace. The fastest run
+// at that pace is held to the build's limit. A busy or slower machine is slower at both alike, and
+// passes; each limit is about three times what its build takes at that pace (MAINTENANCE.md's
+// airport ground entry has the calibration), so a build five times slower fails. The faster
+// yardstick, not the two's mean: a pause (the collector clearing up after a phase, the machine busy
+// elsewhere) only ever slows a yardstick, and the one after a heavy phase often pays for it; paced
+// by the mean, such a run looked up to twice as fast as it ran, and the fastest of three was most
+// often that run.
 const YARDSTICK = 12,
   { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
 /** The yardstick's time, in ms. */
@@ -774,42 +780,45 @@ const yardstick = () => {
   merged.computeBoundingBox();
   return performance.now() - begin;
 };
-/** A run's time (ms) between yardsticks of `before` and `after` ms: { paced: its ms at the limits' pace, ms, pace }. */
+/** A run's time (ms) between yardsticks of `before` and `after` ms: { paced: its ms at the limits' pace, ms, pace, before, after }. */
 const atPace = (ms, before, after) => {
-  const pace = (before + after) / 2 / YARDSTICK;
-  return { paced: ms / pace, ms, pace };
+  const pace = Math.min(before, after) / YARDSTICK;
+  return { paced: ms / pace, ms, pace, before, after };
 };
+/** The fastest of a build's runs (each atPace's) at the limits' pace, with all of them (`runs`). */
+const fastestOf = (runs) => ({ ...runs.reduce((a, b) => (b.paced < a.paced ? b : a)), runs });
 /**
  * A build timed three times over: each run builds (timed) from what `setup` gives it (untimed).
- * Its fastest run at the limits' pace (atPace) and what the first run built.
+ * Its fastest run at the limits' pace (fastestOf) and what the first run built.
  */
 const timeBuild = (setup, build) => {
-  let fastest,
-    first,
+  const runs = [];
+  let first,
     before = yardstick();
   for (let run = 0; run < 3; run++) {
     const given = setup(),
       begin = performance.now(),
       built = build(given),
       ms = performance.now() - begin,
-      after = yardstick(),
-      time = atPace(ms, before, after);
-    if (!fastest || time.paced < fastest.paced) fastest = time;
+      after = yardstick();
+    runs.push(atPace(ms, before, after));
     if (!run) first = built;
     before = after;
   }
-  return { ...fastest, built: first };
+  return { ...fastestOf(runs), built: first };
 };
-/** Holds a timed build's fastest run (atPace) to its limit, in ms at the limits' pace. */
-const inTime = (what, { paced, ms, pace }, limit) =>
-  assert(paced < limit, `${what} takes ${Math.round(paced)} ms at the limits' pace, over its ${limit} ms (${Math.round(ms)} ms here, the yardstick at ${pace.toFixed(2)} times its ${YARDSTICK} ms).`);
+/** Holds a timed build's fastest run (fastestOf) to its limit, in ms at the limits' pace. */
+const inTime = (what, { paced, ms, pace, runs }, limit) =>
+  assert(
+    paced < limit,
+    `${what} takes ${Math.round(paced)} ms at the limits' pace, over its ${limit} ms (${Math.round(ms)} ms here, the faster yardstick at ${pace.toFixed(2)} times its ${YARDSTICK} ms; its runs ${runs.map((r) => `${Math.round(r.ms)} ms between yardsticks of ${r.before.toFixed(1)} and ${r.after.toFixed(1)}`).join(', ')}).`,
+  );
 // The page builds the same town a phase at a time, handing the main thread back in between. (Timed
 // builds, above: the town is built in phases three times over, a yardstick between every two
 // phases, each phase at its fastest.)
 const { buildTownInPhases } = await load('town-build');
 const phaseNames = [],
-  phaseTimes = new Map(),
-  stepTimes = [];
+  stepRuns = [];
 let phased;
 for (let run = 0; run < 3; run++) {
   let before = yardstick();
@@ -817,26 +826,26 @@ for (let run = 0; run < 3; run++) {
     const begin = performance.now(),
       step = phases.next(),
       ms = performance.now() - begin,
-      after = yardstick(),
-      time = atPace(ms, before, after);
-    if (!stepTimes[k] || time.paced < stepTimes[k].paced) stepTimes[k] = time;
+      after = yardstick();
+    (stepRuns[k] ??= []).push(atPace(ms, before, after));
     before = after;
     if (step.done) {
       phased ??= step.value;
       break;
     }
     if (!run) phaseNames.push(step.value);
-    phaseTimes.set(step.value, stepTimes[k]);
   }
 }
-const longestPhase = Math.max(...stepTimes.map((t) => t.ms));
+const stepTimes = stepRuns.map(fastestOf),
+  phaseTimes = new Map(phaseNames.map((name, k) => [name, stepTimes[k]])),
+  longestPhase = Math.max(...stepTimes.map((t) => t.ms));
 assert(phaseNames.length >= 10, 'The town is built in phases: ' + phaseNames.join(', '));
 assert.equal(new Set(phaseNames).size, phaseNames.length, 'Every phase has its own name.');
 // The airport's ground is built and batched in phases of its own (never in 'batch land', the
 // longest), each held to its own limit (timed builds, above), and its hall batches in its own phase too.
 assert.equal(phaseNames[phaseNames.indexOf('park, harbour and landmarks') + 1], 'airport ground', 'The airport ground is not built after the landmarks.');
 assert.equal(phaseNames[phaseNames.indexOf('batch land') + 1], 'batch airport', 'The airport is not batched right after the land.');
-for (const [name, limit] of [['airport ground', 150], ['batch airport', 150], ['batch departures hall', 75]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+for (const [name, limit] of [['airport ground', 150], ['batch airport', 170], ['batch departures hall', 90]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
 let phasedMeshes = 0,
   phasedTriangles = 0;
 phased.city.traverse((o) => {
@@ -5352,6 +5361,8 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       out = (p) => (p.z - F.line(p.y)) / n;
     assert.deepEqual([F.drop, F.width, F.rise], [FALL.drop, FALL.width, 0], 'The fall\'s defaults moved.');
     assert(FALL.width >= 0.5 && FALL.drop === 4.5 && Math.abs(FALL.puff - 1.3) < 1e-9 && Math.abs(F.out - plan.SKY_FALLS.out) < 1e-9, 'The fall is under 0.5 wide, or its drop, its puff or its reach moved.');
+    // Its stream wells up where the plan measures its slot's rise (the lawn's height over its head).
+    assert.equal(FALL.stream.head, plan.SKY_FALLS.head, 'The fall\'s stream wells up elsewhere than where the plan measures its slot\'s rise (FALL.stream.head against plan.SKY_FALLS.head).');
     assert(water.parent.userData.keepSeparate && slide.userData.keepSeparate && slide.parent === water.parent && meshesOf(built.fall).length === 2, 'The fall is not its still water on a pivot and its lumps on one inside it, and nothing else (no basin, kerb or spout).');
     // Nothing over the stream; the stream level out of the lawn's edge to the lip.
     let high = -Infinity;
@@ -5770,7 +5781,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       still = all.filter((m) => m.parent === root),
       movers = ctx.animated.map((e) => e.object);
     assert(all.length <= 14 && trisOf(all) <= 16000, `The garden costs ${all.length} meshes and ${trisOf(all)} triangles.`);
-    inTime('The garden\'s build', gardenTime, 100);
+    inTime('The garden\'s build', gardenTime, 85);
     assert.deepEqual(still.map((m) => `${m.material.userData.surfaceKind}|${m.castShadow}`).sort(), ['brass|false', 'stone|true', 'wood|true'], 'The garden\'s static parts do not merge into casting stone and timber and brass that casts nothing.');
     assert(movers.length === 9 && movers.every((o) => o.children.filter((c) => c.isMesh).length === 1), 'A moving part of the garden is not one mesh.');
     assert(ctx.lamps.length === 1 && globes.parent === lampSet && all.includes(globes) && !globes.material.vertexColors, 'The lamps\' globes were batched, or are not one mesh.');
@@ -6570,16 +6581,13 @@ let skyReport = '';
   const areaOf = (hull) => Math.abs(hull.reduce((sum, a, i) => sum + a[0] * hull[(i + 1) % hull.length][1] - hull[(i + 1) % hull.length][0] * a[1], 0)) / 2;
   /**
    * The clouds and floating rocks the garden hangs in their slots (plan.SKY_CLOUDS and SKY_ROCKS),
-   * each as the surface of a volume in its slot's frame (FLOAT_PROXY, in units of the slot's size)
-   * that holds lane G's piece through its whole drift or bob (fitted to the pieces, and held to them
-   * in the garden's check below): a cloud, widest near its base, inside an upright wall on an ellipse
-   * 2.55 along its length (its own 1.95 and its drift's 0.4) by 1.12 across, from 0.07 under its base
-   * (the bob) to 0.4 over it, under a dome 1.1 high; a rock inside an ellipsoid 1.3 across (it
-   * rocks), 1.2 over its middle (its tussocks) and 1.8 under it (its keel). They stand in for the
-   * pieces wherever a check below measures the island's shape on screen or in the air through the
-   * motion (check-navigation's boxes are round these).
+   * each as the surface of the volume that stands in for it (plan.SKY_FLOAT_PROXY, in its slot's
+   * frame and in units of its size; check-navigation measures the same volumes): it holds lane G's
+   * piece through its whole drift or bob, as the garden's check below holds it to. They stand in for
+   * the pieces wherever a check below measures the island's shape on screen or in the air through
+   * the motion.
    */
-  const FLOAT_PROXY = { cloud: { a: 2.55, c: 1.12, base: -0.07, wall: 0.4, cap: 1.1 }, rock: { r: 1.3, up: 1.2, down: 1.8 } },
+  const FLOAT_PROXY = plan.SKY_FLOAT_PROXY,
     /** How far into its proxy a point lies (in its slot's frame, in units of its size): 1 on its surface. */
     proxyMeasure = (kind, [x, y, z]) => {
       if (kind === 'rock') return (x * x + z * z) / FLOAT_PROXY.rock.r ** 2 + (y / (y > 0 ? FLOAT_PROXY.rock.up : FLOAT_PROXY.rock.down)) ** 2;
@@ -6700,7 +6708,7 @@ let skyReport = '';
   assert.equal(phaseNames[phaseNames.indexOf('sky ground') + 1], 'sky rock', 'The sky island\'s rock is not sculpted in a phase of its own.');
   assert.equal(phaseNames[phaseNames.indexOf('batch airport') + 1], 'batch sky', 'The sky island is not batched right after the airport.');
   assert(phaseNames.includes('batch sky villa'), 'The sky island\'s villa is not batched in a phase of its own.');
-  for (const [name, limit] of [['sky ground', 450], ['sky rock', 150], ['batch sky', 50], ['batch sky villa', 200]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+  for (const [name, limit] of [['sky ground', 550], ['sky rock', 300], ['batch sky', 70], ['batch sky villa', 270]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   each(model.land, (p) => assert(Math.abs(p.x - S.x) > S.b + 4 || Math.abs(p.z - S.z) > S.a + 4, 'Something of the sky island is in the land\'s batch.'));
   // Nothing two-sided, nothing that cuts holes, nothing see-through (its water, foam and clouds are
   // opaque too); every mesh batched, with a surface kind (but the garden lamps' globes, the lamps' own
@@ -7496,16 +7504,16 @@ let skyReport = '';
   //   bounce and the mottle) is the same all round the island (a wandering line smeared like paint),
   //   and the boulders are pieces of their own, cool grey against the brown;
   // - the three floating rocks are not clones;
-  // - the lamps' pools: one opaque mesh laid over the deck (SKY_POOL.lift over the lawn and the
-  //   paths), on the solids' one program so the night wash reaches it, casting nothing; its wash is
-  //   strongest at each lamp's foot (plan.SKY_LAMPS, wherever they stand) and gone by SKY_POOL.r; by
-  //   day its paint is the ground's under it (a lawn tone through the grass grain and the lawn's tint
-  //   under the island, or the gravel's).
+  // - the lamps' pools: one opaque mesh laid over the deck (0.003 to 0.015 over the batched lawn and
+  //   paths under it, measured against their own triangles), on the solids' one program so the night
+  //   wash reaches it, casting nothing; its wash is strongest at each lamp's foot (plan.SKY_LAMPS,
+  //   wherever they stand) and gone by SKY_POOL.r; by day its paint is the ground's under it (the
+  //   lawn's stripe through the lawn material's own grain and LAWN_TINT, or the gravel's).
   {
     const { FALL } = await load('town-sky-garden'),
       { SKY_NOTCH, SKY_POOL } = await load('town-sky'),
       fmt3 = (p) => p.toArray().map((n) => n.toFixed(2)).join(', '),
-      { WASH_PEAK } = await load('city-materials'),
+      { WASH_PEAK, LAWN_TINT } = await load('city-materials'),
       rockMesh = sky.rock.children.find((o) => o.isMesh),
       flat = S.top - SKY_ROCK.body.top;
     for (const f of plan.skyFalls) {
@@ -7571,39 +7579,128 @@ let skyReport = '';
       for (let a = 0; a < shapes.length; a++)
         for (let b = a + 1; b < shapes.length; b++) assert(shapes[a].distanceTo(shapes[b]) > 0.08, `Floating rocks ${a} and ${b} are clones (${fmt3(shapes[a])} and ${fmt3(shapes[b])}).`);
     }
-    // The lamps' pools.
+    // The lamps' pools, against the ground as built: the batched lawn's and paths' own triangles,
+    // found under a point by where it falls in them (barycentric). Each pool vertex, and each pool
+    // triangle's middle, lies 0.003 to 0.015 over the lawn or the gravel under it: lower, the ground
+    // shows through it at night (or fights it for depth); higher, it floats, and what stands in it
+    // sinks into it. (As built 0.006 to 0.0105: SKY_POOL.lift, and more where the lawn's long
+    // triangles by the rim sag under the dome the pool follows.) By day its paint is that ground's
+    // as the visitor sees it: on the lawn, the stripe's colour there times the lawn material's own
+    // grain (its map's texels at the lawn's uv through the map's own repeat, decoded from sRGB and
+    // bilinear, as the GPU samples it close to) times the tint the empty masks leave (LAWN_TINT),
+    // within 5e-4 (under a quarter of an 8-bit step in any channel of the lawn's greens); on the
+    // gravel, the gravel's.
     {
       const pools = sky.land.children.filter((o) => o.isMesh && o.geometry.getAttribute('aWash')),
         [pool] = pools;
       assert(pools.length === 1 && !pool.castShadow && pool.material.vertexColors && pool.material.customProgramCacheKey() === 'lius-bake-solid' && !pool.material.transparent && pool.material.opacity === 1, 'The lamps\' pools are not one opaque mesh on the solids\' program, casting nothing.');
-      const q = pool.geometry.attributes.position,
+      /** The batched ground of a kind (one mesh): under(x, z) gives each of its triangles there, its height, colour and uv at the point. */
+      const groundOf = (kind) => {
+        const meshes = sky.land.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === kind);
+        assert.equal(meshes.length, 1, `The sky island's ${kind} is not one batched mesh.`);
+        const [mesh] = meshes,
+          { position, color, uv } = mesh.geometry.attributes,
+          index = mesh.geometry.index,
+          cell = 0.5,
+          triangles = [],
+          grid = new Map();
+        for (let t = 0; t < (index?.count ?? position.count); t += 3) {
+          const corners = [0, 1, 2].map((k) => {
+              const i = index ? index.getX(t + k) : t + k;
+              return { p: new T.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld), c: new T.Color().fromBufferAttribute(color, i), uv: new T.Vector2().fromBufferAttribute(uv, i) };
+            }),
+            xs = corners.map((v) => v.p.x),
+            zs = corners.map((v) => v.p.z);
+          for (let i = Math.floor(Math.min(...xs) / cell); i <= Math.floor(Math.max(...xs) / cell); i++)
+            for (let j = Math.floor(Math.min(...zs) / cell); j <= Math.floor(Math.max(...zs) / cell); j++) (grid.get(`${i},${j}`) ?? grid.set(`${i},${j}`, []).get(`${i},${j}`)).push(triangles.length);
+          triangles.push(corners);
+        }
+        return {
+          mesh,
+          under(x, z) {
+            const hits = [];
+            for (const t of grid.get(`${Math.floor(x / cell)},${Math.floor(z / cell)}`) ?? []) {
+              const [a, b, c] = triangles[t],
+                det = (b.p.z - c.p.z) * (a.p.x - c.p.x) + (c.p.x - b.p.x) * (a.p.z - c.p.z);
+              if (Math.abs(det) < 1e-12) continue;
+              const la = ((b.p.z - c.p.z) * (x - c.p.x) + (c.p.x - b.p.x) * (z - c.p.z)) / det,
+                lb = ((c.p.z - a.p.z) * (x - c.p.x) + (a.p.x - c.p.x) * (z - c.p.z)) / det,
+                lc = 1 - la - lb,
+                at = (f) => f(a) * la + f(b) * lb + f(c) * lc;
+              // (Within a hair of its edges: a point on an edge the two triangles share lies in both.)
+              if (Math.min(la, lb, lc) >= -1e-4) hits.push({ y: at((v) => v.p.y), c: new T.Color(at((v) => v.c.r), at((v) => v.c.g), at((v) => v.c.b)), uv: new T.Vector2(at((v) => v.uv.x), at((v) => v.uv.y)) });
+            }
+            return hits;
+          },
+        };
+      };
+      const lawn = groundOf('grass'),
+        gravel = groundOf('gravel'),
+        map = lawn.mesh.material.map;
+      assert(map?.isDataTexture && map.colorSpace === T.SRGBColorSpace && map.wrapS === T.RepeatWrapping && map.wrapT === T.RepeatWrapping && !map.flipY, 'The lawn\'s grain is not the repeating sRGB map the pools\' day colour is read from.');
+      map.updateMatrix();
+      const { data, width: W, height: H } = map.image,
+        /** One of the map's texels, linear (the GPU decodes an sRGB map before it filters it), the map repeating. */
+        texel = (i, j) => {
+          const k = ((((j % H) + H) % H) * W + (((i % W) + W) % W)) * 4;
+          return new T.Color().setRGB(data[k] / 255, data[k + 1] / 255, data[k + 2] / 255, T.SRGBColorSpace);
+        },
+        /** The lawn's grain at a uv of its own: the map through its own transform (its repeat), bilinear at its finest level. */
+        grainAt = (uv) => {
+          const m = uv.clone().applyMatrix3(map.matrix),
+            u = m.x * W - 0.5,
+            v = m.y * H - 0.5,
+            i = Math.floor(u),
+            j = Math.floor(v),
+            fu = u - i,
+            fv = v - j;
+          return texel(i, j)
+            .multiplyScalar((1 - fu) * (1 - fv))
+            .add(texel(i + 1, j).multiplyScalar(fu * (1 - fv)))
+            .add(texel(i, j + 1).multiplyScalar((1 - fu) * fv))
+            .add(texel(i + 1, j + 1).multiplyScalar(fu * fv));
+        },
+        tint = new T.Color(...LAWN_TINT),
+        low = 0.003,
+        high = 0.015,
+        where = (x, z) => `${x.toFixed(2)}, ${z.toFixed(2)}`,
+        /**
+         * What a point of the pool lies on: the gravel's or else the lawn's triangles under it that
+         * it lies `low` to `high` over (the lawn runs on under the paths, so the gravel comes first).
+         */
+        restsOn = (x, y, z) => {
+          const turf = lawn.under(x, z),
+            paths = gravel.under(x, z),
+            over = (hits) => hits.filter((h) => y - h.y >= low && y - h.y <= high),
+            [onPaths, onTurf] = [over(paths), over(turf)];
+          assert(turf.length, `A lamp's pool reaches off the lawn at ${where(x, z)}.`);
+          assert(onPaths.length || onTurf.length, `A lamp's pool lies ${(y - turf[0].y).toFixed(4)} over the lawn${paths.length ? ` and ${(y - paths[0].y).toFixed(4)} over the gravel` : ''} at ${where(x, z)}, not ${low} to ${high} over the ground under it.`);
+          return onPaths.length ? { gravel: onPaths } : { lawn: onTurf };
+        },
+        near = (a, b, e) => Math.abs(a.r - b.r) < e && Math.abs(a.g - b.g) < e && Math.abs(a.b - b.b) < e,
+        q = pool.geometry.attributes.position,
         w = pool.geometry.attributes.aWash,
         col = pool.geometry.attributes.color,
-        tones = SKY_LOOK.lawn.map((h) => new T.Color(h)),
-        path = new T.Color(SKY_LOOK.path),
-        tint = [0.93, 0.95, 0.9],
+        paint = new T.Color(),
         nearest = (x, z) => Math.min(...plan.SKY_LAMPS.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
         lit = plan.SKY_LAMPS.map(() => 0);
       for (let i = 0; i < q.count; i++) {
         const x = q.getX(i),
           y = q.getY(i),
           z = q.getZ(i),
-          over = y - plan.skyTop(x, z),
           d = nearest(x, z),
-          r = col.getX(i),
-          g = col.getY(i),
-          b = col.getZ(i);
-        assert(Math.abs(over - SKY_POOL.lift) < 1e-4 || Math.abs(over - plan.SKY_PATHS.lift - SKY_POOL.lift) < 1e-4, `A lamp's pool lies ${over.toFixed(3)} over the deck at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-        assert(Math.abs(w.getX(i) - SKY_POOL.strength) < 1e-6 && w.getW(i) < 0 && Math.abs(w.getZ(i) - (WASH_PEAK + (0.85 - WASH_PEAK) * Math.min(1, d / SKY_POOL.r))) < 1e-5 && d < SKY_POOL.r + SKY_POOL.cell * 1.5, `A lamp's pool is not lit from the nearest lamp's foot at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-        if (Math.abs(over - SKY_POOL.lift) < 1e-4) {
-          // The lawn: one of its two tones, through a grain of 0.85 to 1.02 and the tint.
-          const fits = tones.some((t) => {
-            const k = r / (t.r * tint[0]);
-            return k > 0.85 && k < 1.02 && Math.abs(g - t.g * tint[1] * k) < 2e-3 && Math.abs(b - t.b * tint[2] * k) < 2e-3;
-          });
-          assert(fits, `A lamp's pool on the lawn is not the lawn's own colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-        } else assert(Math.abs(r - path.r) < 1e-4 && Math.abs(g - path.g) < 1e-4 && Math.abs(b - path.b) < 1e-4, `A lamp's pool on the gravel is not the gravel's colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+          on = restsOn(x, y, z);
+        assert(Math.abs(w.getX(i) - SKY_POOL.strength) < 1e-6 && w.getW(i) < 0 && Math.abs(w.getZ(i) - (WASH_PEAK + (0.85 - WASH_PEAK) * Math.min(1, d / SKY_POOL.r))) < 1e-5 && d < SKY_POOL.r + SKY_POOL.cell * 1.5, `A lamp's pool is not lit from the nearest lamp's foot at ${where(x, z)}.`);
+        paint.fromBufferAttribute(col, i);
+        if (on.gravel) assert(on.gravel.some((h) => near(paint, h.c, 1e-4)), `A lamp's pool on the gravel is not the gravel's colour at ${where(x, z)}.`);
+        else assert(on.lawn.some((h) => near(paint, h.c.clone().multiply(grainAt(h.uv)).multiply(tint), 5e-4)), `A lamp's pool on the lawn is not the lawn's own colour there (its stripe, the grass map's grain, LAWN_TINT) at ${where(x, z)}.`);
         plan.SKY_LAMPS.forEach(([lx, lz], k) => Math.hypot(x - lx, z - lz) < 0.3 && lit[k]++);
+      }
+      // Each triangle's middle as well: across two of the ground's triangles, it could dip under them.
+      const corners = pool.geometry.index;
+      for (let t = 0; t < (corners?.count ?? q.count); t += 3) {
+        const k = [0, 1, 2].map((j) => (corners ? corners.getX(t + j) : t + j));
+        restsOn(k.reduce((s, i) => s + q.getX(i), 0) / 3, k.reduce((s, i) => s + q.getY(i), 0) / 3, k.reduce((s, i) => s + q.getZ(i), 0) / 3);
       }
       assert(lit.every((n) => n > 6), `A garden lamp has no pool at its foot (${lit.join(', ')}).`);
     }
@@ -7728,10 +7825,10 @@ let skyReport = '';
   //   else on the island moves but the rock's night;
   // - through their whole drift and bob the clouds and rocks keep SKY_FLOAT_LIMITS (tucked no more than
   //   0.5 under the rim, 0.4 clear of the rock, under the rim's lawn, south of `north` and east of
-  //   `west`, out of the villa's box) and stay inside FLOAT_BOX, the proxies the island's other checks
-  //   and check-navigation use; the falls' water under the rim keeps 0.3 clear of the rock's cliffs
-  //   and shoulders; the island stays inside the rain's square but for the west fall's puff, which pokes
-  //   out by 2.2 at the most (the placement accepted 1.8 for it);
+  //   `west`, out of the villa's box) and stay inside plan.SKY_FLOAT_PROXY, the proxies the island's
+  //   other checks and check-navigation use; the falls' water under the rim keeps 0.3 clear of the
+  //   rock's cliffs and shoulders; the island stays inside the rain's square but for the west fall's
+  //   puff, which pokes out by 2.2 at the most (the placement accepted 1.8 for it);
   // - nothing of the garden stands on her walk (the paths' width) or within her reach where she stands;
   // - at night the clouds dim on one material of the kit's own and the falls (their water, lumps and
   //   puffs) on another, to SKY_NIGHT's colours, with
@@ -8113,7 +8210,7 @@ let skyReport = '';
       const L = plan.SKY_FLOAT_LIMITS,
         villaBox = new T.Box3().setFromObject(sky.shell).expandByScalar(0.3);
       // The clouds and rocks through their drift and bob: within the limits, clear of the rock, and
-      // inside their proxies (FLOAT_BOX, in their slots' frames).
+      // inside their proxies (plan.SKY_FLOAT_PROXY, in their slots' frames).
       for (const [name, list, kind] of [['sky-cloud', plan.SKY_CLOUDS, 'cloud'], ['sky-float', plan.SKY_ROCKS, 'rock']])
         frames(name).forEach((frame, n) => {
           const f = list[n];
@@ -8130,7 +8227,7 @@ let skyReport = '';
               assert(plan.skyDistance(p.x, p.z) >= -L.tuck && p.y <= L.top && p.z >= L.north && p.x >= L.west && Math.abs(p.x) <= 58 && Math.abs(p.z) <= 58 && !villaBox.containsPoint(p), `The garden's ${kind} ${n} leaves its limits at ${fmt(p)}.`);
               assert(!nearRock(p, L.clear), `The garden's ${kind} ${n} comes within ${L.clear} of the rock at ${fmt(p)}.`);
               const l = p.clone().applyMatrix4(inv).divideScalar(f.size);
-              assert(proxyMeasure(kind, l.toArray()) <= 1, `The garden's ${kind} ${n} leaves its proxy (FLOAT_PROXY) at ${fmt(p)}.`);
+              assert(proxyMeasure(kind, l.toArray()) <= 1, `The garden's ${kind} ${n} leaves its proxy (plan.SKY_FLOAT_PROXY) at ${fmt(p)}.`);
             });
           }
           entry.update(0, 0, 0);

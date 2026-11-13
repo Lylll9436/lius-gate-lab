@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { WASH_PEAK, type SurfaceKind } from './city-materials';
+import { LAWN_TINT, WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, hash, type AnimationFrame, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
@@ -14,10 +14,11 @@ import { createAlison, poseAlison } from './sky-figure';
  * greens (the town lawn's stripes); the coping's weathered stone, a step greyer and darker than
  * the kerb's buff, so the villa's pale dressings stay the brightest stone on the island; the
  * paths' pale gravel, between the pavement's and the park path's. Under the deck, the earth in
- * three beds from the warm brown under the turf down to a darker brown (well under the soil's
- * saturation, near the armour's greys in value), parted by pale seams; and the rock that stands
- * out of it and makes the spike, in warm greys, lighter where it faces the sky. (The villa's own
- * colours are town-sky-villa's VILLA_LOOK.)
+ * three warm browns, a bed each from the turf down: dark, lighter, dark again (well under the
+ * soil's saturation, near the armour's greys in value), parted by faint pale seams; and the rock
+ * that stands out of it in outcrops and makes the spike, in the airport armour's cool greys,
+ * lighter where it faces the sky (the lawn's outcrop and the rocks by the falls' notches take the
+ * same greys). (The villa's own colours are town-sky-villa's VILLA_LOOK.)
  */
 export const SKY_LOOK = {
   lawn: [palette.grassDark, palette.grassLight],
@@ -55,18 +56,21 @@ export const SKY_COPING = {
 /**
  * Where each fall's stream runs out over the rim (town-sky-garden's FALL), the coping is notched:
  * over the stations within FALL.notch.half of the fall's rim point, easing back up over its `ramp`
- * either side, its profile sinks to `profile` (the same points, o and y as SKY_COPING's: its top
- * FALL.notch.floor over the rim's lawn, under the stream's water, its nose and underside drawn in
- * after it, so the stone stays 0.07 or more thick and 0.3 clear of the falling sheet). Three of the
- * rock's own boulders (`rocks`, the airport armour's shape: each one's middle and half sizes in the
- * fall's own frame, x across, y over the rim's lawn, z out) line it: one either side, sunk in the
- * coping over its ramps, and one over the stream's spring on the lawn behind it; `tone` lightens
- * them toward the sky.
+ * either side, its profile sinks to `profile` (SKY_COPING.profile's points, each at its own o, sunk
+ * point for point to the heights `sunk` gives: its top FALL.notch.floor over the rim's lawn, under
+ * the stream's water, its nose and underside drawn in after it, so the stone stays 0.07 or more
+ * thick and 0.3 clear of the falling sheet; the last, the underside's end inside the rock, stays
+ * put). Three of the rock's own boulders (`rocks`, the airport armour's shape: each one's middle
+ * and half sizes in the fall's own frame, x across, y over the rim's lawn, z out) line it: one
+ * either side, sunk in the coping over its ramps, and one over the stream's spring on the lawn
+ * behind it; each a shade of its own, lighter where it faces the sky (notchRocks).
  */
 export const SKY_NOTCH = (() => {
-  const top = FALL.notch.floor - plan.SKY.dome;
+  const top = FALL.notch.floor - plan.SKY.dome,
+    sunk = [top - 0.04, top - 0.01, top, top, top - 0.015, top - 0.035, top - 0.05, top - 0.09, top - 0.12],
+    end = SKY_COPING.profile.length - 1;
   return {
-    profile: [[-0.46, top - 0.04], [-0.46, top - 0.01], [-0.41, top], [-0.14, top], [-0.04, top - 0.015], [0, top - 0.035], [-0.04, top - 0.05], [-0.14, top - 0.09], [-0.34, top - 0.12], [-0.62, -0.5]] as [number, number][],
+    profile: SKY_COPING.profile.map(([o, y], j): [number, number] => [o, j === end ? y : sunk[j]]),
     rocks: [
       { c: [-0.7, 0.06, -0.22], h: [0.34, 0.22, 0.3], seed: 3 },
       { c: [0.68, 0.05, -0.18], h: [0.3, 0.2, 0.33], seed: 7 },
@@ -95,7 +99,8 @@ const outcrop = (bearing: number, y: number, size: number, proud: number, seed: 
  * solids blended in a distance grid of spacing `grid` (town-sculpt), so it is one smooth mass with
  * no facet: the owner's reference 2, a grass top on an inverted cone of earth and rock tapering to
  * a point, in the town's own style. The earth's body (`body`, earthBody): cut flat `top` under
- * SKY.top inside the coping (under the turf), it stands straight down as cliffs at `share` of the
+ * SKY.top inside the coping (under the turf; the cut's edge rolled into the cliffs over `cut`, so
+ * the shoulders' blends never crease it), it stands straight down as cliffs at `share` of the
  * rim to `cliff` (a chunk of land, not a plate, from every side), then tapers to the tip,
  * SKY.depth down (as deep as the sea allows) and leaning toward the island's file's camera
  * (plan.skyTip), its flank a little convex (`belly`: full under the rim, narrowing to the point at
@@ -108,11 +113,12 @@ const outcrop = (bearing: number, y: number, size: number, proud: number, seed: 
  * (the plane's side, check-town) nor under the falls.
  * The rock stands out of the flank lower down as outcrops (`outcrops`, Outcrop: the art review found
  * the single rounded blocks there read as grey cushions or paving slabs), each a cluster of the
- * airport armour's own boulders (OUTCROP_STONES), the outcrop, the notch's rocks and the floating
- * rocks' stone, set into the earth on its own normal there, so where stone meets earth the two
+ * airport armour's own boulders (OUTCROP_STONES; the notch's rocks and the floating rocks are such
+ * boulders too), set into the earth on its own normal there, so where stone meets earth the two
  * surfaces part in one crisp line; one or two outcrops face each Rotate stop of the island's file
  * (none alone in the middle of the cone, as the north-north-west block was at the third), and none
- * stands within 25 degrees of a fall.
+ * stands in a fall's way (check-town keeps the falls' water 0.3 clear of the rock; the nearest, at
+ * 245 degrees, is 20 off the west fall's bearing).
  * From the island's file (its own lower pitch, city-scene's SKY_PITCH) the body hangs 0.65 of the
  * deck's height below it and narrows to its tip; from the Rotate stops at the town's pitch it shows
  * as a thick body of earth (0.2 of the deck's height or more) narrowing under it.
@@ -591,7 +597,7 @@ export function skyBorder(nature: Nature, g: T.Object3D, b: BorderSlot, k: numbe
   return bed;
 }
 /**
- * The outcrop (plan.SKY_OUTCROP): the rock's own warm grey breaking through the turf, three rounded
+ * The outcrop (plan.SKY_OUTCROP): the rock's own cool grey breaking through the turf, three rounded
  * blocks of falling size (`lumps`: each one's middle, half sizes, rounding and tilt, in the outcrop's
  * frame, y 0 the lawn) blended by a small `fillet` into one low group of stones, sculpted on a grid of
  * `grid` (smooth: its normals are the field's own), its foot cut flat `sink` under the lawn so the
@@ -764,8 +770,8 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
    * The lamps' pools (SKY_POOL), one mesh laid over the deck: the lawn's and the paths' own triangles
    * near any lamp, cut to SKY_POOL.cell, at their own colours (the lawn's as its ground shader shows
    * it under the island: its stripe, the grass map's grain and the lawn tint the empty ground masks
-   * leave, (0.93, 0.95, 0.90); the gravel's plain), each vertex carrying the nearer lamp's wash. As
-   * flat ground (`ground`) it takes no contact shade; it casts nothing.
+   * leave, city-materials' LAWN_TINT; the gravel's plain), each vertex carrying the nearer lamp's
+   * wash. As flat ground (`ground`) it takes no contact shade; it casts nothing.
    */
   function lampPools(g: T.Object3D) {
     const P = SKY_POOL,
@@ -788,7 +794,7 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
           at = (a: number, b: number) => lut[image.data[((((b % H) + H) % H) * W + (((a % W) + W) % W)) * 4]];
         return (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
       },
-      tint = [0.93, 0.95, 0.9],
+      tint = LAWN_TINT,
       path = new T.Color(L.path),
       pos: number[] = [],
       nor: number[] = [],
@@ -852,7 +858,7 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
   }
   /**
    * The low outcrop on the south-west lawn (SKY_OUTCROP_SHAPE, at plan.SKY_OUTCROP), batched with the
-   * lawn as its floor, so its foot takes the contact shade: its paint the rock's own warm grey, lighter
+   * lawn as its floor, so its foot takes the contact shade: its paint the rock's own cool grey, lighter
    * where it faces the sky and a shade darker low down, with the rock's faint broad mottle. Its buried
    * foot (the cut under the lawn) is left out.
    */
@@ -1204,8 +1210,8 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
     coping(g);
     dimAtNight(g);
     // The lamps' pools go on the deck skyGround laid (the town's `sky.land`, batched with it), here
-    // rather than there: 'sky ground', with the villa and the garden in it, is the longer phase, and
-    // check-town holds each of the island's phases under a fifth of a second.
+    // rather than there: 'sky ground', with the villa and the garden in it, is the longer phase (each
+    // of the island's phases has a time limit of its own in check-town's timed builds).
     if (deckLand) lampPools(deckLand);
   }
 
