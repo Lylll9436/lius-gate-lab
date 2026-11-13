@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { WASH_PEAK, type SurfaceKind } from './city-materials';
+import { LAWN_TINT, WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, hash, type AnimationFrame, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
@@ -55,18 +55,21 @@ export const SKY_COPING = {
 /**
  * Where each fall's stream runs out over the rim (town-sky-garden's FALL), the coping is notched:
  * over the stations within FALL.notch.half of the fall's rim point, easing back up over its `ramp`
- * either side, its profile sinks to `profile` (the same points, o and y as SKY_COPING's: its top
- * FALL.notch.floor over the rim's lawn, under the stream's water, its nose and underside drawn in
- * after it, so the stone stays 0.07 or more thick and 0.3 clear of the falling sheet). Three of the
- * rock's own boulders (`rocks`, the airport armour's shape: each one's middle and half sizes in the
- * fall's own frame, x across, y over the rim's lawn, z out) line it: one either side, sunk in the
- * coping over its ramps, and one over the stream's spring on the lawn behind it; `tone` lightens
- * them toward the sky.
+ * either side, its profile sinks to `profile` (SKY_COPING.profile's points, each at its own o, sunk
+ * point for point to the heights `sunk` gives: its top FALL.notch.floor over the rim's lawn, under
+ * the stream's water, its nose and underside drawn in after it, so the stone stays 0.07 or more
+ * thick and 0.3 clear of the falling sheet; the last, the underside's end inside the rock, stays
+ * put). Three of the rock's own boulders (`rocks`, the airport armour's shape: each one's middle
+ * and half sizes in the fall's own frame, x across, y over the rim's lawn, z out) line it: one
+ * either side, sunk in the coping over its ramps, and one over the stream's spring on the lawn
+ * behind it; each a shade of its own, lighter where it faces the sky (notchRocks).
  */
 export const SKY_NOTCH = (() => {
-  const top = FALL.notch.floor - plan.SKY.dome;
+  const top = FALL.notch.floor - plan.SKY.dome,
+    sunk = [top - 0.04, top - 0.01, top, top, top - 0.015, top - 0.035, top - 0.05, top - 0.09, top - 0.12],
+    end = SKY_COPING.profile.length - 1;
   return {
-    profile: [[-0.46, top - 0.04], [-0.46, top - 0.01], [-0.41, top], [-0.14, top], [-0.04, top - 0.015], [0, top - 0.035], [-0.04, top - 0.05], [-0.14, top - 0.09], [-0.34, top - 0.12], [-0.62, -0.5]] as [number, number][],
+    profile: SKY_COPING.profile.map(([o, y], j): [number, number] => [o, j === end ? y : sunk[j]]),
     rocks: [
       { c: [-0.7, 0.06, -0.22], h: [0.34, 0.22, 0.3], seed: 3 },
       { c: [0.68, 0.05, -0.18], h: [0.3, 0.2, 0.33], seed: 7 },
@@ -764,8 +767,8 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
    * The lamps' pools (SKY_POOL), one mesh laid over the deck: the lawn's and the paths' own triangles
    * near any lamp, cut to SKY_POOL.cell, at their own colours (the lawn's as its ground shader shows
    * it under the island: its stripe, the grass map's grain and the lawn tint the empty ground masks
-   * leave, (0.93, 0.95, 0.90); the gravel's plain), each vertex carrying the nearer lamp's wash. As
-   * flat ground (`ground`) it takes no contact shade; it casts nothing.
+   * leave, city-materials' LAWN_TINT; the gravel's plain), each vertex carrying the nearer lamp's
+   * wash. As flat ground (`ground`) it takes no contact shade; it casts nothing.
    */
   function lampPools(g: T.Object3D) {
     const P = SKY_POOL,
@@ -788,7 +791,7 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
           at = (a: number, b: number) => lut[image.data[((((b % H) + H) % H) * W + (((a % W) + W) % W)) * 4]];
         return (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
       },
-      tint = [0.93, 0.95, 0.9],
+      tint = LAWN_TINT,
       path = new T.Color(L.path),
       pos: number[] = [],
       nor: number[] = [],

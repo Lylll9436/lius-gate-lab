@@ -5352,6 +5352,8 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       out = (p) => (p.z - F.line(p.y)) / n;
     assert.deepEqual([F.drop, F.width, F.rise], [FALL.drop, FALL.width, 0], 'The fall\'s defaults moved.');
     assert(FALL.width >= 0.5 && FALL.drop === 4.5 && Math.abs(FALL.puff - 1.3) < 1e-9 && Math.abs(F.out - plan.SKY_FALLS.out) < 1e-9, 'The fall is under 0.5 wide, or its drop, its puff or its reach moved.');
+    // Its stream wells up where the plan measures its slot's rise (the lawn's height over its head).
+    assert.equal(FALL.stream.head, plan.SKY_FALLS.head, 'The fall\'s stream wells up elsewhere than where the plan measures its slot\'s rise (FALL.stream.head against plan.SKY_FALLS.head).');
     assert(water.parent.userData.keepSeparate && slide.userData.keepSeparate && slide.parent === water.parent && meshesOf(built.fall).length === 2, 'The fall is not its still water on a pivot and its lumps on one inside it, and nothing else (no basin, kerb or spout).');
     // Nothing over the stream; the stream level out of the lawn's edge to the lip.
     let high = -Infinity;
@@ -7505,7 +7507,7 @@ let skyReport = '';
     const { FALL } = await load('town-sky-garden'),
       { SKY_NOTCH, SKY_POOL } = await load('town-sky'),
       fmt3 = (p) => p.toArray().map((n) => n.toFixed(2)).join(', '),
-      { WASH_PEAK } = await load('city-materials'),
+      { WASH_PEAK, LAWN_TINT } = await load('city-materials'),
       rockMesh = sky.rock.children.find((o) => o.isMesh),
       flat = S.top - SKY_ROCK.body.top;
     for (const f of plan.skyFalls) {
@@ -7581,7 +7583,7 @@ let skyReport = '';
         col = pool.geometry.attributes.color,
         tones = SKY_LOOK.lawn.map((h) => new T.Color(h)),
         path = new T.Color(SKY_LOOK.path),
-        tint = [0.93, 0.95, 0.9],
+        tint = LAWN_TINT,
         nearest = (x, z) => Math.min(...plan.SKY_LAMPS.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
         lit = plan.SKY_LAMPS.map(() => 0);
       for (let i = 0; i < q.count; i++) {

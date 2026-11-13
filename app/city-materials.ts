@@ -477,6 +477,12 @@ export const GROUND_HEIGHT_RANGE = 2;
 const MASKED_GROUND = new Set<SurfaceKind>(['grass', 'soil', 'paving', 'asphalt', 'sand', 'gravel']);
 type BakeUniforms = { groundMasks: { value: T.Texture }; maskExtent: { value: number } };
 /**
+ * The grass's tint off the mown town lawn (where the masks' B is 0; the sky island's lawn is all
+ * of it), linear: groundShader's lawn multiplies the grass by it, and the sky island's lamp pools
+ * (town-sky's lampPools) bake it into their day colour, so by day they match the lawn under them.
+ */
+export const LAWN_TINT = [0.93, 0.95, 0.9] as const;
+/**
  * Ground shade from the baked mask grid, sampled by world XZ: R darkens footprint pads,
  * canopy discs, lamp feet and the grass lip by the pavements (tinted, never grey), B is the
  * mown town lawn that carries a soft 1.5-unit checker, A the terrain height (so only
@@ -489,9 +495,11 @@ type BakeUniforms = { groundMasks: { value: T.Texture }; maskExtent: { value: nu
  * darker, darkest at the foam. Any other sand surface needs uv.x = 0 to stay dry.
  */
 function groundShader(m: T.MeshStandardMaterial, kind: SurfaceKind, uniforms: BakeUniforms) {
-  const tint = kind === 'grass' || kind === 'soil' ? 'vec3(.52, .60, .40)' : 'vec3(.62, .58, .50)';
+  const tint = kind === 'grass' || kind === 'soil' ? 'vec3(.52, .60, .40)' : 'vec3(.62, .58, .50)',
+    // LAWN_TINT as GLSL floats: .93,.95,.90.
+    lawnTint = LAWN_TINT.map((v) => v.toFixed(2).replace(/^0(?=\.)/, '')).join(',');
   const lawn = `vec2 q=vGroundP.xz/1.5;vec2 tri=abs(fract(q*.5)*2.-1.);vec2 fw=fwidth(q)+1e-4;vec2 e=smoothstep(.5-fw,.5+fw,tri);float ch=e.x+e.y-2.*e.x*e.y;
-diffuseColor.rgb*=mix(vec3(.93,.95,.90),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
+diffuseColor.rgb*=mix(vec3(${lawnTint}),mix(vec3(.965),vec3(1.035),ch),gs.b);`;
   const sand = kind === 'sand',
     street = kind === 'paving' || kind === 'asphalt';
   m.onBeforeCompile = (shader) => {
