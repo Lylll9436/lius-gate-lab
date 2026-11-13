@@ -1303,15 +1303,25 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       stops = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4],
       drifts = Array.from({ length: 17 }, (_, k) => -0.16 + k * 0.02),
       // Its silhouette: the overview's marks, its rim's widest ring dense; and the clouds' and rocks'
-      // slots as the corners of generous boxes round them (lane G's at the slot's size, drift and bob).
+      // slots as points on check-town's FLOAT_PROXY volumes round them, which hold lane G's pieces
+      // through their whole drift and bob (units of the slot's size): a cloud inside an upright wall on
+      // an ellipse 2.55 by 1.12, from 0.07 under its base to 0.4 over it, under a dome 1.1 high; a rock
+      // inside an ellipsoid 1.3 across, 1.2 up and 1.8 down.
       outline = [...scene.SKY_MARKS, ...plan.skyOutline(0, 64).map((p) => new T.Vector3(p.x, S.top - S.ring, p.z))],
-      floats = [...plan.SKY_CLOUDS.map((f) => [2.2, 0, 1.3, 1, f]), ...plan.SKY_ROCKS.map((f) => [1.05, -1.72, 0.92, 1.05, f])].flatMap(([hx, bottom, top, hz, f]) =>
-        [-1, 1].flatMap((sx) =>
-          [-1, 1].flatMap((sz) =>
-            [bottom, top].map((y) => new T.Vector3(f.x + (sx * hx * Math.cos(f.ry) + sz * hz * Math.sin(f.ry)) * f.size, f.y + y * f.size, f.z + (-sx * hx * Math.sin(f.ry) + sz * hz * Math.cos(f.ry)) * f.size)),
+      floatAt = (f, x, y, z) => new T.Vector3(f.x + (x * Math.cos(f.ry) + z * Math.sin(f.ry)) * f.size, f.y + y * f.size, f.z + (-x * Math.sin(f.ry) + z * Math.cos(f.ry)) * f.size),
+      floats = [
+        ...plan.SKY_CLOUDS.flatMap((f) =>
+          Array.from({ length: 24 }, (_, k) => [Math.cos((k / 24) * Math.PI * 2), Math.sin((k / 24) * Math.PI * 2)]).flatMap(([c, s]) => [
+            ...[-0.07, 0.4].map((y) => floatAt(f, c * 2.55, y, s * 1.12)),
+            ...[1, 2, 3, 4, 5, 6].map((b) => floatAt(f, c * 2.55 * Math.cos((b / 6) * (Math.PI / 2)), 0.4 + Math.sin((b / 6) * (Math.PI / 2)) * 1.1, s * 1.12 * Math.cos((b / 6) * (Math.PI / 2)))),
+          ]),
+        ),
+        ...plan.SKY_ROCKS.flatMap((f) =>
+          Array.from({ length: 24 }, (_, k) => [Math.cos((k / 24) * Math.PI * 2), Math.sin((k / 24) * Math.PI * 2)]).flatMap(([c, s]) =>
+            Array.from({ length: 9 }, (_, b) => (b / 8) * Math.PI - Math.PI / 2).map((w) => floatAt(f, c * 1.3 * Math.cos(w), Math.sin(w) * (w > 0 ? 1.2 : 1.8), s * 1.3 * Math.cos(w))),
           ),
         ),
-      ),
+      ],
       shape = [...outline, ...floats],
       // A point's place (px from the frame's top left) in a w x h frame whose camera looks at `centre`
       // from `bearing` at `zoom`, at the town's pitch unless given the camera's elevation.

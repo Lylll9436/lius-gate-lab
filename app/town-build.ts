@@ -23,6 +23,7 @@ import { createHomes } from './town-homes';
 import { createResidence } from './town-residence';
 import { createAirport } from './town-airport';
 import { createSkyIsland } from './town-sky';
+import { createSkyGarden } from './town-sky-garden';
 import { createSkyVilla } from './town-sky-villa';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
@@ -56,8 +57,10 @@ export { BALLOON, followDrift } from './town-movers';
  * - town-residence.ts: the Visiting PhD Residence at the row's north end;
  * - town-airport.ts: the airport's island off the north shore (its deck, armour, runway, apron and
  *   the road and causeway out to it, in its own group, `airportLand`) and its Departures Hall;
- * - town-sky.ts: the sky island off the north-west headland (its lawn and paths, the rock under it
- *   and its coping, in its own groups under `sky.root`);
+ * - town-sky.ts: the sky island off the north-west headland (its lawn, paths and garden, the rock
+ *   under it and its coping, in its own groups under `sky.root`);
+ * - town-sky-garden.ts: the sky island's garden kit (its short falls and their cloud puffs, clouds,
+ *   floating rocks, tea table, telescope, garden lamps and urns), which town-sky places;
  * - town-sky-villa.ts: the red-brick villa on the sky island (its shell, `sky.shell`);
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
@@ -144,7 +147,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildTerrace, buildCottage } = createHomes(ctx, kit, nature);
   const { buildResidence } = createResidence(ctx, kit, nature, props);
   const { airportGround, buildAirport } = createAirport(ctx, kit, props, nature);
-  const skyIsland = createSkyIsland(ctx, kit, props, nature);
+  const skyGarden = createSkyGarden(ctx, kit, props, nature);
+  const skyIsland = createSkyIsland(ctx, kit, props, nature, skyGarden);
   const { buildSkyVilla } = createSkyVilla(ctx, kit, props, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);

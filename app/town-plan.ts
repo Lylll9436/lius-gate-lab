@@ -809,9 +809,12 @@ export const skyFalls = SKY_FALLS.bearings.map((bearing) => {
 /**
  * The island's one tree, on the north-east lawn behind the villa's east end: from the City view
  * and the island's own file it shows beside the villa, never before its facade. `top` is how high
- * its crown may reach over SKY.top (the overview is fitted to it).
+ * its crown may reach over SKY.top (the overview is fitted to it). It is one of the town's round
+ * trees (town-nature's tree) of the `kind` that shows the season (blossom in spring, turning in
+ * autumn), `size` its scale: a big old tree, the town's largest (its round trees run 0.6 to 1.4),
+ * its crown clear of the villa's back wall and topping out under `top`.
  */
-export const SKY_TREE = { x: -49.4, z: -29, top: 4.53 };
+export const SKY_TREE = { x: -49.4, z: -29, top: 4.53, size: 1.65, kind: 'autumn' as const };
 /**
  * The flower borders at the foot of the terrace's front wall, either side of the steps (world
  * rectangles, `depth` deep, `gap` clear of the steps and stopping `short` of the house's ends, so
@@ -833,10 +836,13 @@ export type SkyStation = { x: number; z: number; facing: number };
  * town's bench), from the piece's own origin: `tea`, either chair of the tea table, along the
  * table's local x (its TEA.radius + TEA.gap + TEA.setback); `bench`, the park bench's seat, along
  * its local +z, the way it faces (its front edge 0.215 out, less F1a's setback 0.09); `telescope`,
- * behind the tripod's middle along its line of sight, stooped to the eyepiece (its userData.stand
- * at the default tilt, 0.42). Seats are 0.44 up, the park bench's.
+ * behind the tripod's middle along its line of sight, stooped to the eyepiece (the garden kit's
+ * telescope({ tilt }).userData.stand, at her own `tilt`). Seats are 0.44 up, the park bench's.
+ * At the telescope her eye meets its eyepiece: `eyepiece` over the floor she stands on, her gaze
+ * `tilt` below level (15 degrees), straight down its tube (lane F's ALISON_TELESCOPE: its eyepiece
+ * 0.7058 up and its gaze; check-town holds the kit's telescope to them).
  */
-export const SKY_SEATS = { tea: 0.61, bench: 0.125, telescope: 0.697, height: 0.44 };
+export const SKY_SEATS = { tea: 0.61, bench: 0.125, telescope: 0.6571, height: 0.44, eyepiece: 0.7058, tilt: 0.2601 };
 /** The point `d` along a bearing from (x, z). */
 const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Math.sin(bearing) * d, z + Math.cos(bearing) * d];
 /**
@@ -851,8 +857,10 @@ const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Mat
  * - `watering`: the stretch of path she walks along the east border at the terrace's foot, `from`
  *   one end `to` the other, facing the border (north).
  * - `telescope`: the telescope on the east-south-east rim. It looks at the Town Hall (`look`, the
- *   bearing; `dip`, the true depression of that line from its eyepiece to the hall's middle), and
- *   she stands at `stand`, stooped to its eyepiece.
+ *   bearing; `dip`, the true depression of that line from her eye to the hall's middle), and she
+ *   stands at `stand`, stooped to its eyepiece. The lawn under her is a little higher than under
+ *   the tripod's middle (the dome), so its eyepiece stands `eyepiece` over the tripod's foot: her
+ *   own SKY_SEATS.eyepiece over the floor she stands on.
  * - `bench`: the bench on the south-east lawn beside the paths' round landing, facing the town;
  *   `seat` is where she sits to read.
  * She stands on skyTop at each (a seat: SKY_SEATS.height over it).
@@ -872,8 +880,9 @@ export const SKY_STATIONS = (() => {
   const rim = skyRim(50 * rad, -1.0),
     look = Math.atan2(hall.x - rim.x, hall.z - rim.z),
     [sx, sz] = along(rim.x, rim.z, look, -SKY_SEATS.telescope),
-    eye = skyTop(rim.x, rim.z) + 0.65,
-    dip = Math.atan2(eye - hall.height / 2, Math.hypot(hall.x - rim.x, hall.z - rim.z));
+    eye = skyTop(sx, sz) + SKY_SEATS.eyepiece,
+    eyepiece = eye - skyTop(rim.x, rim.z),
+    dip = Math.atan2(eye - hall.height / 2, Math.hypot(hall.x - sx, hall.z - sz));
   // The watering stretch, on the walk along the borders (its line is SKY_PATHS.walk's).
   const border = SKY_BORDERS.east,
     line = border.z1 + 0.32;
@@ -884,7 +893,7 @@ export const SKY_STATIONS = (() => {
   return {
     tea: { x: table.x, z: table.z, ry: facing - Math.PI / 2, seats: [seat(-1), seat(1)] as [SkyStation, SkyStation] },
     watering: { from: { x: border.x0 + 0.15, z: line }, to: { x: border.x1 - 0.2, z: line }, facing: Math.PI },
-    telescope: { x: rim.x, z: rim.z, ry: look, look, dip, stand: { x: sx, z: sz, facing: look } as SkyStation },
+    telescope: { x: rim.x, z: rim.z, ry: look, look, dip, eyepiece, stand: { x: sx, z: sz, facing: look } as SkyStation },
     bench: { x: bench.x, z: bench.z, ry: towards, seat: { x: bx, z: bz, facing: towards } as SkyStation },
   };
 })();
@@ -939,10 +948,12 @@ export const SKY_FLOAT_LIMITS = { tuck: 0.5, clear: 0.4, top: SKY.top - SKY.dome
  * The clouds (lane G's cloud(): its origin the middle of its flat base, long along its x, about
  * 3.6 x 1.3 x 2 at size 1, drifting 0.4 x size either way along its length): one low off the
  * south-east rim, toward the town, and one smaller off the south-west, both under the deck's level.
+ * Each lies long across the view from the island's file and the opening bearing (turned within about
+ * 20 degrees of them): seen end on, a cloud is a lump beside the falls' puffs.
  */
 export const SKY_CLOUDS: SkyFloat[] = [
-  { x: -44.7, y: 8.85, z: -19.0, ry: -0.75, size: 0.8, seed: 1 },
-  { x: -56.1, y: 8.05, z: -16.1, ry: 0.5, size: 0.7, seed: 2 },
+  { x: -44.7, y: 8.85, z: -19.0, ry: 0.55, size: 0.8, seed: 1 },
+  { x: -55.95, y: 8.05, z: -16.2, ry: 0.5, size: 0.7, seed: 2 },
 ];
 /**
  * The floating rocks (lane G's floatingRock(): its origin its middle, about 2.1 across, 0.8 over

@@ -5618,7 +5618,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 let skyReport = '';
 {
   const { WATER } = await load('town-shared'),
-    { SKY_LOOK, SKY_LAWN, SKY_COPING, SKY_ROCK, skySlots } = await load('town-sky'),
+    { SKY_LOOK, SKY_LAWN, SKY_COPING, SKY_ROCK, SKY_BEDS, SKY_TREE_SEED, skySlots } = await load('town-sky'),
     { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted, TOWN_PITCH, SKY_PITCH } = await load('city-scene'),
     { SEA_SHADOW, createSeaShadow } = await load('city-water'),
     { palette } = await load('town-shared'),
@@ -5635,6 +5635,18 @@ let skyReport = '';
         const p = o.geometry.attributes.position;
         for (let i = 0; i < p.count; i++) visit(v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld), o, i);
       }),
+    trianglesOf = (o) => (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3,
+    // What moves on the island (the garden's falls, clouds and floating rocks, each part on a pivot of
+    // its own, and the rock's night), and the pivot a mesh hangs on, if it hangs on one.
+    under = (o, root) => {
+      for (let p = o; p; p = p.parent) if (p === root) return true;
+      return false;
+    },
+    skyMoving = model.animated.filter((e) => under(e.object, sky.root)),
+    pivotOf = (o) => {
+      for (let p = o.parent; p && p !== sky.root; p = p.parent) if (p.userData.keepSeparate) return p;
+      return null;
+    },
     // A point in the deck's own frame (x along its long axis).
     local = (x, z) => [(x - S.x) * Math.cos(S.heading) - (z - S.z) * Math.sin(S.heading), (x - S.x) * Math.sin(S.heading) + (z - S.z) * Math.cos(S.heading)],
     stops = [0, 1, 2, 3].map((k) => Math.PI / 4 + (k * Math.PI) / 2),
@@ -5648,6 +5660,10 @@ let skyReport = '';
         up = new T.Vector3().crossVectors(back, right);
       return { back, right, up, flat: (p) => [p.x * right.x + p.z * right.z, p.x * up.x + p.y * up.y + p.z * up.z] };
     };
+  // The island as the frozen frame has it (Pause and reduced motion hold the town at time 0): an
+  // earlier check turned the whole town to 37 s, which carried the garden's clouds, rocks and lumps along.
+  for (const e of skyMoving) e.update(0, 0, 0);
+  city.updateMatrixWorld(true);
   /** The convex outline of points [u, v] (anticlockwise). */
   const hullOf = (points) => {
     const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
@@ -5685,28 +5701,48 @@ let skyReport = '';
   };
   const areaOf = (hull) => Math.abs(hull.reduce((sum, a, i) => sum + a[0] * hull[(i + 1) % hull.length][1] - hull[(i + 1) % hull.length][0] * a[1], 0)) / 2;
   /**
-   * The clouds and floating rocks the garden is to hang in their slots (plan.SKY_CLOUDS and
-   * SKY_ROCKS), as points on a generous volume each (lane G's at the slot's size, with the drift's
-   * or the bob's reach): a cloud 2.2 x size along its length either way, 1.0 x size across and up to
-   * 1.3 x size over its base; a rock 1.05 x size across, 0.92 x size over its middle and 1.72 x size
-   * under it. They stand in for the pieces in every check below that measures the island's shape on
-   * screen or in the air, so the slots are sound before anything is built in them.
+   * The clouds and floating rocks the garden hangs in their slots (plan.SKY_CLOUDS and SKY_ROCKS),
+   * each as the surface of a volume in its slot's frame (FLOAT_PROXY, in units of the slot's size)
+   * that holds lane G's piece through its whole drift or bob (fitted to the pieces, and held to them
+   * in the garden's check below): a cloud, widest near its base, inside an upright wall on an ellipse
+   * 2.55 along its length (its own 1.95 and its drift's 0.4) by 1.12 across, from 0.07 under its base
+   * (the bob) to 0.4 over it, under a dome 1.1 high; a rock inside an ellipsoid 1.3 across (it
+   * rocks), 1.2 over its middle (its tussocks) and 1.8 under it (its keel). They stand in for the
+   * pieces wherever a check below measures the island's shape on screen or in the air through the
+   * motion (check-navigation's boxes are round these).
    */
-  const floatPoints = (f, kind) => {
-    const out = [],
-      m = new T.Matrix4().makeRotationY(f.ry).setPosition(f.x, f.y, f.z);
-    for (let a = 0; a < 24; a++)
-      for (let b = 0; b <= 8; b++) {
-        const u = (a / 24) * Math.PI * 2,
-          w = (b / 8) * Math.PI - Math.PI / 2,
-          p =
-            kind === 'cloud'
-              ? new T.Vector3(Math.cos(w) * Math.cos(u) * 2.2, Math.max(0, 0.6 + Math.sin(w) * 0.75), Math.cos(w) * Math.sin(u))
-              : new T.Vector3(Math.cos(w) * Math.cos(u) * 1.05, Math.sin(w) * (w > 0 ? 0.92 : 1.72), Math.cos(w) * Math.sin(u) * 1.05);
-        out.push(p.multiplyScalar(f.size).applyMatrix4(m));
+  const FLOAT_PROXY = { cloud: { a: 2.55, c: 1.12, base: -0.07, wall: 0.4, cap: 1.1 }, rock: { r: 1.3, up: 1.2, down: 1.8 } },
+    /** How far into its proxy a point lies (in its slot's frame, in units of its size): 1 on its surface. */
+    proxyMeasure = (kind, [x, y, z]) => {
+      if (kind === 'rock') return (x * x + z * z) / FLOAT_PROXY.rock.r ** 2 + (y / (y > 0 ? FLOAT_PROXY.rock.up : FLOAT_PROXY.rock.down)) ** 2;
+      const P = FLOAT_PROXY.cloud,
+        e = (x / P.a) ** 2 + (z / P.c) ** 2;
+      return y < P.base ? Infinity : y <= P.wall ? e : e + ((y - P.wall) / P.cap) ** 2;
+    },
+    floatPoints = (f, kind) => {
+      const out = [],
+        m = new T.Matrix4().makeRotationY(f.ry).setPosition(f.x, f.y, f.z);
+      for (let k = 0; k < 24; k++) {
+        const cu = Math.cos((k / 24) * Math.PI * 2),
+          su = Math.sin((k / 24) * Math.PI * 2);
+        if (kind === 'cloud') {
+          const P = FLOAT_PROXY.cloud;
+          // Its wall from the base up, the dome over it, and the base's rings.
+          for (const y of [P.base, (P.base + P.wall) / 2, P.wall]) out.push(new T.Vector3(cu * P.a, y, su * P.c));
+          for (let b = 1; b <= 6; b++) {
+            const w = (b / 6) * (Math.PI / 2);
+            out.push(new T.Vector3(cu * P.a * Math.cos(w), P.wall + Math.sin(w) * P.cap, su * P.c * Math.cos(w)));
+          }
+          for (const s of [0.33, 0.67]) out.push(new T.Vector3(cu * P.a * s, P.base, su * P.c * s));
+        } else
+          for (let b = 0; b <= 8; b++) {
+            const P = FLOAT_PROXY.rock,
+              w = (b / 8) * Math.PI - Math.PI / 2;
+            out.push(new T.Vector3(cu * P.r * Math.cos(w), Math.sin(w) * (w > 0 ? P.up : P.down), su * P.r * Math.cos(w)));
+          }
       }
-    return out;
-  };
+      return out.map((p) => p.multiplyScalar(f.size).applyMatrix4(m));
+    };
   const floats = [...plan.SKY_CLOUDS.map((f) => floatPoints(f, 'cloud')), ...plan.SKY_ROCKS.map((f) => floatPoints(f, 'rock'))];
 
   /* ---------------- the spot, the deck's maths and the sea below ---------------- */
@@ -5798,28 +5834,33 @@ let skyReport = '';
   for (const name of ['sky ground', 'sky rock', 'batch sky', 'batch sky villa']) assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
   each(model.land, (p) => assert(Math.abs(p.x - S.x) > S.b + 4 || Math.abs(p.z - S.z) > S.a + 4, 'Something of the sky island is in the land\'s batch.'));
   // Nothing two-sided, nothing that cuts holes, nothing see-through (its water, foam and clouds are
-  // to be opaque too); every mesh batched, with a surface kind; within its own caps.
+  // opaque too); every mesh batched, with a surface kind (but the garden lamps' globes, the lamps' own
+  // glass, lit with the town's lamps and never batched); everything takes shadow but those globes and
+  // the garden's pale parts (its falls, their puffs and its clouds, on the garden kit's own material:
+  // half in the island's shadow a cloud reads as a grey boulder); within its own caps.
   let skyMeshes = 0,
     skyTriangles = 0;
   const skyKinds = new Set();
   sky.root.traverse((o) => {
     if (!o.isMesh) return;
     skyMeshes++;
-    skyTriangles += o.geometry.attributes.position.count / 3;
+    skyTriangles += trianglesOf(o);
     skyKinds.add(o.material.userData.surfaceKind);
-    assert(o.material.userData.surfaceKind && o.material.vertexColors, 'A mesh of the sky island has no surface kind, or is not batched.');
+    const globe = model.lamps.includes(o);
+    assert(o.material.userData.surfaceKind && (o.material.vertexColors || (globe && o.material.userData.surfaceKind === 'glass')), 'A mesh of the sky island has no surface kind, or is not batched.');
     assert.notEqual(o.material.side, T.DoubleSide, `${o.material.name} on the sky island is two-sided.`);
     assert(!o.material.transparent && o.material.opacity === 1 && !o.material.alphaTest, `${o.material.name} on the sky island is see-through.`);
     assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} on the sky island cuts holes.`);
-    assert(o.receiveShadow, 'A mesh of the sky island takes no shadow.');
+    assert(o.receiveShadow || globe || o.material.userData.skyGardenOwn, 'A mesh of the sky island takes no shadow.');
   });
   // Its ground is grass and gravel (and the terrace's flags, paving): never sand, asphalt or water.
   for (const kind of skyKinds) assert(!['sand', 'asphalt', 'water', 'soil'].includes(kind), `The sky island has a ${kind} surface.`);
-  // The finished island's caps: the villa (lane V: up to 16 meshes and 45,000 triangles), the
-  // garden, its water and clouds (lane G: 14 and 16,000) and her figure (lane F: 14 and 5,000) are
-  // still to come.
-  const SKY_CAP = { meshes: 50, triangles: 90000 };
-  assert(skyMeshes <= SKY_CAP.meshes && skyTriangles <= SKY_CAP.triangles, `The sky island costs ${skyMeshes} meshes and ${skyTriangles} triangles.`);
+  // The finished island's caps, with her figure (lane F's Alison: 14 meshes, batched part by part,
+  // and 5,000 triangles at the most) still to come: the villa (lane V's detail pass, up to 16 meshes
+  // and 45,000 triangles) and the garden (below) leave room for her.
+  const SKY_CAP = { meshes: 50, triangles: 90000 },
+    HER = { meshes: 14, triangles: 5000 };
+  assert(skyMeshes + HER.meshes <= SKY_CAP.meshes && skyTriangles + HER.triangles <= SKY_CAP.triangles, `The sky island costs ${skyMeshes} meshes and ${skyTriangles} triangles: no room left for her figure under its caps.`);
   // Its colours: each no more saturated than its family (the rock's greys than the armour's darkest,
   // its seams than the kerb's buff).
   for (const [name, colour, family] of [
@@ -5842,10 +5883,13 @@ let skyReport = '';
   assert.deepEqual(SKY_LOOK.lawn, [palette.grassDark, palette.grassLight]);
 
   /* ---------------- the deck: lawn and paths ---------------- */
+  // (The deck's own batch holds the garden's standing parts too: one mesh a surface family.)
   const grounds = sky.land.children.filter((o) => o.isMesh),
-    lawn = grounds.find((o) => o.material.userData.surfaceKind === 'grass'),
-    gravel = grounds.find((o) => o.material.userData.surfaceKind === 'gravel');
-  assert(grounds.length === 2 && lawn && gravel && !lawn.castShadow && !gravel.castShadow, 'The deck is not a lawn and its paths, neither casting.');
+    lawns = grounds.filter((o) => o.material.userData.surfaceKind === 'grass'),
+    gravels = grounds.filter((o) => o.material.userData.surfaceKind === 'gravel'),
+    [lawn] = lawns,
+    [gravel] = gravels;
+  assert(lawns.length === 1 && gravels.length === 1 && !lawn.castShadow && !gravel.castShadow, 'The deck is not one lawn and one set of paths, neither casting.');
   {
     // The lawn: on the dome, out to SKY_LAWN.edge under the coping, mown in stripes each one flat
     // colour (no texture to shimmer), alternately the lawn's two greens, 0.5 wide or more.
@@ -6191,11 +6235,23 @@ let skyReport = '';
   }
 
   /* ---------------- the overview's marks and its own frame ---------------- */
-  // Every other point of what is built, for the screen checks below; and with the floats' proxies,
-  // the island's whole shape in the air.
-  const built = [];
+  // Every fifth point of what is built, for the screen checks below: `still`, what stands still (the
+  // deck and what stands on it, the villa, the rock), and what hangs on the garden's pivots: the
+  // falls' water and puffs, and what floats beside the island (its clouds and rocks); and with the
+  // floats' proxies (their drift and bob), the island's whole shape in the air.
+  const built = [],
+    still = [],
+    falling = [],
+    floating = [];
   let nth = 0;
-  each(sky.root, (p) => nth++ % 5 === 0 && built.push(p.clone()));
+  each(sky.root, (p, o) => {
+    if (nth++ % 5) return;
+    const q = p.clone(),
+      pivot = pivotOf(o);
+    built.push(q);
+    (!pivot ? still : pivot.name.startsWith('sky-fall-') ? falling : floating).push(q);
+  });
+  assert(floating.length > 100 && falling.length > 100 && still.length + falling.length + floating.length === built.length, 'The garden\'s falls, clouds and rocks are not on pivots of their own.');
   const shape = [...built, ...floats.flat()],
     marks = skyMarks(),
     fit = skyFit();
@@ -6208,18 +6264,25 @@ let skyReport = '';
     assert(marks.slice(16, 24).every((m) => Math.abs(m.y - (site.y + C.cans)) < 1e-6 && Math.abs(Math.abs(Math.abs(m.x - S.x) - C.x) - C.cope.hw) < 1e-9 && Math.abs(Math.abs(m.z - (site.z + C.z)) - C.cope.hd) < 1e-9), 'The chimneys\' marks are off the copes.');
     assert(marks[24].distanceTo(new T.Vector3(-49.4, 15.002, -29)) < 1e-6 && marks[25].distanceTo(new T.Vector3(tipAt.x, tipAt.y, tipAt.z)) < 1e-6, 'The tree\'s or the tip\'s mark moved.');
     // They hold what is built: the overview is fitted to their box on screen, and from the four
-    // Rotate stops and the file's bearing nothing of the island shows more than 0.3 outside it (the
-    // rock's shoulders, a little proud of the rim). (The floats hang on the town's side, inside the
-    // town's own marks: check-navigation holds them to that.)
-    let worst = -Infinity;
-    for (const bearing of [...stops, file]) {
-      const { flat } = axes(bearing),
+    // Rotate stops and the file's bearing (at the town's pitch, and at the file's own, whose frame
+    // check-navigation measures from these marks) nothing of the island and its garden shows more
+    // than 0.3 outside it (the rock's shoulders, a little proud of the rim; the tree's crown over the
+    // rim), nor of its falls more than 0.5 (each puff's flat base is wider low down than the four
+    // marks round its middle draw it: from the far stops, where a puff is the island's lowest point on
+    // screen, its base's rim shows under them, a few pixels into the overview's margin). (The floats
+    // hang on the town's side, inside the town's own marks: check-navigation holds their proxies to
+    // that, and the garden's check below the floats to their proxies.)
+    let worst = -Infinity,
+      worstFall = -Infinity;
+    for (const [bearing, pitch] of [...stops.map((b) => [b, TOWN_PITCH]), [file, TOWN_PITCH], [file, SKY_PITCH]]) {
+      const { flat } = axes(bearing, pitch),
         edges = (points) => points.map(flat).reduce(([u0, w0, u1, w1], [u, w]) => [Math.min(u0, u), Math.min(w0, w), Math.max(u1, u), Math.max(w1, w)], [Infinity, Infinity, -Infinity, -Infinity]),
         marked = edges(marks),
-        island = edges(built);
-      worst = Math.max(worst, marked[0] - island[0], marked[1] - island[1], island[2] - marked[2], island[3] - marked[3]);
+        out = (box) => Math.max(marked[0] - box[0], marked[1] - box[1], box[2] - marked[2], box[3] - marked[3]);
+      worst = Math.max(worst, out(edges(still)));
+      worstFall = Math.max(worstFall, out(edges(falling)));
     }
-    assert(worst <= 0.3, `The sky island shows ${worst.toFixed(2)} outside the overview's marks.`);
+    assert(worst <= 0.3 && worstFall <= 0.5, `The sky island shows ${worst.toFixed(2)} outside the overview's marks (its falls ${worstFall.toFixed(2)}).`);
     // The body reads as a floating rock, not a plate (the owner's reference 2: a grass top on an
     // inverted cone of earth and rock tapering to a point). On screen, at a view's bearing and pitch:
     // D, the deck's height (its widest ring, far rim to near rim); V, how far the underside's lowest
@@ -6310,15 +6373,19 @@ let skyReport = '';
       for (const drift of bearing === file ? [0] : drifts) {
         const { back, right, up, flat } = axes(bearing + drift, bearing === file ? SKY_PITCH : TOWN_PITCH);
         dir.copy(back).negate();
-        // (a) Wherever its own surface is the first thing on a view ray, the pointer is on the island.
+        // (a) Wherever its own surface (the deck and all that stands on it, the villa, the rock) is the
+        // first thing on a view ray, the pointer is on the island. (Its falls, their puffs and what
+        // floats beside it are left out of its volume: there it answers only where the volume lies
+        // behind them.)
         if (!drift) {
           let seen = 0;
-          for (let k = 0; k < built.length; k += 9) {
-            through(built[k]);
-            if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(built[k]) ?? 1) > 0.01) continue;
+          // (About two thousand of its still points a bearing: a ray against the island costs some milliseconds.)
+          for (let k = 0; k < still.length; k += Math.ceil(still.length / 2000)) {
+            through(still[k]);
+            if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(still[k]) ?? 1) > 0.01) continue;
             seen++;
             const picked = pickTarget(ray, models, model.parkHit, pick);
-            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${built[k].toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
+            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${still[k].toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
           }
           assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
           seenAll += seen;
@@ -6337,14 +6404,14 @@ let skyReport = '';
           }
           // (Under its lowest point on screen: the tip leans toward the file's camera, so from the far
           // side its belly hangs lower on screen than the tip does.)
-          const lowest = built.reduce((a, b) => (flat(b)[1] < flat(a)[1] ? b : a));
+          const lowest = still.reduce((a, b) => (flat(b)[1] < flat(a)[1] ? b : a));
           for (const below of [1, 1.6, 2.4]) {
             through(lowest.clone().addScaledVector(up, -below));
             assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the air ${below} under the rock's lowest point on screen answers as the sky island.`);
           }
           // (c) It hugs the island: the volume's outline is about a third bigger than the island's own
         // at most (the villa's box over its terrace and the slab over the lawn are most of that).
-          tightest = Math.max(tightest, areaOf(outline) / areaOf(hullOf(built.map(flat))));
+          tightest = Math.max(tightest, areaOf(outline) / areaOf(hullOf(still.map(flat))));
         }
         // (d) No land behind it at any Rotate stop, through the idle drift: the island's own outline,
         // with the clouds and rocks that hang by it, keeps half a unit of sea from the town's land and
@@ -6542,6 +6609,408 @@ let skyReport = '';
       }
     }
     assert(least >= 2, `The sky island stands ${least.toFixed(1)} from a chapter's subject on screen.`);
+  }
+
+  /* ---------------- its garden ---------------- */
+  // The garden as the town plants it (town-sky's skyGarden: lane G's kit, town-sky-garden, with the
+  // town's own bench, tree and flower beds):
+  // - each piece in its slot (skySlots): the tea table, the telescope, the bench, the tree, the two
+  //   flower borders, the one set of four garden lamps, the two falls, the two clouds and the three
+  //   floating rocks;
+  // - SKY_SEATS are the kit's: her chair is the tea table's -x one; the telescope is built along her
+  //   own gaze (lane F's ALISON_TELESCOPE, copied below until lane F is merged: 15 degrees down, its
+  //   eyepiece 0.7058 over her feet and 0.3092 ahead of her root), so where she stands behind it her
+  //   eye is its eyepiece;
+  // - the tree is one of the town's round trees that shows the season, its trunk in the lawn, its
+  //   crown under the overview's mark and 0.3 clear of the house;
+  // - each border is the town's flower bed, its kerb the border's outline, standing on the lowest lawn
+  //   under it, its blooms in a row along its back: as she walks the watering stretch her can (lane
+  //   F's ALISON, copied below: it reaches 0.589 from her and hangs no lower than 0.38 over her feet)
+  //   passes over the bed and never meets a bloom;
+  // - the lamps are one set: one glass mesh of four globes at SKY_LAMPS, the town's lanterns' own
+  //   glass, among its lamps (the frame loop lights them all with the night);
+  // - the budget: lane G's kit as the island places it, batched as the island batches it, costs 14
+  //   meshes and 16,000 triangles at the most, its own budget (the town's bench, tree and beds bring a
+  //   family each of their own, iron, bark and the blooms', counted in the island's caps above);
+  // - every joined piece standing in the garden is 0.07 across or more;
+  // - motion: each moving part hangs on a pivot of its own with one entry in the town's animated list,
+  //   one mesh each, posed from town time alone: as built at time 0 (the frozen frame Pause and reduced
+  //   motion hold), the same a period later and while time stands still, whatever the night; nothing
+  //   else on the island moves but the rock's night;
+  // - through their whole drift and bob the clouds and rocks keep SKY_FLOAT_LIMITS (tucked no more than
+  //   0.5 under the rim, 0.4 clear of the rock, under the rim's lawn, south of `north` and east of
+  //   `west`, out of the villa's box) and stay inside FLOAT_BOX, the proxies the island's other checks
+  //   and check-navigation use; the falls' water under the rim keeps 0.3 clear of the rock's cliffs
+  //   and shoulders; the island stays inside the rain's square but for the west fall's puff, which pokes
+  //   out by 2.2 at the most (the placement accepted 1.8 for it);
+  // - nothing of the garden stands on her walk (the paths' width) or within her reach where she stands;
+  // - at night the falls, puffs and clouds dim by SKY_NIGHT_DIM on one material of the kit's own, with
+  //   no glow, and nothing else of the island does but the rock, on its own (above).
+  {
+    const G = await load('town-sky-garden'),
+      { createProps } = await load('town-props'),
+      { createNature, treeLook, BLOOMS } = await load('town-nature'),
+      { createKit } = await load('town-kit'),
+      { createBatch } = await load('town-batch'),
+      { createCityMaterials } = await load('city-materials'),
+      { skyBorder } = await load('town-sky'),
+      { TEA, TELESCOPE, FALL, CLOUD, GARDEN_LAMP, SKY_NIGHT_DIM } = G,
+      slots = skySlots(),
+      SEATS = plan.SKY_SEATS,
+      ST = plan.SKY_STATIONS,
+      // Lane F's Alison (app/sky-figure.ts, not merged here yet; F1b-loop holds these to its ALISON and
+      // ALISON_TELESCOPE): her eye at the telescope (over her feet, and ahead of her root) and her gaze;
+      // her watering can's reach from her and how low it hangs over her feet.
+      HER_EYE = [0.7058, 0.3092],
+      HER_GAZE = [-0.2571, 0.9664],
+      HER_CAN = { reach: 0.589, low: 0.38 },
+      fresh = (season = 'summer') => {
+        const library = createCityMaterials(),
+          ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
+          kit = createKit(ctx),
+          props = createProps(ctx, kit),
+          nature = createNature(ctx, kit);
+        return { ctx, nature, garden: G.createSkyGarden(ctx, kit, props, nature), batch: createBatch(ctx).batch };
+      },
+      frames = (name) => sky.land.children.filter((o) => o.name === name),
+      inSlot = (o, slot) => Math.hypot(o.position.x - slot.x, o.position.y - slot.y, o.position.z - slot.z) < 1e-9 && Math.abs(plan.angleDiff(o.rotation.y, slot.ry ?? 0)) < 1e-9,
+      fmt = (p) => p.toArray().map((n) => n.toFixed(2)).join(', '),
+      /** Each run of joined faces in a mesh (faces sharing a corner): its box in the world. */
+      pieces = (m) => {
+        const q = m.geometry.attributes.position,
+          index = m.geometry.index,
+          key = (i) => `${q.getX(i).toFixed(4)},${q.getY(i).toFixed(4)},${q.getZ(i).toFixed(4)}`,
+          parent = new Map(),
+          find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k))),
+          corner = (t, j) => (index ? index.getX(t * 3 + j) : t * 3 + j),
+          faces = (index ? index.count : q.count) / 3,
+          out = new Map();
+        for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+        for (let t = 0; t < faces; t++) for (const j of [1, 2]) parent.set(find(key(corner(t, j))), find(key(corner(t, 0))));
+        for (let t = 0; t < faces; t++) {
+          const r = find(key(corner(t, 0)));
+          if (!out.has(r)) out.set(r, new T.Box3());
+          for (const j of [0, 1, 2]) out.get(r).expandByPoint(v.fromBufferAttribute(q, corner(t, j)).applyMatrix4(m.matrixWorld));
+        }
+        return [...out.values()];
+      },
+      // The garden's own meshes, as the town batched them: what stands in it (the deck's batch, less
+      // the lawn and the paths), the lamps' globes, and what moves (on its pivots).
+      standingMeshes = sky.land.children.filter((o) => o.isMesh && o !== lawn && o !== gravel),
+      globes = model.lamps.filter((l) => under(l, sky.root)),
+      gardenMoving = skyMoving.filter((e) => e.object !== sky.rock);
+
+    // Each piece in its slot.
+    const counts = Object.fromEntries(['sky-tea', 'sky-telescope', 'sky-bench', 'sky-tree', 'sky-border', 'sky-lamps', 'sky-fall', 'sky-cloud', 'sky-float'].map((n) => [n, frames(n).length]));
+    assert.deepEqual(counts, { 'sky-tea': 1, 'sky-telescope': 1, 'sky-bench': 1, 'sky-tree': 1, 'sky-border': 2, 'sky-lamps': 1, 'sky-fall': 2, 'sky-cloud': 2, 'sky-float': 3 }, 'The garden is not a tea table, a telescope, a bench and a tree, two borders, a set of lamps, two falls, two clouds and three floating rocks.');
+    assert(inSlot(frames('sky-tea')[0], slots.tea) && inSlot(frames('sky-telescope')[0], slots.telescope) && inSlot(frames('sky-bench')[0], slots.bench) && inSlot(frames('sky-lamps')[0], slots.lamps), 'The tea table, the telescope, the bench or the lamps are off their slots.');
+    for (const [name, list] of [['sky-fall', slots.falls], ['sky-cloud', slots.clouds], ['sky-float', slots.rocks]]) frames(name).forEach((f, k) => assert(inSlot(f, list[k]), `The garden's ${name} ${k} is off its slot.`));
+    // The clouds lie long across the view from the island's file and the opening bearing (a cloud's
+    // length is its x, turned by ry; a camera's screen runs along its bearing's): end on, a cloud is a lump.
+    assert(plan.SKY_CLOUDS.every((c) => [file, Math.PI / 4].every((b) => Math.abs(Math.sin(c.ry - b)) < Math.sin(20 * deg))), 'A cloud is seen end on from the island\'s file or the opening bearing.');
+    {
+      const tree = frames('sky-tree')[0];
+      assert(Math.hypot(tree.position.x - slots.tree.x, tree.position.z - slots.tree.z) < 1e-9 && tree.position.y === slots.tree.y, 'The tree is off its slot, or not on the lawn.');
+    }
+
+    // The seats: her chair is the tea table's -x one, SKY_SEATS.tea out along its x, facing as her
+    // station does; the seats are the table's height.
+    {
+      const table = fresh().garden.teaTable(),
+        [hers, guests] = table.userData.seats;
+      assert(Math.abs(SEATS.tea - (TEA.radius + TEA.gap + TEA.setback)) < 1e-9 && SEATS.height === TEA.seat, 'SKY_SEATS\' tea chairs are not the tea table\'s.');
+      assert(Math.abs(hers.x + SEATS.tea) < 1e-9 && Math.abs(guests.x - SEATS.tea) < 1e-9 && hers.z === 0 && Math.abs(plan.angleDiff(slots.tea.ry + hers.heading, ST.tea.seats[0].facing)) < 1e-9, 'Her chair at tea is not the table\'s -x one.');
+    }
+    // The telescope, built along her gaze to her eye: SKY_SEATS.telescope is its stand at her tilt,
+    // and where she stands, behind it on the lawn, her eye is its eyepiece; its tube runs on from there
+    // along her gaze.
+    {
+      const E = G.telescopeEyepiece(SEATS.tilt),
+        scope = fresh().garden.telescope({ eyepiece: slots.telescope.eyepiece, tilt: SEATS.tilt }),
+        frame = frames('sky-telescope')[0],
+        world = (p) => new T.Vector3(...p).applyAxisAngle(new T.Vector3(0, 1, 0), frame.rotation.y).add(frame.position),
+        eyepiece = world(scope.userData.eyepiece),
+        stand = world(scope.userData.stand),
+        at = ST.telescope.stand,
+        eye = new T.Vector3(at.x + Math.sin(at.facing) * HER_EYE[1], plan.skyTop(at.x, at.z) + HER_EYE[0], at.z + Math.cos(at.facing) * HER_EYE[1]);
+      assert(Math.abs(SEATS.telescope + scope.userData.stand[2]) < 1e-4, `SKY_SEATS.telescope (${SEATS.telescope}) is not the telescope's stand at her tilt (${(-scope.userData.stand[2]).toFixed(4)}).`);
+      assert(SEATS.eyepiece === HER_EYE[0] && Math.abs(Math.sin(SEATS.tilt) + HER_GAZE[0]) < 2e-4 && Math.abs(E.height - HER_EYE[0]) < 5e-4 && Math.abs(E.standOff - HER_EYE[1]) < 5e-4, 'The telescope is not built to her eye and her gaze.');
+      assert(Math.hypot(stand.x - at.x, stand.z - at.z) < 1e-4 && eye.distanceTo(eyepiece) < 1e-3, `At the telescope her eye is ${eye.distanceTo(eyepiece).toFixed(3)} from its eyepiece.`);
+      scope.updateMatrixWorld(true);
+      const brass = scope.children.find((m) => m.name === 'sky-telescope-brass'),
+        gaze = new T.Vector3(0, -Math.sin(SEATS.tilt), Math.cos(SEATS.tilt)),
+        end = new T.Vector3(...scope.userData.eyepiece),
+        q = brass.geometry.attributes.position;
+      let near = Infinity,
+        far = -Infinity;
+      for (let i = 0; i < q.count; i++) {
+        const p = new T.Vector3().fromBufferAttribute(q, i).sub(end),
+          along = p.dot(gaze);
+        if (p.addScaledVector(gaze, -along).length() > TELESCOPE.hood + 0.01) continue;
+        near = Math.min(near, along);
+        far = Math.max(far, along);
+      }
+      assert(Math.abs(near) < 1e-6 && Math.abs(far - TELESCOPE.length) < 1e-6, 'The telescope\'s tube does not run down her gaze from its eyepiece.');
+    }
+
+    // The tree: the town's round tree that shows the season (an accent: blossom in spring, turning
+    // in autumn), its trunk's foot in the lawn, its crown under the overview's mark and clear of the
+    // house in every season.
+    {
+      const spec = { x: slots.tree.x, z: slots.tree.z, size: slots.tree.size, kind: slots.tree.kind, id: 'sky-tree' },
+        seasons = ['spring', 'summer', 'autumn', 'winter'],
+        H = V.house,
+        wallZ = site.z + H.back;
+      assert.equal(new Set(seasons.map((s) => JSON.stringify(treeLook(spec, SKY_TREE_SEED, s)))).size, 4, 'The sky island\'s tree does not show the season.');
+      for (const season of seasons) {
+        const g = new T.Group(),
+          t = fresh(season).nature.tree(g, spec, SKY_TREE_SEED);
+        t.position.y = slots.tree.y;
+        g.updateMatrixWorld(true);
+        let top = -Infinity,
+          foot = Infinity,
+          crowd = Infinity;
+        each(g, (p) => {
+          top = Math.max(top, p.y);
+          if (Math.hypot(p.x - spec.x, p.z - spec.z) < 0.6) foot = Math.min(foot, p.y - plan.skyTop(p.x, p.z));
+          if (p.y > S.top + 1 && Math.abs(p.x - site.x) < H.hw + 0.3) crowd = Math.min(crowd, wallZ - p.z);
+        });
+        assert(top <= S.top + plan.SKY_TREE.top + 1e-6 && foot < -0.02 && crowd >= 0.3, `In ${season} the sky island's tree tops out at ${top.toFixed(2)}, its foot ${foot.toFixed(3)} in the lawn, its crown ${crowd.toFixed(2)} from the house.`);
+      }
+    }
+
+    // The borders: the town's flower bed, its kerb the border's outline, on the lowest lawn under it,
+    // its blooms in a row along its back in the town's colours (mirrored either side of the steps);
+    // the town's own blooms are these. As she walks the watering stretch (the east border), facing it,
+    // her can passes over the bed and meets no bloom.
+    {
+      const { nature } = fresh(),
+        rows = [];
+      slots.borders.forEach((b, k) => {
+        const g = new T.Group(),
+          bed = skyBorder(nature, g, b, k);
+        g.updateMatrixWorld(true);
+        const blooms = bed.children.filter((o) => o.userData.noShadow),
+          kerb = bed.children.find((o) => o.material.userData.surfaceKind === 'stone'),
+          box = new T.Box3().setFromObject(kerb),
+          rest = bed.children.filter((o) => !blooms.includes(o)),
+          side = k ? -1 : 1,
+          // Its outline, drawn in at its outer end (the east border's east, the west's west).
+          [x0, x1] = k ? [b.x - b.w / 2 + SKY_BEDS.trim, b.x + b.w / 2] : [b.x - b.w / 2, b.x + b.w / 2 - SKY_BEDS.trim];
+        assert(SKY_BEDS.trim >= 0 && SKY_BEDS.trim <= 0.2 && Math.abs(box.min.x - x0) < 1e-6 && Math.abs(box.max.x - x1) < 1e-6 && Math.abs(box.min.z - (b.z - b.d / 2)) < 1e-6 && Math.abs(box.max.z - (b.z + b.d / 2)) < 1e-6 && Math.abs(box.min.y - b.floor) < 1e-6, `The ${k ? 'west' : 'east'} border's kerb is not its outline, on the lowest lawn under it.`);
+        for (const [x, z] of [[box.min.x, box.min.z], [box.max.x, box.min.z], [box.min.x, box.max.z], [box.max.x, box.max.z], [b.x, box.min.z], [b.x, box.max.z]]) assert(plan.skyTop(x, z) >= b.floor - 1e-9, 'A border\'s kerb floats over the lawn.');
+        assert.equal(blooms.length, SKY_BEDS.order.length, 'A border has not its row of blooms.');
+        blooms.forEach((m, i) => {
+          const x = (x0 + x1) / 2 + side * (i - (SKY_BEDS.order.length - 1) / 2) * SKY_BEDS.spacing;
+          assert(Math.abs(m.position.x - x) < 1e-9 && Math.abs(m.position.z - (b.z - b.d / 2 + SKY_BEDS.back)) < 1e-9 && Math.abs(m.position.y - b.floor - 0.4) < 1e-9 && m.material.color.equals(new T.Color(BLOOMS[SKY_BEDS.order[i]])), `A bloom of the ${k ? 'west' : 'east'} border is out of its row.`);
+          rows.push(m.position.clone());
+        });
+        if (k) return;
+        // Her can, along the stretch she waters (facing the border, north).
+        const W = ST.watering;
+        for (let x = W.from.x; x <= W.to.x + 1e-9; x += 0.05) {
+          const floor = plan.skyTop(x, W.from.z);
+          for (const m of blooms) each(m, (p) => assert(Math.hypot(p.x - x, p.z - W.from.z) >= HER_CAN.reach + 0.02, `Her can meets a bloom of the east border at ${fmt(p)}.`));
+          for (const m of rest) each(m, (p) => assert(Math.hypot(p.x - x, p.z - W.from.z) > HER_CAN.reach || p.y <= floor + HER_CAN.low - 0.005, `The east border stands in her can's way at ${fmt(p)}.`));
+        }
+      });
+      // The town's own blooms (the deck's batch that casts nothing and is foliage) stand where these do.
+      const batched = standingMeshes.filter((m) => m.material.userData.surfaceKind === 'foliage' && !m.castShadow).flatMap(pieces).map((b) => b.getCenter(new T.Vector3()));
+      assert(batched.length === rows.length && rows.every((r) => batched.some((c) => Math.hypot(c.x - r.x, c.z - r.z) < 1e-3)), 'The town\'s borders are not planted as skyBorder plants them.');
+    }
+
+    // The lamps: one set, its four globes one mesh among the town's lamps, the lanterns' own glass.
+    {
+      const set = globes[0],
+        balls = set ? pieces(set) : [];
+      assert(globes.length === 1 && set.parent?.parent === frames('sky-lamps')[0], 'The garden lamps are not one set of globes among the town\'s lamps.');
+      assert(set.material.emissive.getHex() === new T.Color(palette.lantern).getHex() && set.material.userData.surfaceKind === 'glass' && !set.castShadow, 'The garden lamps\' globes are not the lanterns\' own glass.');
+      assert.equal(balls.length, plan.SKY_LAMPS.length, 'The set of garden lamps has not a globe a lamp.');
+      for (const [x, z] of plan.SKY_LAMPS) {
+        const ball = balls.find((b) => Math.hypot(b.getCenter(v).x - x, v.z - z) < 1e-3);
+        assert(ball && Math.abs(ball.max.y - plan.skyTop(x, z) - GARDEN_LAMP.height) < 0.005, `No globe stands on the garden lamp at ${x}, ${z}.`);
+      }
+    }
+
+    // The budget: lane G's kit as the island places it (skyGarden's slots and options), batched as
+    // the island batches it (the deck as the floor, the moving parts each on its own); the town's own
+    // moving parts and globes are these.
+    let kitMeshes = 0,
+      kitTriangles = 0;
+    {
+      const { ctx, garden, batch } = fresh(),
+        root = new T.Group(),
+        put = (slot, piece) => {
+          const f = new T.Group();
+          f.position.set(slot.x, slot.y, slot.z);
+          f.rotation.y = slot.ry ?? 0;
+          f.add(piece);
+          root.add(f);
+        };
+      put(slots.tea, garden.teaTable());
+      put(slots.telescope, garden.telescope({ eyepiece: slots.telescope.eyepiece, tilt: slots.telescope.tilt }));
+      put(slots.lamps, garden.gardenLamps(slots.lamps.spots));
+      slots.falls.forEach((f, k) => put(f, garden.fall({ rise: f.rise, seed: k + 1 })));
+      for (const c of slots.clouds) put(c, garden.cloud({ size: c.size, seed: c.seed }));
+      for (const r of slots.rocks) put(r, garden.floatingRock({ size: r.size, seed: r.seed }));
+      // (As built: each moving part in its time-0 pose, the frozen frame. The town's, posed at time 0 above, are the same.)
+      const poseOf = (o) => [...o.position.toArray(), ...o.quaternion.toArray()];
+      assert(ctx.animated.length === gardenMoving.length && ctx.animated.every((e, k) => poseOf(e.object).every((n, i) => Math.abs(n - poseOf(gardenMoving[k].object)[i]) < 1e-9)), 'The town\'s garden does not move as the kit builds it, or is not in its time-0 pose.');
+      root.updateMatrixWorld(true);
+      batch(root, { floor: plan.skyTop });
+      for (const e of ctx.animated) batch(e.object, { contact: 'none' });
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        kitMeshes++;
+        kitTriangles += trianglesOf(o);
+      });
+      assert(kitMeshes <= 14 && kitTriangles <= 16000, `The garden kit's pieces cost ${kitMeshes} meshes and ${kitTriangles} triangles as the island places them.`);
+      const movingOf = (list) => list.flatMap((e) => e.object.children.filter((c) => c.isMesh)).reduce((n, m) => n + trianglesOf(m), 0);
+      assert(movingOf(ctx.animated) === movingOf(gardenMoving) && trianglesOf(ctx.lamps[0]) === trianglesOf(globes[0]), 'The town\'s garden is not the kit\'s pieces as skyGarden places them.');
+    }
+    let gardenMeshes = standingMeshes.length + globes.length,
+      gardenTriangles = [...standingMeshes, ...globes].reduce((n, m) => n + trianglesOf(m), 0);
+    for (const e of gardenMoving)
+      for (const m of e.object.children.filter((c) => c.isMesh)) {
+        gardenMeshes++;
+        gardenTriangles += trianglesOf(m);
+      }
+
+    // Every joined piece standing in the garden is 0.07 across or more.
+    for (const m of standingMeshes)
+      for (const box of pieces(m)) {
+        const size = box.getSize(new T.Vector3());
+        assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `A ${m.material.userData.surfaceKind} piece of the sky island's garden is ${fmt(size)} at ${fmt(box.getCenter(new T.Vector3()))}.`);
+      }
+
+    // Motion: from town time alone, each part on a pivot of its own, one mesh, one entry.
+    {
+      const periodOf = (o) => (o.name.startsWith('sky-fall-') ? FALL.period : o.name === 'sky-cloud-drift' ? CLOUD.period : o.parent.userData.period),
+        poseOf = (o) => [...o.position.toArray(), ...o.quaternion.toArray(), ...o.scale.toArray()],
+        same = (a, b) => a.every((n, i) => Math.abs(n - b[i]) < 1e-9);
+      assert.equal(gardenMoving.length, 2 * 2 + plan.SKY_CLOUDS.length + plan.SKY_ROCKS.length, 'The garden\'s moving parts are not its falls\' still water and lumps, its clouds and its rocks.');
+      assert(skyMoving.length === gardenMoving.length + 1, 'Something else on the sky island moves.');
+      for (const e of gardenMoving) {
+        const o = e.object;
+        assert(o.userData.keepSeparate && !o.userData.prebatched && o.children.filter((c) => c.isMesh).length === 1 && model.animated.filter((x) => x.object === o).length === 1, `The garden's ${o.name} is not one mesh on a pivot of its own with one entry.`);
+        for (const t of [0, 13.7, 86400 * 2 + 77.3]) {
+          e.update(t, 0, 0);
+          const at = poseOf(o);
+          e.update(t, 1, 1);
+          assert(same(at, poseOf(o)), `The garden's ${o.name} moves with the night or the rain, or while time stands still.`);
+          e.update(t + periodOf(o), 0, 0);
+          assert(same(at, poseOf(o)), `The garden's ${o.name} is not back where it was a period later.`);
+        }
+        e.update(0, 0, 0);
+      }
+    }
+
+    // The clearances, through the motion. A spatial grid of the rock's points, for distances to it.
+    {
+      const cell = 0.4,
+        grid = new Map(),
+        keyOf = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+      each(sky.rock, (p) => {
+        const k = keyOf(p.x, p.y, p.z);
+        (grid.get(k) ?? grid.set(k, []).get(k)).push(p.clone());
+      });
+      const nearRock = (p, d) => {
+        const [i, j, k] = [p.x, p.y, p.z].map((n) => Math.floor(n / cell));
+        for (let a = -1; a <= 1; a++)
+          for (let b = -1; b <= 1; b++)
+            for (let c = -1; c <= 1; c++) for (const q of grid.get(`${i + a},${j + b},${k + c}`) ?? []) if (q.distanceToSquared(p) < d * d) return true;
+        return false;
+      };
+      const L = plan.SKY_FLOAT_LIMITS,
+        villaBox = new T.Box3().setFromObject(sky.shell).expandByScalar(0.3);
+      // The clouds and rocks through their drift and bob: within the limits, clear of the rock, and
+      // inside their proxies (FLOAT_BOX, in their slots' frames).
+      for (const [name, list, kind] of [['sky-cloud', plan.SKY_CLOUDS, 'cloud'], ['sky-float', plan.SKY_ROCKS, 'rock']])
+        frames(name).forEach((frame, n) => {
+          const f = list[n];
+          let entry = null;
+          frame.traverse((o) => {
+            if (o.userData.keepSeparate) entry = gardenMoving.find((e) => e.object === o);
+          });
+          const period = kind === 'cloud' ? CLOUD.period : entry.object.parent.userData.period;
+          for (let s = 0; s < 16; s++) {
+            entry.update((s / 16) * period, 0, 0);
+            frame.updateMatrixWorld(true);
+            const inv = frame.matrixWorld.clone().invert();
+            each(entry.object, (p) => {
+              assert(plan.skyDistance(p.x, p.z) >= -L.tuck && p.y <= L.top && p.z >= L.north && p.x >= L.west && Math.abs(p.x) <= 58 && Math.abs(p.z) <= 58 && !villaBox.containsPoint(p), `The garden's ${kind} ${n} leaves its limits at ${fmt(p)}.`);
+              assert(!nearRock(p, L.clear), `The garden's ${kind} ${n} comes within ${L.clear} of the rock at ${fmt(p)}.`);
+              const l = p.clone().applyMatrix4(inv).divideScalar(f.size);
+              assert(proxyMeasure(kind, l.toArray()) <= 1, `The garden's ${kind} ${n} leaves its proxy (FLOAT_PROXY) at ${fmt(p)}.`);
+            });
+          }
+          entry.update(0, 0, 0);
+        });
+      // The falls' water under the rim (the sheet, its lumps through their slide, the puff) keeps
+      // 0.3 clear of the rock; the west fall (its spout's nose and its water) is all that leaves the
+      // rain's square, its puff by 2.2 at the most.
+      const west = plan.skyFalls.reduce((a, b) => (b.x < a.x ? b : a)),
+        beyond = (p) => Math.max(Math.abs(p.x) - 58, Math.abs(p.z) - 58);
+      let rain = -Infinity,
+        elsewhere = -Infinity;
+      for (const e of gardenMoving.filter((x) => x.object.name.startsWith('sky-fall-')))
+        for (const t of [0, FALL.period / 3, (2 * FALL.period) / 3]) {
+          e.update(t, 0, 0);
+          e.object.updateMatrixWorld(true);
+          each(e.object, (p) => {
+            if (p.y < west.y - 0.4) assert(!nearRock(p, 0.3), `A fall's water comes within 0.3 of the rock at ${fmt(p)}.`);
+          });
+          e.update(0, 0, 0);
+        }
+      city.updateMatrixWorld(true);
+      each(sky.root, (p, o) => {
+        const fall = (pivotOf(o)?.name ?? '').startsWith('sky-fall-') || !pivotOf(o);
+        if (fall && Math.hypot(p.x - west.puff.x, p.z - west.puff.z) < 2.5) rain = Math.max(rain, beyond(p));
+        else elsewhere = Math.max(elsewhere, beyond(p));
+      });
+      assert(elsewhere <= 0 && rain <= 2.2, `The sky island leaves the rain's square by ${Math.max(0, elsewhere).toFixed(2)} (its west fall by ${rain.toFixed(2)}).`);
+      skyReport += `, its west fall's puff ${rain.toFixed(2)} past the rain's square`;
+    }
+
+    // Nothing of the garden stands on her walk (over the paths' own gravel), nor within her reach
+    // where she stands (at the telescope, and along the watering stretch).
+    {
+      const tris = [],
+        q = gravel.geometry.attributes.position;
+      for (let t = 0; t < q.count; t += 3) tris.push([0, 1, 2].map((j) => [q.getX(t + j), q.getZ(t + j)]));
+      const onPath = (x, z) =>
+          tris.some(([a, b, c]) => {
+            const s1 = (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]),
+              s2 = (c[0] - b[0]) * (z - b[1]) - (c[1] - b[1]) * (x - b[0]),
+              s3 = (a[0] - c[0]) * (z - c[1]) - (a[1] - c[1]) * (x - c[0]);
+            return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
+          }),
+        standing = [ST.telescope.stand, ...Array.from({ length: 9 }, (_, k) => ({ x: ST.watering.from.x + ((ST.watering.to.x - ST.watering.from.x) * k) / 8, z: ST.watering.from.z }))],
+        reach = 0.27;
+      let over = 0,
+        her = Infinity;
+      for (const m of [...standingMeshes, ...globes])
+        each(m, (p) => {
+          if (p.y - plan.skyTop(p.x, p.z) < 0.03) return;
+          if (onPath(p.x, p.z)) over++;
+          for (const s of standing) her = Math.min(her, Math.hypot(p.x - s.x, p.z - s.z));
+        });
+      assert(over === 0 && her >= reach, `The garden stands on her walk (${over} points over the paths), or ${her.toFixed(2)} from where she stands.`);
+    }
+
+    // Night: the pale parts dim on one material of the kit's own, no glow; nothing else does.
+    {
+      const pale = gardenMoving.filter((e) => /^sky-(fall|cloud)-/.test(e.object.name)).flatMap((e) => e.object.children.filter((c) => c.isMesh)),
+        others = [];
+      sky.root.traverse((o) => o.isMesh && !pale.includes(o) && !globes.includes(o) && o.parent !== sky.rock && others.push(o));
+      for (const e of gardenMoving) e.update(5, 1, 0);
+      assert(new Set(pale.map((m) => m.material)).size === 1 && pale.length === 2 * 2 + plan.SKY_CLOUDS.length, 'The falls, puffs and clouds do not share one material of the garden kit\'s own.');
+      for (const m of pale) assert(Math.abs(m.material.color.r - (1 - SKY_NIGHT_DIM)) < 1e-9 && m.material.color.r === m.material.color.b && m.material.emissive.getHex() === 0 && !others.some((o) => o.material === m.material), 'A fall, a puff or a cloud stays bright at night, glows, or shares its material.');
+      for (const o of others) assert(o.material.color.getHex() === 0xffffff, 'Something of the sky island but its rock and its pale parts dims at night.');
+      for (const e of gardenMoving) e.update(0, 0, 0);
+      for (const m of pale) assert.equal(m.material.color.getHex(), 0xffffff, 'The falls, puffs and clouds are dimmed by day.');
+    }
+    skyReport += `; its garden ${gardenMeshes} meshes and ${gardenTriangles} triangles (the garden kit's own ${kitMeshes} and ${kitTriangles})`;
   }
 }
 // The sky villa (town-sky-villa's buildSkyVilla) on the sky island, in place: its parts as the town

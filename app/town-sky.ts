@@ -4,8 +4,9 @@ import * as plan from './town-plan';
 import { palette, hash, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
 import type { Kit } from './town-kit';
-import type { Nature } from './town-nature';
+import { BLOOMS, type Nature } from './town-nature';
 import type { Props } from './town-props';
+import type { SkyGarden } from './town-sky-garden';
 
 /**
  * The sky island's colours, each no more saturated than its palette family: the lawn's two mown
@@ -189,11 +190,16 @@ export type SkySlot = { x: number; y: number; z: number; ry: number };
  * Where each of lane G's garden pieces (town-sky-garden's createSkyGarden) stands; each builds in a
  * frame of its own, y 0 its foot (a lamp set's spots are in its group's frame):
  * - `tea`: teaTable(), its middle on the lawn, turned so its -x chair (hers) faces SKY_STATIONS'.
- * - `telescope`: telescope(), the tripod's middle, looking along its +z at the Town Hall.
+ * - `telescope`: telescope({ eyepiece, tilt }), the tripod's middle, looking along its +z at the
+ *   Town Hall: its tube along her own gaze (`tilt` below level), its eyepiece `eyepiece` over the
+ *   tripod's foot, which is her eye over the lawn she stands on behind it.
  * - `bench`: props.bench(), facing the town.
- * - `tree`: nature.tree() (which stands a tree on the town's terrain: move its group up to `y`).
- * - `borders`: nature.flowerBed() for each (east, then west): its middle, `w` along the terrace
- *   and `d` deep.
+ * - `tree`: nature.tree() of the plan's `size` and `kind` (it stands a tree on the town's terrain:
+ *   move its group up to `y`).
+ * - `borders`: the town's flower bed for each (east, then west): its middle, `w` along the terrace
+ *   and `d` deep (its kerb's outline), and `floor`, the lowest lawn under that kerb, which it stands
+ *   on (the dome falls away under it: set level into the lawn's higher side, it never floats over
+ *   the lower).
  * - `lamps`: gardenLamps(spots), one set, its group at the island's middle (south of the
  *   airport's lamps' line), the spots each lamp's foot in that group's frame.
  * - `falls`: fall({ rise }) for each: the rim point at the deck's level, turned out over the sea.
@@ -204,13 +210,18 @@ export type SkySlot = { x: number; y: number; z: number; ry: number };
 export function skySlots() {
   const on = (x: number, z: number, ry = 0): SkySlot => ({ x, y: plan.skyTop(x, z), z, ry }),
     { tea, telescope, bench } = plan.SKY_STATIONS,
-    border = (b: (typeof plan.SKY_BORDERS)['east']) => ({ ...on((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2), w: b.x1 - b.x0, d: b.z1 - b.z0 }),
+    border = (b: (typeof plan.SKY_BORDERS)['east']) => {
+      // The lawn under the kerb, sampled finely enough to find its lowest corner.
+      let floor = Infinity;
+      for (let i = 0; i <= 16; i++) for (let j = 0; j <= 8; j++) floor = Math.min(floor, plan.skyTop(b.x0 + ((b.x1 - b.x0) * i) / 16, b.z0 + ((b.z1 - b.z0) * j) / 8));
+      return { ...on((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2), w: b.x1 - b.x0, d: b.z1 - b.z0, floor };
+    },
     lamps = on(plan.SKY.x, plan.SKY.z);
   return {
     tea: on(tea.x, tea.z, tea.ry),
-    telescope: on(telescope.x, telescope.z, telescope.ry),
+    telescope: { ...on(telescope.x, telescope.z, telescope.ry), eyepiece: telescope.eyepiece, tilt: plan.SKY_SEATS.tilt },
     bench: on(bench.x, bench.z, bench.ry),
-    tree: on(plan.SKY_TREE.x, plan.SKY_TREE.z),
+    tree: { ...on(plan.SKY_TREE.x, plan.SKY_TREE.z), size: plan.SKY_TREE.size, kind: plan.SKY_TREE.kind },
     borders: [border(plan.SKY_BORDERS.east), border(plan.SKY_BORDERS.west)],
     lamps: { ...lamps, spots: plan.SKY_LAMPS.map(([x, z]) => ({ x: x - lamps.x, y: plan.skyTop(x, z) - lamps.y, z: z - lamps.z })) },
     falls: plan.skyFalls.map((f) => ({ x: f.x, y: f.y, z: f.z, ry: f.ry, rise: f.rise })),
@@ -219,15 +230,49 @@ export function skySlots() {
   };
 }
 
+/**
+ * The flower borders' planting (skyBorder): each is the town's flower bed (its kerb the border's own
+ * outline, drawn in at its outer end by `trim`, so the walk's turn up to the telescope clears it;
+ * its mound inside), its blooms not where the bed scatters them but in one row along its back, `back`
+ * in from the terrace wall, `spacing` apart, their colours the town's bloom colours in `order`
+ * (mirrored on the west border, so the pair flanks the steps alike). Her watering can (lane F's
+ * ALISON: its rose 0.53 ahead of her and 0.444 up, nothing of it hanging lower than 0.38, reaching
+ * 0.589 at the most) passes over the mound in front of them as she walks the watering stretch:
+ * blooms under it would stand in its way.
+ */
+export const SKY_BEDS = { trim: 0.15, back: 0.15, spacing: 0.34, order: [2, 3, 0, 3, 4], seeds: [53, 59] };
+/** The tree's seed (town-nature's tree index): its turn and its crown's clumps. */
+export const SKY_TREE_SEED = 3;
+/** A border's slot (skySlots' `borders`). */
+type BorderSlot = ReturnType<typeof skySlots>['borders'][number];
+/**
+ * One flower border (SKY_BEDS; `k` 0 is the east one, 1 the west), in a group of its own in g: the
+ * town's flower bed standing on the lowest lawn under its kerb, with its blooms in a row at the back.
+ */
+export function skyBorder(nature: Nature, g: T.Object3D, b: BorderSlot, k: number) {
+  const bed = new T.Group(),
+    side = k ? -1 : 1,
+    B = SKY_BEDS,
+    // Its middle, drawn in toward the steps with its outer end.
+    x = b.x - (side * B.trim) / 2;
+  bed.name = 'sky-border';
+  g.add(bed);
+  // (flowerBed's kerb stands 0.08 proud of the bed it is given all round.)
+  nature.flowerBed(bed, x, b.floor, b.z, b.w - B.trim - 0.16, b.d - 0.16, B.seeds[k]);
+  for (const bloom of bed.children.filter((o) => o.userData.noShadow)) bloom.removeFromParent();
+  B.order.forEach((c, i) => nature.bloom(bed, x + side * (i - (B.order.length - 1) / 2) * B.spacing, b.floor + 0.4, b.z - b.d / 2 + B.back, BLOOMS[c]));
+  return bed;
+}
+
 /* ------------------------------------------------------------------ */
 /* The sky island                                                      */
 /* ------------------------------------------------------------------ */
 /**
- * The sky island's own ground: its lawn and paths, and the rock under it and its coping (its villa
- * is town-sky-villa's). `kit`, `props` and `nature` are for its garden (see skyGarden), which is
- * still to be planted; they stay in the signature, which is every site factory's.
+ * The sky island's own ground: its lawn and paths, its garden (lane G's kit, `garden`, with the
+ * town's own bench, tree and flower beds), and the rock under it and its coping (its villa is
+ * town-sky-villa's).
  */
-export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nature: Nature) {
+export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, nature: Nature, garden: SkyGarden) {
   const { material } = ctx;
   const S = plan.SKY,
     L = SKY_LOOK;
@@ -349,15 +394,32 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nat
     solid(g, gravel.geometry(), L.path, 'gravel', { shadow: false, ground: true, name: 'sky-paths' });
   }
   /**
-   * The garden's hook, for the next task (S3), which plants lane G's garden here: build
-   * createSkyGarden(ctx, kit, props, nature) once, then stand each piece in its slot (skySlots,
-   * through standAt), everything in `land`: what stands on the deck is batched with the lawn as
-   * its floor, and every part of a piece that hangs in the air (the falls' water and puffs, the
-   * clouds, the floating rocks) sits on a pivot of its own in ctx.animated, which the town batches
-   * on its own with no contact shade. `air` is for anything static that hangs off the deck or
-   * beside it (batched with no contact shade); lane G's kit has none. Nothing is planted yet.
+   * The garden (lane G's kit, `garden`, built once in town-build with the other factories), each
+   * piece in its slot (skySlots, through standAt), everything in `land`: what stands on the deck is
+   * batched with the lawn as its floor, and every part of a piece that hangs in the air (the falls'
+   * water and puffs, the clouds, the floating rocks) sits on a pivot of its own in ctx.animated,
+   * which the town batches on its own with no contact shade. `air` is for anything static that
+   * hangs off the deck or beside it (batched with no contact shade); the garden has none.
+   * - Tea on the lawn before the terrace: her chair is the table's -x one, the second cup faces the
+   *   other. The telescope on the rim, looking at the Town Hall, its tube along her own gaze.
+   * - The town's bench, facing the town; the island's one tree, a round one that shows the season.
+   * - The flower borders at the terrace's foot (SKY_BEDS) and the four garden lamps as one set.
+   * - The two short falls, the clouds and the floating rocks.
    */
-  function skyGarden(_land: T.Group, _air: T.Group) {}
+  function skyGarden(land: T.Group, _air: T.Group) {
+    const s = skySlots();
+    standAt(land, s.tea, 'sky-tea').add(garden.teaTable());
+    standAt(land, s.telescope, 'sky-telescope').add(garden.telescope({ eyepiece: s.telescope.eyepiece, tilt: s.telescope.tilt }));
+    props.bench(land, s.bench.x, s.bench.y, s.bench.z, s.bench.ry).name = 'sky-bench';
+    const tree = nature.tree(land, { x: s.tree.x, z: s.tree.z, size: s.tree.size, kind: s.tree.kind, id: 'sky-tree' }, SKY_TREE_SEED);
+    tree.name = 'sky-tree';
+    tree.position.y = s.tree.y;
+    s.borders.forEach((b, k) => skyBorder(nature, land, b, k));
+    standAt(land, s.lamps, 'sky-lamps').add(garden.gardenLamps(s.lamps.spots));
+    s.falls.forEach((f, k) => standAt(land, f, 'sky-fall').add(garden.fall({ rise: f.rise, seed: k + 1 })));
+    for (const c of s.clouds) standAt(land, c, 'sky-cloud').add(garden.cloud({ size: c.size, seed: c.seed }));
+    for (const r of s.rocks) standAt(land, r, 'sky-float').add(garden.floatingRock({ size: r.size, seed: r.seed }));
+  }
   /** A group in g at a slot (see skySlots), for a garden piece built in its own frame. */
   function standAt(g: T.Object3D, slot: SkySlot, name: string) {
     const frame = new T.Group();
