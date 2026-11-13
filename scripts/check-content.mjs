@@ -507,6 +507,18 @@ assert.deepEqual(validateCatalog({ ...catalog, neighbours: [...catalog.neighbour
   assert.throws(() => upsertRecord(catalog, 'neighbours', { ...alison, properties: [] }), /unknown field "properties"/);
   assert.throws(() => removeRecord(catalog, 'neighbours', 'missing'), /Record not found: neighbours\/missing/);
 }
+// The example a maintainer starts from (MAINTENANCE's upsert line) is a valid neighbour, a draft
+// beside her, so it stays off the site and her place keeps her.
+{
+  const example = JSON.parse(await fs.readFile(path.join(root, 'content/examples/neighbour.json'), 'utf8'));
+  assert.equal(example.visibility, 'draft', 'content/examples/neighbour.json must be a draft.');
+  assert.deepEqual(
+    upsertRecord(catalog, 'neighbours', example)
+      .neighbours.filter((n) => n.visibility === 'published')
+      .map((n) => n.id),
+    [alison.id],
+  );
+}
 await fs.writeFile(path.join(output, 'lab.json'), JSON.stringify(next));
 for (const name of [
   'public-asset',
@@ -2313,6 +2325,10 @@ assert(
   }
   assert(sentences(neighbourTexts).some(namesTheGate), 'The neighbours’ copy names Liu’s Gate (the connection line).');
   assert.deepEqual(wordingFaults(neighbourTexts), [], 'content/lab.json’s neighbours break a wording rule.');
+  // So does the draft example a maintainer starts from.
+  const exampleTexts = neighbourCopy({ neighbours: [JSON.parse(await fs.readFile(path.join(root, 'content/examples/neighbour.json'), 'utf8'))] });
+  assert(exampleTexts.length >= 18 && !exampleTexts.some(lab), 'content/examples/neighbour.json uses a lab word.');
+  assert.deepEqual(wordingFaults(exampleTexts), [], 'content/examples/neighbour.json breaks a wording rule.');
   // The site's own copy around her record is read by the same rules: the sky island's place (its
   // name, category, summary and the villa's text), the Gate's Layout sentence on it, and every text a
   // visitor reads or hears in its file and in About's Neighbours card (the copy that sits beside the
