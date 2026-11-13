@@ -508,19 +508,19 @@ export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius:
 /** The town's island out to its waterline (3.3 past its outline), as skyShadowWanted measures it. */
 const TOWN_WATERLINE = plan.islandOutline.map(([x, z]) => new T.Vector3(x, 0, z).multiplyScalar(1 + 3.3 / Math.hypot(x, z)));
 /**
- * How much of the free part of the frame (x from -1 to `right`, y from `bottom` to 1, in the
- * camera's clip space) a closed outline on the sea's level takes: the outline as `camera` projects
- * it (a flat outline stays one simple polygon) clipped to that part, an edge at a time, its area as
- * a share of the part's.
+ * A closed outline on the sea's level as `camera` projects it (a flat outline stays one simple
+ * polygon), clipped to the part of the frame x from -1 to `right` and y from `bottom` to `top`, in the
+ * camera's clip space, an edge at a time: its corners there, flat (x, y, x, y...), none if it misses
+ * it.
  */
-function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom: number) {
+function clipToFrame(outline: T.Vector3[], camera: T.Camera, right: number, bottom: number, top = 1) {
   const p = new T.Vector3();
   let polygon: number[] = [];
   for (const point of outline) {
     p.copy(point).project(camera);
     polygon.push(p.x, p.y);
   }
-  for (const [axis, edge, side] of [[0, -1, 1], [0, right, -1], [1, bottom, 1], [1, 1, -1]]) {
+  for (const [axis, edge, side] of [[0, -1, 1], [0, right, -1], [1, bottom, 1], [1, top, -1]]) {
     const kept: number[] = [],
       n = polygon.length / 2;
     for (let i = 0; i < n; i++) {
@@ -531,8 +531,18 @@ function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom
       if (a >= 0 !== b >= 0) kept.push(polygon[2 * i] + ((polygon[2 * j] - polygon[2 * i]) * a) / (a - b), polygon[2 * i + 1] + ((polygon[2 * j + 1] - polygon[2 * i + 1]) * a) / (a - b));
     }
     polygon = kept;
-    if (!polygon.length) return 0;
+    if (!polygon.length) break;
   }
+  return polygon;
+}
+/**
+ * How much of the free part of the frame (x from -1 to `right`, y from `bottom` to 1, in the
+ * camera's clip space) a closed outline on the sea's level takes: the outline clipped to that part
+ * (clipToFrame), its area as a share of the part's.
+ */
+function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom: number) {
+  const polygon = clipToFrame(outline, camera, right, bottom);
+  if (!polygon.length) return 0;
   let area = 0;
   for (let i = 0, n = polygon.length / 2; i < n; i++) {
     const j = (i + 1) % n;
@@ -555,13 +565,13 @@ function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom
  * the masthead and the sheet, the band's foot lay the masthead's height inside the frosted sheet, and
  * counted town seen only blurred through it.) That is the island's own file, and a view panned or
  * zoomed about it. `on` says it is the island's now, which it stays a little longer either way.
+ * (Where the town is not absent, the island's own file frames both: skyWideBox.)
  */
 export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[], shift: number, foot: number, on: boolean, low = 0) {
   const Z = SKY_SHADOW;
-  if (camera.zoom < Z.zoom[on ? 0 : 1] && low < Z.low[on ? 0 : 1]) return false;
-  const p = new T.Vector3().copy(Z.centre).project(camera);
-  if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) return false;
-  const right = 1 - 4 * Math.max(0, shift),
+  if (!skyClose(camera, on, low)) return false;
+  const p = new T.Vector3(),
+    right = 1 - 4 * Math.max(0, shift),
     bottom = 1 - 2 * foot;
   let seen = 0;
   for (const mark of land) {
@@ -569,6 +579,154 @@ export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[],
     if (p.x > -1 && p.x < right && p.y > bottom && p.y < 1 && ++seen > Z.land[on ? 0 : 1]) return false;
   }
   return bandShare(TOWN_WATERLINE, camera, right, bottom) <= Z.shore[on ? 0 : 1];
+}
+/**
+ * Whether the view is close in on the sky island as the sun's shadow counts it (skyShadowWanted):
+ * its zoom past SKY_SHADOW.zoom, or the camera come down `low` of the way to the island's own pitch
+ * (SKY_SHADOW.low), and the island's middle in the frame; `on` (the island has the sun's box now)
+ * keeps it so a little longer.
+ */
+export function skyClose(camera: T.OrthographicCamera, on: boolean, low = 0) {
+  const Z = SKY_SHADOW;
+  if (camera.zoom < Z.zoom[on ? 0 : 1] && low < Z.low[on ? 0 : 1]) return false;
+  const p = new T.Vector3().copy(Z.centre).project(camera);
+  return Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1;
+}
+/**
+ * The sun's shadow in the sky island's own file where its frame shows the town's land or the
+ * airport's as well: at two of its four Rotate stops the north-west headland's coast (its houses,
+ * trees and washing lines) stands in the frame, at one the airport's armour too, beside or behind
+ * the file. SKY_SHADOW's box holds the island alone and would leave that land without its shadows
+ * (and cut them at its edge); the town's leaves the island without any. So the file's box there holds
+ * both (skyWideBox): the island (a sphere of SKY_SHADOW.radius round its middle) and the land the
+ * whole frame shows (TOWN_LAND, the panel's and the sheet's part too, seen blurred through them),
+ * from the ground up to `height` (the Town Hall's 9.5 the highest roof), wherever the idle drift
+ * swings the view (`drift` either way, more than its 0.096 there) and, on a turn, on the way there
+ * (`sweep`: the turn in that many steps, the key light turning with it). Its half-size reaches
+ * `margin` past them, in whole units, up to `most`: 25 texels a unit on a desktop's 3072 map at its
+ * widest and 17 on a phone's 2048, the town's own 22 and 16.7 or sharper (in Manual Day's sun 33 and
+ * 35 at 1440 x 900 and up to 49 on the listed phones; in the lowest and most swung suns the key light
+ * takes, up to 52 on desktops and 61 on phones); further out the view is the town's, and so is the
+ * box. It is kept while the view stays `keep` inside it, so the drift, a pan or a zoom within
+ * it never moves it; and the light stands back far enough for all of it to lie between its near and
+ * far planes (`depth` past them).
+ */
+export const SKY_WIDE = { height: 10, drift: 0.1, sweep: 8, margin: 1.5, most: 61, keep: 0.5, depth: 3 };
+/** The town's land as the sky island's wide box holds it: its island to its waterline, the airport's to its armour's toe, and the lighthouse's rock. */
+const TOWN_LAND = [
+  TOWN_WATERLINE,
+  plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z)),
+  Array.from({ length: 12 }, (_, k) => new T.Vector3(plan.lighthouseRock[0] + 3.5 * Math.cos((k * Math.PI) / 6), 0, plan.lighthouseRock[1] + 3.5 * Math.sin((k * Math.PI) / 6))),
+];
+/** A sun shadow box: its middle and half-size, how far back along the key light the light stands (0: as far as the key's own offset) and its far plane. */
+export type SunBox = { centre: T.Vector3; radius: number; reach: number; far: number };
+/** The sky island's own box (SKY_SHADOW's), the light at the key's own offset. */
+export const SKY_TIGHT: SunBox = { centre: SKY_SHADOW.centre, radius: SKY_SHADOW.radius, reach: 0, far: 90 };
+/** The sun's shadow camera's axes for a key light offset (three's lookAt from the box's middle plus the offset): across, up, and back toward the light. */
+function lightAxes(key: T.Vector3) {
+  const z = key.clone().normalize(),
+    x = new T.Vector3(0, 1, 0).cross(z).normalize();
+  return { x, y: z.clone().cross(x), z };
+}
+/**
+ * The corners of the land (TOWN_LAND) the camera shows, the whole frame, from the ground up to
+ * SKY_WIDE.height over it, handed to `visit` (one scratch vector): what stands on a ground point shows
+ * up the frame from it as it rises, so the land's reach in any light lies at a corner of its outline
+ * clipped to the frame at its foot, of the outline clipped to where its top shows, or of the strips
+ * under the frame's foot and its top edge, raised to where the edge cuts it (exactly: no heights
+ * sampled).
+ */
+function eachLandSeen(camera: T.OrthographicCamera, visit: (p: T.Vector3) => void) {
+  const H = SKY_WIDE.height,
+    p = new T.Vector3(),
+    along = new T.Vector3(),
+    // How far up the frame (clip space) a unit of height shows.
+    rise = p.set(0, 1, 0).project(camera).y - along.set(0, 0, 0).project(camera).y;
+  for (const outline of TOWN_LAND)
+    for (let part = 0; part < 4; part++) {
+      // The ground in the frame; the ground whose tops show in it; the strip under its foot and the one
+      // under its top edge, each point raised to where that edge cuts what stands on it.
+      const polygon = part === 0 ? clipToFrame(outline, camera, 1, -1) : part === 1 ? clipToFrame(outline, camera, 1, -1 - H * rise, 1 - H * rise) : part === 2 ? clipToFrame(outline, camera, 1, -1 - H * rise, -1) : clipToFrame(outline, camera, 1, 1 - H * rise, 1);
+      for (let i = 0; i < polygon.length; i += 2) {
+        p.set(polygon[i], polygon[i + 1], -1).unproject(camera);
+        along.set(polygon[i], polygon[i + 1], 1).unproject(camera).sub(p);
+        p.addScaledVector(along, -p.y / along.y);
+        p.y = part === 0 ? 0 : part === 1 ? H : T.MathUtils.clamp(((part === 2 ? -1 : 1) - polygon[i + 1]) / rise, 0, H);
+        visit(p);
+      }
+    }
+}
+/**
+ * How far the island (a sphere of SKY_SHADOW.radius round its middle) and the land `camera` shows reach
+ * from `centre` in the light of `key`: along its axes across and up (the most), and back toward the
+ * light (the least and the most).
+ */
+function sunReach(camera: T.OrthographicCamera, key: T.Vector3, centre: T.Vector3) {
+  const { x, y, z } = lightAxes(key),
+    r = SKY_SHADOW.radius,
+    d = new T.Vector3().copy(SKY_SHADOW.centre).sub(centre);
+  let half = Math.max(Math.abs(d.dot(x)), Math.abs(d.dot(y))) + r,
+    near = d.dot(z) + r,
+    back = d.dot(z) - r;
+  eachLandSeen(camera, (p) => {
+    d.copy(p).sub(centre);
+    half = Math.max(half, Math.abs(d.dot(x)), Math.abs(d.dot(y)));
+    near = Math.max(near, d.dot(z));
+    back = Math.min(back, d.dot(z));
+  });
+  return { half, near, back };
+}
+/**
+ * The sky island's own file's box where its frame shows land (SKY_WIDE), for `views`, each a camera and
+ * the key light at its bearing, the one it stays in last: its middle that of the box round the island
+ * and the land they show in the last one's light, snapped to the texels of a `map`-wide map there (a
+ * box laid again for the same view lands on the same texels); its half-size as far as they reach from
+ * it along any view's light, SKY_WIDE.margin more, in whole units; the light far enough back, and its
+ * far plane far enough out, for all of them. None past SKY_WIDE.most.
+ */
+export function skyWideBox(views: [T.OrthographicCamera, T.Vector3][], map: number): SunBox | null {
+  const W = SKY_WIDE,
+    [, key] = views[views.length - 1],
+    { x, y } = lightAxes(key),
+    C = SKY_SHADOW.centre,
+    r = SKY_SHADOW.radius;
+  let u0 = C.dot(x) - r,
+    u1 = C.dot(x) + r,
+    v0 = C.dot(y) - r,
+    v1 = C.dot(y) + r;
+  for (const [camera] of views)
+    eachLandSeen(camera, (p) => {
+      u0 = Math.min(u0, p.dot(x));
+      u1 = Math.max(u1, p.dot(x));
+      v0 = Math.min(v0, p.dot(y));
+      v1 = Math.max(v1, p.dot(y));
+    });
+  const centre = C.clone().addScaledVector(x, (u0 + u1) / 2 - C.dot(x)).addScaledVector(y, (v0 + v1) / 2 - C.dot(y));
+  let half = 0,
+    near = -Infinity,
+    back = Infinity;
+  for (const [camera, light] of views) {
+    const seen = sunReach(camera, light, centre);
+    half = Math.max(half, seen.half);
+    near = Math.max(near, seen.near);
+    back = Math.min(back, seen.back);
+  }
+  const radius = Math.ceil(half + W.margin);
+  if (radius > W.most) return null;
+  const texel = (2 * radius) / map,
+    u = centre.dot(x),
+    v = centre.dot(y);
+  centre.addScaledVector(x, Math.round(u / texel) * texel - u).addScaledVector(y, Math.round(v / texel) * texel - v);
+  const reach = Math.ceil(Math.max(key.length(), near + W.depth));
+  return { centre, radius, reach, far: Math.ceil(reach - back + W.depth) };
+}
+/** Whether `box` still holds the island and the land each of `views` shows (each a camera and the key light at its bearing), `margin` inside it and its planes. */
+export function sunBoxHolds(box: SunBox, views: [T.OrthographicCamera, T.Vector3][], margin: number) {
+  return views.every(([camera, key]) => {
+    const { half, near, back } = sunReach(camera, key, box.centre),
+      reach = box.reach || key.length();
+    return half <= box.radius - margin && near <= reach - 0.5 - margin && back >= reach - box.far + margin;
+  });
 }
 
 /**
@@ -866,12 +1024,15 @@ export async function createCity(
   // The key light turns with the camera yaw, so the visible faces keep the same
   // top-bright / left-lit / right-shade read from every side.
   const UP = new T.Vector3(0, 1, 0), keyOffset = new T.Vector3(), lastKey = new T.Vector3(), moonAt = new T.Vector3();
-  let shadowDirty = true;
+  let shadowDirty = true,
+    // How far back along the key light the sun stands from its box's middle: 0 for the key's own offset
+    // (the town's box, the island's own and Inspect's), more for the island's file's wide box (SKY_WIDE).
+    sunBack = 0;
   function placeSun() {
     keyOffset.copy(sunOffset).applyAxisAngle(UP, yaw - Math.PI / 4); // yaw only: idle drift must not swing shadows
     // The moon's glint on the sea turns with it, so no rotate stop faces the moon across the water.
     moonAt.copy(MOON_POSITION).applyAxisAngle(UP, yaw - Math.PI / 4);
-    sun.position.copy(sun.target.position).add(keyOffset);
+    sun.position.copy(sun.target.position).addScaledVector(keyOffset, sunBack ? sunBack / keyOffset.length() : 1);
     // The studio fill turns too, or the shade sides darken after rotate().
     scene.environmentRotation.y = yaw - Math.PI / 4;
     if (lastKey.distanceToSquared(keyOffset) > 1e-6) { lastKey.copy(keyOffset); shadowDirty = true; }
@@ -898,10 +1059,14 @@ export async function createCity(
     }
     for (const [i, light] of lighting.lights.entries())
       light.castShadow = i === 0 && tier !== 'low' && quality < 2;
-    shadowFocus(shadowInspect ? sun.target.position.clone() : undefined, sun.shadow.camera.right);
+    shadowFocus(shadowInspect ? sun.target.position.clone() : undefined, sun.shadow.camera.right, { reach: sunBack, far: sun.shadow.camera.far });
   }
-  /** The sun's shadow on Inspect's building (its centre and reach), or on the town (none given). */
-  function shadowFocus(center?: T.Vector3, radius = SHADOW_HOME.radius) {
+  /**
+   * The sun's shadow on Inspect's building or the sky island (its centre and reach, and for the
+   * island's file's wide box how far back the light stands and its far plane: `depth`), or on the
+   * town (none given).
+   */
+  function shadowFocus(center?: T.Vector3, radius = SHADOW_HOME.radius, depth = { reach: 0, far: 90 }) {
     shadowInspect = !!center;
     const resolution = shadowSizeFor(shadowInspect),
       focus = center || SHADOW_HOME.centre;
@@ -910,7 +1075,9 @@ export async function createCity(
     if (
       sun.shadow.mapSize.x !== resolution ||
       sun.target.position.distanceToSquared(focus) > 1e-9 ||
-      sun.shadow.camera.right !== radius
+      sun.shadow.camera.right !== radius ||
+      sunBack !== depth.reach ||
+      sun.shadow.camera.far !== depth.far
     ) {
       shadowDirty = true;
       renderer.shadowMap.needsUpdate = true;
@@ -921,12 +1088,14 @@ export async function createCity(
       sun.shadow.map = null;
     }
     sun.target.position.copy(focus);
+    sunBack = depth.reach;
     placeSun();
     Object.assign(sun.shadow.camera, {
       left: -radius,
       right: radius,
       top: radius,
       bottom: -radius,
+      far: depth.far,
     });
     sun.shadow.camera.updateProjectionMatrix();
   }
@@ -1141,12 +1310,22 @@ export async function createCity(
     // shadow shows while its box changes hands (followSky).
     skyShown = false,
     skyCast = false,
+    // Which box the sun's shadow has while the island casts: its own (SKY_TIGHT) or its file's wide
+    // one round it and the land in view (skyWideBox); none while the town has it. And the last wide box
+    // fitted, which a hand-over under way heads for (skyWide).
+    skyBox: SunBox | null = null,
+    skyNext: SunBox | null = null,
     shadowFade = 1,
     // A turn the sky island's file makes from where it stands (Rotate, or its bearing set again, with
     // the view in the file), until it ends: the sun's box is decided at the framing it heads for.
     skyTurn = false,
+    // The view's target and zoom at the last frame, for whether it stands still (skySettled).
+    skyStillZoom = 0,
     // How far the camera's pitch has come down from the town's toward the sky island's file's: 0 to 1 (viewOffset).
     pitch = 0;
+  const skyStillAt = new T.Vector3(),
+    // The last framing (and sun) a wide box was found to hold through the drift and the turn (skyHolds).
+    skyHeld: { box: SunBox | null; bearing: number; zoom: number; at: T.Vector3; sun: T.Vector3 } = { box: null, bearing: 0, zoom: 0, at: new T.Vector3(), sun: new T.Vector3() };
   // The windows' night: the clock the panes are heading for (from the sky's hours) and the one
   // they show, which follows it one pane at a time and only in the dark (glasgow-sun's followWindows).
   // paneHours is the sky's hours at the last frame, when the panes last followed the clock.
@@ -1660,10 +1839,12 @@ export async function createCity(
    * the view is the visitor's own (a framing neither the camera's nor the park's: the opening view or
    * the last shot panned or zoomed, which moves under their hand, as before the opening view hid it);
    * City mode, a change of the whole page, brings it back at once.
-   * And the sun's shadow box changes hands (skyShadowWanted): while it frames the island, the
-   * island casts on itself; everywhere else it casts nothing, so every Rotate stop shows it alike.
-   * The shadows fade out before the box moves and back in after (a cut under reduced motion), so
-   * neither the island's nor the town's ever pop. While the island's file turns from where it stands
+   * And the sun's shadow box changes hands: while the view is close in on the island with the town
+   * next to absent, its own box (SKY_TIGHT: skyShadowWanted); in its own file where the frame shows the
+   * town's land or the airport's as well (two of its four Rotate stops), a wide box round both (skyWide):
+   * there the island casts on itself, everywhere else it casts nothing. The shadows fade out before the
+   * box moves and back in after (a cut under reduced motion), so neither the island's nor the town's
+   * ever pop. While the island's file turns from where it stands
    * (skyTurn: Rotate, a pan or a zoom since or not, or the file's bearing set again; not the glide that
    * brings the view to it from elsewhere, which hands over as it closes in, nor a press while that glide
    * is under way), the box is decided at the framing the turn heads for (skyAhead), not at the frames it
@@ -1693,6 +1874,7 @@ export async function createCity(
       // Inspect has the sun's box (and the town is out of sight): the island takes it back, if the
       // view is still on it, once Inspect is left.
       if (skyCast) cast(false);
+      skyBox = null;
       shadowFade = 1;
       return;
     }
@@ -1700,18 +1882,109 @@ export async function createCity(
     if (skyTurn && (!skyFile() || Math.abs(targetYaw - yaw) <= 0.0001)) skyTurn = false;
     // The view it is decided at, and how far down to the island's pitch it is: the island's own file at
     // its fit's zoom or closer counts as close in whatever its pitch (SKY_SHADOW.file), so the same view
-    // keeps the same box however the visitor came to it.
-    const view = skyTurn ? skyAhead() : camera,
-      wanted = skyShown && skyShadowWanted(view, LAND_MARKS, frameShift, frameFoot, skyCast, skyFile() && view.zoom >= SKY_SHADOW.file * skyFitZoom() ? 1 : skyTurn ? aim() : pitch);
-    if (wanted === skyCast) shadowFade = Math.min(1, shadowFade + dt / SKY_SHADOW.fade);
-    else {
+    // keeps the same box however the visitor came to it. Its own box where the town is next to absent;
+    // in its own file, where the frame shows land, a wide one round both (skyWide); the town's elsewhere.
+    const settled = skySettled(),
+      view = skyTurn ? skyAhead() : camera,
+      low = skyFile() && view.zoom >= SKY_SHADOW.file * skyFitZoom() ? 1 : skyTurn ? aim() : pitch,
+      wanted = !skyShown ? null : skyShadowWanted(view, LAND_MARKS, frameShift, frameFoot, skyBox === SKY_TIGHT, low) ? SKY_TIGHT : skyFile() && skyClose(view, !!skyBox, low) ? skyWide(view, settled) : null;
+    if (wanted === skyBox) {
+      skyNext = null;
+      shadowFade = Math.min(1, shadowFade + dt / SKY_SHADOW.fade);
+    } else {
       shadowFade = reduced ? 0 : Math.max(0, shadowFade - dt / SKY_SHADOW.fade);
       if (shadowFade <= 0) {
-        cast(wanted);
-        shadowFocus(wanted ? SKY_SHADOW.centre : undefined, wanted ? SKY_SHADOW.radius : undefined);
+        skyBox = wanted;
+        skyNext = null;
+        cast(!!wanted);
+        shadowFocus(wanted?.centre, wanted?.radius, wanted ?? undefined);
         if (reduced) shadowFade = 1;
       }
     }
+  }
+  /** The key light's offset at a bearing (placeSun's, which turns it with the yaw alone). */
+  function keyAt(bearing: number) {
+    return sunOffset.clone().applyAxisAngle(UP, bearing - Math.PI / 4);
+  }
+  /**
+   * Whether the view stands still (once a frame, for followSky): no glide, no turn, the pitch settled,
+   * no pointer on the map, and its target and zoom as they were the frame before (the idle drift, which
+   * only turns it about its target, aside).
+   */
+  function skySettled() {
+    const still = !tween && !hover.dragging && Math.abs(targetYaw - yaw) <= 0.0001 && Math.abs(aim(camera.zoom) - pitch) <= 0.0001 && controls.target.distanceToSquared(skyStillAt) < 1e-6 && camera.zoom === skyStillZoom;
+    skyStillAt.copy(controls.target);
+    skyStillZoom = camera.zoom;
+    return still;
+  }
+  /**
+   * The sky island's file's box where its frame shows land (SKY_WIDE), for `view` (the camera, or on a
+   * turn the framing it heads for: skyAhead): the box it has, while that still holds the island and the
+   * land the view shows; else a new one (skyWideBox), but only where the view is the file's to decide
+   * (on a turn, from its press, or once the view stands still: a drag, a wheel or a glide under way hands
+   * the box to the town as it leaves the one it has, never through a string of new ones); none, the
+   * town's, where the island and that land need more than SKY_WIDE.most.
+   */
+  function skyWide(view: T.OrthographicCamera, settled: boolean) {
+    const bearing = skyTurn ? targetYaw : yaw,
+      deciding = skyTurn || settled,
+      here: [T.OrthographicCamera, T.Vector3][] = [[view, keyAt(bearing)]];
+    // Where the view is the file's to decide, the box must hold every view a new one would (skyViews:
+    // the drift's swing, the turn's way there), or the drift would hand it over at rest; meanwhile the
+    // view as it stands.
+    if (skyBox && skyBox !== SKY_TIGHT && (deciding ? skyHolds(skyBox, view, bearing) : sunBoxHolds(skyBox, here, SKY_WIDE.keep))) return skyBox;
+    // The box a hand-over under way heads for, while it holds the view (one fit for the fade's frames).
+    if (skyNext && sunBoxHolds(skyNext, here, SKY_WIDE.keep)) return skyNext;
+    if (!deciding) return null;
+    skyNext = skyWideBox(skyViews(view, bearing), 2 * shadowBase);
+    // The same box again (the same view, laid on the same texels) is the one it has.
+    if (skyNext && skyBox && skyNext.radius === skyBox.radius && skyNext.reach === skyBox.reach && skyNext.far === skyBox.far && skyNext.centre.distanceToSquared(skyBox.centre) < 1e-12) skyNext = skyBox;
+    return skyNext;
+  }
+  /**
+   * Whether `box` holds every view a new wide box would be fitted to here (skyViews), SKY_WIDE.keep
+   * inside it: worked out once for each framing it is decided at (its bearing, zoom and target; the idle
+   * drift, which those views take in, aside) and sun, then remembered.
+   */
+  function skyHolds(box: SunBox, view: T.OrthographicCamera, bearing: number) {
+    const at = skyTurn ? ahead.centre : controls.target,
+      held = skyHeld;
+    if (held.box === box && Math.abs(held.bearing - bearing) < 1e-4 && Math.abs(held.zoom - view.zoom) < 1e-4 && held.at.distanceToSquared(at) < 1e-6 && held.sun.distanceToSquared(sunOffset) < 1e-4) return true;
+    if (!sunBoxHolds(box, skyViews(view, bearing), SKY_WIDE.keep)) return false;
+    Object.assign(held, { box, bearing, zoom: view.zoom });
+    held.at.copy(at);
+    held.sun.copy(sunOffset);
+    return true;
+  }
+  /**
+   * The views a new wide box must hold (skyWideBox), each with the key light at its bearing: on a turn
+   * its frames on the way from where the view stands (SKY_WIDE.sweep steps, the framing it heads for
+   * turned back about the island, at zooms and pitches eased between), then the view it is decided at,
+   * swung SKY_WIDE.drift either way by the idle drift, and as it stands, the light it stays in.
+   */
+  function skyViews(view: T.OrthographicCamera, bearing: number) {
+    const views: [T.OrthographicCamera, T.Vector3][] = [],
+      centre = skyTurn ? ahead.centre : controls.target,
+      low = skyTurn ? aim() : pitch,
+      look = (at: T.Vector3, toward: number, zoom: number, down: number) => {
+        const lens = camera.clone();
+        lens.zoom = zoom;
+        lens.position.copy(at).add(viewOffset(toward, new T.Vector3(), down));
+        lens.lookAt(at);
+        lens.updateProjectionMatrix();
+        lens.updateMatrixWorld();
+        return lens;
+      };
+    if (skyTurn)
+      for (let k = 1; k < SKY_WIDE.sweep; k++) {
+        const t = k / SKY_WIDE.sweep,
+          on = yaw + (targetYaw - yaw) * t,
+          at = ahead.centre.clone().sub(ahead.pivot).applyAxisAngle(UP, on - targetYaw).add(ahead.pivot);
+        views.push([look(at, on + driftAngle, T.MathUtils.lerp(camera.zoom, view.zoom, t), T.MathUtils.lerp(pitch, low, t)), keyAt(on)]);
+      }
+    for (const swing of [-SKY_WIDE.drift, SKY_WIDE.drift]) views.push([look(centre, bearing + swing, view.zoom, low), keyAt(bearing)]);
+    views.push([view, keyAt(bearing)]);
+    return views;
   }
   function focusBuildings(ids: BuildingId[]) {
     exitInspection();
@@ -2595,7 +2868,7 @@ export async function createCity(
       model,
       api,
       frameCost: () => frameCost,
-      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock }, skyShown, skyCast, shadowFade, pitch }),
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock }, skyShown, skyCast, skyBox: skyBox === SKY_TIGHT ? 'island' : skyBox ? 'wide' : 'town', shadowRadius: sun.shadow.camera.right, shadowFade, pitch }),
       /** Advance n frames of ~16.7 ms, updating and rendering regardless of visibility. */
       tick(frames = 1) {
         let t = last || performance.now();
