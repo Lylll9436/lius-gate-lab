@@ -705,7 +705,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     root.add(figure);
     const update = (time: number) => {
       const day = plan.alisonDay(time),
-        { lift } = poseAlison(joints, held, day.pose, day.phase, { seat: day.seat, amount: day.amount, step: day.step, side: day.side });
+        { lift } = poseAlison(joints, held, day.pose, day.phase, { seat: day.seat, amount: day.amount, step: day.step, side: day.side, rest: day.rest });
       figure.position.set(day.x, plan.skyTop(day.x, day.z) + lift, day.z);
       figure.rotation.y = day.heading;
     };

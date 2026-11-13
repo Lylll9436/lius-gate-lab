@@ -1003,37 +1003,46 @@ export const SKY_GAIT = { speed: 0.4, stride: TAU / 17, ease: 1.2, turn: 0.7, mi
  * Tea, at her chair (the tea table's -x one, SKY_STATIONS.tea.seats[0]), seated in lane F's 'sip':
  * the day starts there with the cup resting on its saucer (phase 0: Pause and reduced motion hold her
  * so). She lifts it to her lips at each of `sips` ([start, end], seconds into the day: up, at her
- * lips and down again over 'sip''s phases 0.12 to 0.88) and gets up at `rise`. Coming back, she sits
- * `settle` seconds with her hands in her lap ('sit') before she takes up her cup again. Getting up and
- * sitting down she stands `beside` her chair, on her left, toward the walk: the chair's seat (0.44
- * wide) and its back's posts keep 0.27 (the walkers' clearance) from where she stands, and her hands
- * hang 0.242 out. Sitting down and getting up are the one place she moves without walking: a step
- * that long, sideways, as the pose changes (lane F's poses other than walk and stand snap).
+ * lips and down again over 'sip''s phases 0.12 to 0.88). After the last she sets her cup and saucer
+ * down on the table over `down` ([start, end]: lane F's 'set'), sits a moment with her hands in her
+ * lap ('sit') and gets up at `rise`: over `up` seconds she comes up out of her chair as her root
+ * slides out sideways to stand `beside` it, on her left, toward the walk (lane F's 'rise': the chair's
+ * seat, 0.44 wide, and its back's posts keep 0.27, the walkers' clearance, from where she stands, and
+ * her hands hang 0.242 out). Coming back she sits down the same way, rests her hands in her lap for
+ * `settle` seconds and takes her cup and saucer up again over `take`, a moment before the day comes
+ * round. Set down, the saucer (the cup in its well) stands on the table's top, `table` over the lawn
+ * the table stands on (lane G's TEA.top), at `place`: across and ahead of her root in her chair, as
+ * lane F's ALISON_TABLE has it; there it waits all the time she is away.
  */
-export const SKY_TEA = { sips: [[3.5, 8.5], [12.5, 17.5], [21.5, 26.5]] as [number, number][], rise: 28, settle: 1.5, beside: 0.5 };
+export const SKY_TEA = { sips: [[3.5, 8.5], [12.5, 17.5], [21.5, 26.5]] as [number, number][], down: [27, 27.8] as [number, number], rise: 28, up: 0.9, settle: 1.5, take: 0.8, beside: 0.5, table: 0.665, place: [0.03, 0.3] as XZ };
 /**
- * Watering a border: facing it (north), turned `turn` to her right (so the island's file and the
- * opening bearing, which look from the south-south-east, see her can held out beside her rather
- * than hidden behind her hair), she works along its stretch of the walk to the east, the can held
- * out over the bed in lane F's 'water', in sidesteps of about `step` (each `stepTime` seconds: her
- * leading foot steps out, then her other follows, the planted one never moving), watering `pause`
- * seconds between them (`first` before the first). The can sways along the bed once every `sway`
- * seconds. Turned, her can's rose swings 0.22 to 0.31 east of her (0 to 0.09 facing north), so each
- * stretch lies `shift` west of where she would water facing the border straight on, which keeps the
- * rose over the bed, a little inside its kerb, from end to end: the east border's is
+ * Watering a border: facing it (north), turned `turn` to her right, so the island's file and the
+ * opening bearing, which look from the south-south-east, see her in profile, the can held out
+ * before her in her right hand on their side, the water falling from its rose (turned only 0.4, as
+ * she was first, they saw her back: a mop of copper hair and a small grey can, no water), she works
+ * along its stretch of the walk to the east, the can held out over the bed in lane F's 'water', in
+ * sidesteps of about `step` (each `stepTime` seconds: her leading foot steps out, then her other
+ * follows, the planted one never moving), watering `pause` seconds between them (`first` before the
+ * first). The can sways along the bed once every `sway` seconds. Turned, her can's rose reaches less
+ * far north and further east of her (0.3 north and 0.43 east, against 0.53 north facing the border
+ * straight on), so she stands `in` from the walk's middle toward the border (on its gravel still)
+ * and each stretch lies `shift` west of where she would water facing the border straight on, which
+ * keeps the rose over the bed, inside its kerb, from end to end: the east border's is
  * SKY_STATIONS.watering's, and the west border's mirrors it about the steps, from in front of her
  * chair's side to the steps.
  */
-export const SKY_WATERING = { step: 0.13, stepTime: 0.75, pause: 0.8, first: 1.2, sway: 3, turn: 0.4, shift: 0.3 };
+export const SKY_WATERING = { step: 0.13, stepTime: 0.75, pause: 0.8, first: 1.2, sway: 3, turn: 0.85, shift: 0.47, in: 0.15 };
 /** The telescope: she looks through it for `look` seconds. */
 export const SKY_SCOPE = { look: 20 };
 /** Where she is in her day (alisonDay's `station`): at one of her stations, or walking between them. */
 export type SkyDayStation = 'tea' | 'water-west' | 'water-east' | 'telescope' | 'walk';
 /** What she does at a moment of her day: lane F's pose names (sky-figure's AlisonPose). */
-export type SkyDayPoseName = 'sip' | 'sit' | 'stand' | 'walk' | 'water' | 'telescope';
+export type SkyDayPoseName = 'sip' | 'sit' | 'stand' | 'walk' | 'water' | 'telescope' | 'rise' | 'set';
 /**
  * One stretch of her day, from `t0` to `t1` seconds into it, at a station:
  * - `seated`: in her chair at tea (`settle` seconds in her lap first);
+ * - `saucer`: in her chair, setting her cup and saucer down on the table (`down`) or taking them up;
+ * - `rise`: getting up out of her chair to its side (`up`), or sitting down from there;
  * - `stand` and `turn`: standing at (x, z), facing `heading`, or turning on the spot `from` one
  *   heading `to` another (the shorter way);
  * - `walk`: along `line` (`length` long; she has `walked` that far in the day before it);
@@ -1042,6 +1051,8 @@ export type SkyDayPoseName = 'sip' | 'sit' | 'stand' | 'walk' | 'water' | 'teles
  */
 export type SkyDayAct = { t0: number; t1: number; station: SkyDayStation } & (
   | { kind: 'seated'; settle: number }
+  | { kind: 'saucer'; down: boolean }
+  | { kind: 'rise'; up: boolean }
   | { kind: 'stand'; x: number; z: number; heading: number }
   | { kind: 'turn'; x: number; z: number; from: number; to: number }
   | { kind: 'walk'; line: XZ[]; length: number; walked: number }
@@ -1074,13 +1085,16 @@ function walkProgress(length: number, t: number) {
 }
 /**
  * Her day: SKY_DAY.acts, one after another, SKY_DAY.period seconds round, built from S3's numbers
- * (SKY_STATIONS, SKY_PATHS). Tea in her chair (the day's start); up, and a step north to the walk in
- * front of her chair's side; watering the west border along to the steps; east along the walk past
- * them; watering the east border; along the walk's curve to the telescope's stand, and a long look
- * at the town; then back west along the whole walk, round its west end and the step to her chair's
- * side, and down to her tea. She walks the walk's gravel (along its straight, the line SKY_PATHS.walk
- * runs through, and its curve to the stand, a gentle curve of her own within it) but for that one
- * step (`beside`: where she stands at her chair, on the lawn just off the walk's west end).
+ * (SKY_STATIONS, SKY_PATHS). Tea in her chair (the day's start); her cup and saucer set down, up out
+ * of her chair to its side, and a step north to the walk; watering the west border along to the
+ * steps; east along the walk past them; watering the east border; along the walk's curve to the
+ * telescope's stand, and a long look at the town; then back west along the whole walk, round its west
+ * end and the step to her chair's side, down into her chair, and her cup and saucer taken up again.
+ * She walks the walk's gravel (along its straight, the line SKY_PATHS.walk runs through, and its curve
+ * to the stand, a gentle curve of her own within it; watering, a little in from its middle, toward
+ * the border) but for that one step (`beside`: where she stands at her chair, on the lawn just off the
+ * walk's west end). `saucer` is where her saucer stands on the table while she is away from it (its
+ * foot, the turn it has there, the way her chair faces).
  */
 export const SKY_DAY = (() => {
   const { watering, telescope, tea } = SKY_STATIONS,
@@ -1088,28 +1102,42 @@ export const SKY_DAY = (() => {
     W = SKY_WATERING,
     chair = tea.seats[0],
     z = watering.from.z,
+    // Where she stands to water: `in` from the walk's middle toward the borders (north).
+    zw = z - W.in,
     beside: XZ = [chair.x + Math.cos(chair.facing) * SKY_TEA.beside, chair.z - Math.sin(chair.facing) * SKY_TEA.beside],
+    saucer = {
+      x: chair.x + Math.cos(chair.facing) * SKY_TEA.place[0] + Math.sin(chair.facing) * SKY_TEA.place[1],
+      y: skyTop(tea.x, tea.z) + SKY_TEA.table,
+      z: chair.z - Math.sin(chair.facing) * SKY_TEA.place[0] + Math.cos(chair.facing) * SKY_TEA.place[1],
+      ry: chair.facing,
+    },
     stand: XZ = [telescope.stand.x, telescope.stand.z],
-    // The walk's last stretch, from the east border to the telescope's stand: leaving it eastward and
-    // arriving as the walk's own curve does (along its last chord), a cubic through these four.
-    end = [stand[0] - watering.to.x, stand[1] - z],
-    chord = Math.hypot(end[0], end[1]),
-    curve = [[watering.to.x, z], [watering.to.x + 0.3, z], [stand[0] - (0.3 * end[0]) / chord, stand[1] - (0.3 * end[1]) / chord], stand] as XZ[],
-    toScope = Array.from({ length: 17 }, (_, k): XZ => {
-      const u = k / 16,
-        w = [(1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3];
-      return [w.reduce((s, c, i) => s + c * curve[i][0], 0), w.reduce((s, c, i) => s + c * curve[i][1], 0)];
-    }),
+    // The walk's last stretch, from the east border to the telescope's stand: leaving `from` eastward
+    // and arriving as the walk's own curve does (along its last chord), a cubic through these four.
+    // From the walk's line (back from the telescope she walks its middle), and from where she stops
+    // watering, a little in from it.
+    toward = (from: XZ) => {
+      const end = [stand[0] - watering.to.x, stand[1] - z],
+        chord = Math.hypot(end[0], end[1]),
+        curve = [from, [from[0] + 0.3, from[1]], [stand[0] - (0.3 * end[0]) / chord, stand[1] - (0.3 * end[1]) / chord], stand] as XZ[];
+      return Array.from({ length: 17 }, (_, k): XZ => {
+        const u = k / 16,
+          w = [(1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3];
+        return [w.reduce((s, c, i) => s + c * curve[i][0], 0), w.reduce((s, c, i) => s + c * curve[i][1], 0)];
+      });
+    },
+    toScope = toward([watering.to.x, z]),
     // Round the walk's west end to her chair's side: a quarter circle from heading west to south.
     r = 0.3,
     round = Array.from({ length: 9 }, (_, k): XZ => {
       const a = (k / 8) * (Math.PI / 2);
       return [beside[0] + r - r * Math.sin(a), z + r - r * Math.cos(a)];
     }),
-    // The two watering stretches (where her root goes, along the walk's line), each `shift` west of
-    // where she would stand facing the border straight on.
+    // The two watering stretches (where her root goes, along the line `in` from the walk's middle),
+    // each `shift` west of where she would stand facing the border straight on; the west one starts
+    // in front of her chair's side, or where that line leaves the gravel round the walk's west end.
     stretches = {
-      west: { from: beside[0] - W.shift, to: 2 * SKY.x - watering.from.x - W.shift },
+      west: { from: Math.max(beside[0] - W.shift, SKY_PATHS.walk[0][0] - Math.sqrt((SKY_PATHS.width / 2) ** 2 - W.in ** 2) + 0.06), to: 2 * SKY.x - watering.from.x - W.shift },
       east: { from: watering.from.x - W.shift, to: watering.to.x - W.shift },
     },
     acts: SkyDayAct[] = [];
@@ -1137,26 +1165,34 @@ export const SKY_DAY = (() => {
       heading = Math.atan2(line[n][0] - line[n - 1][0], line[n][1] - line[n - 1][1]);
     },
     water = (station: 'water-west' | 'water-east', { from, to }: { from: number; to: number }) => {
-      turnTo(from, z, watering.facing - W.turn, station);
+      turnTo(from, zw, watering.facing - W.turn, station);
       const steps = Math.round((to - from) / W.step);
-      add(W.first + steps * (W.stepTime + W.pause), { kind: 'water', station, x: from, z, step: (to - from) / steps, steps, heading });
+      add(W.first + steps * (W.stepTime + W.pause), { kind: 'water', station, x: from, z: zw, step: (to - from) / steps, steps, heading });
     };
-  add(SKY_TEA.rise, { kind: 'seated', station: 'tea', settle: 0 });
+  const TEA = SKY_TEA;
+  add(TEA.down[0], { kind: 'seated', station: 'tea', settle: 0 });
+  add(TEA.down[1] - TEA.down[0], { kind: 'saucer', station: 'tea', down: true });
+  add(TEA.rise - TEA.down[1], { kind: 'seated', station: 'tea', settle: TEA.rise - TEA.down[1] });
+  add(TEA.up, { kind: 'rise', station: 'tea', up: true });
   add(G.pause, { kind: 'stand', station: 'tea', x: beside[0], z: beside[1], heading });
-  walk([beside, [stretches.west.from, z]]);
+  walk([beside, [stretches.west.from, zw]]);
   water('water-west', stretches.west);
-  walk([[stretches.west.to, z], [stretches.east.from, z]]);
+  walk([[stretches.west.to, zw], [stretches.east.from, zw]]);
   water('water-east', stretches.east);
-  walk([[stretches.east.to, z], ...toScope]);
+  walk(toward([stretches.east.to, zw]));
   turnTo(stand[0], stand[1], telescope.look, 'telescope');
   add(SKY_SCOPE.look, { kind: 'scope', station: 'telescope', x: stand[0], z: stand[1], heading });
   walk([...toScope.slice().reverse(), ...round, beside]);
   turnTo(beside[0], beside[1], chair.facing, 'tea');
   add(G.pause, { kind: 'stand', station: 'tea', x: beside[0], z: beside[1], heading });
-  // Back in her chair, a few seconds with her cup resting before the day comes round.
-  const period = Math.ceil(t + SKY_TEA.settle + 2.5);
-  add(period - t, { kind: 'seated', station: 'tea', settle: SKY_TEA.settle });
-  return { period, acts, beside, chair, walked, stretches };
+  add(TEA.up, { kind: 'rise', station: 'tea', up: false });
+  add(TEA.settle, { kind: 'seated', station: 'tea', settle: TEA.settle });
+  add(TEA.take, { kind: 'saucer', station: 'tea', down: false });
+  // Back in her chair, her cup resting on its saucer in her hands a second or so before the day comes
+  // round (and on until her first sip).
+  const period = Math.ceil(t + 1);
+  add(period - t, { kind: 'seated', station: 'tea', settle: 0 });
+  return { period, acts, beside, chair, walked, stretches, saucer };
 })();
 /** Her cup's phase in 'sip' at `t` seconds into her day: resting (0) but while she drinks (SKY_TEA.sips). */
 function sipPhase(t: number) {
@@ -1174,19 +1210,40 @@ function sipPhase(t: number) {
  * - `seat`, seated, her chair's seat over her floor (the table stands level on the dome, so a
  *   little more than SKY_SEATS.height under her); 0 standing;
  * - `step` and `side`, watering: how far she is through a sidestep (0 between them) and where it
- *   takes her, in her own frame (x her left, z ahead: east along the border, turned as she is).
+ *   takes her, in her own frame (x her left, z ahead: east along the border, turned as she is);
+ * - `rest`, where her saucer stands on the table (SKY_DAY.saucer), in her own frame: [x, y over her
+ *   floor, z, its turn] (lane F's poseAlison shows her cup and saucer there whenever she is not
+ *   holding them).
+ * Getting up and sitting down ('rise') her root slides between her chair's seat and its side by the
+ * smoothstep of the pose's phase, as her body comes up out of the seat or down into it.
  */
 export function alisonDay(time: number) {
-  const { period, acts, chair } = SKY_DAY,
+  const { period, acts, chair, beside, saucer } = SKY_DAY,
     t = ((time % period) + period) % period,
     act = acts.find((a) => t < a.t1) ?? acts[acts.length - 1],
     into = t - act.t0,
-    out = { station: act.station, pose: 'stand' as SkyDayPoseName, phase: 0, x: 0, z: 0, heading: 0, amount: 0, seat: 0, step: 0, side: [0, 0] as XZ };
+    out = { station: act.station, pose: 'stand' as SkyDayPoseName, phase: 0, x: 0, z: 0, heading: 0, amount: 0, seat: 0, step: 0, side: [0, 0] as XZ, rest: [0, 0, 0, 0] as [number, number, number, number] },
+    // Her chair's seat over the floor where she is (the table stands level on the dome).
+    seat = () => skyTop(SKY_STATIONS.tea.x, SKY_STATIONS.tea.z) + SKY_SEATS.height - skyTop(out.x, out.z);
   switch (act.kind) {
     case 'seated':
       Object.assign(out, { pose: into < act.settle ? 'sit' : 'sip', phase: sipPhase(t), x: chair.x, z: chair.z, heading: chair.facing });
-      out.seat = skyTop(SKY_STATIONS.tea.x, SKY_STATIONS.tea.z) + SKY_SEATS.height - skyTop(chair.x, chair.z);
+      out.seat = seat();
       break;
+    case 'saucer': {
+      const f = into / (act.t1 - act.t0);
+      Object.assign(out, { pose: 'set', phase: act.down ? f : 1 - f, x: chair.x, z: chair.z, heading: chair.facing });
+      out.seat = seat();
+      break;
+    }
+    case 'rise': {
+      const f = into / (act.t1 - act.t0),
+        b = act.up ? f : 1 - f,
+        e = smoothstep(b);
+      Object.assign(out, { pose: 'rise', phase: b, x: chair.x * (1 - e) + beside[0] * e, z: chair.z * (1 - e) + beside[1] * e, heading: chair.facing });
+      out.seat = seat();
+      break;
+    }
     case 'stand':
     case 'scope':
       Object.assign(out, { pose: act.kind === 'scope' ? 'telescope' : 'stand', x: act.x, z: act.z, heading: act.heading });
@@ -1212,6 +1269,14 @@ export function alisonDay(time: number) {
     }
   }
   out.heading = Math.atan2(Math.sin(out.heading), Math.cos(out.heading));
+  // Her saucer on the table, in her frame (the inverse of her root's turn).
+  {
+    const dx = saucer.x - out.x,
+      dz = saucer.z - out.z,
+      c = Math.cos(out.heading),
+      s = Math.sin(out.heading);
+    out.rest = [dx * c - dz * s, saucer.y - skyTop(out.x, out.z), dx * s + dz * c, saucer.ry - out.heading];
+  }
   return out;
 }
 
