@@ -114,6 +114,15 @@ export const WATER = -0.028;
 export const MASK_EXTENT = 44 + 48 * (88 / 256),
   MASK_SIZE = 256 + 2 * 48;
 
+/**
+ * The frame the town's loop is drawing, for the moving parts that settle in real time: `held`, the
+ * town is held (paused, or for a visitor who prefers reduced motion); `cut`, reduced motion (a
+ * settle nearly a cut); `dt`, the frame's own seconds (they pass while town time stands still).
+ */
+export type AnimationFrame = { held: boolean; cut: boolean; dt: number };
+/** A moving part's update: at town `time`, the night's level, `rain` (0..1) and the frame (city-scene passes both). */
+export type AnimatedUpdate = (time: number, night: number, rain?: number, frame?: AnimationFrame) => void;
+
 export type TownContext = {
   library: ReturnType<typeof createCityMaterials>;
   material: ReturnType<typeof createCityMaterials>['material'];
@@ -121,6 +130,6 @@ export type TownContext = {
   land: T.Group;
   lamps: T.Mesh[];
   clocks: { hour: T.Object3D; minute: T.Object3D }[];
-  /** Moving parts; `rain` (0..1, the scene's) is passed to those that answer the weather. */
-  animated: { object: T.Object3D; update: (time: number, night: number, rain?: number) => void }[];
+  /** Moving parts; `rain` (0..1, the scene's) is passed to those that answer the weather, and the frame to those that settle in real time. */
+  animated: { object: T.Object3D; update: AnimatedUpdate }[];
 };

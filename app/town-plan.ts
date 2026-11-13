@@ -1400,6 +1400,84 @@ export function alisonDay(time: number): AlisonDay {
   out.heading = Math.atan2(Math.sin(out.heading), Math.cos(out.heading));
   return placesFor(out);
 }
+/**
+ * When the town is held (paused, or for a visitor who prefers reduced motion) Alison rests: she
+ * settles where she is, over `settle` seconds of real time (`take` if she is bending to her can, a
+ * bigger movement: straightening, or going down to it, at about its own pace; `reduced` under reduced
+ * motion, nearly a cut), into a still pose, and comes back into her day as smoothly when it is let go
+ * (town-sky's alison(), which keeps her own clock still while she is held and until she is back, so
+ * nothing she does runs on under her).
+ */
+export const SKY_HOLD = { settle: 0.5, take: 1, reduced: 0.15 };
+/**
+ * The still pose Alison settles into if her day is held at `time` (alisonDay's answer there, made
+ * still; pure): where she is, as she is, but never mid-movement. Seated, her cup comes down to rest on
+ * its saucer, and the saucer goes on to the table or back into her hand, whichever is nearer;
+ * getting up or sitting down, she finishes whichever she is nearer; walking, she stands, her feet
+ * together where she is; turning, she stands as she is turned; bending to her can, she straightens,
+ * with it or without it as she is nearer; watering, her feet come together, the can comes level and
+ * stops swaying, held out over the bed or at her side as she is nearer, and the water stops (its
+ * tail goes down into the bed: alisonStream, in real time); at the telescope, she is stooped to it or
+ * straight, as she is nearer.
+ */
+export function alisonStill(time: number): AlisonDay {
+  const out = alisonDay(time),
+    near = (v: number) => (v < 0.5 ? 0 : 1),
+    { chair, beside } = SKY_DAY;
+  switch (out.pose) {
+    case 'sip':
+      out.phase = out.phase < 0.5 ? Math.min(out.phase, 0.12) : Math.max(out.phase, 0.88);
+      break;
+    case 'set':
+    case 'take':
+      out.phase = near(out.phase);
+      break;
+    case 'rise': {
+      const b = near(out.phase);
+      Object.assign(out, { phase: b, x: chair.x * (1 - b) + beside[0] * b, z: chair.z * (1 - b) + beside[1] * b });
+      break;
+    }
+    case 'walk':
+      out.amount = 0;
+      break;
+    case 'water':
+      Object.assign(out, { step: 0, pour: 0, lift: near(out.lift), front: out.front > 0 ? 1 : 0, tail: out.front > 0 ? 1 : 0 });
+      break;
+    case 'telescope':
+      out.stoop = near(out.stoop);
+      break;
+  }
+  return placesFor(out);
+}
+/**
+ * Alison part of the way `e` from one moment's answer `a` to another's `b` of the same pose (her
+ * live day and the still pose it settles into): every number mixed, her heading the shorter way
+ * round, and where her saucer and her can stand taken again in her frame as she then stands.
+ */
+export function alisonBlend(a: AlisonDay, b: AlisonDay, e: number): AlisonDay {
+  const mix = (p: number, q: number) => p + (q - p) * e,
+    out: AlisonDay = { ...a, side: [mix(a.side[0], b.side[0]), mix(a.side[1], b.side[1])] };
+  for (const key of ['phase', 'x', 'z', 'amount', 'seat', 'step', 'lift', 'pour', 'front', 'tail', 'stoop'] as const) out[key] = mix(a[key], b[key]);
+  out.heading = a.heading + angleDiff(b.heading, a.heading) * e;
+  return placesFor(out);
+}
+/**
+ * The water from her can `dt` seconds on, as it goes in real time while her day is held or let go
+ * (alisonDay's front and tail, SKY_WATERING): it runs while the can is tipped half way or more
+ * (`pour`), coming out of the rose bead by bead over `reveal` seconds; once it stops, what is out goes
+ * on falling and its top leaves the rose, all of it gone down into the bed `leave` seconds later. A
+ * stream still going down finishes before a new one comes; water never goes back up into the rose.
+ */
+export function alisonStream(s: { front: number; tail: number }, pour: number, dt: number) {
+  const W = SKY_WATERING;
+  let { front, tail } = s;
+  if (tail >= 1) front = tail = 0;
+  if (front > 0 && (tail > 0 || pour < 0.5)) {
+    front = Math.min(1, front + dt / W.reveal);
+    tail = Math.min(1, tail + dt / W.leave);
+  } else if (pour >= 0.5) front = Math.min(1, front + dt / W.reveal);
+  return { front, tail };
+}
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */

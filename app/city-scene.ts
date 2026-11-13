@@ -1912,7 +1912,10 @@ export async function createCity(
     // once: a paused frame redraws the shadows only every 30th frame, which left its shadow on
     // the runway and none under it on the stand for up to half a second.
     if (planeTime < flown) shadowDirty = true;
-    for (const entry of animated) entry.update(time, night, rain);
+    // The town held as the plane is, and the frame's own seconds, for what settles in real time
+    // while town time stands still (Alison, town-sky's alison()).
+    const frameState = { held: paused || reduced, cut: reduced, dt };
+    for (const entry of animated) entry.update(time, night, rain, frameState);
     if (now - clockChecked > 15000) {
       clockChecked = now;
       setClocks();

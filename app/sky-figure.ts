@@ -1038,10 +1038,10 @@ function gripOf(at: [number, number, number, number], lift: number): V3 {
 /**
  * The water from the can's rose: its line from inside the rose down the way the spout points,
  * falling as it goes, and its beads along it (ALISON_STREAM): each at its own place, but none past
- * the stream's `front` (0 to 1: from inside the rose to the last bead's place) nor above its
- * `tail` (0 to 1: from the rose to `sink` past the last bead's place). Shown only while some of it
- * is out of the rose and not yet down in the bed. The beads move on the batched mesh itself, which
- * keeps the corners in the order createProps made them.
+ * the stream's `front` (0 to 1: from inside the rose to the last bead's place, gathering pace as the
+ * square of it) nor above its `tail` (0 to 1: from the rose to `sink` past the last bead's place).
+ * Shown only while some of it is out of the rose and not yet down in the bed. The beads move on the
+ * batched mesh itself, which keeps the corners in the order createProps made them.
  */
 function pourWater(props: AlisonProps, front: number, tail: number) {
   const W = ALISON_STREAM,
@@ -1056,7 +1056,8 @@ function pourWater(props: AlisonProps, front: number, tail: number) {
   const mesh = water.children.find((c): c is T.Mesh => c instanceof T.Mesh),
     rest = water.userData.rest as Float32Array | undefined,
     last = (W.count - 1) * W.gap,
-    f = front * last,
+    // (The front gathers pace as it comes, as water leaving a spout does: its first frames stay in the rose.)
+    f = front * front * last,
     g = tail * (last + W.sink);
   if (!mesh || !rest) return;
   const at = mesh.geometry.getAttribute('position') as T.BufferAttribute,

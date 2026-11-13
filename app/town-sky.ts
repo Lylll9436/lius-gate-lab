@@ -2,7 +2,7 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
-import { palette, hash, type TownContext } from './town-shared';
+import { palette, hash, type AnimationFrame, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
 import { BLOOMS, type Nature } from './town-nature';
 import type { Props } from './town-props';
@@ -908,24 +908,63 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
   /* ---------------------------------------------------------------- */
   /**
    * Alison Heppenstall's figure (sky-figure's createAlison) on the island, in `root` (the island's
-   * own root, outside every static batch: her root is a pivot of its own), going about her day from
-   * town time alone: plan.alisonDay says where she is and what she does, poseAlison poses her, and
-   * she stands on the lawn there (skyTop) or sits on her chair. So Pause and reduced motion, which
-   * hold the town at time 0, leave her in her chair at tea, her cup resting on its saucer. Night and
-   * rain change nothing, as for the town's walkers. Returns her root, which the town batches part by
-   * part as it does its figures (it is `prebatched`: never by the animated loop).
+   * own root, outside every static batch: her root is a pivot of its own), going about her day:
+   * plan.alisonDay says where she is and what she does, poseAlison poses her, and she stands on the
+   * lawn there (skyTop) or sits on her chair. She keeps a clock of her own, town time less however
+   * long she has been held (or was coming back from it) while the town ran on, so nothing of her day
+   * runs on under her while she is held. When the town is held (the frame's `held`: Pause, or reduced
+   * motion) she settles where she is into the still pose plan.alisonStill gives, over SKY_HOLD's
+   * seconds of the frame's own time (its `cut`, reduced motion, nearly at once), the water from her
+   * can stopping and going down into the bed as water does (plan.alisonStream, in real time); let go,
+   * she comes back the same way into her day as it was when she was held, and only then does it go on.
+   * Asked without a frame (the build's own first pose, a check sampling her day), she is simply her
+   * day at that time. Reduced motion at load holds her at time 0, in her chair at tea, her cup
+   * resting on its saucer: already still. Night and rain change nothing, as for the town's walkers.
+   * Returns her root, which the town batches part by part as it does its figures (it is
+   * `prebatched`: never by the animated loop).
    */
   function alison(root: T.Group) {
     const { root: figure, joints, props: held } = createAlison(material);
     figure.userData.keepSeparate = true;
     figure.userData.prebatched = true;
     root.add(figure);
-    const update = (time: number) => {
-      // (alisonDay's answer carries poseAlison's options by their own names.)
-      const day = plan.alisonDay(time),
-        { lift } = poseAlison(joints, held, day.pose, day.phase, day);
-      figure.position.set(day.x, plan.skyTop(day.x, day.z) + lift, day.z);
-      figure.rotation.y = day.heading;
+    const H = plan.SKY_HOLD,
+      pose = (day: plan.AlisonDay) => {
+        // (alisonDay's answer carries poseAlison's options by their own names.)
+        const { lift } = poseAlison(joints, held, day.pose, day.phase, day);
+        figure.position.set(day.x, plan.skyTop(day.x, day.z) + lift, day.z);
+        figure.rotation.y = day.heading;
+      },
+      hidden = (s: { front: number; tail: number }) => s.front <= 1e-6 || s.tail >= 1 - 1e-6;
+    // Her clock's lag behind town time; how far she has settled (0 to 1); and the water while it
+    // goes by itself, until her day's own catches up with it.
+    let lag = 0,
+      last = 0,
+      settled = 0,
+      water: { front: number; tail: number } | null = null;
+    const update = (time: number, _night?: number, _rain?: number, frame?: AnimationFrame) => {
+      const step = time - last,
+        dt = frame?.dt ?? 0;
+      last = time;
+      // Asked for a moment of her day outside the frame loop (the build's own first pose, a check
+      // sampling her day), or a jump in town time (the debug clock): she is straight there, out of any
+      // hold; held, and until she is back in her day, her clock stands.
+      if (!frame || Math.abs(step) > 1) {
+        lag = settled = 0;
+        water = null;
+        if (!frame) return pose(plan.alisonDay(time));
+      } else if (frame.held || settled > 0) lag += step;
+      const clock = time - lag,
+        live = plan.alisonDay(clock),
+        settle = frame?.cut ? H.reduced : live.pose === 'take' ? H.take : H.settle;
+      settled = frame?.held ? Math.min(1, settled + dt / settle) : Math.max(0, settled - dt / settle);
+      if (!settled && !water) return pose(live);
+      const day = plan.alisonBlend(live, plan.alisonStill(clock), T.MathUtils.smoothstep(settled, 0, 1));
+      water = plan.alisonStream(water ?? { front: live.front, tail: live.tail }, day.pour, (dt * H.settle) / settle);
+      Object.assign(day, water);
+      // Let go, and her day's water where this is: hers again.
+      if (!settled && ((hidden(water) && hidden(live)) || (Math.abs(water.front - live.front) < 1e-6 && Math.abs(water.tail - live.tail) < 1e-6))) water = null;
+      pose(day);
     };
     update(0);
     ctx.animated.push({ object: figure, update });
