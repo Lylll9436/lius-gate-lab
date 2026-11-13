@@ -1034,8 +1034,9 @@ async function siteOver(name, testCatalog) {
     );
   }
   // The role line: her name hidden as the stage caption's chip is (out of the flow, clipped to
-  // nothing), and her role and affiliation in the text's own ink, not the third ink, which measured
-  // 2.2 to 2.9:1 over the sea glass by day. Site-wide tokens are untouched.
+  // nothing), and her role and affiliation in the text's own ink, not the third ink (which measured
+  // 2.2 to 2.9:1 over the sea glass by day). By day the glass's own day inks then apply to them as to
+  // every file (globals.css, Text on the glass by day): her role the eyebrows' ink-green.
   {
     const sheet = (await fs.readFile(path.join(root, 'app/globals.css'), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, ''),
       declared = (selector) =>
