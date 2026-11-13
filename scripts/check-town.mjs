@@ -9179,13 +9179,13 @@ let skyReport = '';
           assert(off < 1e-9 && (t0 > 30 ? moved > 0.1 : true), `Under reduced motion with Play at ${t0} s she strays ${off} from her day, or moves only ${fmt3(moved)} in 3 s.`);
         }
         // The loop's frame: held on Pause only, cut under reduced motion, its own seconds; a new one
-        // each frame.
+        // each frame, nothing yet having moved in it (so the paused loop draws no shadows it need not).
         for (const paused of [false, true])
           for (const reduced of [false, true])
             for (const dt of [0, frame, 0.05]) {
               const a = animationFrame(paused, reduced, dt),
                 b = animationFrame(paused, reduced, dt);
-              assert(a.held === paused && a.cut === reduced && a.dt === dt && a !== b, `The loop's frame (paused ${paused}, reduced ${reduced}) is ${JSON.stringify(a)}.`);
+              assert(a.held === paused && a.cut === reduced && a.dt === dt && a.moved === false && a !== b, `The loop's frame (paused ${paused}, reduced ${reduced}) is ${JSON.stringify(a)}.`);
             }
         // And city-scene's step() builds it so and passes it to every animated part: its one loop over
         // `animated` calls each entry's update with (time, night, rain, the frame), the frame a const
