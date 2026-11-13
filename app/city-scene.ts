@@ -1506,10 +1506,17 @@ export async function createCity(
    * up that line. Nothing on screen changes, but the idle drift now turns the view about a point 4
    * under the island's middle, not 10 (it swings the island much less far), and the target still
    * stands under the pan limit's lift: a one-building framing, on the island's own middle 10.5 up,
-   * would stand over it, and the limit would slide the camera as the glide ended.
+   * would stand over it, and the limit would slide the camera as the glide ended. At `zoom` (a zoom
+   * the visitor chose: Rotate after a pan or a zoom) the subject is the same, the panel offset
+   * measured at that zoom instead of the fit's.
    */
-  function focusSky() {
+  function focusSky(zoom?: number) {
     fitGroup(SKY_FIT, 0.95, 2.6, panelEdge, 1);
+    if (zoom) {
+      target.sub(shiftApplied);
+      targetZoom = zoom;
+      offsetTarget();
+    }
     const back = viewOffset(targetYaw, new T.Vector3(), 1).normalize();
     target.addScaledVector(back, SKY_LIFT / back.y);
     // A turn still to come (Rotate, or the file opened from another bearing) turns the view about the
@@ -1534,9 +1541,9 @@ export async function createCity(
   /**
    * What the sky island's own file turns about: the point at the height of the island's own middle
    * (SKY_FIT's) on the line of sight through `subject` (a framing's target less its panel offset), seen
-   * from `bearing` at the pitch the view heads for. In the file as it frames the island that is the
-   * island's middle itself, so a turn turns the island where it stands in the frame; panned or zoomed
-   * about since, it is the point of the island's height where the visitor looks.
+   * from `bearing` at the pitch the view heads for. In the file as it frames the island (and Rotate
+   * frames it again, a pan or a zoom since or not: rotate) that is the island's middle itself, so a
+   * turn turns the island where it stands in the frame.
    */
   function skyPivot(subject: T.Vector3, bearing: number, out = new T.Vector3()) {
     const back = viewOffset(bearing, out, aim()).normalize();
@@ -2334,8 +2341,14 @@ export async function createCity(
       inspectionAutoFit = true;
       if (overviewFit) fitOverview();
       // The sky island's own file frames it again for the new bearing, and turns there about the
-      // island (focusSky, turnSky); panned or zoomed about, it keeps the visitor's view and turns.
-      else if (autoFocus && skyFile()) focusSky();
+      // island (focusSky, turnSky). Panned or zoomed about since, it does so at the visitor's zoom
+      // (the camera's, or the one its glide heads for): the turn carries the view about the island
+      // and the glide brings back whatever the pan moved, so the island comes back beside the file
+      // wherever it had been panned to, even out of the frame, and the view ends in its pocket.
+      // (Turned about the point of the island's height on the visitor's line of sight, the view's
+      // ground point swung on a circle out of the island's pocket, and the pan limit slid the view
+      // back all through the turn: 677-717 px at 1440 x 900, up to 16.7 px a frame.)
+      else if (skyFile()) focusSky(autoFocus ? undefined : tween ? targetZoom : camera.zoom);
       lastInteraction = performance.now();
     },
     zoom(f) {

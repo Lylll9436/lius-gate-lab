@@ -2010,6 +2010,181 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       skyNav.rotate = `the island turned where it stands at ${stats.stops} Rotate stops (its middle held within ${stats.hold.toFixed(2)} px over ${stats.frames} frames of turning, ${stats.end.toFixed(2)} px a frame at most as each turn ends)`;
     }
 
+    // (c3b) Rotate in its own file after the visitor has panned or zoomed it (the final review's second
+    // finding): turned about the point of the island's height on the visitor's line of sight, the view's
+    // ground point swung on a circle out of the island's pocket, and every frame the pan limit slid the
+    // view back (677-717 px over the turn at 1440 x 900, up to 16.7 px a frame); let go, the island was
+    // left off the screen. Rotate now frames the island again for the new bearing at the visitor's zoom,
+    // and the turn carries the view about the island. Through three's real OrbitControls (drivePan's
+    // settings) with the scene's own holdPan, panRegion and skyReach, the Rotate button's method,
+    // focusSky, turnSky and the frame loop's turn, pitch and glide, at 1440 x 900, 1280 x 720 and a
+    // phone above its sheet (fileFrame's shift and drop): from the file at rest, a drag out to the
+    // pocket's edge (300 frames of 8 px) to the right, the left, up or down, or a press of + (and one with
+    // a drag after it), a second's rest, then Rotate:
+    // - no frame of the turn has the pan limit (holdPan and OrbitControls' clamp) move the view more than
+    //   half a pixel;
+    // - once the island's middle is in the frame it stays there, and it ends in the free part beside the
+    //   file or above the sheet;
+    // - the turn ends on a still view (under half a pixel over the next second) at the visitor's zoom, its
+    //   ground point well inside the island's pocket.
+    {
+      const want = ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
+        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE'],
+        code = [];
+      let pitchSource;
+      (function collect(node) {
+        if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+        ts.forEachChild(node, collect);
+      })(syntax);
+      const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+      assert(code.length === want.length + vars.length && turning && glideSource && pitchSource && rotateSource && zoomSource, 'The Rotate-after-a-pan check must find every piece it runs.');
+      const script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, rotateSource, zoomSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ holdPan, panRegion, focusSky, followPanel, turnStep, glideStep, pitchStep, rotate, zoomBy, cancel, align, aim, middle: SKY_FIT.getCenter(new T.Vector3()) })`,
+        worst = { pull: 0, end: 0, out: -Infinity, turns: 0 };
+      for (const [w, h, shift, drop, phone] of [[1440, 900, 492 / 2880, 0], [1280, 720, 492 / 2560, 0], [390, 844, 0, -100.95 / 844, true]])
+        for (const { label, drag, plus } of [
+          { label: 'dragged right', drag: [8, 0] },
+          { label: 'dragged left', drag: [-8, 0] },
+          { label: 'dragged down', drag: [0, 8] },
+          { label: 'dragged up', drag: [0, -8] },
+          { label: 'zoomed in with +', plus: true },
+          { label: 'zoomed in with + and dragged up', drag: [0, -8], plus: true },
+        ]) {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect),
+            camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+            controls = new OrbitControls(camera, null);
+          controls.domElement = { clientWidth: w, clientHeight: h };
+          Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: 0.45, maxZoom: 4 });
+          const turn = {
+              T,
+              Math,
+              plan,
+              camera,
+              controls,
+              target: new T.Vector3(),
+              shiftApplied: new T.Vector3(),
+              screenRight: new T.Vector3(),
+              screenUp: new T.Vector3(),
+              offset: new T.Vector3(),
+              frameShift: shift,
+              frameDrop: drop,
+              panelEdge: 1,
+              width: w,
+              height: h,
+              yaw: fileBearing,
+              targetYaw: fileBearing,
+              targetZoom: 1,
+              pitch: 1,
+              driftAngle: 0,
+              panSlack: Infinity,
+              panPitch: 1,
+              tween: false,
+              reduced: false,
+              dt: 1 / 60,
+              blend: 1 - Math.exp(-5.5 / 60),
+              focusedIds: ['sky-island'],
+              overviewFit: false,
+              inspect: null,
+              parkSelected: false,
+              autoFocus: true,
+              inspectionAutoFit: true,
+              cityMode: true,
+              lastInteraction: 0,
+              performance: { now: () => 0 },
+              CITY_MAX_ZOOM: 4,
+              STUDY_MAX_ZOOM: 8,
+              models: new Map(),
+              city: { updateMatrixWorld() {} },
+              placeSun() {},
+              clearHover() {},
+              fitOverview() {},
+            },
+            run = runInNewContext(script, turn),
+            // A point's place on the screen (px) as the camera stands.
+            onScreen = (p) => {
+              const q = p.clone().project(camera);
+              return [((q.x + 1) * w) / 2, ((1 - q.y) * h) / 2];
+            },
+            // One frame of step(): the panel offset, the turn, the pitch, the glide, the limit and
+            // OrbitControls' update, the view handed over; and how far the limit moved the view (px).
+            frame = () => {
+              run.followPanel();
+              run.turnStep();
+              run.pitchStep();
+              run.glideStep();
+              camera.updateMatrixWorld();
+              const was = controls.target.clone(),
+                at = onScreen(was);
+              run.holdPan();
+              controls.update();
+              camera.updateMatrixWorld();
+              const now = onScreen(was);
+              if (!turn.tween) turn.target.copy(controls.target);
+              return Math.hypot(now[0] - at[0], now[1] - at[1]);
+            },
+            out = () => {
+              const back = camera.position.clone().sub(controls.target).normalize(),
+                g = controls.target.clone().sub(turn.shiftApplied);
+              g.addScaledVector(back, -g.y / back.y);
+              const r = run.panRegion(g);
+              return g.distanceTo(r.centre) - r.radius;
+            },
+            inFrame = ([x, y]) => x >= 0 && x <= w && y >= 0 && y <= h,
+            free = ([x, y]) => (phone ? x >= 0 && x <= w && y >= 58 && y <= 0.69 * h : x >= 0 && x <= w - 476 && y >= 76 && y <= h - 76),
+            at = `${label} at ${w} x ${h}`;
+          // The file, framed and at rest.
+          run.focusSky();
+          controls.target.copy(turn.target);
+          camera.zoom = turn.targetZoom;
+          camera.updateProjectionMatrix();
+          run.align();
+          controls.update();
+          for (let f = 0; f < 60; f++) frame();
+          if (plus) {
+            run.zoomBy(1.25);
+            for (let f = 0; f < 400 && turn.tween; f++) frame();
+          }
+          if (drag) {
+            run.cancel();
+            for (let f = 0; f < 300; f++) {
+              controls._pan(drag[0], drag[1]);
+              controls.update();
+              camera.updateMatrixWorld();
+              frame();
+            }
+          }
+          for (let f = 0; f < 60; f++) frame();
+          const zoom = camera.zoom;
+          run.rotate();
+          let shown = inFrame(onScreen(run.middle)),
+            settled = 0,
+            f = 0;
+          for (; f < 900 && settled < 5; f++) {
+            const pulled = frame(),
+              m = onScreen(run.middle);
+            worst.pull = Math.max(worst.pull, pulled);
+            assert(pulled <= 0.5, `Rotate in the sky island's file ${at}: the pan limit moves the view ${pulled.toFixed(2)} px at frame ${f} of the turn.`);
+            assert(!shown || inFrame(m), `Rotate in the sky island's file ${at}: its middle leaves the frame at frame ${f} of the turn (${m.map((v) => v.toFixed(0)).join(', ')} px).`);
+            shown ||= inFrame(m);
+            settled = !turn.tween && Math.abs(turn.targetYaw - turn.yaw) <= 0.0001 && Math.abs(run.aim(camera.zoom) - turn.pitch) <= 0.0001 ? settled + 1 : 0;
+          }
+          assert(settled >= 5 && Math.abs(turn.yaw - fileBearing - Math.PI / 2) < 1e-6, `Rotate in the sky island's file ${at} does not end a quarter turn on.`);
+          const rest = controls.target.clone(),
+            restAt = onScreen(rest),
+            m = onScreen(run.middle);
+          for (let k = 0; k < 60; k++) frame();
+          const still = Math.hypot(...onScreen(rest).map((v, i) => v - restAt[i]));
+          worst.end = Math.max(worst.end, still);
+          worst.out = Math.max(worst.out, out());
+          worst.turns++;
+          assert(free(m), `Rotate in the sky island's file ${at} ends with its middle at ${m.map((v) => v.toFixed(0)).join(', ')} px, out of the part of the frame left free.`);
+          assert(still < 0.5 && Math.abs(camera.zoom - zoom) < 1e-9 && out() < -3, `Rotate in the sky island's file ${at} ends ${still.toFixed(2)} px from still, at zoom ${camera.zoom.toFixed(4)} for the visitor's ${zoom.toFixed(4)}, or its ground point ${out().toFixed(2)} from its pocket's edge.`);
+        }
+      skyNav.rotatePanned = `Rotate after ${worst.turns} pans and zooms of its file framing it again at the visitor's zoom (the pan limit moving the view ${worst.pull.toFixed(2)} px a frame at most, the view still within ${worst.end.toFixed(2)} px after, its ground point ${(-worst.out).toFixed(1)} inside its pocket at least)`;
+    }
+
     // (c4) The sun's shadow box in the island's own file (the 3D review's fourth finding: on portrait
     // phones the file never took it, the villa, the tree, the tea set and Alison casting nothing on
     // the lawn, for a sliver of the north-west coast in the corner above the sheet). city-scene's own
@@ -3118,5 +3293,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
