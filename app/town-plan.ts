@@ -918,15 +918,23 @@ export const SKY_PATHS = (() => {
 })();
 /**
  * The garden lamps (lane G's gardenLamps, one set): their feet, on the lawn either side of the
- * stem where it leaves the walk, past the walk's west end by the tea table, and between the bench
- * and the telescope. Every one lies south of AIRPORT_ROAD.beach, so check-town's count of the
- * airport's own lamps stays theirs.
+ * paths' round landing, between it and the south rim, where the stem from the steps ends; and either
+ * side of the villa, a lamp beyond each end of its terrace, the two pairs each mirrored about the
+ * island's middle. None stands where it hides Alison from the island's file at any of its Rotate
+ * stops (the art review's third finding: by the tea table, one stood right behind her chair on the
+ * file's line of sight, a ball on her head by day and a halo at night; the two by the stem stood
+ * between the camera and her walk, and the one by the telescope behind her at it): from each stop,
+ * a lamp's pier and globe meet her on screen within about 1.5 in front of her or behind her along the
+ * line of sight, and her stations and the walk she keeps to are all in reach of the old spots; these
+ * lie out of it at every moment of her day (check-town holds it). The west one stands 1.4 or more from
+ * the west fall's head and its pool and clear of the outcrop. The set itself stands at the island's
+ * middle, south of AIRPORT_ROAD.beach, so check-town's count of the airport's own lamps stays theirs.
  */
 export const SKY_LAMPS: XZ[] = [
-  [SKY.x - 0.72, -19.6],
-  [SKY.x + 0.72, -19.6],
-  [-55.35, -20.1],
-  [-49.4, -19.45],
+  [SKY.x - 0.65, -17.75],
+  [SKY.x + 0.65, -17.75],
+  [-56.35, -23.15],
+  [-47.65, -23.15],
 ];
 /**
  * The clipped planting (the villa's reference: a striped lawn and clipped box), beside the borders'
@@ -934,7 +942,7 @@ export const SKY_LAMPS: XZ[] = [
  * with a clipped box ball) flanking the back door's step, `side` either side of the house's middle
  * and `out` from its back wall, just outside the villa's footprint, where the north-west Rotate stop
  * and the City overview's other stops look at the house's back. (Before the house the lawn is full:
- * the tea table, the bench, the lamps and the telescope stand round the landing.)
+ * the tea table, the bench, two of the lamps and the telescope stand round the landing.)
  */
 export const SKY_URN = { side: 1.1, out: 0.6 };
 /**

@@ -8088,6 +8088,131 @@ let skyReport = '';
         assert(Math.abs(fromTable) < 1e-9, `Her saucer stands ${fromTable} off the tea table's top.`);
         skyReport += `, frame by frame her root ${fmt3(worst.root)} and her joints and props ${fmt3(Math.max(worst.body, worst.legs, worst.arms, worst.props))} at most a sixtieth of a second, her cup and saucer left on the table while she is away`;
       }
+
+      // The garden lamps never stand in front of her or behind her on screen (the art review's third
+      // finding: by the tea table one stood on the file's line of sight 1.07 behind her chair, a ball
+      // on her head by day and a halo at night, and those by the stem and the telescope covered her on
+      // her walk and at the telescope). From the island's file (its bearing, at its own pitch) and its
+      // three other Rotate stops, through her whole day a tenth of a second at a time, no lamp (its
+      // pier, cup and globe, as the garden kit builds one, at each of SKY_LAMPS) meets her (her body
+      // and what she holds) on screen, but for a brief pass under a second while she walks; and from
+      // the file's own camera the line of sight to her seat (her seated at tea, the day's start) meets
+      // no lamp at all. Each lamp stands 0.6 or more from either fall's head and pool, off the
+      // outcrop's stones, the paths and her stations.
+      {
+        const CELL = 0.012,
+          lamp = fresh().garden.gardenLamp(),
+          triangles = (group, keep = () => true) => {
+            const out = [],
+              q3 = new T.Vector3();
+            group.updateMatrixWorld(true);
+            group.traverse((m) => {
+              if (!m.isMesh || !keep(m)) return;
+              for (let p = m; p; p = p.parent) if (!p.visible) return;
+              const q = m.geometry.attributes.position,
+                index = m.geometry.index,
+                n = index ? index.count : q.count;
+              for (let i = 0; i < n; i++) {
+                q3.fromBufferAttribute(q, index ? index.getX(i) : i).applyMatrix4(m.matrixWorld);
+                out.push(q3.x, q3.y, q3.z);
+              }
+            });
+            return out;
+          },
+          // A silhouette on screen as rows of CELL, each its span along the screen's right.
+          spans = (tris, flat) => {
+            const rows = new Map(),
+              P = [new T.Vector3(), new T.Vector3(), new T.Vector3()];
+            for (let i = 0; i < tris.length; i += 9) {
+              const s = P.map((p, k) => flat(p.set(tris[i + 3 * k], tris[i + 3 * k + 1], tris[i + 3 * k + 2]))),
+                lo = Math.min(s[0][1], s[1][1], s[2][1]),
+                hi = Math.max(s[0][1], s[1][1], s[2][1]);
+              for (let r = Math.floor(lo / CELL); r <= Math.floor(hi / CELL); r++) {
+                const y = Math.min(hi, Math.max(lo, (r + 0.5) * CELL));
+                let a = Infinity,
+                  b = -Infinity;
+                for (let e = 0; e < 3; e++) {
+                  const [x1, y1] = s[e],
+                    [x2, y2] = s[(e + 1) % 3];
+                  if ((y1 - y) * (y2 - y) <= 0) {
+                    const x = y1 === y2 ? Math.min(x1, x2) : x1 + ((y - y1) * (x2 - x1)) / (y2 - y1),
+                      x3 = y1 === y2 ? Math.max(x1, x2) : x;
+                    a = Math.min(a, x, x3);
+                    b = Math.max(b, x, x3);
+                  }
+                }
+                if (a > b) continue;
+                const row = rows.get(r);
+                if (row) {
+                  row[0] = Math.min(row[0], a);
+                  row[1] = Math.max(row[1], b);
+                } else rows.set(r, [a, b]);
+              }
+            }
+            return rows;
+          },
+          meet = (a, b) => {
+            for (const [r, [a0, a1]] of a) {
+              const s = b.get(r);
+              if (s && s[0] <= a1 && s[1] >= a0) return true;
+            }
+            return false;
+          },
+          bearings = [0, 1, 2, 3].map((k) => file + (k * Math.PI) / 2),
+          flats = bearings.map((b) => axes(b, SKY_PITCH).flat),
+          // Each lamp's silhouette at each stop.
+          lampAt = plan.SKY_LAMPS.map(([x, z]) => {
+            lamp.position.set(x, plan.skyTop(x, z), z);
+            const tris = triangles(lamp);
+            return flats.map((flat) => spans(tris, flat));
+          }),
+          // Her body, and her cup and saucer only while they are in her hands.
+          hers = (s) => triangles(her, (m) => !(m.parent === held.cup || m.parent === held.saucer) || s.pose === 'sip' || s.pose === 'set'),
+          step = 0.1,
+          runs = plan.SKY_LAMPS.map(() => bearings.map(() => ({ from: -1, poses: new Set() }))),
+          bad = [];
+        let passes = 0,
+          longest = 0;
+        for (let n = 0; n * step < D.period + 1e-9; n++) {
+          const t = n * step,
+            s = at(t),
+            tris = hers(s),
+            mine = flats.map((flat) => spans(tris, flat));
+          for (const [i, sil] of lampAt.entries())
+            for (let k = 0; k < bearings.length; k++) {
+              const run = runs[i][k],
+                hit = n * step < D.period - 1e-9 && meet(sil[k], mine[k]);
+              if (hit) {
+                if (run.from < 0) run.from = t;
+                run.poses.add(s.pose);
+              } else if (run.from >= 0) {
+                const long = t - run.from;
+                longest = Math.max(longest, long);
+                passes++;
+                if (long >= 1 - 1e-9 || [...run.poses].some((p) => p !== 'walk')) bad.push(`lamp ${i} at stop ${k} from ${run.from.toFixed(1)} s for ${long.toFixed(1)} s (${[...run.poses].join(', ')})`);
+                run.from = -1;
+                run.poses.clear();
+              }
+            }
+        }
+        assert(!bad.length, `A garden lamp stands in front of her or behind her on screen: ${bad.join('; ')}.`);
+        // From the file's own camera, the line of sight to her seat (seated at tea, her cup in her hands).
+        const seated = at(0),
+          seen = spans(hers(seated), flats[0]);
+        assert(seated.pose === 'sip' && lampAt.every((sil) => !meet(sil[0], seen)), 'From the island\'s file a garden lamp stands on the line of sight to her seat.');
+        at(0);
+        // Their own room: clear of the falls' heads and pools, the outcrop's stones, the paths and her stations.
+        const O = plan.SKY_OUTCROP;
+        for (const [x, z] of plan.SKY_LAMPS) {
+          const falls = Math.min(...plan.skyFalls.map((f) => {
+              const pool = plan.skyRim(f.bearing, -plan.SKY_FALLS.pool);
+              return plan.distanceToSegment([x, z], [f.x, f.z], [pool.x, pool.z]);
+            })),
+            outcrop = Math.hypot(x - O.x, z - O.z);
+          assert(falls >= 0.6 && outcrop >= 1.45, `The garden lamp at ${x}, ${z} is ${falls.toFixed(2)} from a fall's head or pool, or ${outcrop.toFixed(2)} from the outcrop's middle.`);
+        }
+        skyReport += `, no garden lamp in front of her or behind her from any of the file's four stops (${passes} passes on her walk, the longest ${longest.toFixed(1)} s)`;
+      }
     }
   }
 }
