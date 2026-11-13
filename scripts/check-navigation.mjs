@@ -887,9 +887,10 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         onSky = nearSky(x, z);
       assert(inside(cx, cz) && (onDisc ? far === 40 && Math.cos(a) > 0.99 && Math.abs(Math.hypot(cx, cz) - DISC) < 1e-6 : onSky ? far >= 20 && Math.cos(a) < -0.5 && Math.abs(beyondSky(cx, cz)) < 1e-6 : beyondDeck(cx, cz) <= 4 + 1e-6), `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
     }
-  // The sky island's pocket: the ground point of its own file (12.2 beyond it along the line of
-  // sight at any bearing) lies in it, unclamped; a pan away from it is held to it, or back along its
-  // link to the town, never out to open sea.
+  // The sky island's pocket at the town's pitch: a ring 12.2 out round it, past the ground point of its
+  // own file there (11.7 beyond it along the line of sight at any bearing, at 42.6 degrees; 18.7 at the
+  // file's own 30, where the pocket widens with it: (c) and (c2) below), lies in it, unclamped; a pan
+  // away from it is held to it, or back along its link to the town, never out to open sea.
   {
     const S = plan.SKY;
     for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) {
@@ -1007,8 +1008,9 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       for (let f = 0; f < 120; f++) drive.frame();
       assert(drive.worst.deck <= 4.5 && drive.worst.beyond <= 0.5 && drive.worst.move <= 16, `A drag from the airport toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.deck.toFixed(2)} past its deck (or jumps ${drive.worst.move.toFixed(0)} px).`);
     }
-  // From the sky island's file (its ground point 12.2 beyond it), a drag out to sea is held in its
-  // pocket and a drag toward the town gets there along the link, never jumping or lifting the camera.
+  // From a ground point 12.2 beyond the sky island at the town's pitch (its file's own is 11.7 there),
+  // a drag out to sea is held in its pocket and a drag toward the town gets there along the link,
+  // never jumping or lifting the camera.
   for (const yaw of [Math.PI / 4, plan.chapterBearings['sky-island'], (5 * Math.PI) / 4])
     for (const [x, z] of [[-95, -24], [-52, -75], [-52, 25], [-90, 15], [0, 0]]) {
       const drive = drivePan(yaw),
@@ -1510,7 +1512,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // come down (aim() 1 for the island alone, the pitch at 1), SKY_FIT fitted like a group between
     // 0.95 and 2.6 (2.035 at 1440 x 900; 2.019 at the town's pitch), its target then raised SKY_LIFT
     // up the line of sight: under the pan limit's lift (a glide's end never slides the camera) with
-    // its ground point, about 19.5 beyond the island at that pitch, in the island's own pocket
+    // its ground point, 18.7 beyond the island at that pitch (11.7 at the town's), in the island's own pocket
     // (skyReach: as much further out as the line of sight runs at that pitch), unclamped. The
     // island, its clouds and rocks with it, stay whole beside the file, 24 px clear of the masthead,
     // the controls and the panel, through the idle drift; on phones, at the zoom's cap, above the

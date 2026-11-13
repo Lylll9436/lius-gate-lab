@@ -941,10 +941,11 @@ export async function createCity(
    * deepest in (or nearest to) and `maxTargetRadius` that region's reach (see holdPan). `lift` is
    * how far the target may stand above or below the subject's ground: above the middle of every
    * building a framing centres (the Town Hall's, 6.7 up, is the highest).
-   * The sky island has a pocket of its own (`sky`): a disc of `reach` round its middle, which holds
-   * the ground point of its own frame at any bearing (12.2 beyond it along the line of sight), and a
-   * capsule of `link` back to the town along the line between them, from `from` (30 out, inside the
-   * island's disc), so a visitor in its file can pan back to the town.
+   * The sky island has a pocket of its own (`sky`): a disc of `reach` round its middle (at the town's
+   * pitch: skyReach widens it at a lower one), which holds the ground point of its own frame at any
+   * bearing (11.7 beyond it along the line of sight at the town's pitch, 42.6 degrees; 18.7 at its
+   * file's own, 30 degrees), and a capsule of `link` back to the town along the line between them,
+   * from `from` (30 out, inside the island's disc), so a visitor in its file can pan back to the town.
    */
   const PAN = {
     disc: 36,
@@ -977,8 +978,9 @@ export async function createCity(
     panLink = new T.Line3(PAN.sky.from, PAN.sky.centre);
   /**
    * The sky island's pocket's reach on the ground: PAN.sky.reach at the town's pitch, and as much
-   * further out as the line of sight runs at a lower one (the file's ground point lies 12.2 beyond
-   * the island at the town's pitch, about 20 at SKY_PITCH): the same freedom on screen either way.
+   * further out as the line of sight runs at a lower one (the file's ground point lies 11.7 beyond
+   * the island at the town's pitch, 42.6 degrees, and 18.7 at SKY_PITCH, 30, where the pocket's reach
+   * is 25.5): the same freedom on screen either way.
    */
   function skyReach() {
     return pitch <= 0 ? PAN.sky.reach : (PAN.sky.reach * Math.tan(TOWN_PITCH)) / Math.tan(elevationAt(pitch));
@@ -1505,9 +1507,10 @@ export async function createCity(
   /**
    * The sky island's own frame, at its own pitch (SKY_PITCH: the camera comes down to it as the
    * glide closes in): SKY_FIT fitted like a group between 0.95 and 2.6, which leaves the target on
-   * the ground some 19 beyond the island along the line of sight; then the target is raised SKY_LIFT
-   * up that line. Nothing on screen changes, but the idle drift now turns the view about a point 4
-   * under the island's middle, not 10 (it swings the island much less far), and the target still
+   * the ground 18.7 beyond the island along the line of sight at that pitch, 30 degrees (11.7 at the
+   * town's, 42.6); then the target is raised SKY_LIFT up that line. Nothing on screen changes, but
+   * the idle drift now turns the view about a point 4 under the island's middle, not 10 (it swings
+   * the island much less far), and the target still
    * stands under the pan limit's lift: a one-building framing, on the island's own middle 10.5 up,
    * would stand over it, and the limit would slide the camera as the glide ended. At `zoom` (a zoom
    * the visitor chose: Rotate after a pan or a zoom) the subject is the same, the panel offset
