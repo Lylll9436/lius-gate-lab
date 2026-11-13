@@ -847,8 +847,8 @@ function NeighboursCard({
       </p>
       <p>
         {zh
-          ? `${group.intro.zh}${neighbour.title.zh} 是 ${group.name.zh} 的团队负责人之一。`
-          : `${group.intro.en} ${neighbour.title.en} is one of its group leaders.`}
+          ? `${group.intro.zh}${neighbour.title.zh} 是 ${group.name.zh} 的团队负责人（Group Leader）之一。`
+          : `${group.intro.en} ${neighbour.title.en} is one of its Group Leaders.`}
       </p>
       <p className="neighbour-tie">{group.connection[locale]}</p>
       <div className="neighbours-actions">

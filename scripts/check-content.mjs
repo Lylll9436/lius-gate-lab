@@ -1068,7 +1068,7 @@ async function siteOver(name, testCatalog) {
 }
 // The reading page's one way to her: a compact Neighbours card at the end of About (the Town Hall's
 // chapter), after its own sections and before the building's note. It holds UIA in one line (its
-// intro, a text of its own, never cut from the summary), her as one of its group leaders, the one tie,
+// intro, a text of its own, never cut from the summary), her as one of its Group Leaders, the one tie,
 // and two ways on: UIA's
 // website (read aloud with its address and the new tab) and the island in the city. It is the island's
 // reading address, so its file's "Read on the page" lands there, its heading taking the focus. The
@@ -1094,7 +1094,7 @@ async function siteOver(name, testCatalog) {
       card = chapter.match(/<section class="neighbours"[\s\S]*?<\/section>/)?.[0] ?? '',
       page = decoded(chapter),
       intro = group.intro[locale],
-      leader = zh ? alison.title.zh + ' 是 UIA 的团队负责人之一。' : alison.title.en + ' is one of its group leaders.';
+      leader = zh ? alison.title.zh + ' 是 UIA 的团队负责人（Group Leader）之一。' : alison.title.en + ' is one of its Group Leaders.';
     assert(card, 'About (' + locale + ') has no Neighbours card.');
     let last = -1;
     for (const text of [
@@ -1180,7 +1180,7 @@ async function siteOver(name, testCatalog) {
         renderToStaticMarkup(React.createElement(site.content.LabContent, { id: 'town-hall', locale: 'en', onOpen() {}, reading: true, onExplore() {} })).match(
           /<section class="neighbours"[\s\S]*?<\/section>/,
         )?.[0] ?? '';
-    assert(textsOf(card).includes(abbreviated + ' ' + alison.title.en + ' is one of its group leaders.'), 'An abbreviation cuts UIA’s line on the Neighbours card short.');
+    assert(textsOf(card).includes(abbreviated + ' ' + alison.title.en + ' is one of its Group Leaders.'), 'An abbreviation cuts UIA’s line on the Neighbours card short.');
   }
   assert.equal(island.name.en, 'Sky Island');
 }
