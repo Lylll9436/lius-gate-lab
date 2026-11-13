@@ -4444,6 +4444,496 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     colour = new T.Color();
   for (let i = 0; i < c.count; i += 5) assert(hsv(colour.fromBufferAttribute(c, i).convertLinearToSRGB()) <= limit + 1e-3, 'The bronze is louder than palette.bronze.');
 }
+// The sky island's garden kit (town-sky-garden's createSkyGarden; nothing in the town calls it yet), each
+// piece built on its own with the check's own context, then a whole garden's worth batched as the island
+// will batch it (static parts in one group with the deck as its floor, moving parts one by one):
+// - every part has a surface kind; nothing is two-sided, transparent, cut out or glowing (but the lamps'
+//   globes, which are the lamps' own glass); its colours are the kit's (SKY_GARDEN_LOOK), none more
+//   saturated than its palette family (SKY_GARDEN_FAMILY): the clouds and the puffs are a muted white no
+//   louder than palette.white over a darker, cooler base;
+// - every joined piece (each run of faces sharing corners) is 0.07 across or more every way (thinner ones
+//   twinkle as the view moves);
+// - the fall: a stone spout that reaches past the rim and never hangs below the deck there; a sheet 0.5
+//   wide or more (and softly rounded: 0.4 deep or more) all the way from the pour to the puff; a puff about
+//   1.3 in radius that the sheet's foot ends inside, so no water reaches the sea; its lumps slide a spacing
+//   and back, the first cluster hidden in the pour at the loop's start and the last in the puff's core at
+//   its end, and at time 0 (the frame Pause and reduced motion hold) two clusters or more show mid-fall;
+// - a cloud has a flat base at y 0 and stays its size; a rock is the armour's smooth boulder (an
+//   icosahedron of detail 2 at least, jittered 8% at most, every corner shaded alike on all its faces)
+//   with a keel deeper than its top is high;
+// - the tea table: both chairs' seats are the park bench's seat height (measured from town-props' bench)
+//   and clear, the tea set stands on the table and off the sitter's side, and `seats` puts a sitter's hips
+//   0.09 behind each seat's front edge; the telescope's eye end is at the eyepiece's height (0.65 by
+//   default, from the residents' own eye height and hips, measured from createResident) and its tube
+//   looks down; a set of lamps lights one glass mesh with the town's lamps (never batched); an urn says
+//   where its plant goes;
+// - motion: every moving part is on a pivot of its own (keepSeparate) with an entry in ctx.animated,
+//   posed from town time alone: the same pose a period later at a large t, the same pose again when time
+//   stands still (whatever the night), a different one in between, and never out of its range;
+// - the budget: two falls, two clouds, three rocks, a tea set, a telescope, a set of four lamps and two
+//   urns cost at most 14 meshes and 16,000 triangles; the static parts merge into three families (stone,
+//   timber, brass) and each moving part is one mesh; every batched solid shares the bake program;
+// - at night the clouds, the puffs and the falls dim (SKY_NIGHT_DIM) on a material of the kit's own, with
+//   no glow, and nothing else does; by day they are not dimmed; they take no shadow.
+{
+  const G = await load('town-sky-garden'),
+    { createProps } = await load('town-props'),
+    { createNature } = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createBatch } = await load('town-batch'),
+    { createCityMaterials } = await load('city-materials'),
+    { createResident } = await load('city-people'),
+    { palette } = await load('town-shared'),
+    { FALL, CLOUD, ROCK, TEA, TELESCOPE, GARDEN_LAMP, URN, SKY_NIGHT_DIM, SKY_GARDEN_LOOK: LOOK, SKY_GARDEN_FAMILY: FAMILY } = G;
+  const fresh = () => {
+    const library = createCityMaterials(),
+      ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+      kit = createKit(ctx),
+      props = createProps(ctx, kit);
+    return { ctx, props, garden: G.createSkyGarden(ctx, kit, props, createNature(ctx, kit)), batch: createBatch(ctx).batch };
+  };
+  const meshesOf = (g) => {
+      const out = [];
+      g.traverse((o) => o.isMesh && out.push(o));
+      return out;
+    },
+    trisOf = (list) => list.reduce((n, m) => n + (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3, 0),
+    v = new T.Vector3(),
+    fmt = (p) => p.toArray().map((n) => n.toFixed(3)).join(', '),
+    /** HSV saturation of a colour given in sRGB. */
+    sat = (c) => {
+      const max = Math.max(c.r, c.g, c.b);
+      return max ? (max - Math.min(c.r, c.g, c.b)) / max : 0;
+    },
+    srgb = (hex) => new T.Color(hex).convertLinearToSRGB(),
+    luminance = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  /** Each run of joined faces in a mesh (faces sharing a corner): its box in the world and its faces. */
+  const pieces = (m) => {
+    const q = m.geometry.attributes.position,
+      index = m.geometry.index,
+      key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k))),
+      corner = (t, j) => (index ? index.getX(t * 3 + j) : t * 3 + j),
+      faces = (index ? index.count : q.count) / 3;
+    for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let t = 0; t < faces; t++) for (const j of [1, 2]) parent.set(find(key(corner(t, j))), find(key(corner(t, 0))));
+    const out = new Map();
+    for (let t = 0; t < faces; t++) {
+      const r = find(key(corner(t, 0)));
+      if (!out.has(r)) out.set(r, { box: new T.Box3(), faces: 0 });
+      const piece = out.get(r);
+      piece.faces++;
+      for (const j of [0, 1, 2]) piece.box.expandByPoint(v.fromBufferAttribute(q, corner(t, j)).applyMatrix4(m.matrixWorld));
+    }
+    return [...out.values()];
+  };
+  /** Every vertex of a mesh, in the frame of `frame` (the world without one). */
+  const each = (m, visit, frame) => {
+    const q = m.geometry.attributes.position,
+      m4 = frame ? frame.matrixWorld.clone().invert().multiply(m.matrixWorld) : m.matrixWorld;
+    for (let i = 0; i < q.count; i++) visit(v.fromBufferAttribute(q, i).applyMatrix4(m4), i);
+  };
+
+  // The kit's colours, each within its palette family; the clouds' base darker and cooler than their top.
+  for (const [name, colour] of Object.entries(LOOK)) {
+    assert(/^#[0-9a-f]{6}$/.test(colour) && FAMILY[name], `The garden's ${name} is not a colour with a family.`);
+    assert(sat(srgb(colour)) <= sat(srgb(FAMILY[name])) + 1e-3, `The garden's ${name} (${colour}) is louder than its family (${FAMILY[name]}).`);
+  }
+  for (const name of ['cloud', 'cloudBase', 'foam']) assert(sat(srgb(LOOK[name])) <= sat(srgb(palette.white)), `The garden's ${name} is more saturated than the palette's white.`);
+  {
+    const top = srgb(LOOK.cloud),
+      base = srgb(LOOK.cloudBase);
+    assert(luminance(base) < luminance(top) - 0.05 && base.b > base.r && top.r >= top.b, 'The clouds\' base is not darker and cooler than their top.');
+  }
+
+  // Each piece on its own.
+  const { ctx, props, garden } = fresh(),
+    built = {
+      fall: garden.fall(),
+      cloud: garden.cloud({ seed: 3 }),
+      rock: garden.floatingRock({ seed: 2 }),
+      tea: garden.teaTable(),
+      telescope: garden.telescope(),
+      lamps: garden.gardenLamps([{ x: 0, z: 0 }, { x: 2, z: 0 }, { x: 0, z: 2 }, { x: 2, y: 0.3, z: 2 }]),
+      lamp: garden.gardenLamp(),
+      urn: garden.urn(),
+    },
+    moving = new Set(ctx.animated.map((e) => e.object)),
+    paleKinds = new Set(['fabric']);
+  assert.equal(ctx.animated.length, 4, 'The kit\'s moving parts are not the fall\'s still water and its lumps, the cloud and the rock.');
+  for (const [name, g] of Object.entries(built)) {
+    assert(g.isGroup && g.position.lengthSq() === 0 && g.rotation.x === 0 && g.rotation.y === 0 && g.rotation.z === 0 && !g.userData.keepSeparate && !moving.has(g), `The ${name}'s own group is not left for whoever places it.`);
+    g.updateMatrixWorld(true);
+    const list = meshesOf(g);
+    assert(list.length > 0, `The ${name} is empty.`);
+    for (const m of list) {
+      const kind = m.material.userData.surfaceKind,
+        what = `The ${name}'s ${m.name || kind}`,
+        globe = ctx.lamps.includes(m);
+      assert(kind, `${what} has no surface kind.`);
+      assert(m.material.side !== T.DoubleSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest, `${what} is two-sided, transparent or cut out.`);
+      assert(globe || m.material.emissive.getHex() === 0, `${what} glows.`);
+      // On a pivot of its own (moving) or not; nothing moving or pale casts.
+      let pivot = m.parent;
+      while (pivot !== g && !pivot.userData.keepSeparate) pivot = pivot.parent;
+      assert(pivot === g || moving.has(pivot), `${what} is kept apart from the batch but nothing poses it.`);
+      if (pivot !== g || paleKinds.has(kind) || globe) assert(!m.castShadow && m.userData.noShadow, `${what} casts a shadow.`);
+      for (const piece of pieces(m)) {
+        const size = piece.box.getSize(new T.Vector3());
+        assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `A piece of ${what} is ${fmt(size)} at ${fmt(piece.box.getCenter(new T.Vector3()))}.`);
+      }
+      if (globe) continue;
+      // Its colours are on its vertices, in the looks it names.
+      const colour = m.geometry.getAttribute('color'),
+        looks = m.userData.looks,
+        c = new T.Color();
+      assert(m.material.color.getHex() === 0xffffff && colour && looks?.length && looks.every((l) => LOOK[l]), `${what} does not carry the kit's colours on its vertices.`);
+      const limit = Math.max(...looks.map((l) => sat(srgb(LOOK[l]))));
+      for (let i = 0; i < colour.count; i++) assert(sat(c.fromBufferAttribute(colour, i).convertLinearToSRGB()) <= limit + 0.02, `${what} has a vertex louder than its looks (${sat(c).toFixed(3)} over ${limit.toFixed(3)}).`);
+    }
+  }
+  const byName = (g, name) => meshesOf(g).find((m) => m.name === name);
+
+  // The fall.
+  {
+    const F = built.fall.userData.fall,
+      water = byName(built.fall, 'sky-fall-water'),
+      lumps = byName(built.fall, 'sky-fall-lumps'),
+      spout = byName(built.fall, 'sky-fall-spout'),
+      slide = lumps.parent,
+      puffTop = -F.drop + FALL.puffRise,
+      neck = F.head - FALL.pour[1];
+    assert.deepEqual([F.drop, F.width, F.rise], [FALL.drop, FALL.width, 0], 'The fall\'s defaults moved.');
+    assert(FALL.width >= 0.5 && FALL.drop === 4.5 && Math.abs(FALL.puff - 1.3) < 1e-9, 'The fall is under 0.5 wide, or its drop or its puff moved.');
+    assert(water.parent.userData.keepSeparate && slide.userData.keepSeparate && slide.parent === water.parent && spout.parent === built.fall, 'The fall is not its spout, its still water on a pivot and its lumps on one inside it.');
+    // The spout: stone from the pool to past the rim; past the rim only a slab under the water.
+    const stone = new T.Box3().setFromObject(spout);
+    assert(spout.material.userData.surfaceKind === 'stone' && spout.castShadow && spout.userData.band, 'The spout is not a casting stone band.');
+    assert(Math.abs(stone.max.z - FALL.nose) < 1e-6 && stone.min.z < F.pool.z - F.pool.r && stone.min.y >= -FALL.foot - 1e-6 && Math.abs(stone.max.y - FALL.kerb.height) < 1e-6, `The spout runs from z ${stone.min.z.toFixed(2)} to ${stone.max.z.toFixed(2)} and y ${stone.min.y.toFixed(2)} to ${stone.max.y.toFixed(2)}.`);
+    each(spout, (p) => assert(p.z < 0.03 || p.y > -0.04, `The spout hangs below the deck's top past the rim at ${fmt(p)}.`));
+    // The sheet, from under the neck to the puff: 0.5 wide or more, softly rounded.
+    const rows = new Map();
+    each(water, (p) => {
+      if (p.y > neck + 1e-6 || p.y < puffTop + 0.2) return;
+      const k = p.y.toFixed(3),
+        row = rows.get(k) ?? rows.set(k, new T.Box3()).get(k);
+      row.expandByPoint(p);
+    });
+    assert(rows.size >= 3, `The sheet has ${rows.size} rows between its neck and the puff.`);
+    for (const [y, row] of rows) {
+      const size = row.getSize(new T.Vector3());
+      assert(size.x >= 0.5 && size.x >= F.width - 0.03 && size.z >= 0.4 && Math.abs(row.getCenter(new T.Vector3()).z - F.out) < 1e-6, `The sheet is ${size.x.toFixed(3)} wide and ${size.z.toFixed(3)} deep at y ${y}.`);
+    }
+    // The puff: about 1.3 in radius round the sheet's line, flat underneath; the sheet's foot ends inside it.
+    let reach = 0,
+      low = Infinity,
+      top = -Infinity;
+    each(water, (p) => {
+      low = Math.min(low, p.y);
+      if (p.y < puffTop - 0.3) reach = Math.max(reach, Math.hypot(p.x, p.z - F.out));
+      if (p.y < puffTop + 0.05 && Math.hypot(p.x, p.z - F.out) < 0.2) top = Math.max(top, p.y);
+    });
+    assert(reach > 1.1 && reach < 1.45 && Math.abs(low + F.drop + FALL.puffSink) < 0.03 && Math.abs(top - puffTop) < 0.06, `The puff reaches ${reach.toFixed(2)} out, ${(-F.drop - low).toFixed(2)} down and ${(top + F.drop).toFixed(2)} up.`);
+    const foot = G.fallSection(F, F.head + F.drop + 0.25);
+    assert(Math.hypot(foot.a, 0.25 + FALL.core.y) < FALL.core.r && low > -F.drop - 1, 'The sheet\'s foot is not inside the puff\'s core, or water falls on toward the sea.');
+    // The lumps: `count` clusters alike, a spacing apart; the loop's ends are hidden.
+    const oval = (p, grow = 0) => {
+      const s = G.fallSection(F, F.head - p.y);
+      return Math.abs(p.x / (s.a + grow)) ** G.FALL_OVAL + Math.abs(p.z / (s.b + grow)) ** G.FALL_OVAL;
+    };
+    assert.equal(pieces(lumps).length, F.count * G.FALL_LUMPS.length, 'The lumps are not the layout\'s clusters.');
+    assert(F.count >= 3 && Math.abs(F.spacing - FALL.pitch) < 0.2 && slide.position.x === 0 && Math.abs(slide.position.z - F.out) < 1e-9, `The fall has ${F.count} clusters ${F.spacing.toFixed(2)} apart, or its lumps are off its line.`);
+    const cluster = (y) => Math.round((F.first - y + (F.over - F.under) / 2) / F.spacing),
+      seen = new Set();
+    each(lumps, (p) => {
+      const k = cluster(p.y);
+      seen.add(k);
+      // At the loop's start the first cluster is inside the pour's straight part.
+      if (k === 0) assert(p.y < F.head + 1e-6 && p.y > F.head - FALL.pour[0] - 1e-6 && oval(p, -0.005) < 1, `A lump of the first cluster shows at the loop's start at ${fmt(p)}.`);
+      // At its end the last one is inside the puff's core.
+      if (k === F.count - 1) assert(Math.hypot(p.x, p.y - F.spacing + F.drop - FALL.core.y, p.z) < FALL.core.r - 0.02, `A lump of the last cluster shows at the loop's end at ${fmt(p)}.`);
+    }, slide);
+    assert.equal(seen.size, F.count, 'The lumps are not sorted into the layout\'s clusters.');
+    // Time 0: the phase is mid-loop, and two clusters or more show on the fall between the lip and the puff.
+    const show = new Set();
+    built.fall.updateMatrixWorld(true);
+    assert(G.fallPhase(0) > 0.15 && G.fallPhase(0) < 0.85 && Math.abs(slide.position.y + G.fallPhase(0) * F.spacing) < 1e-9, 'The fall\'s frozen frame is at an end of its loop.');
+    each(lumps, (p) => {
+      if (p.y > puffTop + 0.05 && p.y < F.head && oval({ x: p.x, y: p.y, z: p.z - F.out }, 0.02) > 1) show.add(cluster(p.y + G.fallPhase(0) * F.spacing));
+    }, built.fall);
+    assert(show.size >= 2, `Only ${show.size} clusters of lumps show mid-fall in the frozen frame.`);
+    // A fall on a domed deck: its water lies level, `rise` higher, and still ends `drop` under the rim.
+    const { garden: other } = fresh(),
+      raised = other.fall({ rise: 0.25, width: 0.7, drop: 5 }),
+      R = raised.userData.fall;
+    raised.updateMatrixWorld(true);
+    const all = new T.Box3().setFromObject(raised);
+    assert(Math.abs(all.max.y - 0.25 - FALL.kerb.height) < 1e-6 && Math.abs(all.min.y + 5 + FALL.puffSink) < 0.03 && Math.abs(R.level - 0.25 - FALL.level) < 1e-9, 'A raised fall\'s water is not level over its pool, or its puff is off its drop.');
+    assert(new T.Box3().setFromObject(byName(raised, 'sky-fall-spout')).min.y >= -FALL.foot - 1e-6, 'A raised fall\'s spout hangs below its foot.');
+  }
+
+  // The cloud: a flat base at y 0, its size, its base's paint darker and cooler than its top's.
+  {
+    const body = byName(built.cloud, 'sky-cloud-body'),
+      drift = body.parent,
+      box = new T.Box3(),
+      n = body.geometry.getAttribute('normal'),
+      colour = body.geometry.getAttribute('color'),
+      under = new T.Color(0, 0, 0),
+      over = new T.Color(0, 0, 0),
+      c = new T.Color();
+    let unders = 0,
+      overs = 0;
+    each(body, (p, i) => {
+      box.expandByPoint(p);
+      c.fromBufferAttribute(colour, i);
+      if (n.getY(i) < -0.6) {
+        unders++;
+        under.add(c);
+      } else if (n.getY(i) > 0.8 && p.y > 0.6) {
+        overs++;
+        over.add(c);
+      }
+    }, drift);
+    const size = box.getSize(new T.Vector3());
+    assert(Math.abs(box.min.y) < 0.02 && size.x > 3 && size.x < 3.9 && size.y > 1.1 && size.y < 1.5 && size.z > 1.5 && size.z < 2.3, `The cloud is ${fmt(size)} over a base at ${box.min.y.toFixed(3)}.`);
+    assert(unders > 20 && overs > 20, 'The cloud has no base or no top.');
+    under.multiplyScalar(1 / unders).convertLinearToSRGB();
+    over.multiplyScalar(1 / overs).convertLinearToSRGB();
+    assert(luminance(under) < luminance(over) - 0.06 && under.b > under.r, 'The cloud\'s base is not painted darker and cooler than its top.');
+    // Half the size, half the cloud, for the same triangles (its grid follows its size).
+    const { garden: other } = fresh(),
+      small = byName(other.cloud({ seed: 3, size: 0.5 }), 'sky-cloud-body');
+    small.geometry.computeBoundingBox();
+    assert(Math.abs(small.geometry.boundingBox.getSize(new T.Vector3()).x - size.x / 2) < 0.05 && Math.abs(trisOf([small]) - trisOf([body])) < 80, 'A cloud half the size is not half the cloud for the same triangles.');
+  }
+
+  // The rock: the armour's smooth boulder with a keel, turf on top.
+  {
+    const body = byName(built.rock, 'sky-rock-body'),
+      bob = body.parent,
+      stone = pieces(body).sort((a, b) => b.faces - a.faces)[0],
+      box = new T.Box3(),
+      q = body.geometry.attributes.position,
+      n = body.geometry.attributes.normal,
+      normals = new Map();
+    assert(ROCK.detail >= 2 && ROCK.jitter <= 0.08 && stone.faces === 20 * (ROCK.detail + 1) ** 2, `The rock is not one smooth icosahedron of detail ${ROCK.detail} (${stone.faces} faces).`);
+    // Smooth: wherever faces of the stone meet they share one normal, and it is a unit one.
+    for (let i = 0; i < stone.faces * 3; i++) {
+      const k = [q.getX(i), q.getY(i), q.getZ(i)].map((x) => x.toFixed(4)).join(','),
+        own = new T.Vector3().fromBufferAttribute(n, i),
+        first = normals.get(k) ?? normals.set(k, own).get(k);
+      assert(Math.abs(own.length() - 1) < 1e-4 && own.distanceTo(first) < 1e-4, 'The rock is faceted: a corner has a normal a face.');
+    }
+    each(body, (p) => box.expandByPoint(p), bob);
+    const size = 0.6;
+    assert(box.max.x - box.min.x > 1.6 * size && box.max.x - box.min.x < 2.6 * size && box.max.y > 0.6 * size && box.max.y < 1.1 * size && -box.min.y > 1.2 * size && -box.min.y > box.max.y * 1.4, `The rock spans ${fmt(box.min)} to ${fmt(box.max)}: no keel.`);
+    assert(built.rock.userData.period > 0 && ROCK.periods.includes(built.rock.userData.period), 'The rock does not say its period.');
+  }
+
+  // The tea table: the bench's seat height, clear seats, the tea set on the table.
+  {
+    const stage = new T.Group(),
+      bench = props.bench(stage, 0, 0, 0);
+    stage.updateMatrixWorld(true);
+    // The park bench's seat: its three level slats' top.
+    const slats = meshesOf(bench).filter((m) => m.material.userData.surfaceKind === 'wood').flatMap(pieces).filter((p) => p.box.max.y - p.box.min.y < 0.08),
+      seat = Math.max(...slats.map((p) => p.box.max.y));
+    assert(slats.length === 3 && Math.abs(seat - TEA.seat) < 1e-6, `The chairs' seat height (${TEA.seat}) is not the park bench's (${seat.toFixed(3)}, over ${slats.length} slats).`);
+    const timber = byName(built.tea, 'sky-tea-timber'),
+      top = byName(built.tea, 'sky-tea-top'),
+      china = byName(built.tea, 'sky-tea-china'),
+      front = TEA.radius + TEA.gap,
+      seats = pieces(timber).filter((p) => Math.abs(p.box.max.y - TEA.seat) < 1e-6 && p.box.max.y - p.box.min.y < 0.1);
+    assert(seats.length === 2 && [timber, top].every((m) => m.material.userData.surfaceKind === 'wood' && m.castShadow) && !top.userData.band && timber.userData.band, 'The tea table is not two seats and a top (an overhang) in casting timber.');
+    seats.sort((a, b) => a.box.min.x - b.box.min.x);
+    seats.forEach((s, k) => {
+      const side = k ? 1 : -1,
+        size = s.box.getSize(new T.Vector3());
+      assert(Math.abs(side * (k ? s.box.min.x : s.box.max.x) - front) < 1e-6 && Math.abs(size.x - TEA.chair.d) < 1e-6 && Math.abs(size.z - TEA.chair.w) < 1e-6, `A chair's seat is ${fmt(size)} from x ${s.box.min.x.toFixed(3)} to ${s.box.max.x.toFixed(3)}.`);
+      // Clear: nothing over the seat (a hand in from its edges) up to a sitter's shoulders but its own back.
+      for (const m of [timber, top, china]) each(m, (p) => assert(!(p.x > s.box.min.x + 0.11 && p.x < s.box.max.x + 0.02 * side && side * p.x > front - 0.02 && Math.abs(p.z) < TEA.chair.w / 2 - 0.05 && p.y > TEA.seat + 0.005 && p.y < 0.95) || side * p.x > front + TEA.chair.d - 0.12, `Something sits on a chair's seat at ${fmt(p)}.`));
+      const sitter = built.tea.userData.seats[k];
+      assert(Math.abs(side * sitter.x - front - TEA.setback) < 1e-9 && sitter.z === 0 && Math.abs(Math.sin(sitter.heading) + side) < 1e-9, 'A sitter is not put 0.09 behind the seat\'s front edge, facing the table.');
+    });
+    const table = new T.Box3().setFromObject(top),
+      set = new T.Box3().setFromObject(china);
+    assert(Math.abs(table.max.y - TEA.top) < 1e-6 && Math.abs(table.max.x - TEA.radius) < 1e-6 && TEA.top - TEA.seat > 0.18 && TEA.top - TEA.seat < 0.3, 'The table\'s top moved.');
+    assert(Math.abs(set.min.y - TEA.top) < 1e-6 && set.max.y < TEA.top + 0.25 && pieces(china).length >= 5, 'The tea set does not stand on the table: a pot with its spout and handle, a cup, a stand and scones.');
+    each(china, (p) => assert(Math.hypot(p.x, p.z) < TEA.radius - 0.05 && p.x > -0.3, `The tea set overhangs the table or crowds the sitter's side at ${fmt(p)}.`));
+    // The top is the pedestal's overhang; everything stands on y 0.
+    assert(Math.abs(new T.Box3().setFromObject(built.tea).min.y) < 1e-6, 'The tea table does not stand on y 0.');
+  }
+
+  // The telescope: its eye end at the eyepiece's height, the default from the residents' eyes and hips.
+  {
+    const resident = createResident(0, ctx.material),
+      face = resident.getObjectByName('body').children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'paint'),
+      colour = face.geometry.getAttribute('color'),
+      q = face.geometry.getAttribute('position'),
+      c = new T.Color();
+    let eye = 0,
+      eyes = 0;
+    // The eyes are the face's darkest paint.
+    for (let i = 0; i < q.count; i++)
+      if (luminance(c.fromBufferAttribute(colour, i)) < 0.03) {
+        eyes++;
+        eye += q.getY(i);
+      }
+    eye /= eyes;
+    assert(eyes > 20 && Math.abs(eye - TELESCOPE.eye) < 0.005 && Math.abs(resident.getObjectByName('leg-left').position.y - TELESCOPE.hip) < 1e-9, `The telescope's eye height (${TELESCOPE.eye}) and hips (${TELESCOPE.hip}) are not the residents' (${eye.toFixed(3)}).`);
+    const E = G.telescopeEyepiece();
+    assert(Math.abs(E.height - 0.6515) < 1e-3 && E.height < TELESCOPE.eye && E.standOff > 0.3 && E.standOff < 0.45, `A stooped resident's eyepiece is ${E.height.toFixed(4)} up and ${E.standOff.toFixed(3)} out.`);
+    const { garden: other } = fresh();
+    for (const [scope, height] of [[built.telescope, 0.65], [other.telescope({ eyepiece: 0.72 }), 0.72]]) {
+      scope.updateMatrixWorld(true);
+      const brass = byName(scope, 'sky-telescope-brass'),
+        tripod = byName(scope, 'sky-telescope-tripod'),
+        end = new T.Vector3(...scope.userData.eyepiece),
+        gaze = new T.Vector3(0, -Math.sin(TELESCOPE.tilt), Math.cos(TELESCOPE.tilt));
+      assert(Math.abs(end.y - height) < 1e-9 && end.x === 0 && Math.abs(scope.userData.stand[2] - end.z + E.standOff) < 1e-9, `The telescope's eyepiece is ${end.y} up, not ${height}.`);
+      let near = Infinity,
+        far = -Infinity,
+        rim = 0;
+      each(brass, (p) => {
+        const along = p.clone().sub(end).dot(gaze),
+          off = p.clone().sub(end).addScaledVector(gaze, -along).length();
+        if (off > TELESCOPE.hood + 0.01) return; // the mount and the shoes
+        near = Math.min(near, along);
+        far = Math.max(far, along);
+        if (along < 0.02) rim = Math.max(rim, off);
+      });
+      assert(Math.abs(near) < 1e-6 && Math.abs(far - TELESCOPE.length) < 1e-6 && Math.abs(rim - TELESCOPE.barrel) < 1e-6, `The tube runs from ${near.toFixed(3)} to ${far.toFixed(3)} along the line of sight, ${rim.toFixed(3)} in radius at its eye end.`);
+      const feet = new T.Box3().setFromObject(tripod);
+      assert(brass.material.userData.surfaceKind === 'brass' && tripod.material.userData.surfaceKind === 'wood' && feet.min.y < -0.02 && feet.min.y > -0.06 && feet.max.y < end.y, 'The telescope is not brass on a timber tripod that stands in the ground under its tube.');
+      each(tripod, (p) => assert(Math.hypot(p.x, p.z) < TELESCOPE.spread + 0.08, `The tripod straddles further than its spread at ${fmt(p)}.`));
+    }
+  }
+
+  // The lamps: one glass mesh a set, the lamps' own glass, lit with the town's and never batched.
+  {
+    const globes = byName(built.lamps, 'sky-lamp-globes'),
+      single = byName(built.lamp, 'sky-lamp-globes');
+    assert(ctx.lamps.length === 2 && ctx.lamps[0] === globes && ctx.lamps[1] === single && globes.material === single.material, 'A set of garden lamps does not light one glass mesh, or the sets do not share their glass.');
+    assert(globes.material.isMeshStandardMaterial && globes.material.emissive.getHex() === new T.Color(palette.lantern).getHex() && globes.material.userData.surfaceKind === 'glass', 'The garden lamps\' glass is not the lamps\' own.');
+    const balls = pieces(globes);
+    assert.equal(balls.length, 4, 'A set of four lamps has not four globes.');
+    [[0, 0, 0], [2, 0, 0], [0, 0, 2], [2, 0.3, 2]].forEach(([x, y, z]) => {
+      const ball = balls.find((b) => b.box.getCenter(new T.Vector3()).distanceTo(new T.Vector3(x, y + GARDEN_LAMP.height - GARDEN_LAMP.globe, z)) < 0.02);
+      assert(ball && Math.abs(ball.box.max.y - y - GARDEN_LAMP.height) < 0.005 && Math.abs(ball.box.max.x - ball.box.min.x - 2 * GARDEN_LAMP.globe) < 0.02, `No globe stands on the lamp at ${x}, ${y}, ${z}.`);
+    });
+    const piers = byName(built.lamp, 'sky-lamp-piers'),
+      pier = new T.Box3().setFromObject(piers);
+    assert(piers.material.userData.surfaceKind === 'stone' && byName(built.lamp, 'sky-lamp-cups').material.userData.surfaceKind === 'brass' && Math.abs(pier.max.y - GARDEN_LAMP.cap) < 1e-6 && Math.abs(pier.min.y + 0.04) < 1e-6 && GARDEN_LAMP.height < 0.9, 'A garden lamp is not a short stone pier under a brass cup.');
+  }
+
+  // The urn: its plant's place; planted, the nature kit's ball sits in its bowl.
+  {
+    const box = new T.Box3().setFromObject(built.urn),
+      { garden: other } = fresh(),
+      planted = other.urn({ planted: true });
+    planted.updateMatrixWorld(true);
+    const ball = meshesOf(planted).find((m) => m.material.userData.surfaceKind === 'foliage'),
+      leaves = ball && new T.Box3().setFromObject(ball);
+    assert(Math.abs(box.max.y - URN.height) < 1e-6 && Math.abs(box.max.x - box.min.x - 0.67) < 0.01 && Math.abs(box.min.y + 0.05) < 1e-6 && built.urn.userData.plant.y === URN.plant.y && built.urn.userData.plant.r === URN.plant.r, 'The urn moved, or does not say where its plant goes.');
+    assert(meshesOf(built.urn).length === 1 && ball && leaves.min.y > URN.plant.y - 0.12 && leaves.min.y < URN.height && leaves.max.y > URN.height + 0.3 && Math.abs(leaves.getCenter(new T.Vector3()).x) < 0.03, 'A planted urn\'s ball does not sit in its bowl.');
+  }
+
+  // Motion, from town time alone.
+  {
+    const pose = (o) => [...o.position.toArray(), ...o.quaternion.toArray(), ...o.scale.toArray()],
+      same = (a, b) => a.every((n, i) => Math.abs(n - b[i]) < 1e-6),
+      T0 = 3 * 86400 + 1234.5,
+      F = built.fall.userData.fall,
+      entries = [
+        [built.fall.getObjectByName('sky-fall-still'), 0, () => true],
+        [built.fall.getObjectByName('sky-fall-moving'), FALL.period, (o) => o.position.y <= 1e-9 && o.position.y > -F.spacing - 1e-9],
+        [built.cloud.getObjectByName('sky-cloud-drift'), CLOUD.period, (o) => Math.abs(o.position.x) <= CLOUD.drift + 1e-9 && Math.abs(o.position.y) <= CLOUD.bob + 1e-9 && o.position.z === 0],
+        [built.rock.getObjectByName('sky-rock-bob'), built.rock.userData.period, (o) => Math.abs(o.position.y) <= ROCK.bob * 0.6 + 1e-9 && o.position.x === 0 && o.position.z === 0 && Math.abs(o.rotation.x) <= ROCK.rock + 1e-9],
+      ];
+    for (const [object, period, inRange] of entries) {
+      const entry = ctx.animated.find((e) => e.object === object);
+      assert(entry && object.userData.keepSeparate, 'A moving part of the garden has no pivot of its own or no entry in the town\'s animated list.');
+      // The pose it was built in is time 0's.
+      const builtAs = pose(object);
+      entry.update(0, 0, 0);
+      assert(same(builtAs, pose(object)), `${object.name} is not built in its pose at time 0.`);
+      for (const t of [0, 7.3, T0]) {
+        entry.update(t, 0, 0);
+        const at = pose(object);
+        assert(at.every(Number.isFinite) && inRange(object), `${object.name} leaves its range at t ${t}.`);
+        entry.update(t, 0, 0);
+        assert(same(at, pose(object)), `${object.name} moves while time stands still.`);
+        entry.update(t, 1, 1);
+        assert(same(at, pose(object)), `${object.name} moves with the night or the rain.`);
+        if (!period) continue;
+        entry.update(t + period, 0, 0);
+        assert(same(at, pose(object)), `${object.name} is not back where it was a period (${period} s) later, at t ${t}.`);
+        entry.update(t + period * 0.37, 0, 0);
+        assert(!same(at, pose(object)), `${object.name} does not move.`);
+      }
+      entry.update(0, 0, 0);
+    }
+  }
+
+  // The budget, batched as the island will batch it: static parts with the deck as their floor, moving
+  // parts one by one.
+  {
+    const { ctx, garden, batch } = fresh(),
+      deck = 10.472,
+      root = new T.Group(),
+      begin = performance.now();
+    root.position.set(-52, deck, -24);
+    root.rotation.y = 0.4;
+    const put = (g, x, y, z, ry = 0) => {
+      g.position.set(x, y, z);
+      g.rotation.y = ry;
+      root.add(g);
+      return g;
+    };
+    const pale = [put(garden.fall({ seed: 1 }), 6, 0, 0, Math.PI / 2), put(garden.fall({ seed: 2 }), -6, 0, 0, -Math.PI / 2), put(garden.cloud({ seed: 1 }), 9, 1, 3), put(garden.cloud({ seed: 2, size: 0.8 }), -9, 2, -3)];
+    for (const k of [1, 2, 3]) put(garden.floatingRock({ seed: k, size: 0.4 + 0.15 * k }), 8, -3, k * 2);
+    put(garden.teaTable(), 0, 0, 3);
+    put(garden.telescope(), 4, 0, 3);
+    const lampSet = put(garden.gardenLamps([{ x: -2, z: 4 }, { x: 2, z: 4 }, { x: -2, z: 5 }, { x: 2, z: 5 }]), 0, 0, 0);
+    put(garden.urn(), -3, 0, 2);
+    put(garden.urn(), 3, 0, 2);
+    root.updateMatrixWorld(true);
+    const built = performance.now() - begin,
+      globes = ctx.lamps[0];
+    batch(root, { floor: () => deck });
+    for (const entry of ctx.animated) batch(entry.object, { contact: 'none' });
+    root.updateMatrixWorld(true);
+    const all = meshesOf(root),
+      still = all.filter((m) => m.parent === root),
+      movers = ctx.animated.map((e) => e.object);
+    assert(all.length <= 14 && trisOf(all) <= 16000, `The garden costs ${all.length} meshes and ${trisOf(all)} triangles.`);
+    assert(built < 300, `The garden takes ${Math.round(built)} ms to build.`);
+    assert.deepEqual(still.map((m) => `${m.material.userData.surfaceKind}|${m.castShadow}`).sort(), ['brass|false', 'stone|true', 'wood|true'], 'The garden\'s static parts do not merge into casting stone and timber and brass that casts nothing.');
+    assert(movers.length === 9 && movers.every((o) => o.children.filter((c) => c.isMesh).length === 1), 'A moving part of the garden is not one mesh.');
+    assert(ctx.lamps.length === 1 && globes.parent === lampSet && all.includes(globes) && !globes.material.vertexColors, 'The lamps\' globes were batched, or are not one mesh.');
+    const solids = all.filter((m) => m !== globes);
+    for (const m of solids) {
+      assert(m.material.vertexColors && m.material.customProgramCacheKey() === 'lius-bake-solid', `The garden's ${m.material.name} batch is not on the solids' one program.`);
+      assert(m.material.side !== T.DoubleSide && !m.material.transparent && !patchedShader(m.material).fragmentShader.includes('discard'), `The garden's ${m.material.name} batch is two-sided, transparent or cuts holes.`);
+    }
+    // Night: the pale parts dim on the kit's own copy of their material, with no glow; nothing else does.
+    const paleMeshes = pale.flatMap((g) => meshesOf(g)).filter((m) => m.material.userData.surfaceKind === 'fabric'),
+      rest = solids.filter((m) => !paleMeshes.includes(m)),
+      shared = new Set(rest.map((m) => m.material));
+    assert(SKY_NIGHT_DIM >= 0.3 && SKY_NIGHT_DIM < 1 && paleMeshes.length === 6, `The clouds hardly darken at night, or the pale parts are ${paleMeshes.length} meshes, not the falls' four and the clouds' two.`);
+    for (const entry of ctx.animated) entry.update(5, 1, 0);
+    assert.equal(new Set(paleMeshes.map((m) => m.material)).size, 1, 'The pale parts do not share one material of the kit\'s own.');
+    for (const m of paleMeshes) {
+      assert(!shared.has(m.material) && m.material.customProgramCacheKey() === 'lius-bake-solid', 'The clouds dim a material the town shares, or leave the solids\' program.');
+      assert(Math.abs(m.material.color.r - (1 - SKY_NIGHT_DIM)) < 1e-6 && m.material.color.r === m.material.color.b && m.material.emissive.getHex() === 0 && !m.receiveShadow && !m.castShadow, 'A cloud, a puff or a fall stays bright (or glows) at night, or takes a shadow.');
+    }
+    for (const m of rest) assert.equal(m.material.color.getHex(), 0xffffff, 'Something of the garden that is not pale dims at night.');
+    for (const entry of ctx.animated) entry.update(5, 0, 0);
+    for (const m of paleMeshes) assert.equal(m.material.color.getHex(), 0xffffff, 'The clouds are dimmed by day.');
+  }
+}
 // The street and pier lamps (town-props' lamp), Glasgow cast-iron lamp standards, built alone: one
 // stands within the old 0.34 plinth square (every clearance in the plan assumes it), reaches no
 // further than 0.32 from its axis and stands under 2.5. Its one lantern glass, the lamps entry the
