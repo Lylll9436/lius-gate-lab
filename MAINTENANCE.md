@@ -14,7 +14,7 @@
 | order | 同一集合内的排序 |
 | sections | 可增删的标题与正文段落 |
 | properties | 可扩展的属性：唯一 key，加上双语 label 与 value |
-| links | 双语链接标题和 HTTPS / mailto 地址；站外链接都在新标签页打开，并带 `rel="noopener noreferrer"`（新页面不能回指本页，也不带上本页地址；`check-content` 检查代码和渲染结果） |
+| links | 双语链接标题和 HTTPS / mailto 地址；HTTPS 地址要能被浏览器原样解析（端口写错、主机名里有不该有的字符都会被拒绝），主机名前也不能带用户名或密码（`https://urban-ai.uk@example.org/` 实际去的是 example.org），见 `app/content-schema.ts` 的 `safeLink`；站外链接都在新标签页打开，并带 `rel="noopener noreferrer"`（新页面不能回指本页，也不带上本页地址；`check-content` 检查代码和渲染结果） |
 
 - 人员额外字段：`role`、`affiliation`、`photo`、`buildingId`，离开时再加 `departure`（见下面「成员离开」）。照片放在 `public/people/`，`photo` 填 `/people/文件名.jpg`，无照片用 `null`（页面显示姓名首字母的方块，颜色取自住所）。`buildingId` 只能是 `pengyuan-liu`、`yunlong-liu`、`qin-li` 三户之一（每户一人；加了 `departure` 的人保留原来的 `buildingId`，但不再占这一户）、`visiting-phd`（访问博士公寓，可住多人）或 `null`；为 `null` 时人员仍出现在成员章节，在小城中定位到联排住宅。
 - 新增访问博士生：在 `content/lab.json` 的 `people` 里加一条记录，`buildingId` 填 `visiting-phd`，`role` 填 `{"en": "VISITING PHD RESEARCHER", "zh": "访问博士生"}`（`check-content` 只允许导师和住在公寓里的访问博士生与「PHD RESEARCHER / 博士生」不同），`affiliation` 写所在大学，照片放在 `public/people/`（4:5 竖版，800 × 1000 像素或更大，人物居中），`photo` 填 `/people/文件名.jpg`。不用改模型或代码：成员章节按 `order` 列出这张卡片，章节镜头本来就框住公寓，公寓屋顶上的名字标签写出所有住户（英文取名、中文全名，多人用「 · 」或「、」隔开），悬停卡片描边公寓；小城视图里点公寓打开它自己的资料，列出每位住户的卡片（没人住时是一段写给访客的说明）。访问结束时不要把记录改成 `draft` 或删除（欢迎活动等已发布的记录还提到这个人，校验会拒绝），而是按下一条加上 `departure`：从那天起，公寓的名字标签和资料不再列出这位访问者，出发屏把这一行显示为「已返程 / Returned」。

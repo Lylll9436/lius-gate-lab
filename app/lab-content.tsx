@@ -497,8 +497,17 @@ function RecordLink({
   );
 }
 
-/** A link's host as a visitor reads it, from the address itself: urban-ai.uk. */
-const siteHost = (url: string) => new URL(url).hostname.replace(/^www\./, '');
+/**
+ * A link's host as a visitor reads it, from the address itself: urban-ai.uk. Null if the address
+ * does not parse (safeLink refuses such an address; the button then shows its label alone).
+ */
+const siteHost = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * The way out to a neighbour's group's website: the main link off the sky island's file and the
@@ -516,7 +525,8 @@ function GroupSiteLink({
   withHost?: boolean;
 }) {
   const label = site.label[locale],
-    host = siteHost(site.url);
+    host = siteHost(site.url),
+    named = host ? (locale === 'zh' ? `${label}：${host}` : `${label}: ${host}`) : label;
   return (
     <a
       className="button-primary site-link"
@@ -525,11 +535,11 @@ function GroupSiteLink({
       rel="noopener noreferrer"
       aria-label={
         locale === 'zh'
-          ? `${label}：${host}，在新标签页打开`
-          : `${label}: ${host}, opens in a new tab`
+          ? `${named}，在新标签页打开`
+          : `${named}, opens in a new tab`
       }
     >
-      {withHost ? `${label} · ${host}` : label}
+      {withHost && host ? `${label} · ${host}` : label}
       <ArrowUpRight size={15} aria-hidden="true" />
     </a>
   );

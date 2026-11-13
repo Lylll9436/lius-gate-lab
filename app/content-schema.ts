@@ -198,10 +198,28 @@ const localized = (v: unknown) =>
   typeof v.zh === 'string' &&
   !!v.zh.trim() &&
   !chinese.test(v.en);
-export const safeLink = (v: unknown) =>
-  typeof v === 'string' &&
-  (/^https:\/\/[^/\s]+(?:[/?#][^\s]*)?$/.test(v) ||
-    /^mailto:[^\s@]+@[^\s@]+$/.test(v));
+/**
+ * A link the site may open: a mailto address, or an HTTPS address written plainly that a browser
+ * parses as written (the WHATWG URL parser, as the page's own `new URL`), with a host and no user
+ * name or password before it: https://urban-ai.uk@example.org/ goes to example.org, and a bad port
+ * such as https://urban-ai.uk:8o80/ does not parse at all.
+ */
+export const safeLink = (v: unknown) => {
+  if (typeof v !== 'string') return false;
+  if (/^mailto:[^\s@]+@[^\s@]+$/.test(v)) return true;
+  if (!/^https:\/\/[^/?#\s@]+(?:[/?#]\S*)?$/.test(v)) return false;
+  try {
+    const url = new URL(v);
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !!url.hostname
+    );
+  } catch {
+    return false;
+  }
+};
 const asset = (v: unknown) =>
   v === null ||
   (typeof v === 'string' &&

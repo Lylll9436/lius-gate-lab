@@ -14,6 +14,7 @@ import {
   migrateCatalog,
   buildingIds,
   neighbourPlaces,
+  safeLink,
 } from '../app/content-schema.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work/content-check');
@@ -36,6 +37,29 @@ for (const en of ['Urban Studies，University of Glasgow', 'Spatial statistics�
     ['people[0].summary: supply en and zh (English must contain no Chinese).'],
     'English text with Chinese in it passes: ' + en,
   );
+// A link is a mailto address, or an HTTPS address written plainly that parses as a browser parses
+// it, with a host and no user name or password before it. One a browser cannot parse (a bad port, a
+// host it refuses) would throw where the page reads its host (the UIA button names it), and a user
+// name before the host sends the visitor to the host after it.
+for (const [url, ok] of [
+  ['https://urban-ai.uk/', true],
+  ['https://www.gla.ac.uk/schools/socialpolitical/staff/alisonheppenstall/', true],
+  ['https://example.org:8443/a?q=a@b#c', true],
+  ['https://example.org?q=a@b', true],
+  ['mailto:someone@example.org', true],
+  ['https://urban-ai.uk:8o80/', false],
+  ['https://urban-ai.uk:99999/', false],
+  ['https://urban-ai.uk]/', false],
+  ['https://urban-ai.uk^/', false],
+  ['https://urban-ai.uk%2F/', false],
+  ['https://urban-ai.uk@example.org/', false],
+  ['https://user:secret@example.org/', false],
+  ['https:///example.org/', false],
+  ['https://exa mple.org/', false],
+  ['http://urban-ai.uk/', false],
+  ['javascript:alert(1)', false],
+])
+  assert.equal(safeLink(url), ok, (ok ? 'A sound link is refused: ' : 'A link a browser would not open as written passes: ') + url);
 const text = (en) => ({ en, zh: '测试内容' });
 // Who is still at the Gate depends on the day: people leave on their departure's UTC day, the day
 // Gate's News counts by. Every helper that decides it takes that day, and these checks pass fixed
@@ -438,6 +462,13 @@ for (const [why, edit, message] of [
   ['UIA’s website not on HTTPS', (n) => (n.group.site.url = 'http://urban-ai.uk/'), herAt + '.group.site.url must be an HTTPS address.'],
   ['an email link', (n) => (n.links[0].url = 'mailto:someone@example.org'), herAt + '.links[0].url must be an HTTPS address.'],
   ['a script link', (n) => (n.group.site.url = 'javascript:alert(1)'), herAt + '.group.site.url must be an HTTPS address.'],
+  // An address a browser cannot parse, or one it would take elsewhere.
+  ['a bad port', (n) => (n.group.site.url = 'https://urban-ai.uk:8o80/'), herAt + '.group.site.url must be an HTTPS address.'],
+  [
+    'a user name before the host',
+    (n) => (n.links[0].url = 'https://www.gla.ac.uk@example.org/schools/socialpolitical/staff/alisonheppenstall/'),
+    herAt + '.links[0].url must be an HTTPS address.',
+  ],
   ['an unknown key in the group', (n) => (n.group.website = 'https://urban-ai.uk/'), herAt + '.group: unknown field "website".'],
   ['an unknown key in the website', (n) => (n.group.site.note = text('Opens in a new tab')), herAt + '.group.site: unknown field "note".'],
   ['an unknown key in a section', (n) => (n.sections[0].image = null), herAt + '.sections[0]: unknown field "image".'],
