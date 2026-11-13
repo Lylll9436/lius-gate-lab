@@ -189,6 +189,18 @@ export function contentForBuilding(id: BuildingId, today: Date = pageDay) {
   return resident ? personContentId(resident) : 'place:' + id;
 }
 /**
+ * Where a place picked on the model goes, picked in `mode`: the mode to open (modeForPick: the
+ * mode it was picked in, but the sky island opens its City file from the reading page too) and
+ * the address its place opens (contentForBuilding). The page sends every pick through it.
+ */
+export function pickRoute(
+  mode: BrowseMode,
+  id: BuildingId,
+): [BrowseMode, ContentId] {
+  const content = contentForBuilding(id);
+  return [modeForPick(mode, content), content];
+}
+/**
  * The City tour on `today` (the page's day unless given): every place in the Directory's order,
  * ending in the corner park.
  */

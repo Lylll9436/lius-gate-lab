@@ -6,7 +6,7 @@ import {
   ADDRESS_EVENT,
   chapterFor,
   facingChapter,
-  modeForPick,
+  pickRoute,
   readingChapter,
   readingContent,
   parseLocation,
@@ -457,11 +457,8 @@ export default function Home() {
           : createCity(
               mount.current,
               // A place picked on the model opens in the mode it was picked in; the sky island,
-              // which has no chapter, opens its City file from the reading page too.
-              (id) => {
-                const content = contentForBuilding(id);
-                navigateRef.current(modeForPick(viewRef.current.mode, content), content);
-              },
+              // which has no chapter, opens its City file from the reading page too (pickRoute).
+              (id) => navigateRef.current(...pickRoute(viewRef.current.mode, id)),
               () => navigateRef.current(viewRef.current.mode, 'corner-park'),
               {
                 onHover: (id) => setHovered(id),

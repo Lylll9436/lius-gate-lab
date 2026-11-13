@@ -634,16 +634,39 @@ const elementsOf = (html) =>
     const attrs = attrsOf(m[2] ?? '');
     return { name: m[1], attrs, classes: (attrs.class ?? '').split(/\s+/).filter(Boolean), end: m.index + m[0].length };
   });
+/** An element's text as a visitor reads it (an element with no element of its own name inside it). */
+const textIn = (html, element) =>
+  decoded(html.slice(element.end, html.indexOf('</' + element.name + '>', element.end)).replace(/<[^>]*>/g, ''));
+/**
+ * Whether parsed attributes open a new tab with neither a way back to the page (noopener) nor its
+ * address sent along (noreferrer): the owner's rule for links off the site. The rel tokens may come
+ * in either order, beside others.
+ */
+const opensSafely = (attrs) => {
+  const rel = (attrs.rel ?? '').toLowerCase().split(/\s+/);
+  return attrs.target === '_blank' && rel.includes('noopener') && rel.includes('noreferrer');
+};
 /**
  * The links off the site in rendered markup that do not open a new tab with neither a way back to
  * the page nor its address sent along: every https link and every target="_blank" must carry
  * target="_blank" rel="noopener noreferrer" (the owner's rule for outbound links).
  */
 const unsafeOutbound = (html) =>
-  [...html.matchAll(/<a\s[^>]*>/g)]
-    .map((m) => m[0])
-    .filter((a) => /\shref="https:\/\//.test(a) || /\starget=/.test(a))
-    .filter((a) => !/\starget="_blank"/.test(a) || !/\srel="noopener noreferrer"/.test(a));
+  elementsOf(html)
+    .filter((e) => e.name === 'a' && ((e.attrs.href ?? '').startsWith('https://') || 'target' in e.attrs))
+    .filter((e) => !opensSafely(e.attrs))
+    .map((e) => e.attrs.href);
+// The rule reads attributes, not their spelling: their order, the rel tokens' order and other
+// attributes beside them do not matter; a missing token, or no new tab, does.
+for (const [a, safe] of [
+  ['<a href="https://urban-ai.uk/" target="_blank" rel="noopener noreferrer">', true],
+  ['<a rel="noreferrer noopener" class="x" target="_blank" href="https://urban-ai.uk/">', true],
+  ['<a href="https://urban-ai.uk/" target="_blank" rel="noreferrer">', false],
+  ['<a href="https://urban-ai.uk/" rel="noopener noreferrer">', false],
+  ['<a href="/#read/town-hall" target="_blank" rel="noopener">', false],
+  ['<a href="mailto:someone@example.org">', true],
+])
+  assert.equal(unsafeOutbound(a).length === 0, safe, 'The outbound-link rule reads ' + a);
 const { SiteFooter, chapterMeta, onReadingPage } = await import(
   pathToFileURL(path.join(output, 'site-chrome.mjs')).href
 );
@@ -981,19 +1004,26 @@ async function siteOver(name, testCatalog) {
       last = found;
     }
     // The way out to UIA's website: the file's one primary button, opening a new tab.
-    const button = html.match(/<a class="button-primary site-link"[^>]*>/g) ?? [];
+    const elements = elementsOf(html),
+      button = elements.filter((e) => e.name === 'a' && e.classes.includes('button-primary') && e.classes.includes('site-link'));
     assert.equal(button.length, 1, 'The island’s file has one button to UIA’s website.');
-    for (const attribute of ['href="https://urban-ai.uk/"', 'target="_blank"', 'rel="noopener noreferrer"', 'aria-label="' + aria + '"'])
-      assert(decoded(button[0]).includes(attribute), 'UIA’s button lacks ' + attribute + ' (' + locale + ').');
-    assert(page.includes('href="' + alison.links[0].url + '" target="_blank" rel="noopener noreferrer"'), 'Her staff page does not open a new tab safely.');
+    assert(
+      button[0].attrs.href === 'https://urban-ai.uk/' && opensSafely(button[0].attrs) && button[0].attrs['aria-label'] === aria,
+      'UIA’s button (' + locale + ') does not go to https://urban-ai.uk/ in a new tab, safely, read aloud as: ' + aria,
+    );
+    const staff = elements.find((e) => e.name === 'a' && e.attrs.href === alison.links[0].url);
+    assert(staff && opensSafely(staff.attrs), 'Her staff page does not open a new tab safely.');
     assert.deepEqual(unsafeOutbound(html), [], 'A link off the island’s file is unsafe.');
     // Her full profile is folded away, a disclosure as on a person's card (its state is the browser's).
-    assert(/<details class="neighbour-profile"><summary>[^<]*<svg/.test(html), 'Her full profile is not a closed disclosure.');
+    const profile = elements.findIndex((e) => e.name === 'details' && e.classes.includes('neighbour-profile'));
+    assert(
+      profile >= 0 && !('open' in elements[profile].attrs) && elements[profile + 1]?.name === 'summary' && elements[profile + 2]?.name === 'svg',
+      'Her full profile is not a closed disclosure.',
+    );
     assert(!/<img|portrait|monogram/.test(html), 'The island’s file shows a photo of her, or a monogram for one.');
     // Her name opens the body, for a screen reader that starts at the focused title (the island's,
     // with her name only in the eyebrow above it): the role line's first child, hidden from view.
-    const elements = elementsOf(html),
-      roleLine = elements.findIndex((e) => e.name === 'p' && e.classes.includes('neighbour-role')),
+    const roleLine = elements.findIndex((e) => e.name === 'p' && e.classes.includes('neighbour-role')),
       name = elements[roleLine + 1];
     assert(
       roleLine >= 0 &&
@@ -1026,8 +1056,10 @@ async function siteOver(name, testCatalog) {
     { en: 'A small island that floats above the town, with a red-brick villa on its lawn.', zh: '漂浮在小城上空的一座小岛，草坪上立着一栋红砖别墅。' },
   ]);
   for (const locale of ['en', 'zh']) {
-    const html = decoded(renderToStaticMarkup(React.createElement(none.content.LabContent, { id: 'sky-island', locale, onOpen() {} })));
-    assert(html.includes('<p class="record-lead">' + bare.summary[locale] + '</p>') && html.includes(bare.architecture[locale]), 'The empty island’s file is not its own.');
+    const markup = renderToStaticMarkup(React.createElement(none.content.LabContent, { id: 'sky-island', locale, onOpen() {} })),
+      html = decoded(markup),
+      lead = elementsOf(markup).find((e) => e.name === 'p' && e.classes.includes('record-lead'));
+    assert(lead && textIn(markup, lead) === bare.summary[locale] && html.includes(bare.architecture[locale]), 'The empty island’s file is not its own.');
     assert(!/heppenstall|uia|urban-ai/i.test(html), 'The empty island’s file still shows her or UIA.');
     // Nor would About end with a Neighbours card.
     const about = renderToStaticMarkup(React.createElement(none.content.LabContent, { id: 'town-hall', locale, onOpen() {}, reading: true }));
@@ -1091,21 +1123,27 @@ async function siteOver(name, testCatalog) {
       !textsOf(card).some((t) => t.includes(group.summary[locale])),
       'The Neighbours card holds UIA’s whole summary.',
     );
+    const cardElements = elementsOf(card),
+      [section, heading] = cardElements;
     assert(
-      card.startsWith('<section class="neighbours" id="read-sky-island"><h3 tabindex="-1">') && (chapter.match(/id="read-sky-island"/g) ?? []).length === 1,
+      section?.name === 'section' &&
+        section.classes.includes('neighbours') &&
+        section.attrs.id === 'read-sky-island' &&
+        heading?.name === 'h3' &&
+        heading.attrs.tabindex === '-1' &&
+        elementsOf(chapter).filter((e) => e.attrs.id === 'read-sky-island').length === 1,
       'The card is not the island’s reading address, or its heading cannot take the focus.',
     );
-    const site = decoded(card).match(/<a class="button-primary site-link"[^>]*>/g) ?? [];
+    const site = cardElements.filter((e) => e.name === 'a' && e.classes.includes('button-primary') && e.classes.includes('site-link')),
+      siteAria = zh ? 'UIA 官网：urban-ai.uk，在新标签页打开' : 'UIA website: urban-ai.uk, opens in a new tab';
     assert.equal(site.length, 1);
-    for (const attribute of [
-      'href="https://urban-ai.uk/"',
-      'target="_blank"',
-      'rel="noopener noreferrer"',
-      'aria-label="' + (zh ? 'UIA 官网：urban-ai.uk，在新标签页打开' : 'UIA website: urban-ai.uk, opens in a new tab') + '"',
-    ])
-      assert(site[0].includes(attribute), 'The card’s UIA website button lacks ' + attribute + ' (' + locale + ').');
     assert(
-      decoded(card).includes('<button class="link-action" aria-label="' + (zh ? '在小城里打开：天空之岛 · 红砖别墅' : 'Open in the city: Sky Island · Red-brick villa') + '">'),
+      site[0].attrs.href === 'https://urban-ai.uk/' && opensSafely(site[0].attrs) && site[0].attrs['aria-label'] === siteAria,
+      'The card’s UIA website button (' + locale + ') does not go to https://urban-ai.uk/ in a new tab, safely, read aloud as: ' + siteAria,
+    );
+    assert.equal(
+      cardElements.find((e) => e.name === 'button' && e.classes.includes('link-action'))?.attrs['aria-label'],
+      zh ? '在小城里打开：天空之岛 · 红砖别墅' : 'Open in the city: Sky Island · Red-brick villa',
       'The card’s Open in the city does not say what it opens.',
     );
     // It opens the island in the city, from the chapter the page renders.
@@ -1192,7 +1230,7 @@ for (const file of (await fs.readdir(path.join(root, 'app'))).filter((f) => f.en
       };
       if (value('target') !== null)
         assert(
-          value('target') === '_blank' && value('rel') === 'noopener noreferrer',
+          value('target') === '_blank' && opensSafely({ target: value('target'), rel: value('rel') ?? '' }),
           'app/' + file + ': a link opens a new tab without rel="noopener noreferrer" (line ' + (source.getLineAndCharacterOfPosition(node.pos).line + 1) + ').',
         );
     }
@@ -2503,13 +2541,17 @@ assert(
         'With no neighbour published, the sky island is not its own again.',
       );
       for (const locale of ['en', 'zh']) {
-        const file = decoded(render('sky-island', locale)),
-          about = render('town-hall', locale, true);
+        const file = render('sky-island', locale),
+          lead = elementsOf(file).find((e) => e.name === 'p' && e.classes.includes('record-lead')),
+          about = elementsOf(render('town-hall', locale, true));
         assert(
-          file.includes('<p class="record-lead">' + island.summary[locale] + '</p>') && file.includes(island.architecture[locale]) && !file.includes('neighbour-file'),
+          lead &&
+            textIn(file, lead) === island.summary[locale] &&
+            decoded(file).includes(island.architecture[locale]) &&
+            !elementsOf(file).some((e) => e.classes.includes('neighbour-file')),
           'With no neighbour published, the sky island’s file (' + locale + ') is not its own.',
         );
-        assert(!about.includes('class="neighbours"'), 'With no neighbour published, About (' + locale + ') still ends with a Neighbours card.');
+        assert(!about.some((e) => e.classes.includes('neighbours')), 'With no neighbour published, About (' + locale + ') still ends with a Neighbours card.');
       }
     } else
       for (const n of live) {
@@ -2613,5 +2655,5 @@ assert.equal(
   assert.doesNotMatch(result.stdout, /Catalog valid/);
 }
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command; checked on a fixture of her record, so that her profile can be taken down, a draft or removed, with the checks still passing, and content/lab.json’s own neighbours checked as they are: each published one within the wording rules, with none the island its own again), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), the sky island’s City file (her category, her role, profile, UIA and its button, her staff page, her full profile folded away, the villa; the island’s own again with no record) and About’s Neighbours card (UIA in one line, the record’s own intro, never cut at an abbreviation, her as a group leader, the tie, its two ways on, the island’s reading address), her name nowhere else on the page, the same wording rules over the file’s and the card’s copy, the Gate’s work never filed at her place, every link off the site opening a new tab with rel noopener noreferrer, still seven chapter chips, and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command; checked on a fixture of her record, so that her profile can be taken down, a draft or removed, with the checks still passing, and content/lab.json’s own neighbours checked as they are: each published one within the wording rules, with none the island its own again), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), the sky island’s City file (her category, her role, profile, UIA and its button, her staff page, her full profile folded away, the villa; the island’s own again with no record) and About’s Neighbours card (UIA in one line, the record’s own intro, never cut at an abbreviation, her as a group leader, the tie, its two ways on, the island’s reading address), her name nowhere else on the page, the same wording rules over the file’s and the card’s copy, the Gate’s work never filed at her place, every link off the site opening a new tab with rel noopener noreferrer (attributes parsed, the tokens in either order), still seven chapter chips, and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
 );
