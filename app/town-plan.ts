@@ -1125,8 +1125,10 @@ export const SKY_DAY = (() => {
       if (Math.abs(turn) > 1e-6) add(Math.max(G.minTurn, (G.turn * Math.abs(turn)) / (Math.PI / 2)), { kind: 'turn', station, x, z: zz, from: heading, to: heading + turn });
       heading = to;
     },
-    walk = (line: XZ[]) => {
-      const length = polylineLength(line),
+    walk = (points: XZ[]) => {
+      // (A point where the last one is, as where a stretch ends at the curve's start, has no heading.)
+      const line = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-9),
+        length = polylineLength(line),
         first = Math.atan2(line[1][0] - line[0][0], line[1][1] - line[0][1]),
         n = line.length - 1;
       turnTo(line[0][0], line[0][1], first, 'walk');

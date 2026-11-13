@@ -7547,8 +7547,13 @@ let skyReport = '';
       at(0);
       const zero = snapshot(her);
       assert(asBuilt && same(zero, snapshot(asBuilt), 1e-6), 'Alison is not built in her pose at time 0 (the frozen frame Pause and reduced motion hold).');
-      at(0, 1, 1);
-      assert(same(zero, snapshot(her)), 'Night or rain moves Alison.');
+      // (At moments of each kind of her day: in her chair, watering, at the telescope and walking.)
+      for (const t of [0, 40.31, 93.07, 111.13]) {
+        at(t);
+        const day = snapshot(her);
+        at(t, 1, 1);
+        assert(same(day, snapshot(her)), `Night or rain moves Alison at ${t} s.`);
+      }
       at(0);
       const day0 = plan.alisonDay(0);
       assert(day0.station === 'tea' && day0.pose === 'sip' && day0.phase === 0 && held.cup.visible && held.saucer.visible, 'At time 0 Alison is not at tea with her cup resting on its saucer.');
@@ -7604,7 +7609,8 @@ let skyReport = '';
         }
         if (s.pose === 'walk' && prev.pose === 'walk') {
           // Her feet never slide: the walk's phase goes on by the distance she walks.
-          assert(Math.abs((s.phase - prev.phase) * ALISON.stride - moved) < 1e-4 && s.amount >= 0 && s.amount <= 1, `At ${t.toFixed(2)} s her walk's phase runs ${fmt3((s.phase - prev.phase) * ALISON.stride)} for ${fmt3(moved)} walked.`);
+          assert(Math.abs((s.phase - prev.phase) * ALISON.stride - moved) < 1e-4, `At ${t.toFixed(2)} s her walk's phase runs ${fmt3((s.phase - prev.phase) * ALISON.stride)} for ${fmt3(moved)} walked.`);
+          assert(s.amount >= 0 && s.amount <= 1, `At ${t.toFixed(2)} s her walk's gait is ${fmt3(s.amount)}.`);
           if (!onGravel(s.x, s.z)) {
             lawn++;
             assert(Math.hypot(s.x - beside.x, s.z - beside.z) < 0.35, `At ${t.toFixed(2)} s she walks off the gravel at ${fmt3(s.x)}, ${fmt3(s.z)}.`);
