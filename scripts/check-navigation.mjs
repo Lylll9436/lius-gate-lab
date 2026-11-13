@@ -887,9 +887,10 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         onSky = nearSky(x, z);
       assert(inside(cx, cz) && (onDisc ? far === 40 && Math.cos(a) > 0.99 && Math.abs(Math.hypot(cx, cz) - DISC) < 1e-6 : onSky ? far >= 20 && Math.cos(a) < -0.5 && Math.abs(beyondSky(cx, cz)) < 1e-6 : beyondDeck(cx, cz) <= 4 + 1e-6), `A pan to ${x.toFixed(1)}, ${z.toFixed(1)} ends ${beyondDeck(cx, cz).toFixed(1)} past the airport's deck.`);
     }
-  // The sky island's pocket: the ground point of its own file (12.2 beyond it along the line of
-  // sight at any bearing) lies in it, unclamped; a pan away from it is held to it, or back along its
-  // link to the town, never out to open sea.
+  // The sky island's pocket at the town's pitch: a ring 12.2 out round it, past the ground point of its
+  // own file there (11.7 beyond it along the line of sight at any bearing, at 42.6 degrees; 18.7 at the
+  // file's own 30, where the pocket widens with it: (c) and (c2) below), lies in it, unclamped; a pan
+  // away from it is held to it, or back along its link to the town, never out to open sea.
   {
     const S = plan.SKY;
     for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) {
@@ -1007,8 +1008,9 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       for (let f = 0; f < 120; f++) drive.frame();
       assert(drive.worst.deck <= 4.5 && drive.worst.beyond <= 0.5 && drive.worst.move <= 16, `A drag from the airport toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.deck.toFixed(2)} past its deck (or jumps ${drive.worst.move.toFixed(0)} px).`);
     }
-  // From the sky island's file (its ground point 12.2 beyond it), a drag out to sea is held in its
-  // pocket and a drag toward the town gets there along the link, never jumping or lifting the camera.
+  // From a ground point 12.2 beyond the sky island at the town's pitch (its file's own is 11.7 there),
+  // a drag out to sea is held in its pocket and a drag toward the town gets there along the link,
+  // never jumping or lifting the camera.
   for (const yaw of [Math.PI / 4, plan.chapterBearings['sky-island'], (5 * Math.PI) / 4])
     for (const [x, z] of [[-95, -24], [-52, -75], [-52, 25], [-90, 15], [0, 0]]) {
       const drive = drivePan(yaw),
@@ -1510,7 +1512,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // come down (aim() 1 for the island alone, the pitch at 1), SKY_FIT fitted like a group between
     // 0.95 and 2.6 (2.035 at 1440 x 900; 2.019 at the town's pitch), its target then raised SKY_LIFT
     // up the line of sight: under the pan limit's lift (a glide's end never slides the camera) with
-    // its ground point, about 19.5 beyond the island at that pitch, in the island's own pocket
+    // its ground point, 18.7 beyond the island at that pitch (11.7 at the town's), in the island's own pocket
     // (skyReach: as much further out as the line of sight runs at that pitch), unclamped. The
     // island, its clouds and rocks with it, stay whole beside the file, 24 px clear of the masthead,
     // the controls and the panel, through the idle drift; on phones, at the zoom's cap, above the
@@ -1894,6 +1896,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           parkSelected: false,
           autoFocus: true,
           inspectionAutoFit: true,
+          skyTurn: false,
           lastInteraction: 0,
           performance: { now: () => 0 },
           CITY_MAX_ZOOM: 4,
@@ -2010,6 +2013,182 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       skyNav.rotate = `the island turned where it stands at ${stats.stops} Rotate stops (its middle held within ${stats.hold.toFixed(2)} px over ${stats.frames} frames of turning, ${stats.end.toFixed(2)} px a frame at most as each turn ends)`;
     }
 
+    // (c3b) Rotate in its own file after the visitor has panned or zoomed it (the final review's second
+    // finding): turned about the point of the island's height on the visitor's line of sight, the view's
+    // ground point swung on a circle out of the island's pocket, and every frame the pan limit slid the
+    // view back (677-717 px over the turn at 1440 x 900, up to 16.7 px a frame); let go, the island was
+    // left off the screen. Rotate now frames the island again for the new bearing at the visitor's zoom,
+    // and the turn carries the view about the island. Through three's real OrbitControls (drivePan's
+    // settings) with the scene's own holdPan, panRegion and skyReach, the Rotate button's method,
+    // focusSky, turnSky and the frame loop's turn, pitch and glide, at 1440 x 900, 1280 x 720 and a
+    // phone above its sheet (fileFrame's shift and drop): from the file at rest, a drag out to the
+    // pocket's edge (300 frames of 8 px) to the right, the left, up or down, or a press of + (and one with
+    // a drag after it), a second's rest, then Rotate:
+    // - no frame of the turn has the pan limit (holdPan and OrbitControls' clamp) move the view more than
+    //   half a pixel;
+    // - once the island's middle is in the frame it stays there, and it ends in the free part beside the
+    //   file or above the sheet;
+    // - the turn ends on a still view (under half a pixel over the next second) at the visitor's zoom, its
+    //   ground point well inside the island's pocket.
+    {
+      const want = ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
+        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE'],
+        code = [];
+      let pitchSource;
+      (function collect(node) {
+        if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+        ts.forEachChild(node, collect);
+      })(syntax);
+      const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+      assert(code.length === want.length + vars.length && turning && glideSource && pitchSource && rotateSource && zoomSource, 'The Rotate-after-a-pan check must find every piece it runs.');
+      const script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, rotateSource, zoomSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ holdPan, panRegion, focusSky, followPanel, turnStep, glideStep, pitchStep, rotate, zoomBy, cancel, align, aim, middle: SKY_FIT.getCenter(new T.Vector3()) })`,
+        worst = { pull: 0, end: 0, out: -Infinity, turns: 0 };
+      for (const [w, h, shift, drop, phone] of [[1440, 900, 492 / 2880, 0], [1280, 720, 492 / 2560, 0], [390, 844, 0, -100.95 / 844, true]])
+        for (const { label, drag, plus } of [
+          { label: 'dragged right', drag: [8, 0] },
+          { label: 'dragged left', drag: [-8, 0] },
+          { label: 'dragged down', drag: [0, 8] },
+          { label: 'dragged up', drag: [0, -8] },
+          { label: 'zoomed in with +', plus: true },
+          { label: 'zoomed in with + and dragged up', drag: [0, -8], plus: true },
+        ]) {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect),
+            camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+            controls = new OrbitControls(camera, null);
+          controls.domElement = { clientWidth: w, clientHeight: h };
+          Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: 0.45, maxZoom: 4 });
+          const turn = {
+              T,
+              Math,
+              plan,
+              camera,
+              controls,
+              target: new T.Vector3(),
+              shiftApplied: new T.Vector3(),
+              screenRight: new T.Vector3(),
+              screenUp: new T.Vector3(),
+              offset: new T.Vector3(),
+              frameShift: shift,
+              frameDrop: drop,
+              panelEdge: 1,
+              width: w,
+              height: h,
+              yaw: fileBearing,
+              targetYaw: fileBearing,
+              targetZoom: 1,
+              pitch: 1,
+              driftAngle: 0,
+              panSlack: Infinity,
+              panPitch: 1,
+              tween: false,
+              reduced: false,
+              dt: 1 / 60,
+              blend: 1 - Math.exp(-5.5 / 60),
+              focusedIds: ['sky-island'],
+              overviewFit: false,
+              inspect: null,
+              parkSelected: false,
+              autoFocus: true,
+              inspectionAutoFit: true,
+              skyTurn: false,
+              cityMode: true,
+              lastInteraction: 0,
+              performance: { now: () => 0 },
+              CITY_MAX_ZOOM: 4,
+              STUDY_MAX_ZOOM: 8,
+              models: new Map(),
+              city: { updateMatrixWorld() {} },
+              placeSun() {},
+              clearHover() {},
+              fitOverview() {},
+            },
+            run = runInNewContext(script, turn),
+            // A point's place on the screen (px) as the camera stands.
+            onScreen = (p) => {
+              const q = p.clone().project(camera);
+              return [((q.x + 1) * w) / 2, ((1 - q.y) * h) / 2];
+            },
+            // One frame of step(): the panel offset, the turn, the pitch, the glide, the limit and
+            // OrbitControls' update, the view handed over; and how far the limit moved the view (px).
+            frame = () => {
+              run.followPanel();
+              run.turnStep();
+              run.pitchStep();
+              run.glideStep();
+              camera.updateMatrixWorld();
+              const was = controls.target.clone(),
+                at = onScreen(was);
+              run.holdPan();
+              controls.update();
+              camera.updateMatrixWorld();
+              const now = onScreen(was);
+              if (!turn.tween) turn.target.copy(controls.target);
+              return Math.hypot(now[0] - at[0], now[1] - at[1]);
+            },
+            out = () => {
+              const back = camera.position.clone().sub(controls.target).normalize(),
+                g = controls.target.clone().sub(turn.shiftApplied);
+              g.addScaledVector(back, -g.y / back.y);
+              const r = run.panRegion(g);
+              return g.distanceTo(r.centre) - r.radius;
+            },
+            inFrame = ([x, y]) => x >= 0 && x <= w && y >= 0 && y <= h,
+            free = ([x, y]) => (phone ? x >= 0 && x <= w && y >= 58 && y <= 0.69 * h : x >= 0 && x <= w - 476 && y >= 76 && y <= h - 76),
+            at = `${label} at ${w} x ${h}`;
+          // The file, framed and at rest.
+          run.focusSky();
+          controls.target.copy(turn.target);
+          camera.zoom = turn.targetZoom;
+          camera.updateProjectionMatrix();
+          run.align();
+          controls.update();
+          for (let f = 0; f < 60; f++) frame();
+          if (plus) {
+            run.zoomBy(1.25);
+            for (let f = 0; f < 400 && turn.tween; f++) frame();
+          }
+          if (drag) {
+            run.cancel();
+            for (let f = 0; f < 300; f++) {
+              controls._pan(drag[0], drag[1]);
+              controls.update();
+              camera.updateMatrixWorld();
+              frame();
+            }
+          }
+          for (let f = 0; f < 60; f++) frame();
+          const zoom = camera.zoom;
+          run.rotate();
+          let shown = inFrame(onScreen(run.middle)),
+            settled = 0,
+            f = 0;
+          for (; f < 900 && settled < 5; f++) {
+            const pulled = frame(),
+              m = onScreen(run.middle);
+            worst.pull = Math.max(worst.pull, pulled);
+            assert(pulled <= 0.5, `Rotate in the sky island's file ${at}: the pan limit moves the view ${pulled.toFixed(2)} px at frame ${f} of the turn.`);
+            assert(!shown || inFrame(m), `Rotate in the sky island's file ${at}: its middle leaves the frame at frame ${f} of the turn (${m.map((v) => v.toFixed(0)).join(', ')} px).`);
+            shown ||= inFrame(m);
+            settled = !turn.tween && Math.abs(turn.targetYaw - turn.yaw) <= 0.0001 && Math.abs(run.aim(camera.zoom) - turn.pitch) <= 0.0001 ? settled + 1 : 0;
+          }
+          assert(settled >= 5 && Math.abs(turn.yaw - fileBearing - Math.PI / 2) < 1e-6, `Rotate in the sky island's file ${at} does not end a quarter turn on.`);
+          const rest = controls.target.clone(),
+            restAt = onScreen(rest),
+            m = onScreen(run.middle);
+          for (let k = 0; k < 60; k++) frame();
+          const still = Math.hypot(...onScreen(rest).map((v, i) => v - restAt[i]));
+          worst.end = Math.max(worst.end, still);
+          worst.out = Math.max(worst.out, out());
+          worst.turns++;
+          assert(free(m), `Rotate in the sky island's file ${at} ends with its middle at ${m.map((v) => v.toFixed(0)).join(', ')} px, out of the part of the frame left free.`);
+          assert(still < 0.5 && Math.abs(camera.zoom - zoom) < 1e-9 && out() < -3, `Rotate in the sky island's file ${at} ends ${still.toFixed(2)} px from still, at zoom ${camera.zoom.toFixed(4)} for the visitor's ${zoom.toFixed(4)}, or its ground point ${out().toFixed(2)} from its pocket's edge.`);
+        }
+      skyNav.rotatePanned = `Rotate after ${worst.turns} pans and zooms of its file framing it again at the visitor's zoom (the pan limit moving the view ${worst.pull.toFixed(2)} px a frame at most, the view still within ${worst.end.toFixed(2)} px after, its ground point ${(-worst.out).toFixed(1)} inside its pocket at least)`;
+    }
+
     // (c4) The sun's shadow box in the island's own file (the 3D review's fourth finding: on portrait
     // phones the file never took it, the villa, the tree, the tea set and Alison casting nothing on
     // the lawn, for a sliver of the north-west coast in the corner above the sheet). city-scene's own
@@ -2027,7 +2206,13 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // - every other place's file and City mode's overview keep the town's box, through the drift;
     // - a pan from the file toward the town hands the box back to the town by the time a twentieth
     //   of the free part of the frame is its land, and before any of its buildings (their sites'
-    //   boxes, at full height) stands whole in it.
+    //   boxes, at full height) stands whole in it;
+    // - (c4b) mid-turn, frame by frame: Rotate round the four stops on portrait phones and desktops
+    //   hands the box over once at most a turn, as the turn starts (the final review's fourth finding:
+    //   on 390-430 px phones the turn to the next stop swept a strip of the town's coast through the
+    //   band's foot, and the box went to the town and back mid-turn, two fades and two new maps), and
+    //   the glide that brings the view into the file from elsewhere hands it over only once the view
+    //   it stands at is close in on the island.
     {
       const shadowPieces = [];
       (function collect(node) {
@@ -2040,10 +2225,10 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         // (By the syntax tree, so that a formatter's line breaks change nothing.)
         const asked = [];
         (function find(node, inFollow) {
-          if (inFollow && ts.isCallExpression(node) && node.expression.getText(syntax) === 'skyShadowWanted') asked.push(node.arguments.map((a) => a.getText(syntax)).join(', '));
+          if (inFollow && ts.isCallExpression(node) && node.expression.getText(syntax) === 'skyShadowWanted') asked.push(node.arguments.map((a) => unformatted(a.getText(syntax))).join(', '));
           ts.forEachChild(node, (child) => find(child, inFollow || (ts.isFunctionDeclaration(node) && node.name?.text === 'followSky')));
         })(syntax, false);
-        assert(asked.length === 1 && asked[0] === 'camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch', 'followSky no longer asks skyShadowWanted about the camera as it stands, its pitch included.');
+        assert(asked.length === 1 && asked[0] === 'skyTurn?skyAhead():camera, LAND_MARKS, frameShift, frameDrop, skyCast, skyTurn?aim():pitch', 'followSky no longer asks skyShadowWanted about the camera as it stands (its pitch included), or, mid-turn in the island\'s file, about the framing the turn heads for (and the pitch it heads for).');
       }
       const sun = runInNewContext(`${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyShadowWanted, bandShare, SKY_SHADOW, TOWN_WATERLINE, LAND_MARKS })`, { T, Math, plan }),
         // The scene's camera for a w x h stage (resize()), looking at `centre` from `bearing` at `low` of the way down to the file's pitch.
@@ -2167,149 +2352,558 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
           pans++;
           assert(handed && !on, `Panning the sky island's file at ${w} x ${h} toward ${goal.x}, ${goal.z} never gives the town its shadow box back.`);
         }
+      // (c4b) Mid-turn, frame by frame: city-scene's own followSky (with skyAhead, skyShadowWanted and
+      // the hand-over's fade), Rotate method, focusSky, turnSky and frame loop (followPanel, the turn,
+      // the pitch step, the glide) on a camera of the stage's size, the file's framing as fileFrame
+      // measures it, its shadow maps counted where followSky lays them (shadowFocus): from the file's
+      // bearing, Rotate pressed four times, each turn run to rest. Every turn hands the box over once at
+      // most, within the fade's own frames after the press (as the turn starts), and ends with the box
+      // the stop keeps when it is reached at rest (the checks above); so a turn that ends with the
+      // island's box never lets it go. And from the Town Hall's file, the glide into the island's file
+      // (its turn and its zoom with it) hands the box to the island only on a frame whose own view is
+      // close in on it (skyShadowWanted on the camera as it stands).
+      {
+        const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'fitFocused', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'skyAhead', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'skyExtent', 'skyHidden', 'skyOnScreen', 'followSky', 'align', 'select', 'skyShadowWanted', 'bandShare'],
+          vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_HIDES', 'SKY_EXTENT', 'onScreen', 'YAW_RATE', 'SKY_SHADOW', 'TOWN_WATERLINE', 'LAND_MARKS', '[rockX, rockZ]', 'ahead', 'UP', 'AIRPORT_FIT'],
+          code = [];
+        let pitchSource;
+        (function collect(node) {
+          if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+          if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+          if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+          ts.forEachChild(node, collect);
+        })(syntax);
+        const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+        assert(code.length === want.length + vars.length && turning && glideSource && pitchSource && rotateSource, 'The mid-turn shadow box check must find every piece it runs.');
+        const { WATER } = await import(pathToFileURL(path.join(output, 'town-shared.mjs')).href),
+          { createSeaShadow } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
+          script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, rotateSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ followPanel, turnStep, glideStep, pitchStep, align, followSky, focusSky, select, rotate, aim })`,
+          models = new Map(
+            buildings
+              .filter((b) => b.model !== 'sky')
+              .map((b) => {
+                const s = plan.sites[b.id],
+                  root = new T.Group(),
+                  mesh = new T.Mesh(new T.BoxGeometry(s.w, s.height, s.d));
+                mesh.position.y = s.height / 2;
+                root.add(mesh);
+                root.position.set(s.x, 0, s.z);
+                root.rotation.y = s.rotation;
+                root.updateMatrixWorld(true);
+                return [b.id, { root, center: new T.Vector3(s.x, s.height / 2, s.z) }];
+              }),
+          ),
+          early = Math.ceil(sun.SKY_SHADOW.fade * 60) + 1,
+          turns = { count: 0, handed: 0, latest: 0 };
+        // A scene of a w x h stage beside the file or above its sheet, in City mode.
+        const stage = (w, h, shift, drop) => {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect),
+            maps = [],
+            ctx = {
+              T,
+              Math,
+              plan,
+              camera: new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+              controls: { target: new T.Vector3(), minZoom: 0.45 },
+              target: new T.Vector3(),
+              shiftApplied: new T.Vector3(),
+              screenRight: new T.Vector3(),
+              screenUp: new T.Vector3(),
+              offset: new T.Vector3(),
+              width: w,
+              height: h,
+              frameShift: shift,
+              frameDrop: drop,
+              panelEdge: 1,
+              yaw: fileBearing,
+              targetYaw: fileBearing,
+              targetZoom: 1,
+              pitch: 0,
+              driftAngle: 0,
+              tween: false,
+              reduced: false,
+              dt: 1 / 60,
+              blend: 1 - Math.exp(-5.5 / 60),
+              focusedIds: [],
+              overviewFit: false,
+              inspect: null,
+              parkSelected: false,
+              autoFocus: false,
+              inspectionAutoFit: true,
+              cityMode: true,
+              lastInteraction: 0,
+              performance: { now: () => 0 },
+              CITY_MAX_ZOOM: 4,
+              STUDY_MAX_ZOOM: 8,
+              models,
+              city: { updateMatrixWorld() {} },
+              island: { root: { visible: true } },
+              skyShown: true,
+              skyCast: false,
+              shadowFade: 1,
+              skyTurn: false,
+              skyCasters: [],
+              seaShadow: createSeaShadow(WATER),
+              frame: 0,
+              // Each new framing of the sun's box, the island's or the town's: a new map where its size changes.
+              shadowFocus(centre) {
+                maps.push({ frame: ctx.frame, island: !!centre });
+              },
+              placeSun() {},
+              clearHover() {},
+              exitInspection() {},
+              fitOverview() {},
+            },
+            run = runInNewContext(script, ctx),
+            step = () => {
+              ctx.frame++;
+              run.followPanel();
+              run.turnStep();
+              run.pitchStep();
+              run.glideStep();
+              if (!ctx.tween) ctx.target.copy(ctx.controls.target);
+              run.align();
+              ctx.camera.updateMatrixWorld();
+              run.followSky(1 / 60);
+            },
+            rests = () => !ctx.tween && Math.abs(ctx.targetYaw - ctx.yaw) <= 0.0001 && Math.abs(run.aim(ctx.camera.zoom) - ctx.pitch) <= 0.0001;
+          return { ctx, run, step, rests, maps };
+        };
+        for (const [w, h, shift, drop] of [portraitFiles[4], portraitFiles[7], portraitFiles[8], desktopFiles[4], desktopFiles[5]]) {
+          const { ctx, run, step, rests, maps } = stage(w, h, shift, drop);
+          run.select('sky-island');
+          ctx.controls.target.copy(ctx.target);
+          ctx.camera.zoom = ctx.targetZoom;
+          ctx.camera.updateProjectionMatrix();
+          ctx.pitch = run.aim(ctx.targetZoom);
+          ctx.tween = false;
+          for (let f = 0; f < 120; f++) step();
+          assert(ctx.skyCast, `The sky island's file at ${w} x ${h} does not take the sun's shadow box as it settles.`);
+          for (let stop = 1; stop <= 4; stop++) {
+            const from = ctx.frame,
+              had = ctx.skyCast,
+              before = maps.length;
+            run.rotate();
+            for (let f = 0, still = 0; f < 900 && still < 30; f++) {
+              step();
+              still = rests() ? still + 1 : 0;
+            }
+            const handed = maps.slice(before),
+              at = `Rotate stop ${stop % 4 || 4} at ${w} x ${h}`,
+              keeps = stop % 4 < 2;
+            turns.count++;
+            turns.handed += handed.length;
+            turns.latest = Math.max(turns.latest, ...handed.map((m) => m.frame - from));
+            assert(handed.length <= 1, `${at}: the sun's shadow box changes hands ${handed.length} times in the turn (frames ${handed.map((m) => m.frame - from).join(', ')} after the press).`);
+            assert(handed.every((m) => m.frame - from <= early), `${at}: the sun's shadow box changes hands at frame ${handed.map((m) => m.frame - from).join(', ')} of the turn, past its first ${early}.`);
+            assert(ctx.skyCast === keeps && (handed.length === 1) === (had !== keeps), `${at}: the turn ends with the ${ctx.skyCast ? 'island' : 'town'}'s box (${handed.length} hand-overs), where the stop keeps the ${keeps ? 'island' : 'town'}'s.`);
+          }
+        }
+        // The glide into the file from the Town Hall's file (and with Rotate pressed as it starts, before
+        // the view is in the file): the island takes the box only on a frame whose own view is close in
+        // on it.
+        for (const [w, h, shift, drop, press] of [desktopFiles[4], portraitFiles[4], [...desktopFiles[4], 0], [...portraitFiles[4], 0]]) {
+          const { ctx, run, step, rests, maps } = stage(w, h, shift, drop);
+          Object.assign(ctx, { yaw: plan.chapterBearings['town-hall'], targetYaw: plan.chapterBearings['town-hall'] });
+          run.select('town-hall');
+          ctx.controls.target.copy(ctx.target);
+          ctx.camera.zoom = ctx.targetZoom;
+          ctx.camera.updateProjectionMatrix();
+          ctx.tween = false;
+          for (let f = 0; f < 60; f++) step();
+          ctx.targetYaw = ctx.yaw + Math.atan2(Math.sin(fileBearing - ctx.yaw), Math.cos(fileBearing - ctx.yaw));
+          run.select('sky-island');
+          for (let f = 0, still = 0; f < 900 && still < 30; f++) {
+            const before = maps.length;
+            if (f === press) run.rotate();
+            step();
+            still = rests() ? still + 1 : 0;
+            if (maps.length > before && maps[maps.length - 1].island)
+              assert(sun.skyShadowWanted(ctx.camera, sun.LAND_MARKS, shift, drop, true, ctx.pitch), `Glided into the sky island's file from the Town Hall's at ${w} x ${h}, the island takes the sun's shadow box at frame ${f} with the view not yet close in on it.`);
+          }
+          assert(press !== undefined || (ctx.skyCast && maps.filter((m) => m.island).length === 1), `Glided into the sky island's file from the Town Hall's at ${w} x ${h}, the island does not take the sun's shadow box once.`);
+        }
+        skyNav.turns = `${turns.count} Rotate turns of its file on portrait phones and desktops handing the sun's box over ${turns.handed} times, each once at most and within ${turns.latest} frames of the press`;
+      }
       skyNav.shadow = `the sun's shadow box the sky island's own in its file on ${files.length} framings (the town's island at most ${(worst.rest * 100).toFixed(1)}% of the free part at rest, ${(worst.drift * 100).toFixed(1)}% through the drift), the town's in ${others} frames of its other files and its overview and on ${pans} pans from the file`;
     }
 
-    // (d) Hidden where a reading frame would cut a slice of it, and only there: in the People
-    // chapter's frames (its row, and each home or the residence picked from it) and the reading
-    // page's last shot, as the glide into them starts and back once the glide out has ended; never in
-    // City mode or Inspect.
+    // (d) Hidden where a reading frame would cut a slice of it: the People chapter's frames (its row,
+    // and each home or the residence picked from it), the reading page's last shot and the opening
+    // view (the art review's ninth finding: on a phone its tall frame showed a cut sliver of the rock,
+    // the puffs and a floating rock along the very top edge, and the island's shadow on the sea below
+    // it); never in City mode or Inspect, nor in the last shot or the opening view once the visitor
+    // has panned or zoomed them. And never seen to go or come where it stands in view (the final
+    // review's first finding: the opening view's hide outlived a pan or a zoom of it, and took the
+    // island away on the first frame of the glide into the opening view from its own file while it
+    // still filled the frame). city-scene's own framing calls (reset, select, focusBuildings, overview,
+    // focusPark, setYaw, setFrameShift, resize, cancel and the +/- buttons), frame loop (followPanel,
+    // the turn, the pitch step, the glide), followSky and city-water's pool on the sea, on a camera of
+    // the stage's size; measured with the check's own silhouette of the island (shape) and the
+    // pool's square:
+    // (d1) out of view in About and Departures; into People from About it goes at once, out of view;
+    //   on the glide out it comes back only where nothing of it is in view, or once the glide has
+    //   ended; City mode and Inspect show it;
+    // (d2) the opening view on phones and upright tablets, as the page opens on it and through the
+    //   idle drift, never shows it nor its pool;
+    // (d3) a drag, a wheel or pinch zoom, or the +/- buttons in the opening view or the last shot show
+    //   it at once, wherever any of it is in view, all through the buttons' glides;
+    // (d4) glided into the opening view, People or the last shot from a view that shows it (its own
+    //   file, by the wordmark or Read; a chapter panned to it, by Recentre), it goes only on a frame
+    //   where neither it nor its pool reaches more than a pixel into the frame, or once the camera has
+    //   come to rest there with no more than half the box round it in the frame; it is gone by the
+    //   time the phone's opening view rests, and a frame that holds it whole (a portrait tablet's
+    //   opening view) keeps it.
     {
-      const pieces = [];
-      (function find(node) {
-        if (ts.isFunctionDeclaration(node) && ['skyHidden', 'followSky'].includes(node.name?.text)) pieces.push(node.getText(syntax));
-        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'SKY_HIDES')) pieces.push(node.getText(syntax));
-        ts.forEachChild(node, find);
+      const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'skyExtent', 'skyHidden', 'skyOnScreen', 'followSky', 'align', 'reset', 'select', 'focusBuildings', 'overview', 'cancel', 'resize'],
+        vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'SKY_HIDES', 'SKY_EXTENT', 'onScreen', 'YAW_RATE', 'shortestAngle'],
+        methods = ['setYaw', 'setFrameShift', 'zoom', 'focusPark'],
+        code = [];
+      let pitchSource, firstShown;
+      (function collect(node) {
+        if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        // (How the scene starts: shown or not, before its first frame.)
+        if (ts.isVariableDeclaration(node) && node.name.getText(syntax) === 'skyShown') firstShown = node.initializer?.getText(syntax);
+        if (ts.isMethodDeclaration(node) && methods.includes(node.name.getText(syntax)))
+          code.push(`function ${node.name.getText(syntax) === 'zoom' ? 'zoomBy' : node.name.getText(syntax)}(${node.parameters.map((p) => p.getText(syntax)).join(', ')}) ${node.body.getText(syntax)}`);
+        if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+        ts.forEachChild(node, collect);
       })(syntax);
-      assert.equal(pieces.length, 3, 'The hiding check must find every piece it runs.');
-      const state = {
+      const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+      assert(code.length === want.length + vars.length + methods.length && turning && glideSource && pitchSource && ['true', 'false'].includes(firstShown), 'The hiding check must find every piece it runs.');
+      const { WATER } = await import(pathToFileURL(path.join(output, 'town-shared.mjs')).href),
+        { createSeaShadow } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
+        UP = new T.Vector3(0, 1, 0),
+        keyOffset = new T.Vector3(),
+        pool = createSeaShadow(WATER),
+        sky = {
           T,
           Math,
           plan,
-          cityMode: false,
-          inspect: null,
-          overviewFit: false,
+          camera: new T.OrthographicCamera(-24, 24, 24, -24, -200, 180),
+          controls: { target: new T.Vector3(), minZoom: 0.45, zoomToCursor: false },
+          container: { clientWidth: 1, clientHeight: 1 },
+          renderer: { setSize() {} },
+          ink: { resize() {} },
+          target: new T.Vector3(),
+          shiftApplied: new T.Vector3(),
+          screenRight: new T.Vector3(),
+          screenUp: new T.Vector3(),
+          offset: new T.Vector3(),
+          width: 1,
+          height: 1,
+          frameShift: 0,
+          frameDrop: 0,
+          panelEdge: 1,
+          yaw: Math.PI / 4,
+          targetYaw: Math.PI / 4,
+          targetZoom: 1,
+          pitch: 0,
+          driftAngle: 0,
+          tween: false,
+          reduced: false,
+          dt: 1 / 60,
+          blend: 1 - Math.exp(-5.5 / 60),
           focusedIds: [],
-          tween: false,
-          island: { root: { visible: true } },
-          skyShown: true,
-          skyCast: false,
-          shadowFade: 1,
-          skyCasters: [],
-          camera: { updateMatrixWorld() {} },
-          skyShadowWanted: () => false,
-          LAND_MARKS: [],
-          frameShift: 0,
-          frameDrop: 0,
-          SKY_SHADOW: { fade: 0.18 },
-          pitch: 0,
-          reduced: false,
-          shadowFocus() {},
-        },
-        hiding = runInNewContext(`${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyHidden, followSky });`, state),
-        shown = (patch) => {
-          Object.assign(state, patch);
-          hiding.followSky(1 / 60);
-          return state.island.root.visible;
-        };
-      assert(shown({ focusedIds: ['town-hall'] }), 'The sky island is hidden in the About chapter.');
-      assert(!shown({ focusedIds: ['yunlong-liu'], tween: true }), 'The sky island shows as the glide into a home of the People chapter starts.');
-      assert(!shown({ focusedIds: [...plan.chapterSubjects.people] }) && !shown({ focusedIds: ['visiting-phd'], tween: false }), 'The sky island shows in the People chapter.');
-      assert(!shown({ focusedIds: [], overviewFit: true }), 'The sky island shows in the reading page\'s last shot.');
-      assert(!shown({ overviewFit: false, focusedIds: ['airport'], tween: true }), 'The sky island comes back before the glide out of the People chapter has ended.');
-      assert(shown({ tween: false }), 'The sky island does not come back once the glide has ended.');
-      assert(shown({ cityMode: true, focusedIds: ['yunlong-liu'], tween: true }) && shown({ overviewFit: true }), 'The sky island is hidden in City mode.');
-      assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: ['qin-li'] }), 'The sky island is hidden in Inspect.');
-    }
-    // (d2) The opening view (the reading page's hero, reset(): nothing framed and no park) hides it too
-    // (the art review's ninth finding): on a phone its tall frame showed a cut sliver of the rock, the
-    // puffs and a floating rock along the very top edge, and the island's shadow on the sea below it.
-    // It hides as the glide into the opening view starts and comes back once the glide out of it has
-    // ended (as in the People chapter), at once in City mode; a park or a chapter's place framed, it
-    // shows. The frames it would cut are measured here: the opening view on phones and upright tablets
-    // (the island's silhouette meets the frame), through the idle drift, where it now hides.
-    {
-      const pieces = [];
-      (function find(node) {
-        if (ts.isFunctionDeclaration(node) && ['skyHidden', 'followSky'].includes(node.name?.text)) pieces.push(node.getText(syntax));
-        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'SKY_HIDES')) pieces.push(node.getText(syntax));
-        ts.forEachChild(node, find);
-      })(syntax);
-      assert.equal(pieces.length, 3, 'The opening view\'s hiding check must find every piece it runs.');
-      const state = {
-          T,
-          Math,
-          plan,
-          cityMode: false,
-          inspect: null,
           overviewFit: false,
-          focusedIds: ['town-hall'],
+          inspect: null,
           parkSelected: false,
-          tween: false,
-          island: { root: { visible: true } },
-          skyShown: true,
+          autoFocus: false,
+          inspectionAutoFit: true,
+          cityMode: false,
+          lastInteraction: 0,
+          performance: { now: () => 0 },
+          CITY_MAX_ZOOM: 4,
+          STUDY_MAX_ZOOM: 8,
+          // The town's buildings as their sites' boxes (fitFocused frames a model's bounds).
+          models: new Map(
+            buildings
+              .filter((b) => b.model !== 'sky')
+              .map((b) => {
+                const s = plan.sites[b.id],
+                  root = new T.Group(),
+                  mesh = new T.Mesh(new T.BoxGeometry(s.w, s.height, s.d));
+                mesh.position.y = s.height / 2;
+                root.add(mesh);
+                root.position.set(s.x, 0, s.z);
+                root.rotation.y = s.rotation;
+                root.updateMatrixWorld(true);
+                return [b.id, { root, center: new T.Vector3(s.x, s.height / 2, s.z) }];
+              }),
+          ),
+          city: { updateMatrixWorld() {} },
+          island: { root: { visible: false } },
+          skyShown: false,
           skyCast: false,
           shadowFade: 1,
+          skyTurn: false,
           skyCasters: [],
-          camera: { updateMatrixWorld() {} },
           skyShadowWanted: () => false,
           LAND_MARKS: [],
-          frameShift: 0,
-          frameDrop: 0,
           SKY_SHADOW: { fade: 0.18 },
-          pitch: 0,
-          reduced: false,
           shadowFocus() {},
+          seaShadow: pool,
+          exitInspection() {},
+          clearHover() {},
+          // The key light at the opening bearing's offset, turned with the camera (placeSun).
+          placeSun() {
+            keyOffset.set(-16, 32, 20).applyAxisAngle(UP, sky.yaw - Math.PI / 4);
+          },
         },
-        hiding = runInNewContext(`${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyHidden, followSky });`, state),
-        shown = (patch) => {
-          Object.assign(state, patch);
-          hiding.followSky(1 / 60);
-          return state.island.root.visible;
+        run = runInNewContext(
+          `${ts.transpileModule([...code, turning, glideSource, pitchSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ followPanel, turnStep, glideStep, pitchStep, align, followSky, reset, select, focusBuildings, cancel, resize, overview, setYaw, setFrameShift, zoomBy, focusPark, aim })`,
+          sky,
+        ),
+        // One frame of step(): the panel offset, the turn, the pitch, the glide, the camera on its target
+        // (OrbitControls' update), the view handed over, then followSky and the pool laid for the frame.
+        step = () => {
+          run.followPanel();
+          run.turnStep();
+          run.pitchStep();
+          run.glideStep();
+          run.align();
+          if (!sky.tween) sky.target.copy(sky.controls.target);
+          sky.camera.updateMatrixWorld();
+          run.followSky(1 / 60);
+          sky.placeSun();
+          pool.update(keyOffset, 0, 0, sky.skyShown);
+          pool.mesh.updateMatrixWorld();
+        },
+        // The camera at rest in the framing it chose: its glide, turn and pitch done.
+        rests = () => sky.autoFocus && !sky.tween && Math.abs(sky.targetYaw - sky.yaw) <= 1e-4 && Math.abs(run.aim(sky.camera.zoom) - sky.pitch) <= 1e-4,
+        // How far the screen box round world points (or points in `matrix`'s frame) reaches into the stage (px), and what share of the box lies there.
+        seen = (points, matrix) => {
+          const q = new T.Vector3();
+          let x0 = Infinity,
+            x1 = -Infinity,
+            y0 = Infinity,
+            y1 = -Infinity;
+          for (const p of points) {
+            q.copy(p);
+            if (matrix) q.applyMatrix4(matrix);
+            q.project(sky.camera);
+            [x0, x1, y0, y1] = [Math.min(x0, q.x), Math.max(x1, q.x), Math.min(y0, q.y), Math.max(y1, q.y)];
+          }
+          const across = Math.max(0, Math.min(x1, 1) - Math.max(x0, -1)),
+            down = Math.max(0, Math.min(y1, 1) - Math.max(y0, -1));
+          return { reach: Math.min((across * sky.width) / 2, (down * sky.height) / 2), share: (across * down) / ((x1 - x0) * (y1 - y0)) };
+        },
+        square = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => new T.Vector3(x, 0, z)),
+        island = () => seen(shape),
+        water = () => seen(square, pool.mesh.matrixWorld),
+        // The stage at w x h (resize(): the scene's camera fitted to it).
+        stage = (w, h) => {
+          Object.assign(sky.container, { clientWidth: w, clientHeight: h });
+          run.resize();
+        },
+        // The reading panel's left edge as a share of the width (page.tsx's readingEdge, no scrollbar).
+        edge = (vw) => {
+          const pad = Math.min(56, Math.max(16, 0.04 * vw)),
+            wide = vw <= 1180 ? Math.min(600, Math.max(380, 0.5 * vw)) : Math.min(640, Math.max(400, 0.44 * vw));
+          return (vw - pad - Math.min(vw - 2 * pad, wide)) / vw;
+        },
+        // The page's framing calls: City mode's file (frameCity, fileFrame's shift and drop), and the reading page's shots (page.tsx).
+        file = (shift, drop) => {
+          Object.assign(sky, { cityMode: true, frameShift: shift, frameDrop: drop, panelEdge: 1 });
+          run.setYaw(fileBearing);
+          run.select('sky-island');
+        },
+        chapter = (id, w, wide) => {
+          sky.cityMode = false;
+          run.setYaw(plan.chapterBearings[id]);
+          run.setFrameShift(wide ? 0.21 : 0, 0, wide ? edge(w) : 1);
+          if (id === 'people') run.focusBuildings([...plan.chapterSubjects.people]);
+          else run.select(id);
+        },
+        hero = (wide) => {
+          sky.cityMode = false;
+          run.setYaw(Math.PI / 4);
+          run.reset();
+          run.setYaw(Math.PI / 4);
+          run.setFrameShift(wide ? -0.06 : 0);
+        },
+        last = (wide) => {
+          sky.cityMode = false;
+          run.setFrameShift(wide ? 0.21 : 0, 0);
+          run.overview(true);
+        },
+        // As the page opens: the scene's state at its first frame, the stage at w x h.
+        open = (w, h) => {
+          sky.controls.target.set(0, 0, 0);
+          sky.target.set(0, 0, 0);
+          sky.shiftApplied.set(0, 0, 0);
+          sky.camera.zoom = 1;
+          Object.assign(sky, { yaw: Math.PI / 4, targetYaw: Math.PI / 4, targetZoom: 1, pitch: 0, driftAngle: 0, tween: true, focusedIds: [], overviewFit: false, inspect: null, parkSelected: false, autoFocus: false, cityMode: false, skyShown: firstShown === 'true', frameShift: 0, frameDrop: 0, panelEdge: 1 });
+          stage(w, h);
+        },
+        settle = () => {
+          for (let f = 0, still = 0; f < 1200 && still < 5; f++) {
+            step();
+            still = rests() ? still + 1 : 0;
+          }
+        },
+        worst = { went: 0, share: 0, glides: 0 },
+        // Frame by frame to rest: wherever it goes, nothing of it or its pool is left in the frame but a pixel, or the camera has come to rest with no more than half the box round it in the frame.
+        watch = (label) => {
+          let went = false;
+          for (let f = 0, still = 0; f < 1200 && still < 5; f++) {
+            const was = sky.skyShown;
+            step();
+            still = rests() ? still + 1 : 0;
+            if (!was || sky.skyShown) continue;
+            const it = island(),
+              sea = water();
+            went = true;
+            assert((it.reach <= 1 + 1e-9 && sea.reach <= 1 + 1e-9) || (rests() && it.share <= 0.5), `${label}: the sky island goes at frame ${f} with ${it.reach.toFixed(1)} px of it (${(it.share * 100).toFixed(0)}% of the box round it) and ${sea.reach.toFixed(1)} px of its pool on the sea still in the frame${rests() ? '' : ', the camera still moving'}.`);
+            if (rests()) worst.share = Math.max(worst.share, it.share);
+            else worst.went = Math.max(worst.went, it.reach, sea.reach);
+          }
+          worst.glides++;
+          return went;
         };
-      assert(shown({}), 'The sky island is hidden in the About chapter.');
-      // Back to the opening view (reset()): gone as the glide starts.
-      assert(!shown({ focusedIds: [], tween: true }) && !shown({ tween: false }), 'The sky island shows in the opening view.');
-      // On to a chapter: back only once the glide has ended.
-      assert(!shown({ focusedIds: ['town-hall'], tween: true }) && shown({ tween: false }), 'The sky island comes back before the glide out of the opening view has ended.');
-      // The corner park's frame (focusPark: nothing focused, the park selected) shows it, as before.
-      assert(shown({ focusedIds: [], parkSelected: true, tween: false }), 'The sky island is hidden in the corner park\'s frame.');
-      // City mode (its overview, a place's file, the island's own) and Inspect always show it.
-      assert(shown({ parkSelected: false, cityMode: true, tween: true }) && shown({ cityMode: true, overviewFit: true }), 'The sky island is hidden in City mode.');
-      assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: [] }), 'The sky island is hidden in Inspect.');
-      // Its pool on the sea goes and comes with it (the 3D review's first finding: in the phone hero
-      // the dark pool showed behind the wordmark's pill): the frame loop lays the sea shadow with
-      // skyShown (city-water's update hides the pool when it is false: check-town), once a frame and
-      // after followSky has set skyShown for that frame.
-      {
-        const updates = [],
-          order = [];
-        (function find(node) {
-          if (ts.isCallExpression(node) && node.expression.getText(syntax) === 'seaShadow.update') updates.push(node);
-          ts.forEachChild(node, find);
-        })(syntax);
-        (function walk(node) {
-          if (ts.isFunctionDeclaration(node) && node.name?.text === 'step')
-            for (const statement of node.body.statements)
-              if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) order.push(statement.expression.expression.getText(syntax));
-          ts.forEachChild(node, walk);
-        })(syntax);
-        const [update] = updates;
-        assert(
-          updates.length === 1 && update.arguments.length === 4 && ts.isIdentifier(update.arguments[3]) && update.arguments[3].text === 'skyShown' && order.indexOf('followSky') >= 0 && order.indexOf('followSky') < order.indexOf('animateExtras'),
-          'The sky island\'s sea shadow no longer follows skyShown, set for the same frame.',
-        );
+      // (d1) About, People from it, Departures after it; City mode and Inspect.
+      open(1440, 900);
+      chapter('town-hall', 1440, true);
+      settle();
+      assert(sky.skyShown && island().reach === 0, 'The sky island is hidden in the About chapter, or in view there.');
+      chapter('people', 1440, true);
+      step();
+      assert(!sky.skyShown && !pool.mesh.visible, 'Glided into the People chapter from About, where it is out of view, the sky island does not go at once.');
+      settle();
+      assert(!sky.skyShown, 'The sky island shows in the People chapter.');
+      chapter('airport', 1440, true);
+      for (let f = 0, still = 0; f < 1200 && still < 5; f++) {
+        const was = sky.skyShown;
+        step();
+        still = rests() ? still + 1 : 0;
+        assert(was || !sky.skyShown || !sky.tween || island().reach <= 1, `The sky island comes back in view at frame ${f} of the glide out of the People chapter.`);
       }
-      // Where it was cut: the opening view (the island's centre at zoom 1, no frame shift on a narrow
-      // page) on phones and upright tablets, whose reading page docks the stage 46% of the screen
-      // tall (320 px at the least: globals.css), at some moment of the idle drift.
+      assert(sky.skyShown && island().reach === 0, 'The sky island does not come back once the glide out of the People chapter has ended, or shows in Departures.');
+      chapter('people', 1440, true);
+      step();
+      sky.cityMode = true;
+      step();
+      assert(sky.skyShown, 'The sky island is hidden in City mode.');
+      Object.assign(sky, { cityMode: false, inspect: {} });
+      step();
+      assert(sky.skyShown, 'The sky island is hidden in Inspect.');
+      sky.inspect = null;
+      // (d2) The opening view on phones and upright tablets (the reading page docks the stage 46% of the
+      // screen tall, 320 px at the least: globals.css; a portrait tablet of 1024 wide lays the page out
+      // wide, the stage the whole screen, and holds it all but whole) and on desktops, as the page
+      // opens on it, through the drift.
       let cut = 0;
-      for (const [w, screen] of [[360, 640], [375, 667], [375, 812], [390, 844], [414, 896], [430, 932], [768, 1024], [820, 1180]]) {
-        const h = Math.max(320, 0.46 * screen);
-        if (drifts.some((d) => overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, new T.Vector3(), p))), [0, 0, w, h]))) cut++;
+      for (const [w, screen, wide] of [[360, 640], [375, 667], [375, 812], [390, 844], [414, 896], [430, 932], [768, 1024], [820, 1180], [1024, 1366, true], [1440, 900, true]]) {
+        const h = wide ? screen : Math.max(320, 0.46 * screen);
+        if (!wide && drifts.some((d) => overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, new T.Vector3(), p))), [0, 0, w, h]))) cut++;
+        open(w, h);
+        hero(wide);
+        settle();
+        for (const d of drifts) {
+          sky.driftAngle = d;
+          step();
+          assert(!sky.skyShown && !sky.island.root.visible && !pool.mesh.visible, `The opening view at ${w} x ${h.toFixed(0)}, drifted ${d.toFixed(2)}, shows the sky island or its pool.`);
+        }
       }
       assert(cut > 0, 'The check no longer finds the opening frame the sky island was cut by.');
-      skyNav.hero = `hidden in the opening view (it would be cut on ${cut} of 8 phone and tablet frames)`;
+      // (d3) The visitor's own view: the -button three times in the opening view at 1440 x 900 (it
+      // comes into view at the top), a drag toward it in a phone's opening view, a wheel zoom out
+      // at 1440 x 900; in the last shot, a drag and the + button.
+      const shownInView = (label, frames, act = () => {}) => {
+        for (let f = 0; f < frames; f++) {
+          act(f);
+          step();
+          const it = island();
+          assert(it.reach <= 1 || sky.skyShown, `${label}: at frame ${f} ${it.reach.toFixed(1)} px of the sky island are in the frame, hidden.`);
+        }
+      };
+      open(1440, 900);
+      hero(true);
+      settle();
+      assert(!sky.skyShown, 'The sky island shows in the opening view at 1440 x 900.');
+      shownInView('The opening view zoomed out with the - button at 1440 x 900', 240, (f) => {
+        if (f % 30 === 0 && f < 90) run.zoomBy(1 / 1.25);
+      });
+      assert(sky.skyShown && island().reach > 1, 'Zoomed out three times from the opening view at 1440 x 900, the sky island is not in view.');
+      open(390, Math.max(320, 0.46 * 844));
+      hero(false);
+      settle();
+      run.cancel();
+      shownInView('A phone\'s opening view dragged toward the sky island', 90, () => {
+        // The map follows the finger down: the view's centre moves up the screen, toward the island.
+        sky.controls.target.addScaledVector(new T.Vector3().setFromMatrixColumn(sky.camera.matrixWorld, 1), 0.25);
+      });
+      assert(sky.skyShown, 'Dragged in a phone\'s opening view, the sky island stays hidden.');
+      open(1440, 900);
+      hero(true);
+      settle();
+      run.cancel();
+      sky.camera.zoom = sky.targetZoom = 0.6;
+      sky.camera.updateProjectionMatrix();
+      shownInView('The opening view zoomed out by the wheel at 1440 x 900', 30);
+      assert(sky.skyShown, 'Zoomed out by the wheel from the opening view, the sky island stays hidden.');
+      open(1440, 900);
+      chapter('town-hall', 1440, true);
+      settle();
+      last(true);
+      settle();
+      assert(!sky.skyShown, 'The sky island shows in the reading page\'s last shot.');
+      run.cancel();
+      shownInView('The last shot dragged', 30);
+      assert(sky.skyShown, 'Dragged, the reading page\'s last shot keeps the sky island hidden.');
+      chapter('town-hall', 1440, true);
+      settle();
+      last(true);
+      settle();
+      assert(!sky.skyShown, 'The sky island shows in the reading page\'s last shot, come to from About.');
+      shownInView('The last shot zoomed in with the + button', 120, (f) => f || run.zoomBy(1.25));
+      // (d4) Glided in from views that show it.
+      const leaving = [
+        ['1440 x 900', 1440, 900, 492 / 2880, 0, true],
+        ['1280 x 720', 1280, 720, 492 / 2560, 0, true],
+        ['390 x 844', 390, 844, 0, -100.95 / 844, false],
+        ['430 x 932', 430, 932, 0, -100.95 / 932, false],
+      ];
+      for (const [size, w, h, shift, drop, wide] of leaving)
+        for (const { into, frameIt } of [
+          { into: 'the opening view', frameIt: () => hero(wide) },
+          { into: 'the People chapter', frameIt: () => chapter('people', w, wide) },
+          { into: 'the last shot', frameIt: () => last(wide) },
+        ]) {
+          // Its own file, at rest, the island in view; then the page leaves City mode (a phone's stage docked).
+          open(w, h);
+          file(shift, drop);
+          settle();
+          assert(sky.skyShown && island().reach > 50, `The sky island's file at ${size} does not show it.`);
+          frameIt();
+          if (!wide) stage(w, Math.max(320, 0.46 * h));
+          watch(`From its file at ${size} into ${into}`);
+          if (into === 'the opening view') assert(!sky.skyShown && !pool.mesh.visible, `From its file at ${size}, the opening view comes to rest with the sky island or its pool in view.`);
+        }
+      // Recentre in the About chapter panned to it, at 1440 x 900.
+      open(1440, 900);
+      chapter('town-hall', 1440, true);
+      settle();
+      run.cancel();
+      for (let f = 0; f < 240 && island().share < 0.75; f++) {
+        sky.controls.target.addScaledVector(new T.Vector3(plan.SKY.x, 0, plan.SKY.z).sub(sky.controls.target).setY(0).normalize(), 0.5);
+        step();
+      }
+      assert(sky.skyShown && island().share >= 0.75, `Panned to the sky island in the About chapter, the check cannot bring it into view (${(island().share * 100).toFixed(0)}% of it).`);
+      hero(true);
+      watch('Recentre in About panned to the sky island, at 1440 x 900');
+      assert(!sky.skyShown, 'Recentre from About panned to the sky island comes to rest with it in view at 1440 x 900.');
+      // A portrait tablet's opening view holds it all but whole (wide layout, the stage the whole
+      // screen): left from its own file by the wordmark, it is never taken away there.
+      open(1024, 1366);
+      file(492 / 2048, 0);
+      settle();
+      hero(true);
+      watch('From its file into the opening view at 1024 x 1366');
+      assert(sky.skyShown && island().share > 0.75, `The opening view at 1024 x 1366, glided into from the sky island's file, takes it away where most of it stands in the frame (${(island().share * 100).toFixed(0)}% of the box round it).`);
+      skyNav.hero = `hidden in the opening view (it would be cut on ${cut} of 8 phone and tablet frames) until the visitor pans or zooms it, and never taken away in view: ${worst.glides} glides into the frames that hide it, ${worst.went.toFixed(1)} px of it or its pool in the frame at most where it went mid-glide, ${(worst.share * 100).toFixed(0)}% of the box round it where it went at rest`;
     }
     // Every other reading frame leaves it out of sight through the idle drift: each chapter's
     // subject framed beside the reading panel from 1024 wide (its buildings as their sites' boxes,
@@ -2884,5 +3478,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.turns}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
