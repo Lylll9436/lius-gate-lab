@@ -791,6 +791,190 @@ assert.equal(studyControls.maxZoom, 4, 'Back in the town, its zoom limit holds a
 // and 4 past its edge, clamped each frame to whichever it is deepest in or nearest to; and the
 // overview and the airport's chapter fit their frames.
 const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href);
+// What the checks lane D3 added found, for a summary line of their own.
+const laneD3 = {};
+// The wheel keeps every notch in a file (the camera review's third finding and its verifier's missed
+// one, on the published site too): OrbitControls' 'start' runs cancel() for each wheel event, which
+// keeps the zoom before that notch; the next frame's followPanel measured the panel offset at that
+// zoom against one measured at another (the zoom before the frame's first notch, when two landed in
+// one frame; the zoom a +/- glide aimed at, which it stops a hair short of), took the difference
+// for a moved panel and glided the zoom back a notch, the view sliding 14-30 px after the wheel had
+// stopped, notch after notch once + or - had been pressed. Through the frame loop's own camera
+// pieces in the order step() runs them, the +/- buttons' own method, cancel() on OrbitControls'
+// 'start' and three's real OrbitControls for the wheel (at the pointer in City mode, at the view
+// centre on the reading page): in the Town Hall's file and the sky island's, beside the panel at
+// 1440 x 900 and above the sheet at 768 x 1024, after + and after - each of four notches keeps its
+// zoom and the view stays where the wheel left it (no glide at all), and so does a pair of notches
+// in one frame; and after + a pinch (one 'start' for the gesture) keeps the zoom the fingers leave
+// at every move, nothing moving once they lift.
+{
+  const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'aim', 'elevationAt', 'cancel', 'align', 'groupFrame', 'fitGroup', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'skyMarks', 'skyFit'],
+    vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_FIT', 'YAW_RATE', 'CITY_MAX_ZOOM'],
+    code = [];
+  let zoomBody, stepBody;
+  (function collect(node) {
+    if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+    if (ts.isMethodDeclaration(node) && node.name.getText(syntax) === 'zoom') zoomBody = node.body.getText(syntax);
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'step') stepBody = node.body;
+    ts.forEachChild(node, collect);
+  })(syntax);
+  // The frame loop's camera pieces, as step() orders them: the wheel's sync, the panel followed, the
+  // pitch, the glide, OrbitControls' update and the view handed over.
+  const shapes = [
+      (s) => ts.isIfStatement(s) && s.expression.getText(syntax) === '!tween && camera.zoom !== shownZoom',
+      (s) => s.getText(syntax) === 'followPanel();',
+      (s) => ts.isBlock(s) && s.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;',
+      (s) => ts.isIfStatement(s) && s.expression.getText(syntax) === 'tween' && s.thenStatement.getText(syntax).includes('controls.target.lerp'),
+      (s) => s.getText(syntax) === 'controls.update();',
+      (s) => s.getText(syntax) === 'if (!tween) target.copy(controls.target);',
+      (s) => s.getText(syntax) === 'shownZoom = camera.zoom;',
+    ],
+    frameCode = stepBody?.statements.filter((s) => shapes.some((is) => is(s))).map((s) => s.getText(syntax));
+  assert(code.length === want.length + vars.length && zoomBody && frameCode?.length === shapes.length, 'The wheel check must find every piece it runs.');
+  const js = ts.transpileModule(`${code.join('\n')}\nfunction zoomBy(f) ${zoomBody}\nfunction frame() { ${frameCode.join('\n')}\ncamera.updateMatrixWorld(); }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const rig = (w, h, city) => {
+    const aspect = w / h,
+      vertical = Math.max(53, 76 / aspect),
+      camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+      controls = new OrbitControls(camera, null);
+    controls.domElement = { clientWidth: w, clientHeight: h, getBoundingClientRect: () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h }) };
+    // As the scene sets them up; City mode's plain wheel zooms at the pointer, 1.5 times as fast (wheelIntent).
+    Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: 0.45, maxZoom: 4, zoomToCursor: city, zoomSpeed: city ? 1.5 : 1 });
+    const s = {
+        T,
+        Math,
+        plan,
+        camera,
+        controls,
+        target: new T.Vector3(),
+        shiftApplied: new T.Vector3(),
+        screenRight: new T.Vector3(),
+        screenUp: new T.Vector3(),
+        offset: new T.Vector3(),
+        frameShift: 0,
+        frameDrop: 0,
+        panelEdge: 1,
+        width: w,
+        height: h,
+        yaw: 0,
+        targetYaw: 0,
+        driftAngle: 0,
+        targetZoom: 1,
+        shownZoom: 1,
+        pitch: 0,
+        tween: false,
+        reduced: false,
+        dt: 1 / 60,
+        blend: 1 - Math.exp(-5.5 / 60),
+        focusedIds: [],
+        overviewFit: false,
+        inspect: null,
+        parkSelected: false,
+        autoFocus: true,
+        inspectionAutoFit: true,
+        lastInteraction: 0,
+        performance: { now: () => 0 },
+        clearHover() {},
+        placeSun() {},
+      },
+      run = runInNewContext(`${js};({ offsetTarget, focusSky, cancel, align, zoomBy, frame })`, s);
+    controls.addEventListener('start', run.cancel);
+    return {
+      s,
+      run,
+      camera,
+      controls,
+      // One wheel event, as OrbitControls' own listener handles it.
+      wheel(deltaY, x, y) {
+        controls.dispatchEvent({ type: 'start' });
+        controls._handleMouseWheel({ clientX: x, clientY: y, deltaY });
+        controls.dispatchEvent({ type: 'end' });
+      },
+      perUnit: () => (h * camera.zoom) / (camera.top - camera.bottom),
+    };
+  };
+  let notches = 0,
+    worst = 0;
+  for (const [w, h, shift, drop] of [[1440, 900, 492 / 2880, 0], [768, 1024, 0, -0.2629]])
+    for (const place of ['town-hall', 'sky-island'])
+      for (const city of [true, false])
+        for (const [press, burst] of [[1.25, 1], [1 / 1.25, 1], [0, 2]]) {
+          const r = rig(w, h, city),
+            { s, run, camera, controls } = r,
+            bearing = plan.chapterBearings[place],
+            at = `in the ${place === 'sky-island' ? "sky island's" : "Town Hall's"} file at ${w} x ${h}${city ? '' : ' on the reading page'}`;
+          // The file as its glide leaves it, at rest.
+          Object.assign(s, { yaw: bearing, targetYaw: bearing, frameShift: shift, frameDrop: drop, focusedIds: [place], pitch: place === 'sky-island' ? 1 : 0, targetZoom: 2 });
+          if (place === 'sky-island') run.focusSky();
+          else {
+            s.target.set(plan.sites[place].x, 3, plan.sites[place].z);
+            run.offsetTarget();
+          }
+          controls.target.copy(s.target);
+          camera.zoom = s.shownZoom = s.targetZoom;
+          camera.updateProjectionMatrix();
+          run.align();
+          controls.update();
+          camera.updateMatrixWorld();
+          for (let f = 0; f < 5; f++) run.frame();
+          // + or - pressed, its glide run to its end.
+          if (press) {
+            const goal = camera.zoom * press;
+            run.zoomBy(press);
+            for (let f = 0; f < 600 && s.tween; f++) run.frame();
+            assert(!s.tween && Math.abs(camera.zoom - goal) < 0.001, `The ${press > 1 ? '+' : '-'} button's glide ${at} ends at ${camera.zoom.toFixed(4)}, not ${goal.toFixed(4)}.`);
+          }
+          // Then notches in and out (or a pair in one frame), off the view's centre.
+          for (const deltaY of burst > 1 ? [100] : [100, -100, -100, 100]) {
+            for (let k = 0; k < burst; k++) r.wheel(deltaY, 0.33 * w, 0.5 * h);
+            const kept = camera.zoom;
+            run.frame();
+            const view = controls.target.clone();
+            let spring = 0,
+              slide = 0,
+              glides = 0;
+            for (let f = 0; f < 120; f++) {
+              run.frame();
+              glides += s.tween ? 1 : 0;
+              spring = Math.max(spring, Math.abs(camera.zoom - kept));
+              slide = Math.max(slide, controls.target.distanceTo(view) * r.perUnit());
+            }
+            notches += burst;
+            worst = Math.max(worst, slide);
+            assert(spring < 1e-9 && slide < 0.01 && !glides, `${burst > 1 ? 'Two wheel notches in one frame' : `A wheel notch after ${press > 1 ? '+' : '-'}`} ${at} spring${spring ? 's' : ''} back from ${kept.toFixed(4)} to ${camera.zoom.toFixed(4)} over ${glides} glide frames, the view sliding ${slide.toFixed(1)} px.`);
+          }
+          // And a pinch (on a tablet, which has the buttons too): one 'start' for the whole gesture,
+          // then a dolly about the fingers' middle at each move, as OrbitControls' touch dolly does it.
+          // Every frame keeps the zoom the fingers left, and once they lift nothing moves.
+          if (press !== 1.25) continue;
+          controls.dispatchEvent({ type: 'start' });
+          let lagged = 0,
+            moves = 0;
+          for (let move = 0; move < 12; move++) {
+            controls._dollyOut(move < 6 ? 1.03 : 1 / 1.05);
+            controls._updateZoomParameters(0.6 * w, 0.4 * h);
+            controls.update();
+            const fingers = camera.zoom;
+            run.frame();
+            moves++;
+            lagged = Math.max(lagged, Math.abs(camera.zoom - fingers));
+          }
+          controls.dispatchEvent({ type: 'end' });
+          const lifted = camera.zoom,
+            view = controls.target.clone();
+          let drift = 0,
+            glides = 0;
+          for (let f = 0; f < 120; f++) {
+            run.frame();
+            glides += s.tween ? 1 : 0;
+            drift = Math.max(drift, Math.abs(camera.zoom - lifted), controls.target.distanceTo(view) * r.perUnit());
+          }
+          notches += moves;
+          assert(lagged < 1e-9 && drift < 0.01 && !glides, `A pinch after + ${at} lags the fingers by ${lagged.toFixed(4)} or moves on by ${drift.toFixed(2)} after they lift, over ${glides} glide frames.`);
+        }
+  laneD3.wheel = `${notches} wheel notches and pinch moves kept after +, - and in same-frame pairs (the view ${worst.toFixed(2)} px from where the wheel left it at most)`;
+}
 {
   const pieces = [];
   const collect = (node) => {
@@ -1507,10 +1691,74 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     assert(fog.rest <= 0.05 && fog.drift <= 0.15, `The fog reaches ${fog.rest.toFixed(3)} at rest (and ${fog.drift.toFixed(3)} through the drift) over the sky island in City mode's overview.`);
     skyNav.overview = `the fog ${(fog.rest * 100).toFixed(1)}% at rest, ${(worstCut * 100).toFixed(0)}% of it in frame through the drift`;
 
+    // (b2) Clear of the caption (the art review's fourth finding): at the opening bearing the island
+    // lands at the box's top left, and it stood under or right beside the caption's sky chip (16 to
+    // 182 px across with its longest caption, its foot 102 down): 3 px from its column at 1280 x 800,
+    // overlapping it at 1280 x 720, 1366 x 768 and 1440 x 900. In City mode fitOverview moves the
+    // view sideways (the town right), never up or down and at the same zoom, until the island, its
+    // clouds and rocks clear that column by 24 px (PANEL_CLEAR), the whole overview kept 24 px from
+    // the file and the frame's left edge; on every desktop size, the file open or hidden, it is then
+    // clear by 24 px at rest and off the column all through the idle drift. Where there is no room for
+    // that (a phone upright, the smallest on its side), the framing stays as it was.
+    {
+      const bearing = Math.PI / 4,
+        right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+        back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+        up = new T.Vector3().crossVectors(back, right),
+        // How far a screen box lies from the chip's column (negative: on it).
+        gap = ([x0, y0, x1, y1]) => Math.max(x0 - 182, y0 - 102, 16 - x1, 72 - y1),
+        found = { moved: [], rest: Infinity, drift: Infinity, kept: 0 },
+        // The overview of a w x h frame (beside a file `shift`, over a sheet `drop`): where it put the
+        // view, and how far (px) that is left of the box's own middle with the panel offset.
+        overviewOf = (w, h, shift, drop) => {
+          frame(w, h, shift, bearing);
+          Object.assign(view, { frameDrop: drop, cityMode: true });
+          scene.fitOverview();
+          const xs = [...scene.islandMarks, ...scene.SKY_MARKS].map((p) => p.dot(right)),
+            ys = [...scene.islandMarks, ...scene.SKY_MARKS].map((p) => p.dot(up)),
+            zoom = view.targetZoom,
+            centre = view.target.clone(),
+            perUnit = (h * zoom) / Math.max(53, (76 * h) / w),
+            moved = ((Math.min(...xs) + Math.max(...xs)) / 2 + view.shiftApplied.dot(right) - centre.dot(right)) * perUnit,
+            lifted = ((Math.min(...ys) + Math.max(...ys)) / 2 + view.shiftApplied.dot(up) - centre.dot(up)) * perUnit;
+          Object.assign(view, { frameDrop: 0, cityMode: false });
+          return { zoom, centre, moved, lifted, panel: shift > 0 ? w * (1 - 2 * shift) + 16 : w };
+        };
+      for (const [w, h] of desktops)
+        for (const open of [false, true]) {
+          const { zoom, centre, moved, lifted, panel } = overviewOf(w, h, open ? 492 / (2 * w) : 0, 0),
+            at = `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''}`,
+            all = box([...scene.islandMarks, ...shape].map((p) => px(w, h, zoom, bearing, centre, p))),
+            rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
+          if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
+          found.rest = Math.min(found.rest, rest);
+          assert(moved > -1e-6 && Math.abs(lifted) < 1e-6 && (moved < 1e-6 || rest < 24 + 6), `${at} moves the view ${moved.toFixed(1)} px sideways and ${lifted.toFixed(1)} px up, the island ${rest.toFixed(1)} px from the caption's column.`);
+          assert(rest >= 24 - 1e-6 && all[0] >= 24 - 1e-6 && all[2] <= panel - 24 + 1e-6, `${at} leaves the sky island ${rest.toFixed(1)} px from the caption's column, the overview spanning ${all[0].toFixed(0)} to ${all[2].toFixed(0)} px (the file at ${panel.toFixed(0)}).`);
+          for (const d of drifts) {
+            const off = gap(box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p))));
+            found.drift = Math.min(found.drift, off);
+            assert(off >= 0, `Drifted ${d.toFixed(2)}, ${at} brings the sky island onto the caption's column (${off.toFixed(1)} px).`);
+          }
+        }
+      // Phones: moved only where that clears the island (on their side, beside the file), else as they were.
+      for (const [w, h, shift, drop] of [
+        ...[[360, 640], [375, 667], [390, 844], [412, 915], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]),
+        ...[[667, 375], [844, 390], [932, 430]].map(([w, h]) => [w, h, (Math.min(340, 0.42 * w) + 28) / (2 * w), -33 / h]),
+      ]) {
+        const { zoom, centre, moved, panel } = overviewOf(w, h, shift, drop),
+          all = box([...scene.islandMarks, ...shape].map((p) => px(w, h, zoom, bearing, centre, p))),
+          rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
+        if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
+        else found.kept++;
+        assert(moved < 1e-6 || (rest >= 24 - 1e-6 && rest < 24 + 6 && all[2] <= panel - 24 + 1e-6), `City mode's overview on a ${w} x ${h} phone moves the view ${moved.toFixed(1)} px, the island ${rest.toFixed(1)} px from the caption's column.`);
+      }
+      laneD3.overview = `the sky island in City mode's overview ${found.rest.toFixed(1)} px clear of the caption's column at rest and ${found.drift.toFixed(1)} px through the drift on every desktop size (the view moved ${found.moved.join(', ')}; ${found.kept} phones as they were)`;
+    }
+
     // (c) Its own file, at its own lower pitch (city-scene's SKY_PITCH, 30 degrees; from the town's
     // 42.6 its rock showed as a fringe under the deck): framed as the camera will stand once it has
     // come down (aim() 1 for the island alone, the pitch at 1), SKY_FIT fitted like a group between
-    // 0.95 and 2.6 (2.035 at 1440 x 900; 2.019 at the town's pitch), its target then raised SKY_LIFT
+    // 0.7 and 2.6 (2.035 at 1440 x 900; 2.019 at the town's pitch), its target then raised SKY_LIFT
     // up the line of sight: under the pan limit's lift (a glide's end never slides the camera) with
     // its ground point, 18.7 beyond the island at that pitch (11.7 at the town's), in the island's own pocket
     // (skyReach: as much further out as the line of sight runs at that pitch), unclamped. The
@@ -1643,6 +1891,101 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         assert(back.steady && back.most < 0.045 && Math.abs(step.pitch - low) < 0.005, `Zoomed back into the sky island's file at ${w} x ${h}, the camera's pitch ends at ${step.pitch.toFixed(3)} for ${low.toFixed(3)}.`);
         Object.assign(view, { frameDrop: 0, focusedIds: [] });
       }
+    }
+
+    // (c1b) Short windows (the camera review's fifth finding). Under 961 px wide the file is a peeking
+    // sheet, and on a short window the band it leaves (from the masthead's foot at 58 to the sheet's
+    // top, measured on the page: 195.2 at 960 x 540, 224 at 800 x 600) held the island only below the
+    // old floor of 0.95: its chimneys rose into the masthead and its rock and puffs sank under the
+    // frosted sheet (12 and 14.5 px at 960 x 540). Fitted down to 0.7 (focusSky, skyFitZoom), it
+    // settles at its own pitch whole in that band, 6 px clear of the masthead and the sheet at least
+    // and 12 of the sides, at every Rotate stop, at rest and through the idle drift; from that fit
+    // down to seven tenths of it, at every bearing and with its ground point anywhere on its pocket's
+    // edge, the sea fills the frame and its corners lie no deeper in the fog than in that window's own
+    // widest view of the town. And every listed screen fits the island above the old floor, so the
+    // new one moves none of their framings.
+    {
+      const { SEA_SIZE } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
+        [fogNear, fogFar] = /new T\.Fog\('#[0-9a-f]+', (\d+), (\d+)\)/.exec(source).slice(1).map(Number),
+        // A frame at `zoom` and `low` of the way down to the file's pitch, from bearing `b`, its view
+        // centre the panel offset (`shift`, `drop`) from `ground`: how far out its corners see the sea
+        // short of the fog and the near plane, and how deep into the fog the farthest lies with the
+        // target lifted as far as the pan limit lets it.
+        corners = (w, h, shift, drop, zoom, low, b, ground) => {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect),
+            halfW = (vertical * aspect) / 2 / zoom,
+            halfH = vertical / 2 / zoom,
+            back = scene.viewOffset(b, new T.Vector3(), low),
+            right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
+            up = new T.Vector3().crossVectors(back.clone().normalize(), right),
+            forward = back.clone().normalize().negate(),
+            eye = ground.clone().addScaledVector(right, shift * 2 * halfW).addScaledVector(up, drop * 2 * halfH).add(back);
+          let fog = 0,
+            reach = 0;
+          for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+            const from = eye.clone().addScaledVector(right, u * halfW).addScaledVector(up, v * halfH),
+              t = (0.07 - from.y) / forward.y;
+            fog = Math.max(fog, (t + scene.PAN.lift / -forward.y - fogNear) / (fogFar - fogNear));
+            if (t > -200 && t < fogFar) reach = Math.max(reach, Math.abs(from.x + forward.x * t), Math.abs(from.z + forward.z * t));
+          }
+          return { fog, reach };
+        },
+        found = { zoom: Infinity, clear: Infinity, fog: 0, widest: 0, reach: 0 };
+      for (const [w, h, sheet] of [[960, 540, 195.2], [800, 600, 224]]) {
+        const drop = ((58 + sheet) / 2 - h / 2) / h;
+        for (let stop = 0; stop < 4; stop++) {
+          const bearing = fileBearing + (stop * Math.PI) / 2,
+            { zoom, centre, low } = settles(w, h, 0, drop, bearing),
+            elevation = scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low,
+            at = `${w} x ${h}${stop ? ` at Rotate stop ${stop}` : ''}`;
+          found.zoom = Math.min(found.zoom, zoom);
+          assert(zoom >= 0.7 - 1e-9 && low > 0.999, `The sky island's file on a ${at} window fits at ${zoom.toFixed(3)}, ${low.toFixed(3)} of the way down to its pitch.`);
+          for (const d of [0, ...fileDrifts]) {
+            const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p, elevation))),
+              clear = Math.min(y0 - 58, sheet - y1);
+            found.clear = Math.min(found.clear, clear);
+            assert(clear >= 6 && x0 >= 12 && x1 <= w - 12, `Drifted ${d.toFixed(2)}, the sky island's file on a ${at} window spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px, against the masthead's foot at 58 and the sheet's top at ${sheet}.`);
+          }
+        }
+        // From the fit down to seven tenths of it: the sea, and the fog against the window's widest view of the town.
+        frame(w, h, 0, fileBearing);
+        Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
+        scene.focusSky();
+        const fit = view.targetZoom,
+          widest = corners(w, h, 0, 0, 0.45, 0, fileBearing, new T.Vector3(S.x, 0, S.z)).fog;
+        found.widest = Math.max(found.widest, widest);
+        for (const k of [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7]) {
+          const zoom = fit * k,
+            low = scene.aim(zoom),
+            out = 16 * (low ? Math.tan(scene.TOWN_PITCH) / Math.tan(scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low) : 1) + 0.5;
+          for (let b = 0; b < 2 * Math.PI; b += Math.PI / 48)
+            for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) {
+              const { fog, reach } = corners(w, h, 0, drop, zoom, low, b, new T.Vector3(S.x + Math.cos(a) * out, 0, S.z + Math.sin(a) * out));
+              found.fog = Math.max(found.fog, fog);
+              found.reach = Math.max(found.reach, reach);
+              assert(fog < widest && reach < SEA_SIZE / 2 - 10, `On a ${w} x ${h} window, the sky island's file zoomed to ${zoom.toFixed(3)} (${low.toFixed(2)} of the way down) at bearing ${b.toFixed(2)} sees the sea ${reach.toFixed(0)} out (of ${SEA_SIZE / 2}) and a corner ${(fog * 100).toFixed(0)}% into the fog, ${(widest * 100).toFixed(0)}% in its widest view of the town.`);
+            }
+        }
+        Object.assign(view, { frameDrop: 0, focusedIds: [], pitch: 0 });
+      }
+      // Every listed screen's file, at every Rotate stop, fits the island above the old floor.
+      let lowest = Infinity;
+      for (const [w, h, shift, drop] of [
+        ...[...desktops, [1366, 657]].map(([w, h]) => [w, h, 492 / (2 * w), 0]),
+        [768, 1024, 0, -0.2629],
+        [820, 1180, 0, -0.2625],
+        ...[[360, 640], [360, 740], [375, 667], [375, 812], [390, 844], [393, 852], [412, 915], [414, 896], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]),
+        ...landscapeFiles,
+      ])
+        for (let stop = 0; stop < 4; stop++) {
+          frame(w, h, shift, fileBearing + (stop * Math.PI) / 2);
+          Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'] });
+          lowest = Math.min(lowest, scene.skyFitZoom());
+          Object.assign(view, { frameDrop: 0, focusedIds: [] });
+        }
+      assert(lowest > 0.95, `A listed screen fits the sky island's file at ${lowest.toFixed(3)}, under the old floor: lowering it moved that screen's framing.`);
+      laneD3.short = `the sky island's file on 960 x 540 and 800 x 600 windows fitted down to ${found.zoom.toFixed(3)}, ${found.clear.toFixed(1)} px clear of the masthead and the sheet at least, its corners ${(found.fog * 100).toFixed(0)}% into the fog at most (${(found.widest * 100).toFixed(0)}% in their widest view of the town), every listed screen at ${lowest.toFixed(3)} or more`;
     }
 
     // (c2) From the file, at its pitch (the pocket as far out as skyReach has it there): a drag out to
@@ -3480,3 +3823,4 @@ visibleMesh.material.dispose();
 console.log(
   `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.turns}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
+console.log(`And: ${Object.values(laneD3).join('; ')}.`);

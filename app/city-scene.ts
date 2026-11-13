@@ -1386,6 +1386,35 @@ export async function createCity(
       .addScaledVector(up, (minY + maxY) / 2);
     target.addScaledVector(back, -target.y / back.y);
     offsetTarget();
+    // City mode, where the sky island lands at the box's top left (the opening bearing): it stood
+    // under or right beside the caption's sky chip (16 px in, 166 wide with its longest caption, its
+    // foot 102 down; the chip naming the place under the pointer is hidden in City mode). The view
+    // moves left, the town right, until the island with its clouds and rocks clears the chip's column
+    // by PANEL_CLEAR, if the room before the file (PANEL_CLEAR from it) or the frame's edge allows;
+    // where it does not, the framing stays as it was. The zoom never changes.
+    if (cityMode) {
+      const perUnit = (width * targetZoom) / (camera.right - camera.left),
+        point = new T.Vector3();
+      let left = Infinity,
+        top = -Infinity;
+      for (const mark of SKY_MARKS) {
+        left = Math.min(left, mark.dot(right));
+        top = Math.max(top, mark.dot(up));
+      }
+      // Each cloud and rock as a disc round its slot, as wide as it reaches and as high as it rises
+      // (in units of its size: a cloud 2.55 out and 1.5 up, a rock 1.3 out and 1.2 up).
+      for (const [floats, reach, rise] of [[plan.SKY_CLOUDS, 2.55, 1.5], [plan.SKY_ROCKS, 1.3, 1.2]] as const)
+        for (const float of floats) {
+          point.set(float.x, float.y + rise * float.size, float.z);
+          left = Math.min(left, point.dot(right) - reach * float.size);
+          top = Math.max(top, point.dot(up) + reach * float.size * Math.hypot(up.x, up.z));
+        }
+      const centre = target.dot(right),
+        islandTop = height / 2 - (top - target.dot(up)) * perUnit,
+        need = 182 + PANEL_CLEAR - (width / 2 + (left - centre) * perUnit),
+        room = (frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width) - PANEL_CLEAR - (width / 2 + (maxX - centre) * perUnit);
+      if (islandTop < 102 + PANEL_CLEAR && need > 0 && need <= room) target.addScaledVector(right, -need / perUnit);
+    }
     tween = true;
   }
   function fitFocused() {
@@ -1506,18 +1535,22 @@ export async function createCity(
   }
   /**
    * The sky island's own frame, at its own pitch (SKY_PITCH: the camera comes down to it as the
-   * glide closes in): SKY_FIT fitted like a group between 0.95 and 2.6, which leaves the target on
+   * glide closes in): SKY_FIT fitted like a group between 0.7 and 2.6, which leaves the target on
    * the ground 18.7 beyond the island along the line of sight at that pitch, 30 degrees (11.7 at the
    * town's, 42.6); then the target is raised SKY_LIFT up that line. Nothing on screen changes, but
    * the idle drift now turns the view about a point 4 under the island's middle, not 10 (it swings
    * the island much less far), and the target still stands under the pan limit's lift: a
    * one-building framing, on the island's own middle 10.5 up, would stand over it, and the limit
-   * would slide the camera as the glide ended. At `zoom` (a zoom
-   * the visitor chose: Rotate after a pan or a zoom) the subject is the same, the panel offset
-   * measured at that zoom instead of the fit's.
+   * would slide the camera as the glide ended. The floor of 0.7 (the airport's is 0.95) is for
+   * short windows under 961 px wide, whose peeking sheet leaves the island a band of about 137 px
+   * (960 x 540 fits it at 0.7, 800 x 600 at 0.74): at 0.95 its chimneys rose into the masthead and
+   * its rock sank under the sheet. Every listed screen fits it at 1.19 or more (a phone on its
+   * side), so their framings are as they were. At `zoom` (a zoom the visitor chose: Rotate after a
+   * pan or a zoom) the subject is the same, the panel offset measured at that zoom instead of the
+   * fit's.
    */
   function focusSky(zoom?: number) {
-    fitGroup(SKY_FIT, 0.95, 2.6, panelEdge, 1);
+    fitGroup(SKY_FIT, 0.7, 2.6, panelEdge, 1);
     if (zoom) {
       target.sub(shiftApplied);
       targetZoom = zoom;
@@ -1538,7 +1571,7 @@ export async function createCity(
   }
   /** The zoom the sky island's own file frames it at (focusSky's fit), for the frame as it is and the bearing the view heads for. */
   function skyFitZoom() {
-    return groupFrame(SKY_FIT, 0.95, 2.6, panelEdge, 1).zoom;
+    return groupFrame(SKY_FIT, 0.7, 2.6, panelEdge, 1).zoom;
   }
   /** Whether the view is the sky island's own file: the island framed alone, or panned and zoomed about since (as aim() has it). */
   function skyFile() {
@@ -1918,6 +1951,57 @@ export async function createCity(
     multiPointer = false;
     clearHover();
   }
+  /**
+   * Where a place stands on screen (px in the stage), for its floating label to keep beside it
+   * (labelPosition, City mode): the box round its points as the camera sees them now. A building's
+   * points are the corners of its pointer box (its bounds; the airport's, its hall's), the park's those
+   * of its own; the sky island's are its silhouette (SKY_MARKS) and an octagon round each cloud and
+   * rock as far out as it reaches, at its foot and its top (in units of its size: a cloud 2.55 out,
+   * 0.07 under its base and 1.5 over it; a rock 1.3 out, 1.8 under and 1.2 over). Gathered once a place.
+   */
+  const subjectPoints = new Map<HoverTarget, T.Vector3[]>(),
+    subjectAt = new T.Vector3();
+  function subjectBox(id: HoverTarget) {
+    let points = subjectPoints.get(id);
+    if (!points) {
+      points = [];
+      if (id === 'sky-island') {
+        points.push(...SKY_MARKS);
+        for (const [floats, reach, sink, rise] of [[plan.SKY_CLOUDS, 2.55, 0.07, 1.5], [plan.SKY_ROCKS, 1.3, 1.8, 1.2]] as const)
+          for (const float of floats)
+            for (let k = 0; k < 8; k++) {
+              const angle = (k / 8) * Math.PI * 2,
+                out = (reach * float.size) / Math.cos(Math.PI / 8);
+              for (const y of [float.y - sink * float.size, float.y + rise * float.size])
+                points.push(new T.Vector3(float.x + Math.cos(angle) * out, y, float.z + Math.sin(angle) * out));
+            }
+      } else if (id) {
+        const model = id === 'corner-park' ? undefined : models.get(id),
+          own = id === 'corner-park' ? parkHit : model?.hit,
+          bounds =
+            own instanceof T.Mesh
+              ? new T.Box3().setFromBufferAttribute(own.geometry.getAttribute('position') as T.BufferAttribute).applyMatrix4(own.matrixWorld)
+              : model
+                ? new T.Box3().setFromObject(model.root)
+                : new T.Box3();
+        if (!bounds.isEmpty())
+          for (let i = 0; i < 8; i++) points.push(new T.Vector3(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z));
+      }
+      subjectPoints.set(id, points);
+    }
+    if (!points.length) return undefined;
+    const box = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+    for (const point of points) {
+      subjectAt.copy(point).project(camera);
+      const x = ((subjectAt.x + 1) / 2) * width,
+        y = ((1 - subjectAt.y) / 2) * height;
+      box.left = Math.min(box.left, x);
+      box.right = Math.max(box.right, x);
+      box.top = Math.min(box.top, y);
+      box.bottom = Math.max(box.bottom, y);
+    }
+    return box;
+  }
   function updateHover() {
     const active =
       hoverAllowed(hover, !!inspect, inViewport) && !document.hidden;
@@ -1930,10 +2014,17 @@ export async function createCity(
       const visible = id === b.id;
       element.style.visibility = visible ? 'visible' : 'hidden';
       if (visible) {
+        // In City mode the label keeps clear of the place it names, of the file beside it (its left
+        // edge, from the frame shift) and of the sheet or bars below (their top, from the frame drop,
+        // which page.tsx's fileFrame centres between them and the masthead's 58 px foot).
         const p = labelPosition(
           { x: hover.x - rect.left, y: hover.y - rect.top },
           { width: element.offsetWidth, height: element.offsetHeight },
-          { width, height },
+          {
+            width: cityMode && frameShift > 0 ? Math.min(width, width * (1 - 2 * frameShift) + 16) : width,
+            height: cityMode && frameDrop < 0 ? Math.max(0, height * (1 + 2 * frameDrop) - 58) : height,
+          },
+          cityMode ? subjectBox(b.id) : undefined,
         );
         element.style.transform =
           'translate(' + Math.round(p.x) + 'px,' + Math.round(p.y) + 'px)';
@@ -2003,6 +2094,21 @@ export async function createCity(
     if (dt > 0 && dt < 0.05) intervals[intervalCount++ % intervals.length] = dt;
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
     if (!paused) time += dt;
+    // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
+    // to keep, so a later re-fit cannot spring back. Zoomed at the view centre, the subject
+    // beside the panel stays put; zoomed at the pointer (City mode), the point under the
+    // pointer stays put and the panel offset is only measured again. Taken before the panel is
+    // followed, so the offset is always measured at the zoom the wheel left: the wheel's 'start'
+    // (cancel) keeps the zoom before its notch, and followPanel, measuring at that zoom against
+    // an offset measured at another (two notches in one frame; a zoom a +/- glide left a hair
+    // off its own), took it for a moved panel and glided the zoom back a notch.
+    if (!tween && camera.zoom !== shownZoom) {
+      targetZoom = camera.zoom;
+      const next = panelOffset(new T.Vector3());
+      if (!controls.zoomToCursor) controls.target.add(next).sub(shiftApplied);
+      shiftApplied.copy(next);
+      align();
+    }
     followPanel();
     if (Math.abs(targetYaw - yaw) > 0.0001) {
       // The bearing eases in more slowly than the glide and never whips round; a reduced-motion
@@ -2035,17 +2141,6 @@ export async function createCity(
         pitch = reduced || Math.abs(left) < 0.0005 ? pitch + left : pitch + left * (1 - Math.exp(-dt * YAW_RATE));
         align();
       }
-    }
-    // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
-    // to keep, so a later re-fit cannot spring back. Zoomed at the view centre, the subject
-    // beside the panel stays put; zoomed at the pointer (City mode), the point under the
-    // pointer stays put and the panel offset is only measured again.
-    if (!tween && camera.zoom !== shownZoom) {
-      targetZoom = camera.zoom;
-      const next = panelOffset(new T.Vector3());
-      if (!controls.zoomToCursor) controls.target.add(next).sub(shiftApplied);
-      shiftApplied.copy(next);
-      align();
     }
     if (tween) {
       controls.target.lerp(target, blend);

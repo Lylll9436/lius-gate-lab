@@ -232,8 +232,14 @@ export function CityStage({
           <i aria-hidden="true" />
           {skyCaption(ctl.sky, ctl.skyMode, locale)}
         </span>
+        {/* The place under the pointer is announced here; in City mode its own floating label names it
+            beside it, so this chip is for screen readers only there (globals.css, data-pointed). */}
         <div className="caption-live" aria-live="polite">
-          {caption && <span className="hover-chip">{caption}</span>}
+          {caption && (
+            <span className="hover-chip" data-pointed>
+              {caption}
+            </span>
+          )}
           {ctl.inspect && b && (
             <span className="hover-chip">
               {b.name[locale]} · {tr('Architecture study', '建筑模型')}
