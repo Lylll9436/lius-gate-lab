@@ -1449,13 +1449,16 @@ export async function createCity(
   /** A place's root in the town: a building's model, or the sky island's own. */
   const rootOf = (id: BuildingId) => (id === 'sky-island' ? island.root : models.get(id)?.root);
   /**
-   * Whether the sky island is hidden. Two of the reading page's frames would show a cut slice of
+   * Whether the sky island is hidden. Three of the reading page's frames would show a cut slice of
    * it under the masthead and the panel: the People chapter's (its row, and each home or the
-   * residence picked from it) and the last shot, the whole town once the footer arrives. It is
-   * out of every other reading frame, so the reading page stays as it was. City mode always shows it.
+   * residence picked from it), the last shot, the whole town once the footer arrives, and the
+   * opening view (reset(): nothing framed, no park), whose tall frame on a phone shows a sliver of
+   * its rock, puffs and a floating rock along the very top edge and its shadow on the sea below
+   * (on wider screens it is out of that frame, so hiding it there changes nothing). It is out of
+   * every other reading frame, so the reading page stays as it was. City mode always shows it.
    */
   function skyHidden() {
-    return !cityMode && !inspect && (overviewFit || (focusedIds.length > 0 && focusedIds.every((id) => SKY_HIDES.has(id))));
+    return !cityMode && !inspect && (overviewFit || (focusedIds.length === 0 && !parkSelected) || (focusedIds.length > 0 && focusedIds.every((id) => SKY_HIDES.has(id))));
   }
   /**
    * The sky island through the frame. It goes as the glide into a frame that hides it starts and

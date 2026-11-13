@@ -1814,6 +1814,72 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       assert(shown({ cityMode: true, focusedIds: ['yunlong-liu'], tween: true }) && shown({ overviewFit: true }), 'The sky island is hidden in City mode.');
       assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: ['qin-li'] }), 'The sky island is hidden in Inspect.');
     }
+    // (d2) The opening view (the reading page's hero, reset(): nothing framed and no park) hides it too
+    // (the art review's ninth finding): on a phone its tall frame showed a cut sliver of the rock, the
+    // puffs and a floating rock along the very top edge, and the island's shadow on the sea below it.
+    // It hides as the glide into the opening view starts and comes back once the glide out of it has
+    // ended (as in the People chapter), at once in City mode; a park or a chapter's place framed, it
+    // shows. The frames it would cut are measured here: the opening view on phones and upright tablets
+    // (the island's silhouette meets the frame), through the idle drift, where it now hides.
+    {
+      const pieces = [];
+      (function find(node) {
+        if (ts.isFunctionDeclaration(node) && ['skyHidden', 'followSky'].includes(node.name?.text)) pieces.push(node.getText(syntax));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'SKY_HIDES')) pieces.push(node.getText(syntax));
+        ts.forEachChild(node, find);
+      })(syntax);
+      assert.equal(pieces.length, 3, 'The opening view\'s hiding check must find every piece it runs.');
+      const state = {
+          T,
+          Math,
+          plan,
+          cityMode: false,
+          inspect: null,
+          overviewFit: false,
+          focusedIds: ['town-hall'],
+          parkSelected: false,
+          tween: false,
+          island: { root: { visible: true } },
+          skyShown: true,
+          skyCast: false,
+          shadowFade: 1,
+          skyCasters: [],
+          camera: { updateMatrixWorld() {} },
+          skyShadowWanted: () => false,
+          LAND_MARKS: [],
+          frameShift: 0,
+          frameDrop: 0,
+          SKY_SHADOW: { fade: 0.18 },
+          reduced: false,
+          shadowFocus() {},
+        },
+        hiding = runInNewContext(`${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyHidden, followSky });`, state),
+        shown = (patch) => {
+          Object.assign(state, patch);
+          hiding.followSky(1 / 60);
+          return state.island.root.visible;
+        };
+      assert(shown({}), 'The sky island is hidden in the About chapter.');
+      // Back to the opening view (reset()): gone as the glide starts.
+      assert(!shown({ focusedIds: [], tween: true }) && !shown({ tween: false }), 'The sky island shows in the opening view.');
+      // On to a chapter: back only once the glide has ended.
+      assert(!shown({ focusedIds: ['town-hall'], tween: true }) && shown({ tween: false }), 'The sky island comes back before the glide out of the opening view has ended.');
+      // The corner park's frame (focusPark: nothing focused, the park selected) shows it, as before.
+      assert(shown({ focusedIds: [], parkSelected: true, tween: false }), 'The sky island is hidden in the corner park\'s frame.');
+      // City mode (its overview, a place's file, the island's own) and Inspect always show it.
+      assert(shown({ parkSelected: false, cityMode: true, tween: true }) && shown({ cityMode: true, overviewFit: true }), 'The sky island is hidden in City mode.');
+      assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: [] }), 'The sky island is hidden in Inspect.');
+      // Where it was cut: the opening view (the island's centre at zoom 1, no frame shift on a narrow
+      // page) on phones and upright tablets, whose reading page docks the stage 46% of the screen
+      // tall (320 px at the least: globals.css), at some moment of the idle drift.
+      let cut = 0;
+      for (const [w, screen] of [[360, 640], [375, 667], [375, 812], [390, 844], [414, 896], [430, 932], [768, 1024], [820, 1180]]) {
+        const h = Math.max(320, 0.46 * screen);
+        if (drifts.some((d) => overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, new T.Vector3(), p))), [0, 0, w, h]))) cut++;
+      }
+      assert(cut > 0, 'The check no longer finds the opening frame the sky island was cut by.');
+      skyNav.hero = `hidden in the opening view (it would be cut on ${cut} of 8 phone and tablet frames)`;
+    }
     // Every other reading frame leaves it out of sight through the idle drift: each chapter's
     // subject framed beside the reading panel from 1024 wide (its buildings as their sites' boxes,
     // the corner park at its zoom of 2.2), and the narrow page's chapters on tablets and phones.
@@ -2365,5 +2431,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
