@@ -33,7 +33,8 @@ import { ellipsoid, roundBox, sculpt } from './town-sculpt';
  * saturated than the palette's own) over a cooler, darker base; the furniture's pale dressed stone
  * (the villa's); the rocks' greys (the airport armour's) with a little earth, under turf; teak and a
  * darker mahogany; brass, its blackened eyecup and a dark lens; white china with a slate band,
- * scones and a planter's soil.
+ * scones and a planter's soil; the garden lamps' cast iron (the town's street lamps' own) and the
+ * frost of their globes, a touch cooler and brighter than the stone.
  */
 export const SKY_GARDEN_LOOK = {
   stream: '#5ab4cc',
@@ -57,6 +58,8 @@ export const SKY_GARDEN_LOOK = {
   band: palette.slate,
   scone: '#d8b98a',
   soil: palette.soil,
+  iron: palette.metal,
+  frost: '#f1f2ec',
 };
 /** Each colour's palette family: the colour may be no more saturated than it (check-town). */
 export const SKY_GARDEN_FAMILY: Record<keyof typeof SKY_GARDEN_LOOK, string> = {
@@ -81,6 +84,8 @@ export const SKY_GARDEN_FAMILY: Record<keyof typeof SKY_GARDEN_LOOK, string> = {
   band: palette.slate,
   scone: palette.blonde,
   soil: palette.soil,
+  iron: palette.metal,
+  frost: palette.white,
 };
 
 /**
@@ -134,8 +139,8 @@ export const FALL = {
   notch: { half: 0.42, ramp: 0.22, floor: -0.06 },
   lip: 0.16,
   recess: { depth: 0.052, flat: 0.45, edge: 0.75 },
-  hide: [0.9, 1.45] as [number, number],
-  pitch: 1.04,
+  hide: [1.15, 1.7] as [number, number],
+  pitch: 0.9,
   period: 2.2,
   phase: 0.35,
   puff: 1.3,
@@ -144,23 +149,32 @@ export const FALL = {
   core: { r: 0.8, y: 0.05 },
 };
 /**
- * A cluster of lumps: low swells of white water riding down the sheet's channel, broader than tall.
- * Each is an ellipsoid sunk in the channel's floor on a face of the sheet (`side` 1 the face to the
- * sea, -1 the one to the rock) until only its crown stands `proud`, so it meets the water at a
- * shallow angle (a pill stuck on the water reads as a rivet): its middle `x` across (in half-widths
- * of the sheet under the lip) and `y` over the cluster's own origin, its radii across (in those
- * half-widths), up and out. All of it lies within the channel's flat floor (`x` and its radius
- * within FALL.recess.flat), so it never reaches the sheet's edges. A big one and a small one a face,
- * set off from one another, so the fall reads from either side and no cluster is a ring.
+ * A cluster of lumps: long, low streaks of white water riding down the sheet's channel, about twice
+ * as long down the fall as they are wide (the art review: the round swells read as rivets on a glass
+ * strap at zoom 3 to 4), long enough that a cluster nearly reaches the next. Each is an ellipsoid sunk in the channel's floor on a face of the sheet
+ * (`side` 1 the face to the sea, -1 the one to the rock) until only its crown stands `proud`, so it
+ * meets the water at a shallow angle (a pill stuck on the water reads as a rivet): its middle `x`
+ * across (in half-widths of the sheet under the lip) and `y` over the cluster's own origin, its radii
+ * across (in those half-widths), up and out. All of it lies within the channel's flat floor (`x` and
+ * its radius within FALL.recess.flat), so it never reaches the sheet's edges. A big one and a small
+ * one a face, set off from one another to either side of the middle, so the fall reads from either
+ * side, no cluster is a ring and the streaks of one cluster are staggered.
  */
 export const FALL_LUMPS = [
-  { side: 1, x: -0.03, y: 0, r: [0.41, 0.15, 0.05], proud: 0.032 },
-  { side: 1, x: 0.2, y: -0.27, r: [0.24, 0.1, 0.045], proud: 0.026 },
-  { side: -1, x: 0.03, y: -0.04, r: [0.41, 0.15, 0.05], proud: 0.032 },
-  { side: -1, x: -0.2, y: -0.3, r: [0.24, 0.1, 0.045], proud: 0.026 },
+  { side: 1, x: -0.2, y: 0, r: [0.17, 0.3, 0.04], proud: 0.02 },
+  { side: 1, x: 0.22, y: -0.28, r: [0.14, 0.22, 0.035], proud: 0.016 },
+  { side: -1, x: 0.2, y: -0.05, r: [0.17, 0.3, 0.04], proud: 0.02 },
+  { side: -1, x: -0.22, y: -0.3, r: [0.14, 0.22, 0.035], proud: 0.016 },
 ] as const;
-/** The exponent of the sheet's section (a superellipse): flat faces, softly rounded edges. */
-export const FALL_OVAL = 4;
+/** The exponent of the sheet's section (a superellipse): broad faces rolling softly round to its edges (at 4 the edges were crisp, a strap's). */
+export const FALL_OVAL = 2.5;
+/**
+ * The sheet's streaks, down its columns (waterGeometry): white water at its two edges (`edge`, how
+ * far toward the foam), and on its faces about `share` of the columns in a paler streak (`pale`,
+ * from, to) or a deeper one (`deep`, from, to) by the fall's seed; all of them fade out down the
+ * fall into the foam at its foot. Static paint on the vertices: nothing scrolls, so nothing crawls.
+ */
+export const FALL_STREAKS = { edge: 0.55, share: 0.5, pale: [0.3, 0.55] as [number, number], deep: [0.12, 0.25] as [number, number] };
 /**
  * A fall's measures for a drop, a width and a `rise` (how much higher the lawn is over the stream's
  * head than at the rim): the sheet's half-width and half-depth under the lip; the stream's middle
@@ -236,13 +250,17 @@ export function cloudDrift(time: number, seed: number) {
  * rounded block): a big one (`top`, its half sizes) and a smaller one (`keel`) set under it and off
  * to one side (`at`: how far out from under its middle and how far down), so the lump has a keel
  * (from the town's high camera a flat pebble shows only its top) and an outline of its own. A thin,
- * irregular patch of turf (`turf`: its reach over the big stone's top, how far it stands proud of
- * it, and how much its outline wanders) lies on the big one's top, set off its middle; no tussocks
- * (three small balls on a green cap read as eyes). Each seed turns, tilts and sizes its stones and
- * its patch its own way (each big stone tipped `tilt` (from, to) radians either way about both level
- * axes, so no top lies level like a pot's), so no two are alike. The turf is the crown of a low
- * lens `turf.rise` deep sunk in the stone's top until `proud` of it shows, so its edge follows the
- * stone's own bumps. About 2.1 across, 0.75 over its middle (the origin) and 1.3
+ * ragged patch of turf (`turf`: its reach over the big stone's top, how far it stands proud of it,
+ * how much its outline wanders in its broad lobes, and how much more in its small tufts and bites,
+ * `ragged`, round `sides` points) lies on the big one's top, set off its middle, in the lawn's own
+ * darker stripe (turfDark) as the island's ground shows it (`shade`: the lawn's grass grain and tint
+ * take about a fifth off its paint, which the rock's stone does not), so the rock reads as a chunk
+ * torn from the island's turf, never a pebble with a bright green cap (the art review: palette.grass
+ * facing straight up shone 14% over the lawn); no tussocks (three small balls on a green cap read as eyes). Each seed turns, tilts and
+ * sizes its stones and its patch its own way (each big stone tipped `tilt` (from, to) radians either
+ * way about both level axes, so no top lies level like a pot's), so no two are alike. The turf is the
+ * crown of a low lens `turf.rise` deep sunk in the stone's top until `proud` of it shows, so its edge
+ * follows the stone's own bumps. About 2.1 across, 0.75 over its middle (the origin) and 1.3
  * under it. It bobs by `bob` and rocks by `rock` radians every `period` seconds (`periods`,
  * picked by its seed).
  */
@@ -252,23 +270,25 @@ export const ROCK = {
   top: [1.0, 0.68, 0.84] as [number, number, number],
   keel: { r: [0.66, 0.6, 0.6] as [number, number, number], at: [0.36, -0.52] as [number, number] },
   tilt: [0.14, 0.3] as [number, number],
-  turf: { reach: 0.66, proud: 0.06, rise: 0.2, wander: 0.24 },
+  turf: { reach: 0.8, proud: 0.04, rise: 0.16, wander: 0.2, ragged: 0.1, sides: 22, shade: 0.8 },
   bob: 0.12,
   rock: 0.035,
   periods: [9, 10.5, 12],
 };
-/** The armour stones' shape (ROCK.detail): an icosahedron with its corners merged, so a corner moved moves every face round it. */
-let STONE: T.BufferGeometry | null = null;
+/** The armour stones' shapes, by detail: an icosahedron with its corners merged, so a corner moved moves every face round it. */
+const STONES = new Map<number, T.BufferGeometry>();
 /**
  * One of the airport armour's boulders (town-airport's boulder(), copied: its helpers stay its own)
- * at size 1, about 2 across: the icosahedron pushed part way toward a rounded block (`square`, 0.3
- * to 0.65 by its seed), each corner in or out by up to ROCK.jitter / 2, with the rounded block's own
- * analytic normals, so it shades as one smooth chunk and no facet shows. Squash and turn it as it is
- * placed (a matrix takes its normals through the squash).
+ * at size 1, about 2 across: the icosahedron (of `detail`, ROCK.detail unless a small stone needs
+ * fewer faces) pushed part way toward a rounded block (`square`, 0.3 to 0.65 by its seed), each
+ * corner in or out by up to ROCK.jitter / 2, with the rounded block's own analytic normals, so it
+ * shades as one smooth chunk and no facet shows. Squash and turn it as it is placed (a matrix takes
+ * its normals through the squash).
  */
-export function boulder(seed: number, square = 0.3 + 0.35 * hash(seed * 7.31 + 1.913)) {
-  STONE ??= mergeVertices(new T.IcosahedronGeometry(1, ROCK.detail).deleteAttribute('normal').deleteAttribute('uv'));
-  const geometry = STONE.clone(),
+export function boulder(seed: number, square = 0.3 + 0.35 * hash(seed * 7.31 + 1.913), detail = ROCK.detail) {
+  let stone = STONES.get(detail);
+  if (!stone) STONES.set(detail, (stone = mergeVertices(new T.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv'))));
+  const geometry = stone.clone(),
     p = geometry.getAttribute('position'),
     normals = new Float32Array(p.count * 3),
     n = new T.Vector3(),
@@ -336,7 +356,11 @@ export function telescopeEyepiece(tilt = TELESCOPE.tilt) {
   return { height: hip + up * Math.cos(tilt) - (eyeOut + relief) * Math.sin(tilt), standOff: up * Math.sin(tilt) + (eyeOut + relief) * Math.cos(tilt) };
 }
 
-/** A garden lamp: a frosted globe `globe` in radius on a brass cup, on a short stone pier; `height` is its top. */
+/**
+ * A garden lamp: a frosted globe `globe` in radius on a brass cup, on a short post of the town's dark
+ * cast iron (its shaft and its cap) on a stone plinth (`base`), so by day it reads as a lamp, never as
+ * a stone pawn or a ball finial (the art review); `height` is its top.
+ */
 export const GARDEN_LAMP = { base: 0.3, shaft: 0.22, cap: 0.49, cup: 0.13, globe: 0.135, height: 0.86 };
 /** An urn: `height` to its rim on a square plinth `plinth` across; a planted ball of radius `plant.r` sits with its foot at `plant.y`. */
 export const URN = { plinth: 0.44, height: 0.635, plant: { y: 0.585, r: 0.3 } };
@@ -608,7 +632,8 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
    * fallFace), swept along the stream's middle line under the lawn's edge, round the lip's short turn
    * and straight down the sheet's lean to its foot in the puff. Its paint is on its vertices: the
    * stream's muted turquoise paling to the water's edge at the lip, then down the fall from the water
-   * to foam white at the puff, with a few faint streaks of deeper water down it, so nothing scrolls
+   * to foam white at the puff, streaked down its columns (FALL_STREAKS: white water at its edges, paler
+   * and deeper streaks on its faces, fading into the foam at its foot), so nothing scrolls
    * and nothing can crawl.
    */
   function waterGeometry(F: FallLayout, seed: number) {
@@ -650,16 +675,27 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
       index: number[] = [],
       c = new T.Color(),
       deep = new T.Color(L.stream),
+      white = new T.Color(L.foam),
       channel = 0.22,
-      streaks = COLUMNS.map((_, i) => (hash(seed * 7.7 + i * 3.3) > 0.62 ? 0.18 + 0.14 * hash(seed * 1.9 + i * 5.1) : 0));
+      K = FALL_STREAKS,
+      // Each column's streak: white water at the edges; on the faces a paler streak (over 0) or a
+      // deeper one (under 0) for a share of the columns, by the fall's seed.
+      streaks = COLUMNS.map(([u], i) => {
+        if (Math.abs(u) >= 0.95) return K.edge;
+        const h = hash(seed * 7.7 + i * 3.3),
+          k = hash(seed * 1.9 + i * 5.1);
+        return h < K.share / 2 ? lerp(K.pale[0], K.pale[1], k) : h < K.share ? -lerp(K.deep[0], K.deep[1], k) : 0;
+      });
     for (const s of stations)
       COLUMNS.forEach(([u, side], i) => {
         // Across the face: the oval's own face (the stream's flat one) less the sheet's channel.
         const w = side * (s.e === FALL_OVAL ? fallFace(s, u) : s.b * (1 - Math.abs(u) ** s.e) ** (1 / s.e));
         pos.push(u * s.a, s.y + w * s.ny, s.z + w * s.nz);
         s.tone(c);
-        // Deeper water down the channel the lumps ride in, so their foam shows white against it.
-        c.lerp(deep, Math.max(streaks[i], channel * (s.recess / FALL.recess.depth) * (1 - T.MathUtils.smoothstep(Math.abs(u), FALL.recess.flat, FALL.recess.edge))) * s.streak);
+        // Deeper water down the channel the lumps ride in, so their foam shows white against it, and
+        // the column's own streak, paler or deeper, fading out into the foam down the fall.
+        c.lerp(deep, Math.max(-streaks[i], channel * (s.recess / FALL.recess.depth) * (1 - T.MathUtils.smoothstep(Math.abs(u), FALL.recess.flat, FALL.recess.edge))) * s.streak);
+        if (streaks[i] > 0) c.lerp(white, streaks[i] * s.streak);
         col.push(c.r, c.g, c.b);
       });
     // The ring runs from the flow's right over its top to its left, so these faces look out.
@@ -777,7 +813,7 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
   }
   /**
    * A small floating rock (ROCK), one mesh: its two boulders in one of the armour's greys, lighter
-   * toward the top, the big one's top a little earthy under its patch of turf. Its origin is its
+   * toward the top, the big one's top a little earthy under its ragged patch of the lawn's dark turf. Its origin is its
    * middle. It bobs and rocks slowly on town time (rockBob) and casts nothing.
    */
   function floatingRock({ size = 0.6, seed = 1 }: { size?: number; seed?: number } = {}) {
@@ -809,12 +845,13 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     // its middle, so only a thin, irregular patch of it shows over the stone.
     {
       const T0 = ROCK.turf,
-        cap = new T.SphereGeometry(1, 18, 6),
+        cap = new T.SphereGeometry(1, T0.sides, 5),
         q = cap.getAttribute('position'),
         phase = h(18) * Math.PI * 2;
       for (let i = 0; i < q.count; i++) {
         const a = Math.atan2(q.getZ(i), q.getX(i)),
-          k = 1 + T0.wander * (0.65 * Math.sin(2 * a + phase) + 0.35 * Math.sin(3 * a + 2.1 * phase));
+          // Broad lobes, and small tufts and bites along its edge (a torn edge, not a lid's).
+          k = 1 + T0.wander * (0.65 * Math.sin(2 * a + phase) + 0.35 * Math.sin(3 * a + 2.1 * phase)) + T0.ragged * Math.sin(7 * a + 3.3 * phase) * Math.sin(4 * a + phase);
         q.setXYZ(i, q.getX(i) * k, q.getY(i), q.getZ(i) * k);
       }
       cap.computeVertexNormals();
@@ -823,11 +860,11 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
         at = new T.Vector3(Math.cos(side + Math.PI) * off, top[1] * 0.94 + (T0.proud - T0.rise) * size, Math.sin(side + Math.PI) * off);
       parts.push({
         geometry: cap,
-        tint: (p, _n, c) => blend(c, L.turfDark, L.turf, smooth(p.y, 0.3, 0.9)),
+        tint: toned(L.turfDark, T0.shade),
         matrix: turn2(at, new T.Vector3(T0.reach * top[0], T0.rise * size, T0.reach * top[2])),
       });
     }
-    solid(bob, parts, 'stone', 'sky-rock-body', ['rock', 'rockDark', 'rockPale', 'earth', 'turf', 'turfDark'], { shadow: false });
+    solid(bob, parts, 'stone', 'sky-rock-body', ['rock', 'rockDark', 'rockPale', 'earth', 'turfDark'], { shadow: false });
     parts.forEach((p) => p.geometry.dispose());
     g.userData.period = rockBob(0, seed).period;
     const update = (time: number) => {
@@ -979,10 +1016,12 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
   let globeGlass: T.MeshStandardMaterial | null = null;
   /**
    * Short garden lamps at `spots` (each its foot, in the frame of the returned group), as one set:
-   * a frosted globe on a brass cup, on a short pier of the villa's stone with a base and a cap (the
-   * airport forecourt's lamp, smaller). The globes are one mesh in the lamps' own glass, lit with
-   * the town's lamps (ctx.lamps) and never batched; the piers are one stone mesh and the cups one
-   * brass. Each pier runs on 0.04 below its foot, for a domed lawn.
+   * a frosted globe on a brass cup, on a short post (its shaft and its cap in the town's dark cast
+   * iron, as the street lamps are) on a plinth of the villa's stone (the airport forecourt's lamp,
+   * smaller). The globes are one mesh in the lamps' own glass, frosted by day (a touch cooler and
+   * brighter than the stone; at night they glow as the town's lamps do, lit with them through
+   * ctx.lamps) and never batched; the posts are one mesh (the stone family's, so they cast) and the
+   * cups one brass. Each plinth runs on 0.04 below its foot, for a domed lawn.
    */
   function gardenLamps(spots: { x: number; y?: number; z: number }[]) {
     const G = GARDEN_LAMP,
@@ -996,16 +1035,19 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     for (const { x, y = 0, z } of spots) {
       stone.push(
         { geometry: chamfered(G.base, 0.12, G.base), tint: L.stone, matrix: placed(x, y + 0.02, z) },
-        { geometry: chamfered(G.shaft, G.cap - 0.14, G.shaft), tint: toned(L.stone, 0.97), matrix: placed(x, y + G.cap / 2, z) },
-        { geometry: chamfered(G.base, 0.08, G.base), tint: L.stone, matrix: placed(x, y + G.cap - 0.04, z) },
+        { geometry: chamfered(G.shaft, G.cap - 0.14, G.shaft), tint: L.iron, matrix: placed(x, y + G.cap / 2, z) },
+        { geometry: chamfered(G.base, 0.08, G.base), tint: toned(L.iron, 1.06), matrix: placed(x, y + G.cap - 0.04, z) },
       );
       brass.push({ geometry: cup, tint: L.brass, matrix: placed(x, y + G.cap, z) });
       globes.push(new T.SphereGeometry(G.globe, 12, 8).translate(x, y + centre, z));
     }
-    solid(g, stone, 'stone', 'sky-lamp-piers', ['stone']);
+    solid(g, stone, 'stone', 'sky-lamp-piers', ['stone', 'iron']);
     solid(g, brass, 'brass', 'sky-lamp-cups', ['brass'], { shadow: false });
     cup.dispose();
-    globeGlass ??= lampGlass();
+    if (!globeGlass) {
+      globeGlass = lampGlass();
+      globeGlass.color.set(L.frost);
+    }
     const glass = new T.Mesh(mergeGeometries(globes)!, globeGlass);
     globes.forEach((s) => s.dispose());
     glass.name = 'sky-lamp-globes';

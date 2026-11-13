@@ -5404,6 +5404,22 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(reach > 1.1 && reach < 1.45 && Math.abs(low + F.drop + FALL.puffSink) < 0.03 && Math.abs(top - puffTop) < 0.06, `The puff reaches ${reach.toFixed(2)} out, ${(-F.drop - low).toFixed(2)} down and ${(top + F.drop).toFixed(2)} up.`);
     const foot = G.fallSection(F, F.top.y + F.drop);
     assert(Math.hypot(foot.a, FALL.core.y + 0.15) < FALL.core.r && low > -F.drop - 1, 'The sheet\'s foot is not inside the puff\'s core, or water falls on toward the sea.');
+    // Falling water, not a glass strap with rivets (the final art review): the sheet's section rolls
+    // softly round to its edges (a superellipse of 3 or under); its lumps are long streaks (each at
+    // least twice as long down the fall as it is wide); and its paint is streaked down the sheet: on
+    // each of the upper rings its edges are paler than the middle of its faces, and its face columns
+    // part into paler and deeper streaks (the palest a tenth or more over the deepest).
+    {
+      assert(G.FALL_OVAL <= 3 && G.FALL_LUMPS.every((l) => l.r[1] >= 2 * l.r[0] * F.a), 'The fall is a crisp strap, or its lumps are round rivets, not long streaks.');
+      for (const ring of rings.slice(0, 3)) {
+        const half = Math.max(...ring.list.map((q) => Math.abs(q.p.x))),
+          lumOf = (q) => luminance(new T.Color().fromBufferAttribute(colour, q.i)),
+          edges = ring.list.filter((q) => Math.abs(q.p.x) > 0.9 * half).map(lumOf),
+          faces = ring.list.filter((q) => Math.abs(q.p.x) < 0.8 * half).map(lumOf),
+          mean = (list) => list.reduce((s, x) => s + x, 0) / list.length;
+        assert(mean(edges) > 1.05 * mean(faces) && Math.max(...faces) > 1.1 * Math.min(...faces), `The fall's water is not streaked at y ${ring.y.toFixed(2)} (its edges ${mean(edges).toFixed(3)}, its faces ${Math.min(...faces).toFixed(3)} to ${Math.max(...faces).toFixed(3)}).`);
+      }
+    }
     // The lumps: foam white, `count` clusters alike, a spacing apart down the lean.
     const lumpColour = lumps.geometry.getAttribute('color');
     for (let i = 0; i < lumpColour.count; i++) assert(Math.abs(luminance(new T.Color().fromBufferAttribute(lumpColour, i)) - luminance(new T.Color(LOOK.foam))) < 1e-3, 'A lump is not foam white.');
@@ -5548,6 +5564,16 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(stones >= 2 && stones <= 3 && all.every((p) => p.faces === 20 * (ROCK.detail + 1) ** 2 || p.faces < 20 * (ROCK.detail + 1) ** 2 + 60) && all.every((p) => Math.min(p.box.max.x - p.box.min.x, p.box.max.z - p.box.min.z) >= 0.2 * size), `The rock is ${stones} boulders, or carries a piece under a fifth of its size across (a tussock).`);
     assert(!turfTop.isEmpty() && turfTop.max.y - stoneTop.max.y > -0.04 * size && turfTop.max.y - stoneTop.max.y < 0.12 * size && turfTop.max.x - turfTop.min.x < 0.8 * (stoneTop.max.x - stoneTop.min.x), `The rock's turf is not one thin patch on its stone's top (${(turfTop.max.y - stoneTop.max.y).toFixed(3)} over it).`);
     assert(built.rock.userData.period > 0 && ROCK.periods.includes(built.rock.userData.period), 'The rock does not say its period.');
+    // A chunk torn from the island's turf, not a capped pebble (the final art review: the patch in
+    // palette.grass facing straight up shone 14% over the lawn): every vertex of the patch is the
+    // lawn's own darker stripe (turfDark) as the island's ground shows it (ROCK.turf.shade, 0.75 to
+    // 0.9: the lawn's grain and tint), and it spreads over half the big stone's width or more.
+    {
+      const dark = new T.Color(LOOK.turfDark).multiplyScalar(ROCK.turf.shade),
+        turfLooks = [];
+      for (let i = 0; i < colour.count; i++) if (green(i)) turfLooks.push(new T.Color().fromBufferAttribute(colour, i));
+      assert(turfLooks.length && turfLooks.every((c) => Math.abs(c.r - dark.r) + Math.abs(c.g - dark.g) + Math.abs(c.b - dark.b) < 1e-3) && LOOK.turfDark === palette.grassDark && ROCK.turf.shade >= 0.75 && ROCK.turf.shade <= 0.9 && turfTop.max.x - turfTop.min.x >= 0.5 * (stoneTop.max.x - stoneTop.min.x), 'The rock\'s turf is not a wide patch of the lawn\'s darker stripe.');
+    }
   }
 
   // The tea table: the bench's seat height, clear seats, the tea set on the table.
@@ -5644,6 +5670,21 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     const piers = byName(built.lamp, 'sky-lamp-piers'),
       pier = new T.Box3().setFromObject(piers);
     assert(piers.material.userData.surfaceKind === 'stone' && byName(built.lamp, 'sky-lamp-cups').material.userData.surfaceKind === 'brass' && Math.abs(pier.max.y - GARDEN_LAMP.cap) < 1e-6 && Math.abs(pier.min.y + 0.04) < 1e-6 && GARDEN_LAMP.height < 0.9, 'A garden lamp is not a short stone pier under a brass cup.');
+    // By day it reads as a lamp, not a stone pawn (the final art review): its post (the shaft and
+    // the cap, over its plinth) is the town's dark cast iron, its plinth the pale stone, and its globe
+    // frosted, brighter than the stone and a touch cooler.
+    {
+      const q = piers.geometry.attributes.position,
+        tone = piers.geometry.getAttribute('color'),
+        c = new T.Color(),
+        post = [],
+        plinth = [];
+      // (The plinth's top is 0.08 up and the shaft runs down into it: the band between is left out.)
+      for (let i = 0; i < q.count; i++) if (q.getY(i) < 0.06 || q.getY(i) > 0.1) (q.getY(i) > 0.1 ? post : plinth).push(luminance(c.fromBufferAttribute(tone, i)));
+      const glass = single.material.color,
+        stone = new T.Color(LOOK.stone);
+      assert(post.length && Math.max(...post) < 0.1 && Math.min(...plinth) > 0.5 && luminance(glass) > luminance(stone) && glass.b / glass.r > stone.b / stone.r, `A garden lamp's post is not dark iron over a stone plinth (${Math.max(...post).toFixed(3)}), or its globe is not frosted.`);
+    }
   }
 
   // The urn: its plant's place; planted, the nature kit's ball sits in its bowl.
@@ -6851,6 +6892,59 @@ let skyReport = '';
     assert(corners / seen.size > 4, 'The rock\'s triangles share no corners.');
     assert(lean / corners > 0.97 && worst > 0.3, `The rock's normals lean ${(lean / corners).toFixed(3)} on average (${worst.toFixed(2)} at worst) from its faces.`);
     assert(rockTriangles >= 8000 && rockTriangles <= 16000 && SKY_ROCK.grid >= 0.2, `The rock costs ${rockTriangles} triangles.`);
+    let outcropReport = '';
+    // The rock's outcrops (the final art review: single rounded blocks read as grey cushions or paving
+    // slabs): stones of their own standing out of the earth (runs of joined faces apart from the earth's
+    // and the coping's), each by its middle's bearing round the island and depth under the deck one of
+    // the SKY_ROCK.outcrops (its nearest, within 2.2 of its place); each outcrop a cluster of three stones
+    // or more, the biggest at least four times the smallest's size (its box's volume), and not all lying
+    // one way (their long axes, by their spread, 15 degrees apart or more: tilted beds, a piece split off).
+    {
+      const key = (i) => [p.getX(i), p.getY(i), p.getZ(i)].map((q) => Math.round(q * 2000)).join(),
+        parent = new Map(),
+        find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+      for (let i = 0; i < p.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+      for (let t = 0; t < p.count; t += 3) for (const j of [1, 2]) parent.set(find(key(t + j)), find(key(t)));
+      const runs = new Map();
+      for (let i = 0; i < p.count; i++) {
+        const r = find(key(i));
+        if (!runs.has(r)) runs.set(r, []);
+        runs.get(r).push(new T.Vector3(p.getX(i), p.getY(i), p.getZ(i)));
+      }
+      const all = [...runs.values()].sort((a, b) => b.length - a.length),
+        // (The earth is the biggest run; the coping stands over the rock's flat top.)
+        stones = all.slice(1).filter((q) => Math.max(...q.map((v) => v.y)) < S.top - SKY_ROCK.body.top),
+        boxes = stones.map((q) => new T.Box3().setFromPoints(q)),
+        axisOf = (q) => {
+          const mid = q.reduce((s, v) => s.add(v), new T.Vector3()).multiplyScalar(1 / q.length),
+            m = new T.Matrix3().set(0, 0, 0, 0, 0, 0, 0, 0, 0).elements;
+          for (const v of q) {
+            const d = [v.x - mid.x, v.y - mid.y, v.z - mid.z];
+            for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) m[a * 3 + b] += d[a] * d[b];
+          }
+          // The long axis: power iteration on the spread.
+          let x = new T.Vector3(1, 0.3, 0.2);
+          for (let k = 0; k < 40; k++) x = new T.Vector3(m[0] * x.x + m[1] * x.y + m[2] * x.z, m[3] * x.x + m[4] * x.y + m[5] * x.z, m[6] * x.x + m[7] * x.y + m[8] * x.z).normalize();
+          return x;
+        },
+        // How far a point lies from an outcrop's place: round the island (at about the flank's reach) and down.
+        apart = (c, o) => Math.hypot(5 * plan.angleDiff(Math.atan2(c.x - S.x, c.z - S.z), o.bearing * deg), S.top - c.y + o.y),
+        groups = SKY_ROCK.outcrops.map(() => []);
+      boxes.forEach((b, k) => {
+        const c = b.getCenter(new T.Vector3()),
+          d = SKY_ROCK.outcrops.map((o) => apart(c, o)),
+          j = d.indexOf(Math.min(...d));
+        assert(d[j] < 2.2, `A stone of the rock at ${c.toArray().map((n) => n.toFixed(2)).join(', ')} is no outcrop's.`);
+        groups[j].push(k);
+      });
+      for (const g of groups) {
+        const sizes = g.map((k) => boxes[k].getSize(new T.Vector3())).map((s) => s.x * s.y * s.z),
+          axes = g.map((k) => axisOf(stones[k])),
+          spread = Math.max(...axes.flatMap((a, i) => axes.slice(i + 1).map((b) => Math.acos(Math.min(1, Math.abs(a.dot(b)))))));
+        assert(g.length >= 3 && Math.max(...sizes) >= 4 * Math.min(...sizes) && spread >= 15 * deg, `An outcrop of the rock is ${g.length} stones, ${(Math.max(...sizes) / Math.min(...sizes)).toFixed(1)} times apart in size, their long axes within ${(spread / deg).toFixed(0)} degrees of one another.`);
+      }
+      outcropReport = `, ${groups.length} outcrops of ${stones.length} stones`;
+    }
     // A chunk of land, not a plate: all round the rim the earth stands as cliffs (within half a unit
     // of the rim's line) down to SKY_ROCK.body.cliff under the deck or deeper, its shoulders proud of
     // them; and under each fall (within 12 degrees of its bearing) nothing stands out past the rim,
@@ -6905,7 +6999,7 @@ let skyReport = '';
       // (Its near-vertical faces take a little of it too: measured, about 1.6 times the light.)
       assert(down.length > 20 && side.length > 20 && mean(down).r / mean(side).r > 1 + 0.35 * B[0] && luma(mean(down)) / luma(mean(side)) > 1 + 0.3 * B[1], 'The underside\'s down-turned faces are not lifted by the sea\'s bounce.');
     }
-    skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles}, Alison ${herMeshes} and ${herTriangles})`;
+    skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles}${outcropReport}, Alison ${herMeshes} and ${herTriangles})`;
   }
 
   /* ---------------- the villa in place ---------------- */
@@ -7801,13 +7895,20 @@ let skyReport = '';
       }
     }
 
-    // The borders: the town's flower bed, its kerb the border's outline, on the lowest lawn under it,
-    // its blooms in a row along its back in the town's colours (mirrored either side of the steps);
-    // the town's own blooms are these. As she walks the watering stretch (the east border), facing it,
-    // her can passes over the bed and meets no bloom.
+    // The borders: the town's flower bed's kerb, the border's outline, on the lowest lawn under it, and
+    // in it a bed of flowering plants (the final art review: a row of five like blobs on the bed's
+    // smooth green bar read as beads or sweets): a leafy planting that casts, its outline a row of
+    // soft clumps (along the bed its top rises and falls by 0.03 or more, five crowns or more), and the
+    // town's own blooms over it, a dozen or more, in two rows along the back (each level along the
+    // bed), staggered (along the bed the two rows take turns), of three sizes or more (the back row's
+    // the larger), each in one of the town's bloom colours, three colours or more a border and no two
+    // neighbours in a row alike; the west border mirrors the east about the steps. The town's own
+    // blooms are these. As she walks the watering stretch (the east border), facing it, her can passes
+    // over the bed and meets no bloom.
     {
       const { nature } = fresh(),
-        rows = [];
+        rows = [],
+        planted = [];
       slots.borders.forEach((b, k) => {
         const g = new T.Group(),
           bed = skyBorder(nature, g, b, k);
@@ -7816,17 +7917,36 @@ let skyReport = '';
           kerb = bed.children.find((o) => o.material.userData.surfaceKind === 'stone'),
           box = new T.Box3().setFromObject(kerb),
           rest = bed.children.filter((o) => !blooms.includes(o)),
-          side = k ? -1 : 1,
           // Its outline, drawn in at its outer end (the east border's east, the west's west).
-          [x0, x1] = k ? [b.x - b.w / 2 + SKY_BEDS.trim, b.x + b.w / 2] : [b.x - b.w / 2, b.x + b.w / 2 - SKY_BEDS.trim];
-        assert(SKY_BEDS.trim >= 0 && SKY_BEDS.trim <= 0.2 && Math.abs(box.min.x - x0) < 1e-6 && Math.abs(box.max.x - x1) < 1e-6 && Math.abs(box.min.z - (b.z - b.d / 2)) < 1e-6 && Math.abs(box.max.z - (b.z + b.d / 2)) < 1e-6 && Math.abs(box.min.y - b.floor) < 1e-6, `The ${k ? 'west' : 'east'} border's kerb is not its outline, on the lowest lawn under it.`);
+          [x0, x1] = k ? [b.x - b.w / 2 + SKY_BEDS.trim, b.x + b.w / 2] : [b.x - b.w / 2, b.x + b.w / 2 - SKY_BEDS.trim],
+          what = k ? 'west' : 'east';
+        assert(SKY_BEDS.trim >= 0 && SKY_BEDS.trim <= 0.2 && Math.abs(box.min.x - x0) < 1e-6 && Math.abs(box.max.x - x1) < 1e-6 && Math.abs(box.min.z - (b.z - b.d / 2)) < 1e-6 && Math.abs(box.max.z - (b.z + b.d / 2)) < 1e-6 && Math.abs(box.min.y - b.floor) < 1e-6, `The ${what} border's kerb is not its outline, on the lowest lawn under it.`);
         for (const [x, z] of [[box.min.x, box.min.z], [box.max.x, box.min.z], [box.min.x, box.max.z], [box.max.x, box.max.z], [b.x, box.min.z], [b.x, box.max.z]]) assert(plan.skyTop(x, z) >= b.floor - 1e-9, 'A border\'s kerb floats over the lawn.');
-        assert.equal(blooms.length, SKY_BEDS.order.length, 'A border has not its row of blooms.');
-        blooms.forEach((m, i) => {
-          const x = (x0 + x1) / 2 + side * (i - (SKY_BEDS.order.length - 1) / 2) * SKY_BEDS.spacing;
-          assert(Math.abs(m.position.x - x) < 1e-9 && Math.abs(m.position.z - (b.z - b.d / 2 + SKY_BEDS.back)) < 1e-9 && Math.abs(m.position.y - b.floor - 0.4) < 1e-9 && m.material.color.equals(new T.Color(BLOOMS[SKY_BEDS.order[i]])), `A bloom of the ${k ? 'west' : 'east'} border is out of its row.`);
-          rows.push(m.position.clone());
+        // The leaves: one casting foliage mesh inside the kerb, its outline a row of clumps.
+        const leaves = rest.filter((o) => o.material.userData.surfaceKind === 'foliage');
+        assert(leaves.length === 1 && leaves[0].castShadow && rest.length === 2, `The ${what} border is not its kerb and one leafy planting.`);
+        const slices = Array.from({ length: 40 }, () => -Infinity);
+        each(leaves[0], (p) => {
+          assert(p.x > box.min.x && p.x < box.max.x && p.z > box.min.z && p.z < box.max.z, `The ${what} border's leaves reach past its kerb at ${fmt(p)}.`);
+          const s = Math.min(39, Math.floor(((p.x - box.min.x) / (box.max.x - box.min.x)) * 40));
+          slices[s] = Math.max(slices[s], p.y);
         });
+        const tops = slices.slice(4, 36),
+          crowns = tops.filter((y, i) => i > 0 && i < tops.length - 1 && y > tops[i - 1] && y >= tops[i + 1]).length;
+        assert(Math.max(...tops) - Math.min(...tops) >= 0.03 && crowns >= 5, `The ${what} border's leaves are a smooth bar (their top within ${(Math.max(...tops) - Math.min(...tops)).toFixed(3)}, ${crowns} crowns).`);
+        // The blooms: two rows, staggered, of several sizes and colours.
+        const byRow = new Map();
+        for (const m of blooms) (byRow.get(m.position.z.toFixed(4)) ?? byRow.set(m.position.z.toFixed(4), []).get(m.position.z.toFixed(4))).push(m);
+        const [backRow, frontRow] = [...byRow.entries()].sort((a, c) => +a[0] - +c[0]).map(([, list]) => list.sort((a, c) => a.position.x - c.position.x)),
+          scale = (m) => m.scale.x,
+          mean = (list) => list.reduce((s, m) => s + scale(m), 0) / list.length,
+          merged = blooms.slice().sort((a, c) => a.position.x - c.position.x),
+          turns = merged.filter((m, i) => i && backRow.includes(m) !== backRow.includes(merged[i - 1])).length,
+          colours = new Set(blooms.map((m) => m.material.color.getHex()));
+        assert(blooms.length >= 12 && byRow.size === 2 && turns >= blooms.length - 3 && new Set(blooms.map((m) => scale(m).toFixed(2))).size >= 3 && mean(backRow) > mean(frontRow), `The ${what} border's ${blooms.length} blooms are not two staggered rows of several sizes (${byRow.size} rows, ${turns} turns).`);
+        assert(colours.size >= 3 && blooms.every((m) => BLOOMS.some((c) => m.material.color.equals(new T.Color(c)))) && [backRow, frontRow].every((list) => list.every((m, i) => !i || !m.material.color.equals(list[i - 1].material.color))), `The ${what} border's blooms are not the town's colours, three or more, no two neighbours alike.`);
+        for (const m of blooms) rows.push(m.position.clone());
+        planted.push(blooms.map((m) => ({ x: m.position.x, y: m.position.y, z: m.position.z, s: scale(m), c: m.material.color.getHex() })));
         if (k) return;
         // Her can, along the stretch she waters (facing the border, north).
         const W = ST.watering;
@@ -7836,6 +7956,8 @@ let skyReport = '';
           for (const m of rest) each(m, (p) => assert(Math.hypot(p.x - x, p.z - W.from.z) > HER_CAN.reach || p.y <= floor + HER_CAN.low - 0.005, `The east border stands in her can's way at ${fmt(p)}.`));
         }
       });
+      // The west border mirrors the east about the steps (the island's middle line).
+      assert(planted[0].length === planted[1].length && planted[0].every((e) => planted[1].some((w) => Math.abs(w.x - (2 * S.x - e.x)) < 1e-6 && Math.abs(w.y - e.y) < 1e-6 && Math.abs(w.z - e.z) < 1e-6 && Math.abs(w.s - e.s) < 1e-6 && w.c === e.c)), 'The west border does not mirror the east.');
       // The town's own blooms (the deck's batch that casts nothing and is foliage) stand where these do.
       const batched = standingMeshes.filter((m) => m.material.userData.surfaceKind === 'foliage' && !m.castShadow).flatMap(pieces).map((b) => b.getCenter(new T.Vector3()));
       assert(batched.length === rows.length && rows.every((r) => batched.some((c) => Math.hypot(c.x - r.x, c.z - r.z) < 1e-3)), 'The town\'s borders are not planted as skyBorder plants them.');
@@ -9181,6 +9303,12 @@ let skyReport = '';
       assert(lum(VILLA_LOOK.lens) < 0.05 && VILLA_FAMILY.housing === palette.bronze && lum(VILLA_LOOK.housing) > 0.4 * lum(VILLA_LOOK.brick) && lum(VILLA_LOOK.housing) < 0.9 * lum(VILLA_LOOK.brick) && lensPieces.length === 16 && housings.length === 8, `The wall lamps are ${lensPieces.length} lenses and ${housings.length} housings, not 16 dark lenses in 8 bronze housings near the brick's shade.`);
       assert(!dressings.some((p) => p.colour === hex(VILLA_LOOK.paint) && lensPieces.some((l) => l.b.intersectsBox(p.b))), 'A wall lamp still shows white paint.');
       assert(R.roll[0] >= 0.07 && R.roll[1] > 0 && R.roll[1] < R.roll[0] && hsv(VILLA_LOOK.roll).s <= hsv(palette.slate).s + 1e-3, 'The roof\'s rolls are not low half-rounds in the slate family.');
+      // The windows' slim uprights over the glass (glazing bars, mullions, stiles: the final art
+      // review's verifier found the white grid of them on the glass twinkling under the idle drift) are
+      // the bars' pale grey-blue, between the paint and the glass in value, each standing upright; the
+      // frames and the level rails stay the paint's white (ref-3's white-framed sashes).
+      const uprights = dressings.filter((p) => p.colour === hex(VILLA_LOOK.bar));
+      assert(uprights.length >= 30 && uprights.every((p) => p.s.y >= 2.5 * Math.max(p.s.x, p.s.z)) && lum(VILLA_LOOK.bar) < lum(VILLA_LOOK.paint) - 0.1 && lum(VILLA_LOOK.bar) > lum(VILLA_LOOK.glass) + 0.1, `The villa's ${uprights.length} window uprights are not the bars' grey-blue standing upright, between the paint and the glass.`);
       // No ball at a roll's foot: every roll piece near the eaves is a run along a hip, never a lump.
       for (const p of rolls) if (p.b.min.y < VILLA.cornice.corona[1] + R.fascia + 0.3) assert(Math.max(p.s.x, p.s.z) > 0.5, `A ball sits at a roll's foot over the gutter at ${p.c.x.toFixed(2)}, ${p.c.z.toFixed(2)}.`);
       const cap = parts.find((m) => m.name === 'sky-villa-roof-cap');
