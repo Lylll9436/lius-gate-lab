@@ -1879,6 +1879,21 @@ export async function createCity(
     if (dt > 0 && dt < 0.05) intervals[intervalCount++ % intervals.length] = dt;
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
     if (!paused) time += dt;
+    // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
+    // to keep, so a later re-fit cannot spring back. Zoomed at the view centre, the subject
+    // beside the panel stays put; zoomed at the pointer (City mode), the point under the
+    // pointer stays put and the panel offset is only measured again. Taken before the panel is
+    // followed, so the offset is always measured at the zoom the wheel left: the wheel's 'start'
+    // (cancel) keeps the zoom before its notch, and followPanel, measuring at that zoom against
+    // an offset measured at another (two notches in one frame; a zoom a +/- glide left a hair
+    // off its own), took it for a moved panel and glided the zoom back a notch.
+    if (!tween && camera.zoom !== shownZoom) {
+      targetZoom = camera.zoom;
+      const next = panelOffset(new T.Vector3());
+      if (!controls.zoomToCursor) controls.target.add(next).sub(shiftApplied);
+      shiftApplied.copy(next);
+      align();
+    }
     followPanel();
     if (Math.abs(targetYaw - yaw) > 0.0001) {
       // The bearing eases in more slowly than the glide and never whips round; a reduced-motion
@@ -1911,17 +1926,6 @@ export async function createCity(
         pitch = reduced || Math.abs(left) < 0.0005 ? pitch + left : pitch + left * (1 - Math.exp(-dt * YAW_RATE));
         align();
       }
-    }
-    // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
-    // to keep, so a later re-fit cannot spring back. Zoomed at the view centre, the subject
-    // beside the panel stays put; zoomed at the pointer (City mode), the point under the
-    // pointer stays put and the panel offset is only measured again.
-    if (!tween && camera.zoom !== shownZoom) {
-      targetZoom = camera.zoom;
-      const next = panelOffset(new T.Vector3());
-      if (!controls.zoomToCursor) controls.target.add(next).sub(shiftApplied);
-      shiftApplied.copy(next);
-      align();
     }
     if (tween) {
       controls.target.lerp(target, blend);

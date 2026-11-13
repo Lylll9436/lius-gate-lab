@@ -791,6 +791,161 @@ assert.equal(studyControls.maxZoom, 4, 'Back in the town, its zoom limit holds a
 // and 4 past its edge, clamped each frame to whichever it is deepest in or nearest to; and the
 // overview and the airport's chapter fit their frames.
 const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href);
+// What the checks lane D3 added found, for a summary line of their own.
+const laneD3 = {};
+// The wheel keeps every notch in a file (the camera review's third finding and its verifier's missed
+// one, on the published site too): OrbitControls' 'start' runs cancel() for each wheel event, which
+// keeps the zoom before that notch; the next frame's followPanel measured the panel offset at that
+// zoom against one measured at another (the zoom before the frame's first notch, when two landed in
+// one frame; the zoom a +/- glide aimed at, which it stops a hair short of), took the difference
+// for a moved panel and glided the zoom back a notch, the view sliding 14-30 px after the wheel had
+// stopped, notch after notch once + or - had been pressed. Through the frame loop's own camera
+// pieces in the order step() runs them, the +/- buttons' own method, cancel() on OrbitControls'
+// 'start' and three's real OrbitControls for the wheel (at the pointer in City mode, at the view
+// centre on the reading page): in the Town Hall's file and the sky island's, beside the panel at
+// 1440 x 900 and above the sheet at 768 x 1024, after + and after - each of four notches keeps its
+// zoom and the view stays where the wheel left it (no glide at all), and so does a pair of notches
+// in one frame.
+{
+  const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'aim', 'elevationAt', 'cancel', 'align', 'groupFrame', 'fitGroup', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'skyMarks', 'skyFit'],
+    vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_FIT', 'YAW_RATE', 'CITY_MAX_ZOOM'],
+    code = [];
+  let zoomBody, stepBody;
+  (function collect(node) {
+    if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+    if (ts.isMethodDeclaration(node) && node.name.getText(syntax) === 'zoom') zoomBody = node.body.getText(syntax);
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'step') stepBody = node.body;
+    ts.forEachChild(node, collect);
+  })(syntax);
+  // The frame loop's camera pieces, as step() orders them: the wheel's sync, the panel followed, the
+  // pitch, the glide, OrbitControls' update and the view handed over.
+  const shapes = [
+      (s) => ts.isIfStatement(s) && s.expression.getText(syntax) === '!tween && camera.zoom !== shownZoom',
+      (s) => s.getText(syntax) === 'followPanel();',
+      (s) => ts.isBlock(s) && s.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;',
+      (s) => ts.isIfStatement(s) && s.expression.getText(syntax) === 'tween' && s.thenStatement.getText(syntax).includes('controls.target.lerp'),
+      (s) => s.getText(syntax) === 'controls.update();',
+      (s) => s.getText(syntax) === 'if (!tween) target.copy(controls.target);',
+      (s) => s.getText(syntax) === 'shownZoom = camera.zoom;',
+    ],
+    frameCode = stepBody?.statements.filter((s) => shapes.some((is) => is(s))).map((s) => s.getText(syntax));
+  assert(code.length === want.length + vars.length && zoomBody && frameCode?.length === shapes.length, 'The wheel check must find every piece it runs.');
+  const js = ts.transpileModule(`${code.join('\n')}\nfunction zoomBy(f) ${zoomBody}\nfunction frame() { ${frameCode.join('\n')}\ncamera.updateMatrixWorld(); }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const rig = (w, h, city) => {
+    const aspect = w / h,
+      vertical = Math.max(53, 76 / aspect),
+      camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+      controls = new OrbitControls(camera, null);
+    controls.domElement = { clientWidth: w, clientHeight: h, getBoundingClientRect: () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h }) };
+    // As the scene sets them up; City mode's plain wheel zooms at the pointer, 1.5 times as fast (wheelIntent).
+    Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: 0.45, maxZoom: 4, zoomToCursor: city, zoomSpeed: city ? 1.5 : 1 });
+    const s = {
+        T,
+        Math,
+        plan,
+        camera,
+        controls,
+        target: new T.Vector3(),
+        shiftApplied: new T.Vector3(),
+        screenRight: new T.Vector3(),
+        screenUp: new T.Vector3(),
+        offset: new T.Vector3(),
+        frameShift: 0,
+        frameDrop: 0,
+        panelEdge: 1,
+        width: w,
+        height: h,
+        yaw: 0,
+        targetYaw: 0,
+        driftAngle: 0,
+        targetZoom: 1,
+        shownZoom: 1,
+        pitch: 0,
+        tween: false,
+        reduced: false,
+        dt: 1 / 60,
+        blend: 1 - Math.exp(-5.5 / 60),
+        focusedIds: [],
+        overviewFit: false,
+        inspect: null,
+        parkSelected: false,
+        autoFocus: true,
+        inspectionAutoFit: true,
+        lastInteraction: 0,
+        performance: { now: () => 0 },
+        clearHover() {},
+        placeSun() {},
+      },
+      run = runInNewContext(`${js};({ offsetTarget, focusSky, cancel, align, zoomBy, frame })`, s);
+    controls.addEventListener('start', run.cancel);
+    return {
+      s,
+      run,
+      camera,
+      controls,
+      // One wheel event, as OrbitControls' own listener handles it.
+      wheel(deltaY, x, y) {
+        controls.dispatchEvent({ type: 'start' });
+        controls._handleMouseWheel({ clientX: x, clientY: y, deltaY });
+        controls.dispatchEvent({ type: 'end' });
+      },
+      perUnit: () => (h * camera.zoom) / (camera.top - camera.bottom),
+    };
+  };
+  let notches = 0,
+    worst = 0;
+  for (const [w, h, shift, drop] of [[1440, 900, 492 / 2880, 0], [768, 1024, 0, -0.2629]])
+    for (const place of ['town-hall', 'sky-island'])
+      for (const city of [true, false])
+        for (const [press, burst] of [[1.25, 1], [1 / 1.25, 1], [0, 2]]) {
+          const r = rig(w, h, city),
+            { s, run, camera, controls } = r,
+            bearing = plan.chapterBearings[place],
+            at = `in the ${place === 'sky-island' ? "sky island's" : "Town Hall's"} file at ${w} x ${h}${city ? '' : ' on the reading page'}`;
+          // The file as its glide leaves it, at rest.
+          Object.assign(s, { yaw: bearing, targetYaw: bearing, frameShift: shift, frameDrop: drop, focusedIds: [place], pitch: place === 'sky-island' ? 1 : 0, targetZoom: 2 });
+          if (place === 'sky-island') run.focusSky();
+          else {
+            s.target.set(plan.sites[place].x, 3, plan.sites[place].z);
+            run.offsetTarget();
+          }
+          controls.target.copy(s.target);
+          camera.zoom = s.shownZoom = s.targetZoom;
+          camera.updateProjectionMatrix();
+          run.align();
+          controls.update();
+          camera.updateMatrixWorld();
+          for (let f = 0; f < 5; f++) run.frame();
+          // + or - pressed, its glide run to its end.
+          if (press) {
+            const goal = camera.zoom * press;
+            run.zoomBy(press);
+            for (let f = 0; f < 600 && s.tween; f++) run.frame();
+            assert(!s.tween && Math.abs(camera.zoom - goal) < 0.001, `The ${press > 1 ? '+' : '-'} button's glide ${at} ends at ${camera.zoom.toFixed(4)}, not ${goal.toFixed(4)}.`);
+          }
+          // Then notches in and out (or a pair in one frame), off the view's centre.
+          for (const deltaY of burst > 1 ? [100] : [100, -100, -100, 100]) {
+            for (let k = 0; k < burst; k++) r.wheel(deltaY, 0.33 * w, 0.5 * h);
+            const kept = camera.zoom;
+            run.frame();
+            const view = controls.target.clone();
+            let spring = 0,
+              slide = 0,
+              glides = 0;
+            for (let f = 0; f < 120; f++) {
+              run.frame();
+              glides += s.tween ? 1 : 0;
+              spring = Math.max(spring, Math.abs(camera.zoom - kept));
+              slide = Math.max(slide, controls.target.distanceTo(view) * r.perUnit());
+            }
+            notches += burst;
+            worst = Math.max(worst, slide);
+            assert(spring < 1e-9 && slide < 0.01 && !glides, `${burst > 1 ? 'Two wheel notches in one frame' : `A wheel notch after ${press > 1 ? '+' : '-'}`} ${at} spring${spring ? 's' : ''} back from ${kept.toFixed(4)} to ${camera.zoom.toFixed(4)} over ${glides} glide frames, the view sliding ${slide.toFixed(1)} px.`);
+          }
+        }
+  laneD3.wheel = `${notches} wheel notches kept after +, - and in same-frame pairs (the view ${worst.toFixed(2)} px from where the wheel left it at most)`;
+}
 {
   const pieces = [];
   const collect = (node) => {
@@ -2886,3 +3041,4 @@ visibleMesh.material.dispose();
 console.log(
   `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
+console.log(`And: ${Object.values(laneD3).join('; ')}.`);
