@@ -1,5 +1,6 @@
 // Water surface adapted from AC / xi4u (MIT). See THIRD_PARTY_NOTICES.md.
 import * as T from 'three';
+import { SKY } from './town-plan';
 import { MASK_EXTENT } from './town-shared';
 
 /**
@@ -167,6 +168,103 @@ export function createIslandWater(level = 0.0725, bedLevel = -0.38, masks?: T.Te
       blankMasks.dispose();
       bottom.geometry.dispose();
       bottom.material.dispose();
+    },
+  };
+}
+
+/**
+ * The sky island's shadow on the sea. The sea takes no shadows, so this is a soft pool laid just
+ * over the water (`lift`), an ellipse the deck's size and `grow` more: the sea under it is
+ * multiplied down to `depth` in its middle (out to `core` of its radius) and feathered back to
+ * nothing at its rim. Multiplied, it has no colour of its own to go wrong over the shallows, in
+ * the rain or at dusk. Each frame it is laid where the key light would throw the shadow of a deck
+ * `height` up (the island's, less a quarter of the rock's depth): 5.4 from under it by day and up
+ * to 10.1 at golden hour, turning with the camera as the key light does.
+ */
+export const SEA_SHADOW = { grow: 0.6, depth: 0.7, core: 0.32, lift: 0.012, height: 8.5 };
+/**
+ * The pool (SEA_SHADOW): drawn after the sea with no depth write, fading with the sun (gone at
+ * night, fainter in the rain as the town's shadows are), into the fog, and where the ground masks'
+ * G channel marks shallows (a dark arc across the turquoise read as a hole). It belongs to the
+ * scene, never to the island's own group: a pointer ray that meets it has not met the island.
+ */
+export function createSeaShadow(level: number, masks?: T.Texture) {
+  const blank = new T.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  blank.needsUpdate = true;
+  const uniforms = {
+    ...T.UniformsUtils.clone(T.UniformsLib.fog),
+    strength: { value: 1 },
+    groundMasks: { value: masks ?? (blank as T.Texture) },
+    maskExtent: { value: MASK_EXTENT },
+  };
+  const material = new T.ShaderMaterial({
+    name: 'sky-island-sea-shadow',
+    uniforms,
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    // The sea's colour times the pool's shade; its alpha is left as it is.
+    blending: T.CustomBlending,
+    blendEquation: T.AddEquation,
+    blendSrc: T.ZeroFactor,
+    blendDst: T.SrcColorFactor,
+    blendSrcAlpha: T.ZeroFactor,
+    blendDstAlpha: T.OneFactor,
+    vertexShader: `#include <common>
+#include <fog_pars_vertex>
+varying vec2 vPool;
+varying vec2 vSea;
+void main() {
+  vPool = position.xz;
+  vec4 world = modelMatrix * vec4(position, 1.);
+  vSea = world.xz;
+  vec4 mvPosition = viewMatrix * world;
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`,
+    fragmentShader: `#include <common>
+#include <fog_pars_fragment>
+uniform float strength;
+uniform sampler2D groundMasks;
+uniform float maskExtent;
+varying vec2 vPool;
+varying vec2 vSea;
+void main() {
+  float shade = ${(1 - SEA_SHADOW.depth).toFixed(3)} * strength * (1. - smoothstep(${SEA_SHADOW.core.toFixed(3)}, 1., length(vPool)));
+  shade *= 1. - smoothstep(0., .35, texture2D(groundMasks, vSea / (2. * maskExtent) + .5).g);
+  #ifdef USE_FOG
+  shade *= 1. - smoothstep(fogNear, fogFar, vFogDepth);
+  #endif
+  gl_FragColor = vec4(vec3(1. - shade), 1.);
+}`,
+  });
+  // A unit square on the water; the fragment keeps the disc inside it.
+  const geometry = new T.PlaneGeometry(2, 2).rotateX(-Math.PI / 2),
+    mesh = new T.Mesh(geometry, material);
+  mesh.name = 'sky-island-sea-shadow';
+  mesh.scale.set(SKY.a + SEA_SHADOW.grow, 1, SKY.b + SEA_SHADOW.grow);
+  mesh.rotation.y = SKY.heading;
+  mesh.position.set(SKY.x, level + SEA_SHADOW.lift, SKY.z);
+  mesh.renderOrder = 3;
+  mesh.castShadow = mesh.receiveShadow = false;
+  return {
+    mesh,
+    /**
+     * Lay it for the frame: `key` is the key light's offset from its target (the scene's, turned
+     * with the camera), `night` and `rain` the scene's (0..1); hidden when `shown` is false (the
+     * island is) or when there is no sun to speak of.
+     */
+    update(key: T.Vector3, night: number, rain: number, shown = true) {
+      const strength = (1 - night) * T.MathUtils.lerp(1, 0.35, rain);
+      uniforms.strength.value = strength;
+      mesh.visible = shown && strength > 0.01;
+      const throwBy = key.y > 1e-3 ? SEA_SHADOW.height / key.y : 0;
+      mesh.position.set(SKY.x - key.x * throwBy, level + SEA_SHADOW.lift, SKY.z - key.z * throwBy);
+    },
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+      blank.dispose();
     },
   };
 }

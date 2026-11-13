@@ -15,14 +15,15 @@ export type ResidentLook = { coat: string; legs: string; skin: string; hair: str
  * Every part is built from a few smooth solids (lathes, ellipsoids, tori, tubes) merged into one
  * geometry per surface kind with its colours on the vertices, so a figure batches into one mesh
  * per moving part: the body in fabric (coat, collar, hair, bag) and skin (head and face), and each
- * thigh, shin and arm in fabric (trousers and shoe, sleeve and mitten).
+ * thigh, shin and arm in fabric (trousers and shoe, sleeve and mitten). The kit and the body's
+ * measures are exported for sky-figure.ts, whose one named figure is built to the same scale.
  */
 const tone = new T.Color();
 /**
  * A geometry's colour on its vertices: one colour, or one picked per vertex from its position;
  * `grade` [y0, y1, k0, k1] shades it from k0 at y0 to k1 at y1, so cloth darkens towards its hem.
  */
-function paint(geometry: T.BufferGeometry, colour: string | ((p: T.Vector3) => string), grade?: [number, number, number, number]) {
+export function paint(geometry: T.BufferGeometry, colour: string | ((p: T.Vector3) => string), grade?: [number, number, number, number]) {
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
   for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
   const p = g.getAttribute('position'),
@@ -38,7 +39,7 @@ function paint(geometry: T.BufferGeometry, colour: string | ((p: T.Vector3) => s
   return g;
 }
 /** An ellipsoid of radii r at c, turned by rot (XYZ), with seg segments round. */
-function blob(r: V3, c: V3, seg = 12, rot?: V3) {
+export function blob(r: V3, c: V3, seg = 12, rot?: V3) {
   const g = new T.SphereGeometry(1, seg, Math.max(5, Math.round(seg * 0.65)));
   g.scale(r[0], r[1], r[2]);
   if (rot) g.applyMatrix4(new T.Matrix4().makeRotationFromEuler(new T.Euler(...rot)));
@@ -58,13 +59,13 @@ function cushion(r: V3, c: V3, rot?: V3) {
   return g.translate(c[0], c[1], c[2]);
 }
 /** A solid of revolution about y through (radius, height) points, given top to bottom or bottom to top. */
-function lathe(profile: number[][], seg = 14) {
+export function lathe(profile: number[][], seg = 14) {
   // Three's lathe faces outwards when its profile runs upwards.
   const up = profile[0][1] <= profile[profile.length - 1][1] ? profile : [...profile].reverse();
   return new T.LatheGeometry(up.map(([r, y]) => new T.Vector2(r, y)), seg);
 }
 /** A smooth tube through points, its radius running through r (one per point), closed with round caps. */
-function taper(points: V3[], r: number[], seg = 10, radial = 6) {
+export function taper(points: V3[], r: number[], seg = 10, radial = 6) {
   const curve = new T.CatmullRomCurve3(points.map((p) => new T.Vector3(...p)), false, 'centripetal'),
     frames = curve.computeFrenetFrames(seg, false),
     pos: number[] = [],
@@ -119,7 +120,7 @@ function taper(points: V3[], r: number[], seg = 10, radial = 6) {
   return g;
 }
 /** One mesh of painted parts in a kind; its material's own colour is white, the vertices carry the rest. */
-function part(g: T.Object3D, pieces: T.BufferGeometry[], material: Material, kind: SurfaceKind, name?: string) {
+export function part(g: T.Object3D, pieces: T.BufferGeometry[], material: Material, kind: SurfaceKind, name?: string) {
   const m = new T.Mesh(mergeGeometries(pieces)!, material('#ffffff', kind));
   m.castShadow = m.receiveShadow = true;
   if (name) m.name = name;
@@ -138,10 +139,10 @@ const COATS = ['#5f7186', '#7d8a5c', '#a8735a', '#c2a878', '#6d6378', '#4f6b66',
   STYLES: HairStyle[] = ['crop', 'bob', 'beanie', 'parted', 'bun', 'cap', 'crop', 'cap', 'helmet'],
   EYES = '#2b2622';
 /** A shade of a colour: darker below 1, lighter above. */
-const shade = (c: string, k: number) => '#' + new T.Color(c).multiplyScalar(k).getHexString();
+export const shade = (c: string, k: number) => '#' + new T.Color(c).multiplyScalar(k).getHexString();
 
 /** The head's centre and radii (0.6 to 0.9: a third of the figure). */
-const HEAD = { y: 0.75, r: [0.15, 0.148, 0.142] as V3 };
+export const HEAD = { y: 0.75, r: [0.15, 0.148, 0.142] as V3 };
 /** A point on the head's surface at (x, y), pushed out by `out`, for the face's features. */
 function onHead(x: number, y: number, out = 0): V3 {
   const [a, b, c] = HEAD.r,
@@ -149,10 +150,10 @@ function onHead(x: number, y: number, out = 0): V3 {
   return [x, y, 0.005 + c * Math.sqrt(Math.max(0, u)) + out];
 }
 /** The torso's profile (radius, height), hem to neck; it is 0.86 as deep as it is wide. */
-const TORSO = [[0, 0.268], [0.13, 0.268], [0.152, 0.285], [0.16, 0.33], [0.163, 0.4], [0.158, 0.47], [0.146, 0.53], [0.127, 0.585], [0.098, 0.618], [0.06, 0.638], [0, 0.642]],
+export const TORSO = [[0, 0.268], [0.13, 0.268], [0.152, 0.285], [0.16, 0.33], [0.163, 0.4], [0.158, 0.47], [0.146, 0.53], [0.127, 0.585], [0.098, 0.618], [0.06, 0.638], [0, 0.642]],
   DEPTH = 0.86;
 /** The torso's radius at height y. */
-function torsoAt(y: number) {
+export function torsoAt(y: number) {
   for (let i = 1; i < TORSO.length; i++) {
     const [r0, y0] = TORSO[i - 1],
       [r1, y1] = TORSO[i];

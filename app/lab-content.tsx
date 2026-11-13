@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowUpRight, ChevronDown, PlaneTakeoff } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, Cloud, PlaneTakeoff } from 'lucide-react';
 import { publicAsset } from './public-asset';
 import { buildings, type BuildingId, type Locale } from './city-data';
 import { personPhotos } from './people-photos';
@@ -79,6 +79,7 @@ export type GlyphKind =
   | 'hall'
   | 'house'
   | 'airport'
+  | 'sky'
   | 'studio'
   | 'archive'
   | 'park'
@@ -88,6 +89,7 @@ export function glyphFor(id: ContentId): GlyphKind {
   if (id === 'lius-gate' || id === 'overview') return 'gate';
   if (id === 'town-hall') return 'hall';
   if (id === 'airport') return 'airport';
+  if (id === 'sky-island') return 'sky';
   if (id === 'research-studio') return 'studio';
   if (id === 'city-archive') return 'archive';
   if (id === 'corner-park') return 'park';
@@ -105,7 +107,7 @@ export function PlaceGlyph({
   size?: number;
 }) {
   const k = (
-    ['gate', 'hall', 'house', 'airport', 'studio', 'archive', 'park', 'people'].includes(
+    ['gate', 'hall', 'house', 'airport', 'sky', 'studio', 'archive', 'park', 'people'].includes(
       kind,
     )
       ? kind
@@ -122,7 +124,18 @@ export function PlaceGlyph({
         className="place-glyph"
       />
     );
-  const paths: Record<Exclude<GlyphKind, 'airport'>, string> = {
+  // The sky island's is a cloud, from the same icon set: the island floats, and at 16 px a villa
+  // on a rock reads as one more house.
+  if (k === 'sky')
+    return (
+      <Cloud
+        size={size}
+        strokeWidth={1.6}
+        aria-hidden="true"
+        className="place-glyph"
+      />
+    );
+  const paths: Record<Exclude<GlyphKind, 'airport' | 'sky'>, string> = {
     gate: 'M4 20V10a8 8 0 0 1 16 0v10M2 20h20M8 20v-9a4 4 0 0 1 8 0v9',
     hall: 'M3 21h18M5 21V10h14v11M12 10V4l3 2M9 14h2v7M13 14h2v7M8 7h8',
     house: 'M3 11l9-7 9 7M5 9.5V21h14V9.5M10 21v-6h4v6M14 5V3h2v4',

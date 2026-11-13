@@ -72,7 +72,19 @@ const parkHit = new T.Mesh(new T.BoxGeometry(1.5, 0.2, 1.5));
 parkHit.position.set(0, 0, 3);
 parkHit.userData.placeId = 'corner-park';
 parkHit.updateMatrixWorld();
-const labels = [...models.keys(), 'corner-park'].map((id) => ({
+// The sky island: no building model, but a root of its own and a pointer volume beside it (as
+// addSkyHit makes one), floating clear of the ground and a little bigger than what it holds.
+const skyAt = new T.Vector3(-5.5, 3, -1),
+  skyRoot = new T.Group(),
+  skyHit = new T.Group();
+skyRoot.userData.buildingId = skyHit.userData.buildingId = 'sky-island';
+skyRoot.position.copy(skyAt);
+skyRoot.add(new T.Mesh(new T.BoxGeometry(1.2, 0.8, 1.2), new T.MeshBasicMaterial()));
+skyRoot.updateMatrixWorld(true);
+skyHit.add(new T.Mesh(new T.BoxGeometry(1.6, 1.2, 1.6), new T.MeshBasicMaterial({ visible: false })));
+skyHit.children[0].position.copy(skyAt);
+skyHit.updateMatrixWorld(true);
+const labels = [...models.keys(), 'corner-park', 'sky-island'].map((id) => ({
   b: { id },
   element: {
     offsetWidth: 240,
@@ -87,6 +99,7 @@ const h = {
   camera,
   models,
   parkHit,
+  skyPick: { hit: skyHit, root: skyRoot },
   labels,
   hover: api.hoverPointer(),
   width: 800,
@@ -130,8 +143,8 @@ const visible = () =>
     .filter((l) => l.element.style.visibility === 'visible')
     .map((l) => l.b.id);
 function eventAt(id, extra = {}) {
-  const object = id === 'corner-park' ? parkHit : models.get(id).root;
-  const v = object.position.clone().project(camera);
+  const at = id.isVector3 ? id : id === 'corner-park' ? parkHit.position : id === 'sky-island' ? skyAt : models.get(id).root.position;
+  const v = at.clone().project(camera);
   return {
     clientX: 42 + (v.x * 0.5 + 0.5) * 800,
     clientY: 20 + (-v.y * 0.5 + 0.5) * 500,
@@ -145,11 +158,40 @@ function eventAt(id, extra = {}) {
 const emit = (name, e) => h.renderer.domElement.emit(name, e);
 f.updateHover();
 assert.deepEqual(visible(), [], 'Labels must start hidden.');
-for (const id of [...models.keys(), 'corner-park']) {
+for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   emit('pointermove', eventAt(id));
   f.updateHover();
   assert.deepEqual(visible(), [id], 'Only the raycast hit may be named.');
   assert.equal(h.renderer.domElement.style.cursor, 'pointer');
+}
+// The sky island answers on itself and within its volume's slack, and the open sky beside it,
+// over it and under it (between it and the ground it floats over) does not.
+{
+  const within = eventAt(skyAt.clone().add(new T.Vector3(0.7, 0, 0)));
+  h.ray.setFromCamera(new T.Vector2(((within.clientX - 42) / 800) * 2 - 1, (-(within.clientY - 20) / 500) * 2 + 1), camera);
+  assert(h.ray.intersectObject(skyRoot, true).length === 0 && h.ray.intersectObject(skyHit, true).length > 0, 'The check points at no slack round the sky island.');
+  emit('pointermove', within);
+  f.updateHover();
+  assert.deepEqual(visible(), ['sky-island'], 'The sky island must answer within the slack of its own volume.');
+  for (const [dx, dy] of [[-1.9, 0], [1.9, 0], [0, 1.9], [0, -2.1]]) {
+    emit('pointermove', eventAt(skyAt.clone().add(new T.Vector3(dx, dy, 0))));
+    f.updateHover();
+    assert.deepEqual(visible(), [], `The open sky ${dx}, ${dy} from the sky island must name nothing.`);
+    assert.equal(h.renderer.domElement.style.cursor, 'grab');
+  }
+  // A click on it opens it; hidden (the frames that would cut it), it answers neither the pointer nor a click.
+  const on = eventAt('sky-island');
+  emit('pointerdown', on);
+  emit('pointerup', on);
+  assert.deepEqual(selection.splice(0), ['sky-island'], 'A click on the sky island must open it.');
+  skyRoot.visible = false;
+  emit('pointermove', on);
+  f.updateHover();
+  assert.deepEqual(visible(), [], 'Hidden, the sky island must name nothing.');
+  emit('pointerdown', on);
+  emit('pointerup', on);
+  assert.deepEqual(selection, [], 'Hidden, the sky island must not open.');
+  skyRoot.visible = true;
 }
 emit('pointermove', {
   clientX: 43,
@@ -397,5 +439,5 @@ assert(
   stopGlass();
 }
 console.log(
-  'Hover checks passed: real raycasting, one passive label, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, and glass rims let go with the chips that leave the page.',
+  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, and glass rims let go with the chips that leave the page.',
 );
