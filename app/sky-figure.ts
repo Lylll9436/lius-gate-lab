@@ -8,7 +8,7 @@ import { ellipsoid, sculpt } from './town-sculpt';
  * (city-people.ts: the same kit, scale and joints, so their walk code drives her) but as one named
  * person: long, loose, curly ginger hair, dark rectangular glasses, a black long-sleeved top with a
  * small pale pendant, fair skin, dark trousers. Her hands carry a watering can, or a teacup and its
- * saucer, or a book; poseAlison() sets every joint and prop for a pose and a phase, from nothing
+ * saucer; poseAlison() sets every joint and prop for a pose and a phase, from nothing
  * else, so town time can drive it and a paused town holds it. The sky island (town-sky's alison())
  * stands her on its deck and poses her through her day from town-plan's alisonDay.
  */
@@ -39,8 +39,6 @@ export const ALISON_LOOK = {
   china: '#efeae0',
   chinaBand: '#8ea2b4',
   tea: '#a07a58',
-  cover: '#6f4a44',
-  pages: '#efe7d6',
 };
 /**
  * The hair's saturation cap (HSV, sRGB): her one exception to the figures' 0.55. It is 0.70, not the
@@ -91,22 +89,6 @@ const STRIDE = (Math.PI * 2) / 17;
 /* Builders                                                            */
 /* ------------------------------------------------------------------ */
 const srgb = new T.Color();
-/** A geometry's colours on its vertices from its position and normal (sRGB triples): paint(), continuous. */
-function tint(geometry: T.BufferGeometry, fn: (p: T.Vector3, n: T.Vector3) => V3) {
-  const g = geometry.index ? geometry.toNonIndexed() : geometry;
-  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
-  const p = g.getAttribute('position'),
-    nrm = g.getAttribute('normal'),
-    out = new Float32Array(p.count * 3),
-    v = new T.Vector3(),
-    n = new T.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    const [r, gg, b] = fn(v.fromBufferAttribute(p, i), n.fromBufferAttribute(nrm, i));
-    srgb.setRGB(r, gg, b, T.SRGBColorSpace).toArray(out, i * 3);
-  }
-  g.setAttribute('color', new T.BufferAttribute(out, 3));
-  return g;
-}
 /** A hex colour as sRGB components (0..1). */
 function sRGB(hex: string): V3 {
   const n = parseInt(hex.slice(1), 16);
@@ -631,7 +613,7 @@ export type AlisonJoints = {
   arms: [T.Object3D, T.Object3D];
   elbows: [T.Object3D, T.Object3D];
 };
-export type AlisonProps = { can: T.Group; cup: T.Group; saucer: T.Group; book: T.Group; water: T.Group };
+export type AlisonProps = { can: T.Group; cup: T.Group; saucer: T.Group; water: T.Group };
 
 /** The watering can's drum: its axis this far ahead of the handle's grip (the can's origin, +z towards the spout). */
 const DRUM = 0.141;
@@ -645,36 +627,39 @@ const SPOUT: V3 = [0, -0.012, DRUM + 0.165];
  * The water she pours: `count` pale beads of radius `r` (twenty-faced, so 0.0715 across their box
  * the narrowest way, never under the 0.07 a part needs), `gap` apart down a straight stream from
  * inside the rose (`inset` back along the spout from its middle, where the first bead sits in the
- * rose's flare) to the bed, falling `lead` forward for each unit it drops, as water leaving a spout
- * does.
+ * rose's flare, wholly inside it) to the bed, falling `lead` forward for each unit it drops, as
+ * water leaving a spout does. It comes and goes along that line, never in a frame (poseAlison's
+ * `front` and `tail`): starting, the beads come out of the rose one behind another, the front of the
+ * stream carrying those still to come, until each is at its place; stopping, its top leaves the rose
+ * and falls on down the line, gathering the beads below it, `sink` past the last bead's place, which
+ * is down in the bed (the kerb and the mound under the rose), out of sight.
  */
-export const ALISON_STREAM = { count: 4, r: 0.042, gap: 0.075, inset: 0.03, lead: 0.3 };
+export const ALISON_STREAM = { count: 4, r: 0.042, gap: 0.075, inset: 0.03, lead: 0.3, sink: 0.4 };
+/** The can's foot (the middle of its drum's base, where it stands) in the can's own frame: its handle's grip is the can's origin. */
+export const CAN_FOOT: V3 = [0, -0.09, DRUM];
 /**
  * Her hand props, each a group of its own in her root (so batching part by part makes each one
  * mesh, and a pose shows only its own), placed by poseAlison. Every joined piece is at least 0.07
  * thick: the can's handle and its spout are 0.07 tubes (the spout flares into its rose), the cup's
- * handle is a 0.07 lug, the saucer stands 0.07 from its foot to its rim, the book's boards are
- * 0.07. Their origins are where they are held: the can's handle at its back, the cup's handle, the
- * saucer's foot, the book's spine.
+ * handle is a 0.07 lug, the saucer stands 0.07 from its foot to its rim. Their origins are where
+ * they are held: the can's handle at its back, the cup's handle, the saucer's foot.
  */
 function createProps(material: Material): AlisonProps {
   const L = ALISON_LOOK;
   const can = new T.Group(),
     cup = new T.Group(),
     saucer = new T.Group(),
-    book = new T.Group(),
     water = new T.Group();
   can.name = 'watering-can';
   cup.name = 'teacup';
   saucer.name = 'saucer';
-  book.name = 'book';
   water.name = 'water-stream';
   // The can, level: a zinc drum, a loop handle on its back (held at its rearmost point, the
   // origin) and a spout from its foot, forward and a little up, flaring into the rose.
   part(can, [
     paint(lathe([[0, -0.09], [0.064, -0.09], [0.07, -0.076], [0.07, 0.04], [0.061, 0.055], [0, 0.055]], 10).translate(0, 0, DRUM), L.zinc, [-0.09, 0.055, 0.9, 1.04]),
-    paint(taper([[0, 0.032, DRUM - 0.062], [0, 0.044, 0.04], [0, 0.028, 0.004], [0, -0.024, 0.002], [0, -0.062, 0.034], [0, -0.066, DRUM - 0.062]], [TUBE, TUBE, TUBE, TUBE, TUBE, TUBE], 6, 6), shade(L.zinc, 0.9)),
-    paint(taper([[0, -0.054, DRUM + 0.04], [0, -0.034, DRUM + 0.105], [0, -0.012, DRUM + 0.165], ROSE], [TUBE, TUBE, TUBE, 0.062], 5, 6), shade(L.zinc, 0.96)),
+    paint(outward(taper([[0, 0.032, DRUM - 0.062], [0, 0.044, 0.04], [0, 0.028, 0.004], [0, -0.024, 0.002], [0, -0.062, 0.034], [0, -0.066, DRUM - 0.062]], [TUBE, TUBE, TUBE, TUBE, TUBE, TUBE], 6, 6)), shade(L.zinc, 0.9)),
+    paint(outward(taper([[0, -0.054, DRUM + 0.04], [0, -0.034, DRUM + 0.105], [0, -0.012, DRUM + 0.165], ROSE], [TUBE, TUBE, TUBE, 0.062], 5, 6)), shade(L.zinc, 0.96)),
   ], material, 'paint', 'watering-can');
   // The teacup, its handle (a lug) at the origin on its -x side; milky tea inside, a blue band at the rim.
   const ring = (p: T.Vector3) => Math.hypot(p.x - CUP_AXIS, p.z);
@@ -690,15 +675,6 @@ function createProps(material: Material): AlisonProps {
       p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? L.chinaBand : L.china,
     ),
   ], material, 'paint', 'saucer');
-  // The book, open: two boards with their pages, each 0.07 thick and 0.15 long, meeting at the
-  // spine (the origin, along z) in a shallow V, the pages up and the cloth cover below and round them.
-  const pages = sRGB(L.pages),
-    cover = sRGB(L.cover),
-    leaf = (s: number) =>
-      tint(new T.BoxGeometry(0.11, 0.07, 0.15), (_, n) => (n.y > 0.5 ? pages : cover))
-        .translate(s * 0.058, -0.035, 0)
-        .rotateZ(s * 0.22);
-  part(book, [leaf(-1), leaf(1)], material, 'paint', 'book');
   // The water, its origin the first bead's middle, falling along its -y: each bead a round icosahedron
   // (its normals the sphere's own, so it shades smooth at twenty faces), opaque.
   const S = ALISON_STREAM,
@@ -709,9 +685,26 @@ function createProps(material: Material): AlisonProps {
       for (let i = 0; i < p.count; i++) n.setXYZ(i, p.getX(i), p.getY(i), p.getZ(i));
       return g.scale(S.r, S.r, S.r).translate(0, -k * S.gap, 0);
     };
-  part(water, [paint(mergeBeads(Array.from({ length: S.count }, (_, k) => bead(k))), L.water)], material, 'paint', 'water-stream');
-  for (const g of [can, cup, saucer, book, water]) g.visible = false;
-  return { can, cup, saucer, book, water };
+  const stream = part(water, [paint(mergeBeads(Array.from({ length: S.count }, (_, k) => bead(k))), L.water)], material, 'paint', 'water-stream');
+  // The beads where the stream is whole, for poseAlison to move them from (the batched mesh that
+  // takes this one's place keeps its corners in the same order).
+  water.userData.rest = Float32Array.from(stream.geometry.getAttribute('position').array);
+  for (const g of [can, cup, saucer, water]) g.visible = false;
+  return { can, cup, saucer, water };
+}
+/**
+ * A tube of city-people's taper with its faces turned the way its normals point: taper winds them
+ * inward, so drawn one-sided a tube shows its far wall's inside, and anything in it (the water in the
+ * can's rose) shows through its near one.
+ */
+function outward(geometry: T.BufferGeometry) {
+  const index = geometry.getIndex()!;
+  for (let i = 0; i < index.count; i += 3) {
+    const b = index.getX(i + 1);
+    index.setX(i + 1, index.getX(i + 2));
+    index.setX(i + 2, b);
+  }
+  return geometry;
 }
 /** Beads as one geometry (positions and normals: paint() adds the colours). */
 function mergeBeads(beads: T.BufferGeometry[]) {
@@ -809,7 +802,7 @@ export function createAlison(material: Material) {
     elbows.push(elbow);
   }
   const props = createProps(material);
-  root.add(props.can, props.cup, props.saucer, props.book, props.water);
+  root.add(props.can, props.cup, props.saucer, props.water);
   root.userData.gait = { phase: 0, amount: 0 };
   root.userData.sole = 0;
   const joints: AlisonJoints = {
@@ -827,7 +820,7 @@ export function createAlison(material: Material) {
 /* ------------------------------------------------------------------ */
 /* Poses                                                               */
 /* ------------------------------------------------------------------ */
-export const ALISON_POSES = ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'read', 'rise', 'set'] as const;
+export const ALISON_POSES = ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'rise', 'set', 'take'] as const;
 export type AlisonPose = (typeof ALISON_POSES)[number];
 
 const tmp = new T.Vector3(),
@@ -839,12 +832,17 @@ function leaned([x, y, z]: V3, a: number): V3 {
 }
 /**
  * Lean the body forward by `a` about the hip line (y 0.31), carrying the shoulders with it; `reach`
- * draws each shoulder in, up and forward (the shoulder blade sliding round as an arm reaches out).
+ * draws each shoulder in, up and forward (the shoulder blade sliding round as an arm reaches out);
+ * `back` moves her hips, and all of her over them, back over her feet (as her knees bend).
  */
-function lean(j: AlisonJoints, a: number, reach: V3 = [0, 0, 0]) {
+function lean(j: AlisonJoints, a: number, reach: V3 = [0, 0, 0], back = 0) {
   j.body.rotation.set(a, 0, 0);
-  j.body.position.set(0, HIP - HIP * Math.cos(a), -HIP * Math.sin(a));
-  j.arms.forEach((arm, k) => arm.position.set(...leaned([(k ? 1 : -1) * (SHOULDER.x - reach[0]), SHOULDER.y + reach[1], reach[2]], a)));
+  j.body.position.set(0, HIP - HIP * Math.cos(a), -HIP * Math.sin(a) - back);
+  j.arms.forEach((arm, k) => {
+    arm.position.set(...leaned([(k ? 1 : -1) * (SHOULDER.x - reach[0]), SHOULDER.y + reach[1], reach[2]], a));
+    arm.position.z -= back;
+  });
+  j.legs.forEach((leg) => (leg.position.z = -back));
 }
 /** A hand's centre (the mitten's) in her root's frame, from its arm and elbow as posed. */
 export function alisonHand(j: AlisonJoints, k: 0 | 1, out = new T.Vector3()) {
@@ -918,8 +916,6 @@ const WATER = { lean: 0.1, reach: [0.01, 0.02, 0.045] as V3, grip: [-0.13, 0.71,
  * rim dipped 4 mm into it).
  */
 const SIP = { lean: 0.05, reach: [0.012, 0, 0.035] as V3, saucer: [0.03, 0.482, 0.214] as V3, lips: [0, 0.655, 0.178] as V3 };
-/** The 'read' pose: her lean and reach, the book's spine where she holds it, and its tilt (the pages up and a little towards her). */
-const READ = { lean: 0.05, reach: [0.012, 0, 0.03] as V3, book: [0, 0.478, 0.215] as V3, tilt: -0.2 };
 /** The 'telescope' pose's stoop (from the hips) and how far her shoulders reach in, up and forward. */
 const SCOPE = { lean: 0.26, reach: [0.015, 0.02, 0.05] as V3 };
 /**
@@ -937,6 +933,21 @@ export const ALISON_TABLE = { x: 0.03, z: 0.3, up: 0.225 };
 const SET = { lean: 0.2, over: 0.035 };
 /** The 'rise' pose: how far she leans forward at its middle, as anyone does to stand up. */
 const RISE = { lean: 0.16 };
+/**
+ * Carrying the watering can (poseAlison's `carry`): her -x arm hangs at her side `out` from plumb
+ * (a little further out than at ease, so the can's drum clears her leg), its elbow `elbow` bent,
+ * her hand on the can's handle; the can level, its spout ahead, turned `yaw` (out a little).
+ */
+export const ALISON_CARRY = { out: 0.2, elbow: 0.16, yaw: -0.06 };
+/**
+ * The 'take' pose, bending to the can where it stands (a border's kerb, 0.32 over her feet) and up
+ * again with it: at the bottom she stoops `lean` from the hips, her shoulders reaching `reach`, her
+ * thighs forward and her knees bent by `knee` (her shins upright, so her hips go back over her
+ * feet and her soles stay flat); she goes down over the phase's first `down` and up over its last,
+ * her hand on the can's handle between, and on the way never more than `arm` from her shoulder (so
+ * her arm is never quite straight: a two-bone solve turns fast as it straightens).
+ */
+const TAKE = { lean: 0.7, reach: [0.012, 0, 0.04] as V3, knee: 0.5, down: 0.42, arm: 0.2 };
 /** Hand k's place in her lap seated, and the way its elbow bends there ('sit'). */
 const LAP = (k: 0 | 1): [V3, V3] => [
   [(k ? 1 : -1) * 0.1, 0.42, 0.075],
@@ -960,13 +971,12 @@ function cupOnSaucer(props: AlisonProps, at: V3, ry: number) {
 }
 /**
  * Where a hand holds each prop, in the prop's own frame: the can's handle and the cup's lug in her
- * -x hand (hand 0), the saucer's near rim in her +x hand (hand 1), the book's near corners in both.
+ * -x hand (hand 0), the saucer's near rim in her +x hand (hand 1).
  */
 export const ALISON_HOLDS = {
   can: [0, 0, 0] as V3,
   cup: [0, 0, 0] as V3,
   saucer: [0.066, 0.03, -0.038] as V3,
-  book: [[-0.118, -0.012, -0.045], [0.118, -0.012, -0.045]] as [V3, V3],
 };
 /**
  * The telescope in her frame, which is the station's: her root on the deck, facing +z, the town
@@ -985,26 +995,120 @@ export const ALISON_TELESCOPE = (() => {
   return { eye, gaze, eyepiece, radius: 0.04, grips };
 })();
 
+/** poseAlison's options (see there). */
+export type AlisonPoseOptions = {
+  seat?: number;
+  amount?: number;
+  step?: number;
+  side?: [number, number];
+  rest?: [number, number, number, number];
+  can?: [number, number, number, number];
+  carry?: boolean;
+  lift?: number;
+  pour?: number;
+  front?: number;
+  tail?: number;
+  stoop?: number;
+};
+/** An arm as a pose leaves it: its turn at the shoulder and its elbow's bend. */
+type ArmState = { q: T.Quaternion; bend: number };
+const armState = (j: AlisonJoints, k: 0 | 1): ArmState => ({ q: j.arms[k].quaternion.clone(), bend: j.elbows[k].rotation.x });
+/** Arm k part of the way `t` from one state to another (exactly each at 0 and 1). */
+function easeArm(j: AlisonJoints, k: 0 | 1, a: ArmState, b: ArmState, t: number) {
+  j.arms[k].quaternion.slerpQuaternions(a.q, b.q, t);
+  j.elbows[k].rotation.set(mix(a.bend, b.bend, t), 0, 0);
+}
+/** Each arm at ease, as poseAlison leaves it; her -x arm carrying the can (ALISON_CARRY). */
+const AT_EASE = [-1, 1].map((s) => ({ q: new T.Quaternion().setFromEuler(new T.Euler(0, 0, s * 0.12)), bend: -0.12 })) as [ArmState, ArmState],
+  CARRYING: ArmState = { q: new T.Quaternion().setFromEuler(new T.Euler(0, 0, -ALISON_CARRY.out)), bend: -ALISON_CARRY.elbow },
+  /** The can's turn as she carries it, and level at a turn of `ry` about the upright. */
+  CAN_CARRIED = new T.Quaternion().setFromEuler(new T.Euler(0, ALISON_CARRY.yaw, 0)),
+  level = (ry: number) => new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), ry);
+/** The can in her -x hand, its handle's grip on the hand's centre, turned `q`. */
+function canInHand(j: AlisonJoints, props: AlisonProps, q: T.Quaternion) {
+  props.can.visible = true;
+  alisonHand(j, 0, props.can.position);
+  props.can.quaternion.copy(q);
+}
+/** The can's grip, in her root's frame (her root `lift` over her floor), as it stands at `at` (its foot in her frame, y over her floor, and its turn). */
+function gripOf(at: [number, number, number, number], lift: number): V3 {
+  const foot = tmp.set(...CAN_FOOT).applyAxisAngle(new T.Vector3(0, 1, 0), at[3]);
+  return [at[0] - foot.x, at[1] - lift - foot.y, at[2] - foot.z];
+}
+/**
+ * The water from the can's rose: its line from inside the rose down the way the spout points,
+ * falling as it goes, and its beads along it (ALISON_STREAM): each at its own place, but none past
+ * the stream's `front` (0 to 1: from inside the rose to the last bead's place, gathering pace as the
+ * square of it) nor above its `tail` (0 to 1: from the rose to `sink` past the last bead's place).
+ * Shown only while some of it is out of the rose and not yet down in the bed. The beads move on the
+ * batched mesh itself, which keeps the corners in the order createProps made them.
+ */
+function pourWater(props: AlisonProps, front: number, tail: number) {
+  const W = ALISON_STREAM,
+    { can, water } = props;
+  water.visible = front > 1e-6 && tail < 1 - 1e-6;
+  if (!water.visible) return;
+  const along = new T.Vector3(...ROSE).sub(new T.Vector3(...SPOUT)).normalize(),
+    out = along.clone().applyQuaternion(can.quaternion),
+    fall = new T.Vector3(out.x, 0, out.z).normalize().multiplyScalar(W.lead).setY(-1).normalize();
+  water.position.set(...ROSE).addScaledVector(along, -W.inset).applyQuaternion(can.quaternion).add(can.position);
+  water.quaternion.setFromUnitVectors(new T.Vector3(0, -1, 0), fall);
+  const mesh = water.children.find((c): c is T.Mesh => c instanceof T.Mesh),
+    rest = water.userData.rest as Float32Array | undefined,
+    last = (W.count - 1) * W.gap,
+    // (The front gathers pace as it comes, as water leaving a spout does: its first frames stay in the rose.)
+    f = front * front * last,
+    g = tail * (last + W.sink);
+  if (!mesh || !rest) return;
+  const at = mesh.geometry.getAttribute('position') as T.BufferAttribute,
+    was = mesh.userData.stream as [number, number] | undefined;
+  if (at.count * 3 !== rest.length || (was && was[0] === f && was[1] === g)) return;
+  const per = at.count / W.count;
+  for (let k = 0; k < W.count; k++) {
+    // Its middle `place` down the line (the group's -y), so it moves up by its own place less that.
+    const own = k * W.gap,
+      place = Math.max(Math.min(own, f), g);
+    for (let i = k * per; i < (k + 1) * per; i++) at.setY(i, rest[i * 3 + 1] + own - place);
+  }
+  at.needsUpdate = true;
+  mesh.geometry.computeBoundingSphere();
+  mesh.userData.stream = [f, g];
+}
+/** Where the can stands for 'take' when no `can` is given: on a border's kerb in front of her, as at the west border. */
+export const ALISON_KERB: [number, number, number, number] = [0.01, 0.228, 0.315, 0.85];
+
 /**
  * Pose her for `name` at `phase` (0..1, looping), from nothing else: every joint and prop that any
  * pose moves is set on each call, so poses never leak into one another, and the same arguments
  * always give the same pose. Returns `lift`: her root's height over the floor under her (standing
  * and walking, her lowest sole touches it; seated, her thighs rest on a seat `seat` high,
  * ALISON.seat by default). Place her root at the floor plus lift.
- * - 'stand': at ease.
+ * - 'stand': at ease; `carry`, the watering can in her -x hand at her side (ALISON_CARRY).
  * - 'walk': one stride a phase (two steps), the residents' gait: ALISON.stride units a phase.
- *   `amount` (1 by default) scales the gait, so 0 is 'stand' and a walk can ease in and out.
+ *   `amount` (1 by default) scales the gait, so 0 is 'stand' and a walk can ease in and out;
+ *   `carry`, the can at her side, that arm still.
  * - 'water': standing, the can held out in her -x hand by its handle and tipped, so its rose hangs
  *   over a border in front of her (ALISON.rose), swaying gently along it; her other hand on her hip.
+ *   `lift` (1 by default) takes her from carrying the can (0: 'stand' with `carry`) to holding it out
+ *   so, her lean and both arms easing; `pour` (1 by default) tips it from level (0) to pouring and
+ *   sways it; `front` and `tail` (1 and 0 by default: the whole stream) say how much of the water is
+ *   out of the rose and how much has gone down into the bed (ALISON_STREAM: shown only between).
  *   `step` (0 to 1) takes her through a sidestep along the border that moves her root `side` ([x,
  *   z] in her frame), her root moved there by side x smoothstep(step) by whoever places her (step
  *   0, the default: feet together).
+ * - 'take': bending to the can where it stands (`can`) and up again with it, phase 0 'stand' to 1
+ *   'stand' with `carry`: she stoops from the hips, her knees bending and her hips going back over
+ *   her feet, her -x hand coming to the can's handle at the bottom (over 0.42 to 0.58 it is there),
+ *   then she straightens with the can and it comes level to her side. Back from 1 to 0, she sets it
+ *   down where `can` says.
  * - 'sit': on a seat, hands on her thighs.
  * - 'sip': seated, the saucer held in front of her in her +x hand, the cup lifted from it to her
  *   lips and down again in her -x hand (on the saucer from 0.88 round to 0.12, at her lips from
  *   0.4 to 0.6).
- * - 'telescope': standing, stooped a little to the eyepiece (ALISON_TELESCOPE), both hands on the tube.
- * - 'read': seated, an open book held by its near corners.
+ * - 'telescope': standing, stooped a little to the eyepiece (ALISON_TELESCOPE), both hands on the
+ *   tube; `stoop` (1 by default) eases her into it from standing at ease (0), her lean, her stance
+ *   and her arms together; with `carry`, her -x hand keeps the can at her side and her +x hand alone
+ *   is on the tube.
  * - 'rise': getting up from a seat, phase 0 'sit' (her hands in her lap) to 1 'stand' (at ease),
  *   while whoever places her slides her root out sideways by the smoothstep of the phase: her hips
  *   come up and her legs straighten under her (her soles never below her floor, touching it at 1),
@@ -1017,11 +1121,14 @@ export const ALISON_TELESCOPE = (() => {
  * `rest` ([x, y, z, turn]: the saucer's foot in her frame, y over her floor, and its turn about the
  * upright) is where her cup and saucer stand once she has set them down: every pose but 'sip' (and
  * 'set', which moves them) shows them there, so they stay on the table while she goes about her day.
+ * `can` (the same, for the can's foot) is where the can stands when she is not holding it: every pose
+ * that does not hold it shows it there.
  */
-export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose, phase: number, opts: { seat?: number; amount?: number; step?: number; side?: [number, number]; rest?: [number, number, number, number] } = {}) {
+export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose, phase: number, opts: AlisonPoseOptions = {}) {
   const u = ((phase % 1) + 1) % 1,
-    // 'rise' and 'set' run from one pose to another: their phase does not loop.
-    p = T.MathUtils.clamp(phase, 0, 1);
+    // 'rise', 'set' and 'take' run from one pose to another: their phase does not loop.
+    p = T.MathUtils.clamp(phase, 0, 1),
+    unit = (v: number | undefined, d: number) => T.MathUtils.clamp(v ?? d, 0, 1);
   // At ease: upright, legs straight, arms down and a little out, elbows soft, no props.
   lean(j, 0);
   j.legs.forEach((leg) => leg.rotation.set(0, 0, 0));
@@ -1034,38 +1141,48 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
     p.rotation.set(0, 0, 0, 'XYZ');
   }
   let lift = 0;
-  if (name === 'sit' || name === 'sip' || name === 'read' || name === 'set') {
+  const carry = () => {
+    easeArm(j, 0, CARRYING, CARRYING, 0);
+    canInHand(j, props, CAN_CARRIED);
+  };
+  if (name === 'sit' || name === 'sip' || name === 'set') {
     // Thighs level and a little apart, shins hanging just forward of plumb, sitting up.
     lift = Math.max(0.11, opts.seat ?? SEAT) + THIGH_R - HIP;
     j.legs.forEach((leg, k) => leg.rotation.set(-Math.PI / 2, 0, (k ? 1 : -1) * 0.07));
     j.knees.forEach((knee) => knee.rotation.set(Math.PI / 2 - 0.12, 0, 0));
     lean(j, -0.03);
   }
-  if (name === 'walk') {
-    // The residents' own walk, one stride a phase; the elbows fold a little more as each arm swings forward.
+  if (name === 'stand') {
+    if (opts.carry) carry();
+  } else if (name === 'walk') {
+    // The residents' own walk, one stride a phase; the elbows fold a little more as each arm swings
+    // forward. Carrying the can, that arm hangs still.
     const amount = T.MathUtils.clamp(opts.amount ?? 1, 0, 1);
     j.root.userData.gait = { phase: u * TAU, amount };
     animateResident(j.root, 0, 0, false);
     lift = -j.root.userData.sole;
     j.arms.forEach((arm, k) => j.elbows[k].rotation.set(-0.12 - 0.04 * amount - 0.5 * Math.max(0, -arm.rotation.x), 0, 0));
+    if (opts.carry) carry();
   } else if (name === 'water') {
-    const sway = Math.sin(u * TAU),
-      can = props.can;
+    const held = unit(opts.lift, 1),
+      pour = unit(opts.pour, 1),
+      sway = Math.sin(u * TAU) * pour,
+      bob = Math.sin(u * TAU * 2) * pour;
+    // Her arms as they hold the can out over the bed, at the hold's own lean; then her lean and her
+    // arms `held` of the way there from carrying it.
     lean(j, WATER.lean, WATER.reach);
-    reach(j, 0, [WATER.grip[0] + 0.014 * sway, WATER.grip[1] + 0.006 * Math.sin(u * TAU * 2), WATER.grip[2]], [-0.8, -0.6, -0.2]);
-    can.visible = true;
-    alisonHand(j, 0, can.position);
-    can.rotation.set(WATER.tilt + 0.05 * Math.sin(u * TAU * 2), WATER.yaw + 0.1 * sway, 0, 'YXZ');
-    // The water, from inside the rose down to the bed, leaving the way the spout points and falling.
-    const W = ALISON_STREAM,
-      water = props.water,
-      out = new T.Vector3(...ROSE).sub(new T.Vector3(...SPOUT)).normalize().applyQuaternion(can.quaternion),
-      fall = new T.Vector3(out.x, 0, out.z).normalize().multiplyScalar(W.lead).setY(-1).normalize();
-    water.visible = true;
-    water.position.set(...ROSE).addScaledVector(new T.Vector3(...ROSE).sub(new T.Vector3(...SPOUT)).normalize(), -W.inset).applyQuaternion(can.quaternion).add(can.position);
-    water.quaternion.setFromUnitVectors(new T.Vector3(0, -1, 0), fall);
+    reach(j, 0, [WATER.grip[0] + 0.014 * sway, WATER.grip[1] + 0.006 * bob, WATER.grip[2]], [-0.8, -0.6, -0.2]);
+    const out = armState(j, 0);
     // Her other hand rests on her hip, its elbow out.
     reach(j, 1, leaned([0.19, 0.455, 0.03], WATER.lean), [0.9, -0.1, -0.5]);
+    const hip = armState(j, 1);
+    lean(j, WATER.lean * held, [WATER.reach[0] * held, WATER.reach[1] * held, WATER.reach[2] * held]);
+    easeArm(j, 0, CARRYING, out, held);
+    easeArm(j, 1, AT_EASE[1], hip, held);
+    // The can comes level from her side, then tips (spout down) and turns towards her middle.
+    canInHand(j, props, CAN_CARRIED.clone().slerp(new T.Quaternion().setFromEuler(new T.Euler(WATER.tilt * pour + 0.05 * bob, WATER.yaw + 0.1 * sway, 0, 'YXZ')), held));
+    // The water, from inside the rose down to the bed, leaving the way the spout points and falling.
+    pourWater(props, unit(opts.front, 1), unit(opts.tail, 0));
     // A sidestep along the bed: `step` of the way through one that takes her root `side` ([x, z] in
     // her frame, mostly to her right), while whoever places her moves her root there by side x
     // smoothstep(step). The foot on that side (her right, to her right) steps out over the first
@@ -1087,6 +1204,47 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
         j.knees[k].rotation.set(0.7 * swing[k], 0, 0);
       });
       lift = -Math.min(soleOf(j.legs[0], j.knees[0]), soleOf(j.legs[1], j.knees[1]));
+    }
+  } else if (name === 'take') {
+    // Stooping to the can, her knees bending and her hips going back; at the bottom her -x hand is
+    // on its handle. Between her side and the handle her hand keeps low and out to her side (it
+    // comes out sideways first and rises last, so the can never swings up into her hair hanging in
+    // front of her as she leans), her arm reaching for it by a two-bone solve and settling at her
+    // side at the top.
+    const at = opts.can ?? ALISON_KERB,
+      bend = p <= 0.5 ? smooth(p, 0, TAKE.down) : 1 - smooth(p, 1 - TAKE.down, 1),
+      crouch = (b: number) => {
+        lean(j, TAKE.lean * b, [TAKE.reach[0] * b, TAKE.reach[1] * b, TAKE.reach[2] * b], 0.14 * Math.sin(TAKE.knee * b));
+        j.legs.forEach((leg) => leg.rotation.set(-TAKE.knee * b, 0, 0));
+        j.knees.forEach((knee) => knee.rotation.set(TAKE.knee * b, 0, 0));
+        // (Her shins upright, her soles stay flat: her hips come down as her thighs come forward.)
+        return -sole(-TAKE.knee * b, TAKE.knee * b);
+      },
+      // Her hand, standing, with her arm `side` (at ease or carrying).
+      upright = (side: ArmState) => {
+        easeArm(j, 0, side, side, 0);
+        return alisonHand(j, 0).toArray() as V3;
+      },
+      side = p <= 0.5 ? AT_EASE[0] : CARRYING,
+      from = upright(side);
+    lift = crouch(bend);
+    const grip = gripOf(at, lift),
+      // How far from her side to the handle her hand has come: across first, then forward, then down;
+      // never further from her shoulder than her arm reaches with its elbow still soft.
+      to = new T.Vector3(mix(from[0], grip[0], smooth(bend, 0.5, 1)), mix(from[1], grip[1], smooth(bend, 0, 0.7)), mix(from[2], grip[2], smooth(bend, 0.15, 0.9))),
+      shoulder = j.arms[0].position,
+      off = to.clone().sub(shoulder);
+    if (off.length() > TAKE.arm) to.copy(shoulder).addScaledVector(off, TAKE.arm / off.length());
+    reach(j, 0, to.toArray() as V3, [-0.7, -0.1, -0.7]);
+    easeArm(j, 0, side, armState(j, 0), smooth(bend, 0, 0.3));
+    if (p <= 0.5) {
+      // Going down, the can still stands where it is.
+      props.can.visible = true;
+      props.can.quaternion.copy(level(at[3]));
+      props.can.position.set(...grip);
+    } else {
+      // Coming up, it comes with her hand, turning level to her side.
+      canInHand(j, props, level(at[3]).slerp(CAN_CARRIED, 1 - bend));
     }
   } else if (name === 'sit') {
     for (const k of [0, 1] as const) reach(j, k, [(k ? 1 : -1) * 0.1, 0.42, 0.075], [(k ? 1 : -1) * 0.8, -0.2, -0.6]);
@@ -1110,24 +1268,19 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
     const hold = ALISON_HOLDS.saucer;
     reach(j, 1, [S[0] + hold[0], S[1] + hold[1], S[2] + hold[2]], [0.8, -0.4, -0.3]);
   } else if (name === 'telescope') {
-    const S = ALISON_TELESCOPE;
+    // Her hands as they hold the tube at the full stoop; then her stoop, her stance (her -x foot a
+    // little back) and her arms `stoop` of the way there from standing at ease.
+    const S = ALISON_TELESCOPE,
+      stoop = unit(opts.stoop, 1);
     lean(j, SCOPE.lean, SCOPE.reach);
-    // A short stance: her -x foot a little back.
-    j.legs[0].rotation.set(0.09, 0, 0);
-    j.legs[1].rotation.set(-0.05, 0, 0);
-    lift = -Math.min(sole(0.09, 0), sole(-0.05, 0));
-    for (const k of [0, 1] as const) reach(j, k, S.grips[k], [(k ? 1 : -1) * 0.9, -0.4, -0.3]);
-  } else if (name === 'read') {
-    const book = props.book;
-    lean(j, READ.lean, READ.reach);
-    book.visible = true;
-    book.position.set(...READ.book);
-    book.rotation.set(READ.tilt, 0, 0, 'XYZ');
-    book.updateMatrix();
-    for (const k of [0, 1] as const) {
-      const corner = tmp.set(...ALISON_HOLDS.book[k]).applyMatrix4(book.matrix);
-      reach(j, k, [corner.x, corner.y, corner.z], [(k ? 1 : -1) * 0.8, -0.4, -0.4]);
-    }
+    const grips = ([0, 1] as const).map((k) => (reach(j, k, S.grips[k], [(k ? 1 : -1) * 0.9, -0.4, -0.3]), armState(j, k)));
+    lean(j, SCOPE.lean * stoop, [SCOPE.reach[0] * stoop, SCOPE.reach[1] * stoop, SCOPE.reach[2] * stoop]);
+    j.legs[0].rotation.set(0.09 * stoop, 0, 0);
+    j.legs[1].rotation.set(-0.05 * stoop, 0, 0);
+    lift = -Math.min(sole(0.09 * stoop, 0), sole(-0.05 * stoop, 0));
+    if (opts.carry) carry();
+    else easeArm(j, 0, AT_EASE[0], grips[0], stoop);
+    easeArm(j, 1, AT_EASE[1], grips[1], stoop);
   } else if (name === 'rise') {
     // From 'sit' (0) to 'stand' (1): every joint goes from the one to the other by the same smoothstep
     // that slides her root, her seat's lift comes down to her floor, and she leans into it midway.
@@ -1172,7 +1325,13 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
     reach(j, 0, mixV([lug.x, lug.y, lug.z], lap0, free0), mixV([-0.8, -0.5, -0.3], bend0, free0));
     reach(j, 1, mixV([rim.x, rim.y, rim.z], lap1, free1), mixV([0.8, -0.4, -0.3], bend1, free1));
   }
-  // Her cup and saucer, set down on the table, stay where they stand there while she is away.
+  // The can where it stands, while she is not holding it; her cup and saucer, set down on the
+  // table, where they stand there while she is away.
+  if (opts.can && !props.can.visible) {
+    props.can.visible = true;
+    props.can.quaternion.copy(level(opts.can[3]));
+    props.can.position.set(...gripOf(opts.can, lift));
+  }
   if (opts.rest && !props.saucer.visible) cupOnSaucer(props, [opts.rest[0], opts.rest[1] - lift, opts.rest[2]], opts.rest[3]);
   j.root.userData.lift = lift;
   return { lift };
@@ -1181,7 +1340,7 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
 const WATER_ROSE = ((): V3 => {
   const g = () => new T.Group(),
     j: AlisonJoints = { root: g(), body: g(), legs: [g(), g()], knees: [g(), g()], arms: [g(), g()], elbows: [g(), g()] },
-    props: AlisonProps = { can: g(), cup: g(), saucer: g(), book: g(), water: g() };
+    props: AlisonProps = { can: g(), cup: g(), saucer: g(), water: g() };
   j.elbows.forEach((e, k) => {
     j.arms[k].add(e);
     e.position.y = -UPPER;
