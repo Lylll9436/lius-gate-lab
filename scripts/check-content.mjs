@@ -382,47 +382,61 @@ assert.equal(
 // never people, so nothing counts her as a member, a leaver, a resident or someone with a home (the
 // site's own code is checked for that below). Her fields are checked strictly, each fault in words
 // of its own.
-const alison = catalog.neighbours.find((n) => n.id === 'alison-heppenstall'),
-  herAt = 'neighbours[' + catalog.neighbours.indexOf(alison) + ']';
-assert(alison, 'The sky island’s neighbour, Alison Heppenstall, is in content/lab.json.');
+//
+// The checks on the neighbours' rules, the island's City file, About's Neighbours card and what
+// the site does with a neighbour run on a fixture: her record as it was reviewed, published
+// (scripts/fixtures/alison-heppenstall.json), set into the test catalogues in place of the real
+// neighbours. So they hold whatever content/lab.json says of her: taking her profile down, as
+// MAINTENANCE describes it (her record set to draft, or removed), changes nothing here. What
+// content/lab.json holds is checked as it is (the live neighbours, after the copy scan below): a
+// valid catalogue, every published neighbour within the wording rules, and with none published the
+// island's own file and no card.
+const alison = JSON.parse(await fs.readFile(path.join(root, 'scripts/fixtures/alison-heppenstall.json'), 'utf8')),
+  /** The real catalogue with her record, the fixture, as its one neighbour. */
+  withHer = { ...catalog, neighbours: [alison] },
+  herAt = 'neighbours[0]';
+assert.deepEqual(validateCatalog(withHer), [], 'scripts/fixtures/alison-heppenstall.json is not a valid neighbour.');
 assert.deepEqual(
   Object.keys(alison).sort(),
   ['id', 'title', 'summary', 'visibility', 'order', 'role', 'affiliation', 'photo', 'buildingId', 'group', 'sections', 'links'].sort(),
   'Her record holds its fields, and no properties.',
 );
 assert.deepEqual(
-  [alison.visibility, alison.order, alison.photo, alison.buildingId],
-  ['published', 0, null, 'sky-island'],
-  'She is published, first, with no photo (the site shows none of her), and her place is the sky island.',
+  [alison.id, alison.visibility, alison.buildingId],
+  ['alison-heppenstall', 'published', 'sky-island'],
+  'The fixture is her record, published, on the sky island.',
 );
 assert.deepEqual(alison.sections.map((s) => s.heading.en), ['Background', 'Research']);
 assert.deepEqual(Object.keys(alison.group).sort(), ['name', 'fullName', 'summary', 'connection', 'site'].sort());
-// Her two ways off the site, both HTTPS: UIA's website and her staff page.
-assert.equal(alison.group.site.url, 'https://urban-ai.uk/');
-assert.deepEqual(alison.links.map((l) => l.url), ['https://www.gla.ac.uk/schools/socialpolitical/staff/alisonheppenstall/']);
-// The wording rules for her copy. She has no Chinese name, so hers stays in Latin script in the
-// Chinese copy, and UIA keeps its own name. The one tie the sources state is that Pengyuan Liu is
-// listed as an Associate of UIA, and the connection line says so. That nothing stronger is said,
-// that her name and UIA's are never written in Chinese characters, and that Liu’s Gate is never
-// called a lab or a group are checked in every sentence of her copy, whatever its field (the copy
-// scan, below).
-assert(alison.title.zh === alison.title.en && !/[㐀-鿿]/.test(alison.title.zh), 'Her name stays in Latin script in Chinese.');
-assert.deepEqual(
-  [alison.group.name.zh, alison.group.fullName.zh],
-  [alison.group.name.en, alison.group.fullName.en],
-  'UIA keeps its own name in Chinese.',
-);
-{
-  const tie = alison.group.connection;
+// The facts and the wording rules for her record, the fixture and, while content/lab.json holds hers
+// (published or a draft), that one too. No photo: the site shows none of her. Her two ways off the
+// site are the sources' own addresses, UIA's website and her staff page. She has no Chinese name,
+// so hers stays in Latin script in the Chinese copy, and UIA keeps its own name. The one tie the
+// sources state is that Pengyuan Liu is listed as an Associate of UIA, and the connection line says
+// so. That nothing stronger is said, that her name and UIA's are never written in Chinese
+// characters, and that Liu’s Gate is never called a lab or a group are checked in every sentence of
+// her copy, whatever its field (the copy scan, below).
+for (const her of [alison, ...catalog.neighbours.filter((n) => n.id === alison.id)]) {
+  const which = her === alison ? 'scripts/fixtures/alison-heppenstall.json' : 'content/lab.json';
+  assert.equal(her.photo, null, 'Her record (' + which + ') has a photo: the site shows none of her.');
+  assert.equal(her.group.site.url, 'https://urban-ai.uk/', 'UIA’s website (' + which + ') is not https://urban-ai.uk/.');
+  assert.deepEqual(her.links.map((l) => l.url), ['https://www.gla.ac.uk/schools/socialpolitical/staff/alisonheppenstall/'], 'Her staff page (' + which + ') has moved.');
+  assert(her.title.zh === her.title.en && !/[㐀-鿿]/.test(her.title.zh), 'Her name stays in Latin script in Chinese (' + which + ').');
+  assert.deepEqual(
+    [her.group.name.zh, her.group.fullName.zh],
+    [her.group.name.en, her.group.fullName.en],
+    'UIA keeps its own name in Chinese (' + which + ').',
+  );
+  const tie = her.group.connection;
   assert(
     tie.en.includes('Pengyuan Liu') && /\bAssociates?\b/.test(tie.en) && tie.zh.includes('刘鹏远') && tie.zh.includes('Associate'),
-    'The tie to UIA is that Pengyuan Liu is listed as an Associate.',
+    'The tie to UIA is that Pengyuan Liu is listed as an Associate (' + which + ').',
   );
 }
-/** The real catalogue with Alison Heppenstall's record changed by `edit`. */
+/** The real catalogue with her record (the fixture) as its one neighbour, changed by `edit`. */
 const editedNeighbour = (edit) => {
-  const cat = structuredClone(catalog);
-  edit(cat.neighbours.find((n) => n.id === alison.id));
+  const cat = structuredClone(withHer);
+  edit(cat.neighbours[0]);
   return cat;
 };
 const placeRule = herAt + '.buildingId must be the place whose file shows them: sky-island.';
@@ -488,8 +502,8 @@ for (const [why, edit, message] of [
 // note may name her among its people (their People buttons open members' files).
 assert.deepEqual(
   validateCatalog({
-    ...catalog,
-    people: [...catalog.people, { ...stayer(catalog.people[1]), id: alison.id, title: alison.title, buildingId: null, order: 30 }],
+    ...withHer,
+    people: [...withHer.people, { ...stayer(catalog.people[1]), id: alison.id, title: alison.title, buildingId: null, order: 30 }],
   }),
   [herAt + ': alison-heppenstall is in people too. A neighbour is not a member: keep them in neighbours only.'],
 );
@@ -523,33 +537,36 @@ const testNeighbour = {
   title: { en: 'Test Neighbour', zh: '测试近邻' },
   order: 1,
 };
-assert.deepEqual(validateCatalog({ ...catalog, neighbours: [...catalog.neighbours, testNeighbour] }), [
-  'neighbours[' + catalog.neighbours.length + ']: sky-island already has a published neighbour; a place’s file shows one.',
+assert.deepEqual(validateCatalog({ ...withHer, neighbours: [alison, testNeighbour] }), [
+  'neighbours[1]: sky-island already has a published neighbour; a place’s file shows one.',
 ]);
-assert.deepEqual(validateCatalog({ ...catalog, neighbours: [...catalog.neighbours, { ...testNeighbour, visibility: 'draft' }] }), []);
-assert.deepEqual(validateCatalog({ ...catalog, neighbours: [...catalog.neighbours, { ...alison, visibility: 'draft' }] }), [
-  'neighbours[' + catalog.neighbours.length + ']: id must be a unique stable slug.',
+assert.deepEqual(validateCatalog({ ...withHer, neighbours: [alison, { ...testNeighbour, visibility: 'draft' }] }), []);
+assert.deepEqual(validateCatalog({ ...withHer, neighbours: [alison, { ...alison, visibility: 'draft' }] }), [
+  'neighbours[1]: id must be a unique stable slug.',
 ]);
 // The maintenance command's operations take the neighbours too, and refuse a typo.
 {
-  const added = upsertRecord(catalog, 'neighbours', { ...testNeighbour, visibility: 'draft' });
-  assert.deepEqual(added.neighbours.map((n) => n.id), [...catalog.neighbours.map((n) => n.id), 'test-neighbour']);
-  assert.deepEqual(removeRecord(added, 'neighbours', 'test-neighbour'), catalog);
-  assert.throws(() => upsertRecord(catalog, 'neighbours', { ...alison, properties: [] }), /unknown field "properties"/);
-  assert.throws(() => removeRecord(catalog, 'neighbours', 'missing'), /Record not found: neighbours\/missing/);
+  const added = upsertRecord(withHer, 'neighbours', { ...testNeighbour, visibility: 'draft' });
+  assert.deepEqual(added.neighbours.map((n) => n.id), [alison.id, 'test-neighbour']);
+  assert.deepEqual(removeRecord(added, 'neighbours', 'test-neighbour'), withHer);
+  assert.throws(() => upsertRecord(withHer, 'neighbours', { ...alison, properties: [] }), /unknown field "properties"/);
+  assert.throws(() => removeRecord(withHer, 'neighbours', 'missing'), /Record not found: neighbours\/missing/);
 }
-// The example a maintainer starts from (MAINTENANCE's upsert line) is a valid neighbour, a draft
-// beside her, so it stays off the site and her place keeps her.
+// The example a maintainer starts from (MAINTENANCE's upsert line) is a valid neighbour, a draft: beside
+// her it stays off the site and her place keeps her, and it goes into content/lab.json as it stands.
 {
   const example = JSON.parse(await fs.readFile(path.join(root, 'content/examples/neighbour.json'), 'utf8'));
   assert.equal(example.visibility, 'draft', 'content/examples/neighbour.json must be a draft.');
   assert.deepEqual(
-    upsertRecord(catalog, 'neighbours', example)
+    upsertRecord(withHer, 'neighbours', example)
       .neighbours.filter((n) => n.visibility === 'published')
       .map((n) => n.id),
     [alison.id],
   );
+  upsertRecord(catalog, 'neighbours', example);
 }
+// The site's own code is compiled over the test catalogue, her record (the fixture) its one neighbour.
+next = { ...next, neighbours: [alison] };
 await fs.writeFile(path.join(output, 'lab.json'), JSON.stringify(next));
 for (const name of [
   'public-asset',
@@ -2273,17 +2290,20 @@ assert(
     return found;
   };
   // The scan reads the neighbours' copy, so a lab word anywhere in it is caught, and still leaves a
-  // member's bio alone.
+  // member's bio alone. It reads every neighbour in content/lab.json, a draft too, and her record.
   const scanned = (edit, words) => {
-    const cat = structuredClone(catalog);
-    edit(cat, cat.neighbours.find((n) => n.id === alison.id));
+    const cat = structuredClone(withHer);
+    edit(cat, cat.neighbours[0]);
     return neighbourCopy(cat).some((t) => t.includes(words) && lab(t));
   };
   assert(scanned((cat, n) => (n.group.summary.en = 'UIA is a lab that studies cities.'), 'UIA is a lab'), 'The scan misses a lab word in a neighbour’s English.');
   assert(scanned((cat, n) => (n.sections[1].body.zh = 'UIA 实验室'), 'UIA 实验室'), 'The scan misses a lab word in a neighbour’s Chinese.');
   assert(!scanned((cat) => (cat.people[0].summary.en += ' Once in a lab.'), 'Once in a lab.'), 'The scan reads a member’s bio.');
-  const neighbourTexts = neighbourCopy(catalog);
+  const herTexts = neighbourCopy(withHer),
+    neighbourTexts = neighbourCopy(catalog);
+  assert(herTexts.length >= 18, 'The copy scan read her text (' + herTexts.length + ' pieces).');
   assert(neighbourTexts.length >= 18 * catalog.neighbours.length, 'The copy scan read the neighbours’ text (' + neighbourTexts.length + ' pieces).');
+  for (const text of herTexts) assert(!lab(text), 'scripts/fixtures/alison-heppenstall.json uses a lab word: ' + text);
   for (const text of neighbourTexts) assert(!lab(text), 'content/lab.json’s neighbours use a lab word: ' + text);
   // The wording rules, read in every sentence of the neighbours' copy, whatever its field:
   // - Liu’s Gate is never called a lab or a group: no sentence that names it calls anything one.
@@ -2350,12 +2370,12 @@ assert(
     ['her role', (n) => (n.role.zh = '赫彭斯托尔教授')],
     ['her staff page’s label', (n) => (n.links[0].label.zh = '艾莉森的格拉斯哥大学教师主页')],
   ]) {
-    const cat = structuredClone(catalog);
-    edit(cat.neighbours.find((n) => n.id === alison.id));
+    const cat = structuredClone(withHer);
+    edit(cat.neighbours[0]);
     assert.equal(wordingFaults(neighbourCopy(cat)).length, 1, 'The wording rules miss a fault in ' + where + '.');
   }
-  assert(sentences(neighbourTexts).some(namesTheGate), 'The neighbours’ copy names Liu’s Gate (the connection line).');
-  assert.deepEqual(wordingFaults(neighbourTexts), [], 'content/lab.json’s neighbours break a wording rule.');
+  assert(sentences(herTexts).some(namesTheGate), 'Her copy names Liu’s Gate (the connection line).');
+  assert.deepEqual(wordingFaults(herTexts), [], 'scripts/fixtures/alison-heppenstall.json breaks a wording rule.');
   // So does the draft example a maintainer starts from.
   const exampleTexts = neighbourCopy({ neighbours: [JSON.parse(await fs.readFile(path.join(root, 'content/examples/neighbour.json'), 'utf8'))] });
   assert(exampleTexts.length >= 18 && !exampleTexts.some(lab), 'content/examples/neighbour.json uses a lab word.');
@@ -2388,6 +2408,49 @@ assert(
     neighbours: next.neighbours.map((n) => ({ ...n, group: { ...n.group, connection: { en: 'Liu’s Gate is part of UIA.', zh: '刘家门隶属于 UIA。' } } })),
   });
   assert.equal(wordingFaults(shown(planted.content.LabContent)).length, 4, 'The wording rules miss a fault the island’s file or the card shows.');
+  // The neighbours content/lab.json holds, as they are (the checks above ran on her record, the
+  // fixture). Every published one keeps to the wording rules, in its record and in what its place's
+  // file and About's card show of it, links included. With none published (her profile taken down:
+  // her record set to draft, or removed), the sky island is its own again: its own category and
+  // summary, the villa's file and no Neighbours card in About.
+  {
+    const live = catalog.neighbours.filter((n) => n.visibility === 'published'),
+      site = await siteOver('neighbours-live', catalog),
+      island = site.data.buildings.find((b) => b.id === 'sky-island');
+    assert.deepEqual(wordingFaults(neighbourCopy({ neighbours: live })), [], 'A published neighbour in content/lab.json breaks a wording rule.');
+    const render = (id, locale, reading = false) =>
+      renderToStaticMarkup(React.createElement(site.content.LabContent, { id, locale, onOpen() {}, reading, onExplore() {} }));
+    if (!live.length) {
+      assert.deepEqual(
+        [island.category, island.summary],
+        [
+          { en: 'ABOVE THE TOWN', zh: '小城上空' },
+          { en: 'A small island that floats above the town, with a red-brick villa on its lawn.', zh: '漂浮在小城上空的一座小岛，草坪上立着一栋红砖别墅。' },
+        ],
+        'With no neighbour published, the sky island is not its own again.',
+      );
+      for (const locale of ['en', 'zh']) {
+        const file = decoded(render('sky-island', locale)),
+          about = render('town-hall', locale, true);
+        assert(
+          file.includes('<p class="record-lead">' + island.summary[locale] + '</p>') && file.includes(island.architecture[locale]) && !file.includes('neighbour-file'),
+          'With no neighbour published, the sky island’s file (' + locale + ') is not its own.',
+        );
+        assert(!about.includes('class="neighbours"'), 'With no neighbour published, About (' + locale + ') still ends with a Neighbours card.');
+      }
+    } else
+      for (const n of live) {
+        const place = site.data.buildings.find((b) => b.id === n.buildingId);
+        assert.deepEqual(place.category, { en: (n.title.en + ' · ' + n.group.name.en).toUpperCase(), zh: n.title.zh + ' · ' + n.group.name.zh }, 'The category of ' + n.buildingId + ' does not name its neighbour.');
+        for (const locale of ['en', 'zh']) {
+          const file = render(n.buildingId, locale),
+            card = render('town-hall', locale, true).match(/<section class="neighbours"[\s\S]*?<\/section>/)?.[0] ?? '';
+          assert(file.includes('neighbour-file') && textsOf(file).includes(n.summary[locale]) && textsOf(card).includes(n.group.connection[locale]), 'The file of ' + n.buildingId + ' or About’s card (' + locale + ') does not show ' + n.id + '.');
+          assert.deepEqual(wordingFaults([...textsOf(file), ...textsOf(card)]), [], 'What the file of ' + n.buildingId + ' or About’s card (' + locale + ') shows of ' + n.id + ' breaks a wording rule.');
+          assert.deepEqual(unsafeOutbound(file + card), [], 'A link off the file of ' + n.buildingId + ' or About’s card (' + locale + ') is unsafe.');
+        }
+      }
+  }
 }
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');
@@ -2428,7 +2491,8 @@ for (const { args, status = 0, message, output: printed } of [
   { args: ['upsert', 'people', leaverFile] },
   { args: ['upsert', 'people', typoFile], status: 1, message: /unknown field "depature"/ },
   { args: ['remove', 'people', 'test-member'] },
-  { args: ['list', 'neighbours'], output: /"id": "alison-heppenstall"/ },
+  // The neighbours content/lab.json holds, whoever they are, or none.
+  { args: ['list', 'neighbours'], output: catalog.neighbours.length ? new RegExp('"id": "' + catalog.neighbours[0].id + '"') : /^\[\]$/m },
   { args: ['upsert', 'neighbours', neighbourFile] },
   { args: ['upsert', 'neighbours', neighbourTypoFile], status: 1, message: /unknown field "properties"/ },
   { args: ['remove', 'neighbours', 'test-neighbour'] },
@@ -2476,5 +2540,5 @@ assert.equal(
   assert.doesNotMatch(result.stdout, /Catalog valid/);
 }
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), the sky island’s City file (her category, her role, profile, UIA and its button, her staff page, her full profile folded away, the villa; the island’s own again with no record) and About’s Neighbours card (UIA in one line, her as a group leader, the tie, its two ways on, the island’s reading address), her name nowhere else on the page, the same wording rules over the file’s and the card’s copy, the Gate’s work never filed at her place, every link off the site opening a new tab with rel noopener noreferrer, still seven chapter chips, and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command; checked on a fixture of her record, so that her profile can be taken down, a draft or removed, with the checks still passing, and content/lab.json’s own neighbours checked as they are: each published one within the wording rules, with none the island its own again), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), the sky island’s City file (her category, her role, profile, UIA and its button, her staff page, her full profile folded away, the villa; the island’s own again with no record) and About’s Neighbours card (UIA in one line, her as a group leader, the tie, its two ways on, the island’s reading address), her name nowhere else on the page, the same wording rules over the file’s and the card’s copy, the Gate’s work never filed at her place, every link off the site opening a new tab with rel noopener noreferrer, still seven chapter chips, and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
 );
