@@ -499,9 +499,12 @@ export function skyExtent(marks: T.Vector3[]) {
  * take (`shore`, likewise: a portrait phone's file shows a sliver of its north-west coast in the
  * corner above the sheet, its beach and the grass behind it, the corner of a roof at the idle
  * drift's extreme, 0.8% of the free part at rest and 1.2% through the drift at most, at 412 x 915);
- * and how long the shadows take to fade out before the box moves and to fade back in after.
+ * from what share of the island's own fit its file counts as close in whatever its zoom and pitch
+ * (`file`: followSky; a window whose fit falls between the zooms and short of the pitch, 1.25 to
+ * 1.4, never took the box on opening the file, though one resized into it kept it); and how long
+ * the shadows take to fade out before the box moves and to fade back in after.
  */
-export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], low: [0.75, 0.9], land: [4, 2], shore: [0.05, 0.04], fade: 0.18 };
+export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], low: [0.75, 0.9], land: [4, 2], shore: [0.05, 0.04], file: 0.97, fade: 0.18 };
 /** The town's island out to its waterline (3.3 past its outline), as skyShadowWanted measures it. */
 const TOWN_WATERLINE = plan.islandOutline.map(([x, z]) => new T.Vector3(x, 0, z).multiplyScalar(1 + 3.3 / Math.hypot(x, z)));
 /**
@@ -1695,7 +1698,11 @@ export async function createCity(
     }
     camera.updateMatrixWorld();
     if (skyTurn && (!skyFile() || Math.abs(targetYaw - yaw) <= 0.0001)) skyTurn = false;
-    const wanted = skyShown && skyShadowWanted(skyTurn ? skyAhead() : camera, LAND_MARKS, frameShift, frameFoot, skyCast, skyTurn ? aim() : pitch);
+    // The view it is decided at, and how far down to the island's pitch it is: the island's own file at
+    // its fit's zoom or closer counts as close in whatever its pitch (SKY_SHADOW.file), so the same view
+    // keeps the same box however the visitor came to it.
+    const view = skyTurn ? skyAhead() : camera,
+      wanted = skyShown && skyShadowWanted(view, LAND_MARKS, frameShift, frameFoot, skyCast, skyFile() && view.zoom >= SKY_SHADOW.file * skyFitZoom() ? 1 : skyTurn ? aim() : pitch);
     if (wanted === skyCast) shadowFade = Math.min(1, shadowFade + dt / SKY_SHADOW.fade);
     else {
       shadowFade = reduced ? 0 : Math.max(0, shadowFade - dt / SKY_SHADOW.fade);
