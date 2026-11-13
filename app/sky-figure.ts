@@ -998,14 +998,17 @@ const RISE = { lean: 0.16 };
  */
 export const ALISON_CARRY = { out: 0.2, elbow: 0.16, yaw: -0.06 };
 /**
- * The 'take' pose, bending to the can where it stands (a border's kerb, 0.32 over her feet) and up
- * again with it: at the bottom she stoops `lean` from the hips, her shoulders reaching `reach`, her
- * thighs forward and her knees bent by `knee` (her shins upright, so her hips go back over her
- * feet and her soles stay flat); she goes down over the phase's first `down` and up over its last,
- * her hand on the can's handle between, and on the way never more than `arm` from her shoulder (so
- * her arm is never quite straight: a two-bone solve turns fast as it straightens).
+ * The 'take' pose, bending to the can where it stands beside her (a border's kerb, 0.3 over her
+ * feet, at her -x side, its handle toward her hand) and up again with it: at the bottom she crouches,
+ * her knees bent by `knee` (her thighs forward, her shins upright, so her hips go back over her feet
+ * and her soles stay flat) and her back leaning only `lean` from the hips, her shoulders reaching
+ * `reach` (at F's 0.7 stoop her front locks hung through the can's handle); she goes down over the
+ * phase's first `down` and up over its last, her hand on the can's handle between, and on the way
+ * never more than `arm` from her shoulder (so her arm is never quite straight: a two-bone solve turns
+ * fast as it straightens); between her side and the handle her hand swings out to her side, `out`
+ * at the most, half way, so the can comes up wide of her hair.
  */
-const TAKE = { lean: 0.7, reach: [0.012, 0, 0.04] as V3, knee: 0.5, down: 0.42, arm: 0.2 };
+const TAKE = { lean: 0.55, reach: [0.012, 0, 0.04] as V3, knee: 1.1, down: 0.42, arm: 0.2, out: 0.05 };
 /** Hand k's place in her lap seated, and the way its elbow bends there ('sit'). */
 const LAP = (k: 0 | 1): [V3, V3] => [
   [(k ? 1 : -1) * 0.1, 0.42, 0.075],
@@ -1144,7 +1147,7 @@ function pourWater(props: AlisonProps, front: number, tail: number) {
   mesh.userData.stream = [f, g];
 }
 /** Where the can stands for 'take' when no `can` is given: on a border's kerb in front of her, as at the west border. */
-export const ALISON_KERB: [number, number, number, number] = [0.01, 0.228, 0.315, 0.85];
+export const ALISON_KERB: [number, number, number, number] = [-0.259, 0.203, 0.181, -0.06];
 
 /**
  * Pose her for `name` at `phase` (0..1, looping), from nothing else: every joint and prop that any
@@ -1275,11 +1278,14 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       lift = -Math.min(soleOf(j.legs[0], j.knees[0]), soleOf(j.legs[1], j.knees[1]));
     }
   } else if (name === 'take') {
-    // Stooping to the can, her knees bending and her hips going back; at the bottom her -x hand is
-    // on its handle. Between her side and the handle her hand keeps low and out to her side (it
-    // comes out sideways first and rises last, so the can never swings up into her hair hanging in
-    // front of her as she leans), her arm reaching for it by a two-bone solve and settling at her
-    // side at the top.
+    // Crouching to the can beside her, her knees bending and her hips going back; at the bottom her
+    // -x hand is on its handle. Between her side and the handle her hand swings out a little to her
+    // side (TAKE.out) as it goes down and comes up, her arm reaching for it by a two-bone solve and
+    // settling at her side at the top, so the can comes up wide of the locks hanging in front of
+    // her shoulder (at F's deep stoop, the can in front of her, her front lock hung through its
+    // handle for 0.65 s each time). Standing where her day stands it, facing its own way less the
+    // carry's turn, the can comes up into her hand without turning; any other turn it has comes
+    // round to the carry's as she straightens.
     const at = opts.can ?? ALISON_KERB,
       bend = p <= 0.5 ? smooth(p, 0, TAKE.down) : 1 - smooth(p, 1 - TAKE.down, 1),
       crouch = (b: number) => {
@@ -1298,9 +1304,10 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       from = upright(side);
     lift = crouch(bend);
     const grip = gripOf(at, lift),
-      // How far from her side to the handle her hand has come: across first, then forward, then down;
-      // never further from her shoulder than her arm reaches with its elbow still soft.
-      to = new T.Vector3(mix(from[0], grip[0], smooth(bend, 0.5, 1)), mix(from[1], grip[1], smooth(bend, 0, 0.7)), mix(from[2], grip[2], smooth(bend, 0.15, 0.9))),
+      // How far from her side to the handle her hand has come: across first, then forward, then down,
+      // out to her side on the way; never further from her shoulder than her arm reaches with its
+      // elbow still soft.
+      to = new T.Vector3(mix(from[0], grip[0], smooth(bend, 0.5, 1)) - 4 * TAKE.out * bend * (1 - bend), mix(from[1], grip[1], smooth(bend, 0, 0.7)), mix(from[2], grip[2], smooth(bend, 0.15, 0.9))),
       shoulder = j.arms[0].position,
       off = to.clone().sub(shoulder);
     if (off.length() > TAKE.arm) to.copy(shoulder).addScaledVector(off, TAKE.arm / off.length());
@@ -1312,7 +1319,7 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       props.can.quaternion.copy(level(at[3]));
       props.can.position.set(...grip);
     } else {
-      // Coming up, it comes with her hand, turning level to her side.
+      // Coming up, it comes with her hand, level, turning to the carry's turn as she straightens.
       canInHand(j, props, level(at[3]).slerp(CAN_CARRIED, 1 - bend));
     }
   } else if (name === 'sit') {

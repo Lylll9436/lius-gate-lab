@@ -1110,21 +1110,25 @@ export const SKY_TEA = { sips: [[3.5, 8.5], [11.5, 16.5], [19.5, 24.5]] as [numb
  * way, its top leaving the rose and falling on into the bed, all of it gone `leave` seconds later;
  * then the can comes back down to her side over `lift`.
  */
-export const SKY_WATERING = { step: 0.13, stepTime: 0.75, pause: 0.66, first: 0.6, sway: 3, turn: 0.85, shift: 0.47, in: 0.15, short: 0.2, late: 0.1, lift: 0.65, tilt: 0.45, reveal: 0.32, leave: 0.66 };
+export const SKY_WATERING = { step: 0.13, stepTime: 0.75, pause: 0.66, first: 0.6, sway: 3, turn: 0.85, shift: 0.47, in: 0.15, short: 0.2, late: 0.1, lift: 0.65, tilt: 0.45, reveal: 0.35, leave: 0.66 };
 /**
  * Her watering can's place, where it stands while she is not carrying it: on the west border's kerb
  * (the border she waters first; the town's flower bed's kerb, `kerb` over the lowest lawn under it)
- * at its south-west corner, in front of where she stands to start watering it, its spout along the
- * kerb's west side and its handle out over the gravel towards her. `at` is its foot (the middle of
- * its drum's base) from the border's own south-west corner, east and north; `turn` its rotation.y.
- * Leaving her chair she goes to it, bends and takes it up (lane F's 'take', over `take` seconds) and
- * carries it from there; it goes with her to the telescope, in her hand at her side as she looks
+ * at its south-west corner, by where she stands to start watering it, its spout along the kerb's
+ * west side and its handle out over the gravel towards her. `at` is its foot (the middle of its
+ * drum's base) from the border's own south-west corner, east and north; `turn` its rotation.y.
+ * Leaving her chair she goes to it, crouches and takes it up (lane F's 'take', over `take` seconds)
+ * and carries it from there; it goes with her to the telescope, in her hand at her side as she looks
  * (she looks with the other), and back along the walk to its place, where she sets it down again
- * before she goes back to her chair.
+ * before she goes back to her chair. She takes it up and sets it down facing the kerb, turned the
+ * can's own way less `face` (lane F's ALISON_CARRY yaw, the other way): so it stands at her side, its
+ * handle toward her hand, and comes up into her hand already turned as she carries it. (Facing the
+ * border as she waters it, the can stood in front of her: she stooped deep to it, her front lock hung
+ * through its handle, and its spout swung low over the bed as it turned to her side.)
  */
-export const SKY_CAN = { at: [0.205, 0.045] as XZ, turn: Math.PI + 0.08, kerb: 0.22, take: 1.45 };
+export const SKY_CAN = { at: [0.205, 0.045] as XZ, turn: Math.PI + 0.08, face: 0.06, kerb: 0.22, take: 1.45 };
 /** The telescope: she looks through it for `look` seconds, easing into her stoop over `ease` at the start and out of it at the end. */
-export const SKY_SCOPE = { look: 16.8, ease: 0.7 };
+export const SKY_SCOPE = { look: 16.6, ease: 0.7 };
 /** Where she is in her day (alisonDay's `station`): at one of her stations, or walking between them. */
 export type SkyDayStation = 'tea' | 'water-west' | 'water-east' | 'telescope' | 'walk';
 /** What she does at a moment of her day: lane F's pose names (sky-figure's AlisonPose). */
@@ -1203,7 +1207,8 @@ function borderFloor(b: (typeof SKY_BORDERS)['west']) {
  * Her day: SKY_DAY.acts, one after another, SKY_DAY.period seconds round, built from S3's numbers
  * (SKY_STATIONS, SKY_PATHS). Tea in her chair (the day's start); her cup and saucer set down, up out
  * of her chair to its side, and a step north to the walk, where her watering can stands on the west
- * border's kerb (SKY_CAN); she takes it up and waters the west border along to the steps; east along
+ * border's kerb (SKY_CAN); she turns to the kerb, takes it up, turns to the border and waters it
+ * along to the steps; east along
  * the walk past them; watering the east border; along the walk's curve to the telescope's stand,
  * and a long look at the town, the can at her side; then back west along the whole walk to the
  * can's place, where she sets it down, the step back to her chair's side, down into her chair, and
@@ -1295,7 +1300,7 @@ export const SKY_DAY = (() => {
       add(wateringTimes(steps).seconds, { kind: 'water', station, x: from, z: zw, step: (to - from) / steps, steps, heading });
     },
     take = (up: boolean) => {
-      turnTo(fetch[0], fetch[1], watering.facing - W.turn, 'water-west');
+      turnTo(fetch[0], fetch[1], SKY_CAN.turn + SKY_CAN.face, 'water-west');
       add(SKY_CAN.take, { kind: 'take', station: 'water-west', x: fetch[0], z: fetch[1], heading, up });
       carry = up;
     };

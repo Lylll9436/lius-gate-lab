@@ -4483,6 +4483,89 @@ function alisonStream(water) {
     corners: () => Array.from({ length: q.count }, (_, i) => ({ p: new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(tube.matrixWorld), k: ring[i] })),
   };
 }
+/** The triangles of what shows of a group's meshes, in the world: 9 numbers each. */
+function worldTriangles(group) {
+  const out = [],
+    v = new T.Vector3();
+  group.updateMatrixWorld(true);
+  group.traverse((m) => {
+    if (!m.isMesh) return;
+    for (let o = m; o; o = o.parent) if (!o.visible) return;
+    const q = m.geometry.attributes.position,
+      index = m.geometry.index,
+      n = index ? index.count : q.count;
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(q, index ? index.getX(i) : i).applyMatrix4(m.matrixWorld);
+      out.push(v.x, v.y, v.z);
+    }
+  });
+  return Float32Array.from(out);
+}
+/**
+ * How many edges of either set of triangles (worldTriangles) pass strictly through a triangle of the
+ * other: two surfaces that cross have some; two that only touch, or stand apart, none.
+ */
+function crossingEdges(X, Y) {
+  const box = (tris, i) => {
+      const b = new T.Box3();
+      for (let k = 0; k < 9; k += 3) b.expandByPoint(new T.Vector3(tris[i + k], tris[i + k + 1], tris[i + k + 2]));
+      return b;
+    },
+    all = (tris) => new T.Box3().setFromArray(tris),
+    both = all(X).intersect(all(Y)).expandByScalar(1e-4);
+  if (both.isEmpty()) return 0;
+  const near = (tris) => {
+      const out = [];
+      for (let i = 0; i < tris.length; i += 9) if (box(tris, i).intersectsBox(both)) out.push(i);
+      return out;
+    },
+    xs = near(X),
+    ys = near(Y),
+    a = new T.Vector3(),
+    b = new T.Vector3(),
+    c = new T.Vector3(),
+    p0 = new T.Vector3(),
+    p1 = new T.Vector3(),
+    e1 = new T.Vector3(),
+    e2 = new T.Vector3(),
+    d = new T.Vector3(),
+    h = new T.Vector3(),
+    s = new T.Vector3(),
+    q = new T.Vector3(),
+    through = () => {
+      // (Moller-Trumbore, the segment p0-p1 strictly inside the triangle abc's plane crossing.)
+      e1.subVectors(b, a);
+      e2.subVectors(c, a);
+      d.subVectors(p1, p0);
+      h.crossVectors(d, e2);
+      const det = e1.dot(h);
+      if (Math.abs(det) < 1e-15) return false;
+      s.subVectors(p0, a);
+      const u = s.dot(h) / det;
+      if (u < 0 || u > 1) return false;
+      q.crossVectors(s, e1);
+      const w = d.dot(q) / det;
+      if (w < 0 || u + w > 1) return false;
+      const f = e2.dot(q) / det;
+      return f > 0 && f < 1;
+    };
+  let n = 0;
+  for (const [E, es, F, fs] of [[X, xs, Y, ys], [Y, ys, X, xs]])
+    for (const i of es)
+      for (const [j, k] of [[0, 3], [3, 6], [6, 0]]) {
+        p0.fromArray(E, i + j);
+        p1.fromArray(E, i + k);
+        const seg = new T.Box3().setFromPoints([p0, p1]);
+        for (const f of fs) {
+          a.fromArray(F, f);
+          b.fromArray(F, f + 3);
+          c.fromArray(F, f + 6);
+          if (Math.max(a.x, b.x, c.x) < seg.min.x || Math.min(a.x, b.x, c.x) > seg.max.x || Math.max(a.y, b.y, c.y) < seg.min.y || Math.min(a.y, b.y, c.y) > seg.max.y || Math.max(a.z, b.z, c.z) < seg.min.z || Math.min(a.z, b.z, c.z) > seg.max.z) continue;
+          if (through()) n++;
+        }
+      }
+  return n;
+}
 // Alison Heppenstall's figure (sky-figure.ts), built on her own. She is the town's one named
 // person, so she has a builder and a block of her own, and the residents above stay generic.
 // - Build: a resident's pivots (so their walk drives her) and an elbow in each arm; at most 5,000
@@ -8734,7 +8817,14 @@ let skyReport = '';
       // - getting up (SKY_TEA.rise to the end of its 'rise') and sitting down she comes out of her
       //   chair and goes back into it in no less than 0.8 s, and her cup and saucer stand on the
       //   table's top, at her place (SKY_DAY.saucer), from the moment she has set them down until she
-      //   takes them up again, all the time she is away; before and after, in her hands.
+      //   takes them up again, all the time she is away; before and after, in her hands;
+      // - her can as she takes it up from the west border's kerb and sets it down again (the final
+      //   review's fourth finding: turning to her side low over the bed, its spout and rose swept
+      //   through the border's mound, and her front lock hung through its handle for 0.65 s), in every
+      //   frame of both: nothing of it is in the border (its kerb, its leaves and its blooms: over
+      //   their height, standing on the kerb's top at the ends), and no edge of it passes through her
+      //   (her top and her hair, which batch as one, her head and her legs), nor any of hers through
+      //   it; and so while she carries it, every tenth of a second.
       {
         const frame = 1 / 60,
           parts = { body: [joints.body], legs: [...joints.legs, ...joints.knees], arms: [...joints.arms, ...joints.elbows], props: Object.values(held) },
@@ -8758,7 +8848,14 @@ let skyReport = '';
         let prev = (at(0), sample()),
           prevDay = plan.alisonDay(0),
           flips = 0,
-          awayWorst = 0;
+          awayWorst = 0,
+          takeGap = Infinity,
+          liftedGap = Infinity,
+          takeFrames = 0,
+          crossed = 0,
+          crossedAt = '',
+          crossTried = 0;
+        const herself = [joints.body, ...joints.legs];
         for (let n = 1; n <= Math.round(D.period / frame) + 60; n++) {
           const t = n * frame,
             day = at(t),
@@ -8788,14 +8885,38 @@ let skyReport = '';
             awayWorst = Math.max(awayWorst, grip(held.saucer, [0, 0, 0]).distanceTo(saucerAt));
           }
           assert(held.can.visible, `At ${t.toFixed(3)} s her can is gone.`);
+          // Her can at the kerb, and against her, as she takes it up or sets it down (every frame) and
+          // carries it (every sixth).
+          if (day.pose === 'take' && n <= Math.round(D.period / frame)) {
+            takeFrames++;
+            let low = Infinity,
+              foot = Infinity;
+            visit(held.can, (p) => {
+              low = Math.min(low, p.y - beds[1].height(p.x, p.z));
+              foot = Math.min(foot, p.y);
+            });
+            takeGap = Math.min(takeGap, low);
+            if (foot > D.can.y + 0.002) liftedGap = Math.min(liftedGap, low);
+          }
+          if ((day.pose === 'take' || (day.carry && n % 6 === 0)) && n <= Math.round(D.period / frame)) {
+            crossTried++;
+            const can = worldTriangles(held.can),
+              x = herself.reduce((sum, g) => sum + crossingEdges(can, worldTriangles(g)), 0);
+            if (x > crossed) {
+              crossed = x;
+              crossedAt = `${t.toFixed(3)} s (${day.pose})`;
+            }
+          }
           prev = now;
           prevDay = day;
         }
+        assert(takeFrames >= 2 * Math.floor(plan.SKY_CAN.take * 60) && takeGap > -0.005, `Taking her can up or setting it down (${takeFrames} frames), it goes ${fmt3(-takeGap)} into the west border.`);
+        assert(crossed === 0 && crossTried > 500, `Her can crosses her (her top and hair, her head or her legs) on ${crossed} edges at ${crossedAt} (of ${crossTried} frames tried).`);
         at(0);
         assert(flips === 4 && awayWorst < 1e-6, `Her water comes or goes ${flips} times in a day, not at each border's start and end, or her cup and saucer stray ${awayWorst} from her place on the table.`);
         const fromTable = TEA.top + slots.tea.y - D.saucer.y;
         assert(Math.abs(fromTable) < 1e-9, `Her saucer stands ${fromTable} off the tea table's top.`);
-        skyReport += `, frame by frame her root ${fmt3(worst.root)} and her joints and props ${fmt3(Math.max(worst.body, worst.legs, worst.arms, worst.props))} at most a sixtieth of a second (no switch of pose nor prop anywhere in it; her water out of sight each time it comes and goes), her cup and saucer left on the table while she is away`;
+        skyReport += `, frame by frame her root ${fmt3(worst.root)} and her joints and props ${fmt3(Math.max(worst.body, worst.legs, worst.arms, worst.props))} at most a sixtieth of a second (no switch of pose nor prop anywhere in it; her water out of sight each time it comes and goes), her cup and saucer left on the table while she is away, her can over the west border in every frame she takes it up or sets it down (${fmt3(liftedGap)} over it at the least once off the kerb) and through none of her (${crossTried} frames)`;
       }
 
       // Pause and reduced motion (the 3D review's third finding: Pause pressed in her day, or reduced
