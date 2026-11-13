@@ -328,7 +328,7 @@ export const SKY_OUTCROP_SHAPE = {
  * two pools meet each point takes the nearer lamp's). `cell` is the size its triangles are cut to,
  * so the pool's fall-off is smooth.
  */
-export const SKY_POOL = { r: 0.9, strength: 0.3, lift: 0.006, cell: 0.26 };
+export const SKY_POOL = { r: 0.9, strength: 0.38, lift: 0.006, cell: 0.26 };
 /** Where the wash's up scallop has faded out (city-materials' WASH_SHAPE.upFade[1]). */
 const POOL_EDGE = 0.85;
 
@@ -475,21 +475,23 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
   function lampPools(g: T.Object3D) {
     const P = SKY_POOL,
       lamps = plan.SKY_LAMPS,
+      reach = P.r + P.cell,
       map = material('#ffffff', 'grass').map,
       image = map?.image as { data: Uint8Array; width: number; height: number } | undefined,
-      linear = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4),
       // The grain as the ground shader samples it: linear, bilinear at its finest level, repeating.
-      texel = image ? Float32Array.from({ length: image.width * image.height }, (_, i) => linear(image.data[i * 4] / 255)) : null,
+      lut = Float32Array.from({ length: 256 }, (_, v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)),
       grain = (x: number, z: number) => {
-        if (!texel || !image || !map) return 1;
-        const u = x * map.repeat.x * image.width - 0.5,
-          v = z * map.repeat.y * image.height - 0.5,
+        if (!image || !map) return 1;
+        const W = image.width,
+          H = image.height,
+          u = x * map.repeat.x * W - 0.5,
+          v = z * map.repeat.y * H - 0.5,
           i = Math.floor(u),
           j = Math.floor(v),
           fu = u - i,
           fv = v - j,
-          at = (a: number, b: number) => texel[(((b % image.height) + image.height) % image.height) * image.width + (((a % image.width) + image.width) % image.width)];
-        return T.MathUtils.lerp(T.MathUtils.lerp(at(i, j), at(i + 1, j), fu), T.MathUtils.lerp(at(i, j + 1), at(i + 1, j + 1), fu), fv);
+          at = (a: number, b: number) => lut[image.data[((((b % H) + H) % H) * W + (((a % W) + W) % W)) * 4]];
+        return (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
       },
       tint = [0.93, 0.95, 0.9],
       path = new T.Color(L.path),
@@ -497,26 +499,50 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
       nor: number[] = [],
       col: number[] = [],
       wash: number[] = [],
-      near = (x: number, z: number) => Math.min(...lamps.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
-      put = (x: number, z: number, lift: number, tone?: T.Color) => {
-        pos.push(x, plan.skyTop(x, z) + lift, z);
-        lawnNormal(x, z).toArray(nor, nor.length);
-        if (tone) {
-          const k = grain(x, z);
-          col.push(tone.r * k * tint[0], tone.g * k * tint[1], tone.b * k * tint[2]);
-        } else col.push(path.r, path.g, path.b);
-        wash.push(P.strength, 0, WASH_PEAK + (POOL_EDGE - WASH_PEAK) * Math.min(1, near(x, z) / P.r), -1);
+      near = (x: number, z: number) => {
+        let d = Infinity;
+        for (const [lx, lz] of lamps) d = Math.min(d, (x - lx) ** 2 + (z - lz) ** 2);
+        return Math.sqrt(d);
+      },
+      /** A vertex's attributes, worked out once and laid down by every triangle that shares it. */
+      vertex = (x: number, z: number, lift: number, tone?: T.Color) => {
+        const n = lawnNormal(x, z),
+          d = near(x, z),
+          k = tone ? grain(x, z) : 1;
+        return {
+          d,
+          p: [x, plan.skyTop(x, z) + lift, z],
+          n: [n.x, n.y, n.z],
+          c: tone ? [tone.r * k * tint[0], tone.g * k * tint[1], tone.b * k * tint[2]] : [path.r, path.g, path.b],
+          w: [P.strength, 0, WASH_PEAK + (POOL_EDGE - WASH_PEAK) * Math.min(1, d / P.r), -1],
+        };
       },
       lay = (tris: { a: plan.XZ; b: plan.XZ; c: plan.XZ; tone?: T.Color }[], lift: number) => {
         for (const { a, b, c, tone } of tris) {
-          if (Math.min(...[a, b, c, [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3] as plan.XZ].map(([x, z]) => near(x, z))) > P.r + Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1]), Math.hypot(a[0] - c[0], a[1] - c[1]))) continue;
+          // Only the triangles whose box comes within a pool's reach of a lamp.
+          const x0 = Math.min(a[0], b[0], c[0]),
+            x1 = Math.max(a[0], b[0], c[0]),
+            z0 = Math.min(a[1], b[1], c[1]),
+            z1 = Math.max(a[1], b[1], c[1]);
+          if (!lamps.some(([lx, lz]) => Math.hypot(Math.max(x0 - lx, 0, lx - x1), Math.max(z0 - lz, 0, lz - z1)) < reach)) continue;
           const n = Math.max(1, Math.ceil(Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1]), Math.hypot(a[0] - c[0], a[1] - c[1])) / P.cell)),
-            at = (i: number, j: number): plan.XZ => [a[0] + ((b[0] - a[0]) * i + (c[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * i + (c[1] - a[1]) * j) / n];
+            grid = new Map<number, ReturnType<typeof vertex>>(),
+            at = (i: number, j: number) => {
+              const key = i * (n + 1) + j;
+              let v = grid.get(key);
+              if (!v) grid.set(key, (v = vertex(a[0] + ((b[0] - a[0]) * i + (c[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * i + (c[1] - a[1]) * j) / n, lift, tone)));
+              return v;
+            };
           for (let i = 0; i < n; i++)
             for (let j = 0; i + j < n; j++)
               for (const t of i + j + 1 < n ? [[at(i, j), at(i + 1, j), at(i, j + 1)], [at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)]] : [[at(i, j), at(i + 1, j), at(i, j + 1)]]) {
-                if (Math.min(...t.map(([x, z]) => near(x, z))) > P.r) continue;
-                for (const [x, z] of t) put(x, z, lift, tone);
+                if (Math.min(t[0].d, t[1].d, t[2].d) > P.r) continue;
+                for (const v of t) {
+                  pos.push(...v.p);
+                  nor.push(...v.n);
+                  col.push(...v.c);
+                  wash.push(...v.w);
+                }
               }
         }
       };
@@ -588,7 +614,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
       const frame = new T.Matrix4().compose(new T.Vector3(f.x, f.y, f.z), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), f.ry), new T.Vector3(1, 1, 1));
       for (const r of SKY_NOTCH.rocks) {
         const seed = r.seed + 17 * k,
-          shape = boulder(seed),
+          shape = boulder(seed, 0.6 + 0.2 * hash(seed * 1.7)),
           turn = new T.Euler(0.2 * (hash(seed * 3.1) - 0.5), hash(seed * 5.7) * Math.PI * 2, 0.2 * (hash(seed * 7.9) - 0.5)),
           plain = shape.applyMatrix4(frame.clone().multiply(new T.Matrix4().compose(new T.Vector3(...r.c), new T.Quaternion().setFromEuler(turn), new T.Vector3(...r.h)))).toNonIndexed(),
           p = plain.getAttribute('position'),
@@ -651,12 +677,14 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     g.add(frame);
     return frame;
   }
+  /** The ground skyGround laid, for the lamps' pools (laid over it in the 'sky rock' phase). */
+  let deckLand: T.Group | null = null;
   /** The island's ground, in its own group (the town's `sky.land`): the lawn, the paths and the garden. */
   function skyGround(land: T.Group, air: T.Group) {
     lawn(land);
     paths(land);
-    lampPools(land);
     skyGarden(land, air);
+    deckLand = land;
   }
 
   /* ---------------------------------------------------------------- */
@@ -865,12 +893,16 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
   /**
    * The island's underside, in its own group (the town's `sky.rock`, batched with no contact
    * shade: measured from the lawn, everything below it would bake to its darkest): the rock and
-   * the coping over it.
+   * the coping over it; and, on the deck skyGround laid, the lamps' pools.
    */
   function skyUnderside(g: T.Group) {
     rock(g);
     coping(g);
     dimAtNight(g);
+    // The lamps' pools go on the deck skyGround laid (the town's `sky.land`, batched with it), here
+    // rather than there: 'sky ground', with the villa and the garden in it, is the longer phase, and
+    // check-town holds each of the island's phases under a fifth of a second.
+    if (deckLand) lampPools(deckLand);
   }
 
   /* ---------------------------------------------------------------- */

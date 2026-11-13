@@ -239,16 +239,20 @@ export function cloudDrift(time: number, seed: number) {
  * irregular patch of turf (`turf`: its reach over the big stone's top, how far it stands proud of
  * it, and how much its outline wanders) lies on the big one's top, set off its middle; no tussocks
  * (three small balls on a green cap read as eyes). Each seed turns, tilts and sizes its stones and
- * its patch its own way, so no two are alike. About 2.1 across, 0.75 over its middle (the origin)
- * and 1.4 under it. It bobs by `bob` and rocks by `rock` radians every `period` seconds (`periods`,
+ * its patch its own way (each big stone tipped `tilt` (from, to) radians either way about both level
+ * axes, so no top lies level like a pot's), so no two are alike. The turf is the crown of a low
+ * lens `turf.rise` deep sunk in the stone's top until `proud` of it shows, so its edge follows the
+ * stone's own bumps. About 2.1 across, 0.75 over its middle (the origin) and 1.3
+ * under it. It bobs by `bob` and rocks by `rock` radians every `period` seconds (`periods`,
  * picked by its seed).
  */
 export const ROCK = {
   detail: 2,
   jitter: 0.08,
-  top: [1.0, 0.6, 0.86] as [number, number, number],
-  keel: { r: [0.7, 0.62, 0.62] as [number, number, number], at: [0.32, -0.5] as [number, number] },
-  turf: { reach: 0.68, proud: 0.09, wander: 0.22 },
+  top: [1.0, 0.68, 0.84] as [number, number, number],
+  keel: { r: [0.66, 0.6, 0.6] as [number, number, number], at: [0.36, -0.52] as [number, number] },
+  tilt: [0.14, 0.3] as [number, number],
+  turf: { reach: 0.66, proud: 0.06, rise: 0.2, wander: 0.24 },
   bob: 0.12,
   rock: 0.035,
   periods: [9, 10.5, 12],
@@ -637,7 +641,7 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     depths.push(foot);
     for (const d of depths) {
       const s = fallSection(F, d),
-        f = smooth(d, 0.1, foam) ** 0.85;
+        f = smooth(d, 0.1, foam) ** 1.25;
       stations.push({ z: s.z, y: F.top.y - d, ny: F.lean / n, nz: 1 / n, a: s.a, b: d < 0.3 ? lerp(0.75 * F.b, F.b, smooth(d, 0, 0.3)) : s.b, recess: s.recess, e: FALL_OVAL, tone: (c) => blend(c, L.water, L.foam, f), streak: 1 - f });
     }
     const M = COLUMNS.length,
@@ -646,6 +650,7 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
       index: number[] = [],
       c = new T.Color(),
       deep = new T.Color(L.stream),
+      channel = 0.22,
       streaks = COLUMNS.map((_, i) => (hash(seed * 7.7 + i * 3.3) > 0.62 ? 0.18 + 0.14 * hash(seed * 1.9 + i * 5.1) : 0));
     for (const s of stations)
       COLUMNS.forEach(([u, side], i) => {
@@ -653,7 +658,8 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
         const w = side * (s.e === FALL_OVAL ? fallFace(s, u) : s.b * (1 - Math.abs(u) ** s.e) ** (1 / s.e));
         pos.push(u * s.a, s.y + w * s.ny, s.z + w * s.nz);
         s.tone(c);
-        c.lerp(deep, streaks[i] * s.streak);
+        // Deeper water down the channel the lumps ride in, so their foam shows white against it.
+        c.lerp(deep, Math.max(streaks[i], channel * (s.recess / FALL.recess.depth) * (1 - T.MathUtils.smoothstep(Math.abs(u), FALL.recess.flat, FALL.recess.edge))) * s.streak);
         col.push(c.r, c.g, c.b);
       });
     // The ring runs from the flow's right over its top to its left, so these faces look out.
@@ -784,22 +790,23 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
       K = ROCK.keel,
       // The big stone's half sizes, each a little its own, and its turn and tilt.
       top = ROCK.top.map((r, k) => r * size * (0.9 + 0.2 * h(3 + k))) as [number, number, number],
-      turn = new T.Euler(0.24 * (h(6) - 0.5), h(7) * Math.PI * 2, 0.24 * (h(8) - 0.5)),
+      lean = (k: number) => (h(k) < 0.5 ? -1 : 1) * lerp(ROCK.tilt[0], ROCK.tilt[1], h(k + 30)),
+      turn = new T.Euler(lean(6), h(7) * Math.PI * 2, lean(8)),
       // The keel: under the big stone, off to the side its seed picks.
       side = h(9) * Math.PI * 2,
       keel = new T.Vector3(Math.cos(side) * K.at[0] * size, K.at[1] * size, Math.sin(side) * K.at[0] * size),
-      bottom = keel.y - K.r[1] * size,
-      stone = (p: T.Vector3, n: T.Vector3, c: T.Color) => blend(c, grey, L.earth, 0.6 * smooth(p.y, 0.2 * top[1], 0.95 * top[1]) * smooth(n.y, 0.4, 0.9), tone * lerp(0.8, 1.04, smooth(p.y, bottom, top[1]))),
+      // A stone's paint, in its own unit frame: lighter toward its top, a little earthy over it.
+      stone = (p: T.Vector3, n: T.Vector3, c: T.Color) => blend(c, grey, L.earth, 0.6 * smooth(p.y, 0.3, 0.9) * smooth(n.y, 0.4, 0.9), tone * lerp(0.8, 1.04, smooth(p.y, -1, 1))),
       parts: Part[] = [
-        { geometry: boulder(seed * 3 + 1, 0.6 + 0.2 * h(10)), tint: stone, matrix: new T.Matrix4().compose(new T.Vector3(), new T.Quaternion().setFromEuler(turn), new T.Vector3(...top)) },
+        { geometry: boulder(seed * 3 + 1, 0.4 + 0.2 * h(10)), tint: stone, matrix: new T.Matrix4().compose(new T.Vector3(), new T.Quaternion().setFromEuler(turn), new T.Vector3(...top)) },
         {
           geometry: boulder(seed * 3 + 2, 0.5 + 0.25 * h(11)),
           tint: stone,
           matrix: new T.Matrix4().compose(keel, new T.Quaternion().setFromEuler(new T.Euler(0.3 * (h(12) - 0.5), h(13) * Math.PI * 2, 0.3 * (h(14) - 0.5))), new T.Vector3(...K.r.map((r, k) => r * size * (0.9 + 0.2 * h(15 + k))))),
         },
       ];
-    // The turf: a flat, closed lens with a wandering outline, sunk in the big stone's top off its
-    // middle, so only a thin, irregular patch of it shows over the stone.
+    // The turf: a low, closed lens with a wandering outline, sunk in the big stone's (tipped) top off
+    // its middle, so only a thin, irregular patch of it shows over the stone.
     {
       const T0 = ROCK.turf,
         cap = new T.SphereGeometry(1, 18, 6),
@@ -811,12 +818,13 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
         q.setXYZ(i, q.getX(i) * k, q.getY(i), q.getZ(i) * k);
       }
       cap.computeVertexNormals();
-      const off = (0.12 + 0.1 * h(19)) * size,
-        at = new T.Vector3(Math.cos(side + Math.PI) * off, top[1] * 0.94 + (T0.proud - 0.12) * size, Math.sin(side + Math.PI) * off);
+      const turn2 = (p: T.Vector3, scale: T.Vector3) => new T.Matrix4().makeRotationFromEuler(turn).multiply(new T.Matrix4().compose(p, new T.Quaternion().setFromEuler(new T.Euler(0, h(20) * Math.PI * 2, 0)), scale)),
+        off = (0.12 + 0.1 * h(19)) * size,
+        at = new T.Vector3(Math.cos(side + Math.PI) * off, top[1] * 0.94 + (T0.proud - T0.rise) * size, Math.sin(side + Math.PI) * off);
       parts.push({
         geometry: cap,
-        tint: (p, _n, c) => blend(c, L.turfDark, L.turf, smooth(p.y, at.y - 0.02 * size, at.y + 0.1 * size)),
-        matrix: new T.Matrix4().compose(at, new T.Quaternion().setFromEuler(new T.Euler(turn.x * 0.6, h(20) * Math.PI * 2, turn.z * 0.6)), new T.Vector3(T0.reach * top[0], 0.12 * size, T0.reach * top[2])),
+        tint: (p, _n, c) => blend(c, L.turfDark, L.turf, smooth(p.y, 0.3, 0.9)),
+        matrix: turn2(at, new T.Vector3(T0.reach * top[0], T0.rise * size, T0.reach * top[2])),
       });
     }
     solid(bob, parts, 'stone', 'sky-rock-body', ['rock', 'rockDark', 'rockPale', 'earth', 'turf', 'turfDark'], { shadow: false });

@@ -6994,6 +6994,129 @@ let skyReport = '';
     assert(SKY_SHADOW.zoom[0] < SKY_SHADOW.zoom[1] && SKY_SHADOW.zoom[1] > 1 && SKY_SHADOW.land[0] > SKY_SHADOW.land[1] && SKY_SHADOW.fade > 0.05 && SKY_SHADOW.fade < 0.4, 'The shadow box changes hands at the City overview\'s zoom, without slack, or abruptly.');
   }
 
+  /* ---------------- the falls' notches, the rock's beds, the floats and the lamps' pools ---------------- */
+  // The art review of the merged island (findings 2, 4, 5 and 10):
+  // - each fall leaves the rim through a notch in the coping, never a basin or a spout: within
+  //   FALL.notch.half of its rim point the coping sinks under the stream's water (nothing of the stone
+  //   stands over it), clear of the notch it keeps its full height, and three of the rock's own
+  //   boulders (SKY_NOTCH.rocks) stand round it on the deck;
+  // - the earth's beds are level: at the depth of each bed change the earth's paint (less the sea's
+  //   bounce and the mottle) is the same all round the island (a wandering line smeared like paint),
+  //   and the boulders are pieces of their own, cool grey against the brown;
+  // - the three floating rocks are not clones;
+  // - the lamps' pools: one opaque mesh laid over the deck (SKY_POOL.lift over the lawn and the
+  //   paths), on the solids' one program so the night wash reaches it, casting nothing; its wash is
+  //   strongest at each lamp's foot (plan.SKY_LAMPS, wherever they stand) and gone by SKY_POOL.r; by
+  //   day its paint is the ground's under it (a lawn tone through the grass grain and the lawn's tint
+  //   under the island, or the gravel's).
+  {
+    const { FALL } = await load('town-sky-garden'),
+      { SKY_NOTCH, SKY_POOL } = await load('town-sky'),
+      fmt3 = (p) => p.toArray().map((n) => n.toFixed(2)).join(', '),
+      { WASH_PEAK } = await load('city-materials'),
+      rockMesh = sky.rock.children.find((o) => o.isMesh),
+      flat = S.top - SKY_ROCK.body.top;
+    for (const f of plan.skyFalls) {
+      let notch = -Infinity,
+        beside = -Infinity;
+      each(sky.rock, (p) => {
+        if (p.y < flat + 0.02) return;
+        const d = Math.hypot(p.x - f.x, p.z - f.z);
+        if (d < FALL.notch.half - 0.05) notch = Math.max(notch, p.y);
+        else if (d > FALL.notch.half + FALL.notch.ramp + 0.35 && d < FALL.notch.half + FALL.notch.ramp + 0.8) beside = Math.max(beside, p.y);
+      });
+      assert(notch <= f.y + FALL.notch.floor + 1e-4 && notch < f.y + FALL.stream.level - 2 * FALL.stream.depth && Math.abs(beside - (S.top + Math.max(...SKY_COPING.profile.map(([, y]) => y)))) < 1e-3, `The coping at the fall on bearing ${(f.bearing / deg).toFixed(0)} stands ${(notch - f.y).toFixed(3)} over the rim's lawn in its notch (${(beside - S.top).toFixed(3)} beside it).`);
+      const stone = sky.land.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'stone'),
+        frame = new T.Matrix4().compose(new T.Vector3(f.x, f.y, f.z), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), f.ry), new T.Vector3(1, 1, 1));
+      for (const r of SKY_NOTCH.rocks) {
+        const at = new T.Vector3(...r.c).applyMatrix4(frame);
+        let near = 0;
+        for (const m of stone) each(m, (p) => Math.abs(p.x - at.x) < r.h[0] + 0.05 && Math.abs(p.z - at.z) < r.h[0] + 0.05 && Math.abs(p.y - at.y) < r.h[1] + 0.05 && near++);
+        assert(near > 100 && Math.min(...r.h) >= 0.15, `No boulder stands by the fall's notch at ${fmt3(at)}.`);
+      }
+    }
+    // The beds, level all round (read through the bounce and the mottle, which the rock's builder lays on).
+    {
+      const { noise3 } = await load('town-sculpt'),
+        colour = rockMesh.geometry.attributes.color,
+        q = rockMesh.geometry.attributes.position,
+        nn = rockMesh.geometry.attributes.normal,
+        B = SKY_ROCK.bounce,
+        c = new T.Color(),
+        grey = (k) => (Math.max(k.r, k.g, k.b) - Math.min(k.r, k.g, k.b)) / Math.max(k.r, k.g, k.b),
+        lumOf = (k) => 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b,
+        cosH = Math.cos(S.heading),
+        sinH = Math.sin(S.heading);
+      for (const b of SKY_ROCK.beds.slice(0, 2)) {
+        const seen = [];
+        for (let i = 0; i < q.count; i++) {
+          const y = q.getY(i) - S.top;
+          if (Math.abs(-y - b) > 0.01) continue;
+          // Back into the rock's own frame (its long axis on x), where its mottle is laid.
+          const dx = q.getX(i) - S.x,
+            dz = q.getZ(i) - S.z,
+            lx = dx * cosH - dz * sinH,
+            lz = dx * sinH + dz * cosH,
+            u = T.MathUtils.smoothstep(-nn.getY(i), -0.1, 0.8),
+            mottle = 1 + 0.07 * (noise3(lx * 0.9 + 11.3, y * 1.4 + 5.2, lz * 0.9 + 2.9) - 0.5);
+          c.fromBufferAttribute(colour, i);
+          c.setRGB(c.r / (1 + B[0] * u) / mottle, c.g / (1 + B[1] * u) / mottle, c.b / (1 + B[2] * u) / mottle);
+          if (grey(c) > 0.25) seen.push(lumOf(c));
+        }
+        assert(seen.length > 40 && Math.max(...seen) - Math.min(...seen) < 0.01, `At the bed change ${b} under the deck the earth's paint wanders (${seen.length} points, ${(Math.max(...seen) - Math.min(...seen)).toFixed(3)} apart in luminance).`);
+      }
+    }
+    // The floats: three rocks, each its own shape.
+    {
+      const shapes = plan.SKY_ROCKS.map((r, k) => {
+        const frame = sky.land.children.filter((o) => o.name === 'sky-float')[k],
+          box = new T.Box3();
+        frame.updateMatrixWorld(true);
+        const inv = frame.matrixWorld.clone().invert();
+        each(frame, (p) => box.expandByPoint(p.clone().applyMatrix4(inv).divideScalar(r.size)));
+        return box.getSize(new T.Vector3());
+      });
+      for (let a = 0; a < shapes.length; a++)
+        for (let b = a + 1; b < shapes.length; b++) assert(shapes[a].distanceTo(shapes[b]) > 0.08, `Floating rocks ${a} and ${b} are clones (${fmt3(shapes[a])} and ${fmt3(shapes[b])}).`);
+    }
+    // The lamps' pools.
+    {
+      const pools = sky.land.children.filter((o) => o.isMesh && o.geometry.getAttribute('aWash')),
+        [pool] = pools;
+      assert(pools.length === 1 && !pool.castShadow && pool.material.vertexColors && pool.material.customProgramCacheKey() === 'lius-bake-solid' && !pool.material.transparent && pool.material.opacity === 1, 'The lamps\' pools are not one opaque mesh on the solids\' program, casting nothing.');
+      const q = pool.geometry.attributes.position,
+        w = pool.geometry.attributes.aWash,
+        col = pool.geometry.attributes.color,
+        tones = SKY_LOOK.lawn.map((h) => new T.Color(h)),
+        path = new T.Color(SKY_LOOK.path),
+        tint = [0.93, 0.95, 0.9],
+        nearest = (x, z) => Math.min(...plan.SKY_LAMPS.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
+        lit = plan.SKY_LAMPS.map(() => 0);
+      for (let i = 0; i < q.count; i++) {
+        const x = q.getX(i),
+          y = q.getY(i),
+          z = q.getZ(i),
+          over = y - plan.skyTop(x, z),
+          d = nearest(x, z),
+          r = col.getX(i),
+          g = col.getY(i),
+          b = col.getZ(i);
+        assert(Math.abs(over - SKY_POOL.lift) < 1e-4 || Math.abs(over - plan.SKY_PATHS.lift - SKY_POOL.lift) < 1e-4, `A lamp's pool lies ${over.toFixed(3)} over the deck at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        assert(Math.abs(w.getX(i) - SKY_POOL.strength) < 1e-6 && w.getW(i) < 0 && Math.abs(w.getZ(i) - (WASH_PEAK + (0.85 - WASH_PEAK) * Math.min(1, d / SKY_POOL.r))) < 1e-5 && d < SKY_POOL.r + SKY_POOL.cell * 1.5, `A lamp's pool is not lit from the nearest lamp's foot at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        if (Math.abs(over - SKY_POOL.lift) < 1e-4) {
+          // The lawn: one of its two tones, through a grain of 0.85 to 1.02 and the tint.
+          const fits = tones.some((t) => {
+            const k = r / (t.r * tint[0]);
+            return k > 0.85 && k < 1.02 && Math.abs(g - t.g * tint[1] * k) < 2e-3 && Math.abs(b - t.b * tint[2] * k) < 2e-3;
+          });
+          assert(fits, `A lamp's pool on the lawn is not the lawn's own colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        } else assert(Math.abs(r - path.r) < 1e-4 && Math.abs(g - path.g) < 1e-4 && Math.abs(b - path.b) < 1e-4, `A lamp's pool on the gravel is not the gravel's colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        plan.SKY_LAMPS.forEach(([lx, lz], k) => Math.hypot(x - lx, z - lz) < 0.3 && lit[k]++);
+      }
+      assert(lit.every((n) => n > 6), `A garden lamp has no pool at its foot (${lit.join(', ')}).`);
+    }
+  }
+
   /* ---------------- everything that moves ---------------- */
   {
     // The island as points: what is built (a share of it, and its rim, its chimney tops and its
@@ -8136,6 +8259,35 @@ let skyReport = '';
         const hit = top(x, y, z);
         assert(hit && hex(hit.object.material.color) === hex(VILLA_LOOK.roll), `No roll on ${what} at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
       }
+    }
+    // The trims by day (the art review's finding 12): the wall lamps' lenses are dark smoked glass and
+    // their housings a dark bronze near the brick's own shade (no black boxes with white bars on the
+    // brick); the rolls are low half-rounds (sunk in the arris they cover, so they stand no more than
+    // their radius over it) in a light slate grey, with no balls at their feet over the gutters and
+    // none across the flat; and the flat carries a low hipped cap of slate (calm, never an empty
+    // panel), under the chimneys' copes.
+    {
+      const R = VILLA.roof,
+        y2 = VILLA.cornice.corona[1] + R.fascia + R.rise,
+        lum = (h) => {
+          const c = new T.Color(h);
+          return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        },
+        rolls = of(VILLA_LOOK.roll),
+        lensPieces = dressings.filter((p) => p.colour === hex(VILLA_LOOK.lens)),
+        housings = dressings.filter((p) => p.colour === hex(VILLA_LOOK.housing));
+      assert(lum(VILLA_LOOK.lens) < 0.05 && VILLA_FAMILY.housing === palette.bronze && lum(VILLA_LOOK.housing) > 0.4 * lum(VILLA_LOOK.brick) && lum(VILLA_LOOK.housing) < 0.9 * lum(VILLA_LOOK.brick) && lensPieces.length === 16 && housings.length === 8, `The wall lamps are ${lensPieces.length} lenses and ${housings.length} housings, not 16 dark lenses in 8 bronze housings near the brick's shade.`);
+      assert(!dressings.some((p) => p.colour === hex(VILLA_LOOK.paint) && lensPieces.some((l) => l.b.intersectsBox(p.b))), 'A wall lamp still shows white paint.');
+      assert(R.roll[0] >= 0.07 && R.roll[1] > 0 && R.roll[1] < R.roll[0] && hsv(VILLA_LOOK.roll).s <= hsv(palette.slate).s + 1e-3, 'The roof\'s rolls are not low half-rounds in the slate family.');
+      // No ball at a roll's foot: every roll piece near the eaves is a run along a hip, never a lump.
+      for (const p of rolls) if (p.b.min.y < VILLA.cornice.corona[1] + R.fascia + 0.3) assert(Math.max(p.s.x, p.s.z) > 0.5, `A ball sits at a roll's foot over the gutter at ${p.c.x.toFixed(2)}, ${p.c.z.toFixed(2)}.`);
+      const cap = parts.find((m) => m.name === 'sky-villa-roof-cap');
+      assert(cap && cap.material.userData.surfaceKind === 'slate', 'The flat has no low cap of slate.');
+      const capBox = new T.Box3().setFromObject(cap).applyMatrix4(toShell);
+      assert(Math.abs(capBox.min.y - y2) < 1e-3 && capBox.max.y - y2 > 0.12 && capBox.max.y - y2 < 0.3 && capBox.max.y < VILLA.chimney.top, `The flat's cap rises ${(capBox.max.y - y2).toFixed(2)} over it.`);
+      // No roll across the flat: inside the flat (clear of its edges) only the cap's own ridge roll.
+      const inner = rolls.filter((p) => p.c.y > y2 && Math.abs(p.c.x) < capBox.max.x - 0.3 && p.c.z > capBox.min.z + 0.3 && p.c.z < capBox.max.z - 0.3);
+      assert(inner.length === 1 && inner[0].c.y > capBox.max.y - 0.1, `${inner.length} rolls run across the villa's flat, not the cap's ridge roll alone.`);
     }
     // Three dormers under roofs of their own and white cornices, the middle one's pediment over it.
     assert.equal(parts.filter((m) => m.name === 'sky-villa-dormer-roof').length, 3, "The villa's dormers lack their roofs.");
