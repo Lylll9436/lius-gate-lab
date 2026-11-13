@@ -14,9 +14,8 @@ import type { Props } from './town-props';
  * paths' pale gravel, between the pavement's and the park path's. Under the deck, the earth in
  * three beds from the warm brown under the turf down to a darker brown (well under the soil's
  * saturation, near the armour's greys in value), parted by pale seams; and the rock that stands
- * out of it and makes the spike, in warm greys, lighter where it faces the sky. Then the villa's
- * stand-in massing: the town's brick, the residence's pale dressing stone, the kerb's buff for its
- * base, terrace and steps, the town's mid slate and terracotta cans.
+ * out of it and makes the spike, in warm greys, lighter where it faces the sky. (The villa's own
+ * colours are town-sky-villa's VILLA_LOOK.)
  */
 export const SKY_LOOK = {
   lawn: [palette.grassDark, palette.grassLight],
@@ -25,11 +24,6 @@ export const SKY_LOOK = {
   earth: ['#8d6c4f', '#7a5c44', '#665041'],
   seam: '#a2998a',
   rock: ['#9e988c', '#86817a', '#6f6b65'],
-  brick: palette.brick,
-  dressing: '#ece4d1',
-  base: palette.kerb,
-  slate: palette.slate,
-  pots: palette.pantile,
 };
 /**
  * The lawn: mown in stripes `stripe` wide that run the deck's length (north-south, past the
@@ -120,8 +114,6 @@ export const SKY_ROCK = {
   wander: 0.5,
   outcrop: [0.12, 0.45],
 };
-/** How far below the deck's level the villa's stand-in massing runs on, so the lawn's soft dome never shows a gap under it (lane V's VILLA.foot). */
-const FOOT = -0.3;
 
 /**
  * A cone of an ellipse (half-axes a and b, its axis the y axis), for town-sculpt: `share` of the
@@ -198,13 +190,12 @@ export function skySlots() {
 /* The sky island                                                      */
 /* ------------------------------------------------------------------ */
 /**
- * The sky island's own ground: its lawn and paths, the rock under it and its coping, and a
- * stand-in massing for the villa. `props` and `nature` are for its garden (see skyGarden), which
- * is still to be planted; they stay in the signature, which is every site factory's.
+ * The sky island's own ground: its lawn and paths, and the rock under it and its coping (its villa
+ * is town-sky-villa's). `kit`, `props` and `nature` are for its garden (see skyGarden), which is
+ * still to be planted; they stay in the signature, which is every site factory's.
  */
-export function createSkyIsland(ctx: TownContext, kit: Kit, _props: Props, _nature: Nature) {
+export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nature: Nature) {
   const { material } = ctx;
-  const { box, cylinder } = kit;
   const S = plan.SKY,
     L = SKY_LOOK;
 
@@ -487,80 +478,6 @@ export function createSkyIsland(ctx: TownContext, kit: Kit, _props: Props, _natu
     coping(g);
   }
 
-  /* ---------------------------------------------------------------- */
-  /* The villa's stand-in                                              */
-  /* ---------------------------------------------------------------- */
-  /**
-   * A stand-in massing for the villa (plan.SKY_VILLA, lane V's measures), in the shell's own frame
-   * (front +z, y 0 the deck's level, the footprint's middle at the origin), until lane V's
-   * buildSkyVilla takes its place (town-build, one line): a plain brick block on a buff base
-   * course, two pale floor bands and a cornice under a hipped slate roof with a flat top, a brick
-   * stack at each end with a pale cope and two cans, and before it the raised terrace with its steps
-   * down to the lawn. It stands where the villa will, as big and as tall, so the site, the framing,
-   * the pointer, the marks and the checks already measure the villa's own silhouette; nothing
-   * more: no windows, no door.
-   */
-  function villaMassing(shell: T.Group, _site: plan.Site) {
-    const V = plan.SKY_VILLA,
-      { hw, back, front, cornice, flat } = V.house,
-      block = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, colour: string, kind: SurfaceKind) =>
-        box(shell, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, colour, kind),
-      // A course round the house, `proud` of its walls: a surface on the wall (band), never an overhang.
-      course = (y0: number, y1: number, proud: number, colour: string, kind: SurfaceKind) => {
-        block(-hw - proud, hw + proud, y0, y1, back - proud, front + proud, colour, kind).userData.band = true;
-      },
-      eave = cornice - 0.44;
-    // One brick block from under the turf to the cornice, so its courses run true from one foot.
-    block(-hw, hw, FOOT, eave, back, front, L.brick, 'brick');
-    // (The base course stops just under the terrace's top, so the two never share a face.)
-    course(FOOT, V.terrace.top - 0.02, 0.11, L.base, 'ashlar');
-    course(2.06, 2.26, 0.05, L.dressing, 'stone');
-    course(3.62, 3.8, 0.05, L.dressing, 'stone');
-    course(eave, cornice, 0.25, L.dressing, 'stone');
-    // The hipped roof: flat slopes from the eaves (0.23 out from the walls) up to a flat top, the
-    // end slopes steeper than the front and back ones, as lane V's are.
-    const W = hw + 0.23,
-      D = (front - back) / 2 + 0.23,
-      rise = flat - cornice,
-      fw = W - 1.05,
-      fd = D - 1.55,
-      eaves = [[-W, 0, D], [W, 0, D], [W, 0, -D], [-W, 0, -D]],
-      top = [[-fw, rise, fd], [fw, rise, fd], [fw, rise, -fd], [-fw, rise, -fd]],
-      quad = (a: number[], b: number[], c: number[], d: number[]) => [a, b, c, a, c, d],
-      faces = [
-        ...quad(eaves[0], eaves[1], top[1], top[0]),
-        ...quad(eaves[1], eaves[2], top[2], top[1]),
-        ...quad(eaves[2], eaves[3], top[3], top[2]),
-        ...quad(eaves[3], eaves[0], top[0], top[3]),
-        ...quad(top[0], top[1], top[2], top[3]),
-        ...quad(eaves[3], eaves[2], eaves[1], eaves[0]),
-      ],
-      roofGeometry = new T.BufferGeometry();
-    roofGeometry.setAttribute('position', new T.Float32BufferAttribute(faces.flat(), 3));
-    roofGeometry.computeVertexNormals();
-    const roof = new T.Mesh(roofGeometry, material(L.slate, 'slate'));
-    roof.position.set(0, cornice, (back + front) / 2);
-    roof.castShadow = roof.receiveShadow = true;
-    // A roof: the walls under it take its eave shade from here.
-    roof.userData.roof = true;
-    roof.userData.eaveY = cornice;
-    shell.add(roof);
-    // The chimneys: a brick stack at each end, a pale cope and two cans up to their tops.
-    const C = V.chimneys;
-    for (const side of [-1, 1]) {
-      const x = side * C.x;
-      block(x - C.hw, x + C.hw, cornice, C.top, C.z - C.hd, C.z + C.hd, L.brick, 'brick');
-      block(x - C.cope.hw, x + C.cope.hw, C.top, C.cope.top, C.z - C.cope.hd, C.z + C.cope.hd, L.dressing, 'stone').userData.band = true;
-      for (const dx of [-0.24, 0.24]) cylinder(shell, x + dx, (C.cope.top + C.cans) / 2, C.z, 0.11, 0.14, C.cans - C.cope.top, L.pots, 'pantile');
-    }
-    // The terrace before the front, and its steps down to the lawn at the middle.
-    block(-V.terrace.hw, V.terrace.hw, FOOT, V.terrace.top, front, V.terrace.front, L.base, 'ashlar');
-    const treads = V.steps.risers - 1,
-      going = (V.steps.front - V.terrace.front) / treads;
-    for (let k = 1; k <= treads; k++)
-      block(-V.steps.hw, V.steps.hw, FOOT, V.terrace.top * (1 - k / V.steps.risers), V.terrace.front + (k - 1) * going, V.terrace.front + k * going, L.base, 'ashlar');
-  }
-
-  return { skyGround, skyUnderside, villaMassing, standAt, skySlots };
+  return { skyGround, skyUnderside, standAt, skySlots };
 }
 export type SkyIsland = ReturnType<typeof createSkyIsland>;

@@ -23,6 +23,7 @@ import { createHomes } from './town-homes';
 import { createResidence } from './town-residence';
 import { createAirport } from './town-airport';
 import { createSkyIsland } from './town-sky';
+import { createSkyVilla } from './town-sky-villa';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
@@ -56,7 +57,8 @@ export { BALLOON, followDrift } from './town-movers';
  * - town-airport.ts: the airport's island off the north shore (its deck, armour, runway, apron and
  *   the road and causeway out to it, in its own group, `airportLand`) and its Departures Hall;
  * - town-sky.ts: the sky island off the north-west headland (its lawn and paths, the rock under it
- *   and its coping, and its villa's stand-in massing, in its own groups under `sky.root`);
+ *   and its coping, in its own groups under `sky.root`);
+ * - town-sky-villa.ts: the red-brick villa on the sky island (its shell, `sky.shell`);
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
  * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
@@ -143,8 +145,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildResidence } = createResidence(ctx, kit, nature, props);
   const { airportGround, buildAirport } = createAirport(ctx, kit, props, nature);
   const skyIsland = createSkyIsland(ctx, kit, props, nature);
-  // The sky island's villa: a stand-in massing until the villa itself is wired in (this one line).
-  const buildSkyVilla = skyIsland.villaMassing;
+  const { buildSkyVilla } = createSkyVilla(ctx, kit, props, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);

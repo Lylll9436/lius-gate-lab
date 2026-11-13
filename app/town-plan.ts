@@ -257,25 +257,27 @@ export type Site = {
 export const SKY = { x: -52, z: -24, H: 10.5, top: 10.472, heading: Math.PI / 2, a: 7.5, b: 6, dome: 0.3, ring: 0.26, depth: 8.12 };
 /**
  * The villa's site on the deck, in the villa's own frame (front +z, y 0 the deck's level, the
- * footprint's middle at the origin: the frame lane V's buildSkyVilla works in, and these are its
- * VILLA measures). The footprint, `w` across and `d` deep, holds the house, the raised terrace
- * before it and the steps down to the lawn; nothing reaches over `height` (the placement's cap is
- * the deck plus 8.2, so the villa's y 0 may stand no higher than 10.50). The house block
- * (`house`: its half width, its back and front walls, the top of its cornice and the flat of its
- * hipped roof) stands with its middle `back` north of the island's, front due south; then the
- * terrace's top, its front edge and its half width; the steps' half width and their foot; and the
- * chimney stacks either side (`x`, `z`, the shaft's half sizes and its top), their copes (half
- * sizes, top) and their cans' tops.
+ * footprint's middle at the origin: the frame town-sky-villa's buildSkyVilla works in, and these
+ * mirror its VILLA measures, which check-town holds them to). The footprint, `w` across and `d`
+ * deep, holds the house, the raised terrace before it and the steps down to the lawn; nothing
+ * reaches over `height` (the placement's cap is the deck plus 8.2, so the villa's y 0 may stand no
+ * higher than 10.50). The house block (`house`: its half width, its back and front walls, the top
+ * of its cornice and the flat of its hipped roof; how far its eave stands out of the walls and its
+ * gutter out to; how far out the downpipes on its side walls reach, and how far back its back
+ * door's hood and step reach) stands with its middle `back` north of the island's, front due
+ * south; then the terrace's top, its front edge and its half width; the steps' half width and
+ * their foot; and the chimney stacks either side (`x`, `z`, the shaft's half sizes and its top),
+ * their copes (half sizes, top) and the tallest can's top.
  */
 export const SKY_VILLA = {
   back: 0.8,
   w: 6.9,
   d: 6.8,
   height: 8.18,
-  house: { hw: 3.2, back: -3.145, front: 1.255, cornice: 5.42, flat: 6.98 },
+  house: { hw: 3.2, back: -3.145, front: 1.255, cornice: 5.42, flat: 6.98, eave: 0.1, gutter: 0.245, pipes: 3.45, rear: -3.4 },
   terrace: { top: 0.5, front: 2.855, hw: 3.3 },
   steps: { hw: 0.67, front: 3.355, risers: 3 },
-  chimneys: { x: 2.8, z: -0.945, hw: 0.5, hd: 0.31, top: 7.6, cope: { hw: 0.58, hd: 0.39, top: 7.76 }, cans: 8.164 },
+  chimneys: { x: 2.8, z: -0.945, hw: 0.5, hd: 0.31, top: 7.6, cope: { hw: 0.64, hd: 0.45, top: 7.76 }, cans: 8.171 },
 };
 /**
  * The three homes stand side by side in a straight row, fronts in one line facing the ring
