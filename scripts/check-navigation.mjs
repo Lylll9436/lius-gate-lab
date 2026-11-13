@@ -371,7 +371,7 @@ const turnPieces = [];
 function collectTurn(node) {
   if (
     ts.isFunctionDeclaration(node) &&
-    ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'reset', 'aim', 'elevationAt'].includes(
+    ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'reset', 'aim', 'elevationAt', 'turnSky', 'skyFile', 'skyPivot'].includes(
       node.name?.text,
     )
   )
@@ -391,7 +391,7 @@ function collectTurn(node) {
   ts.forEachChild(node, collectTurn);
 }
 collectTurn(syntax);
-assert.equal(turnPieces.length, 11, 'The turn check must find every piece it runs.');
+assert.equal(turnPieces.length, 14, 'The turn check must find every piece it runs.');
 const turn = {
   T,
   Math,
@@ -1618,6 +1618,179 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       skyNav.file = `at its own pitch (${((filePitch * 180) / Math.PI).toFixed(0)} degrees, its ground point ${D.toFixed(1)} out in a pocket of ${((16 * Math.tan(scene.TOWN_PITCH)) / Math.tan(filePitch)).toFixed(1)})`;
     }
 
+    // (c3) Rotate in its own file turns the island where it stands (the art review's first finding:
+    // the file's target stands on the line of sight 7.4 beyond the island, SKY_LIFT, and each quarter
+    // turn about that point swung the island into a corner, its roof under the masthead or its side
+    // against the file). The Rotate button's method and the frame loop's own turn and glide (as step()
+    // runs them, a frame at a time) from the file as it frames the island, press by press round all
+    // four stops, then two stops more with the second press made mid-turn, then once more after a
+    // press of + (the visitor's zoom kept): on desktops beside the file (and a laptop's shorter
+    // frame) and on phones above the file's sheet,
+    // - at each stop the view settles on the file's own framing for that bearing (focusSky's target
+    //   and zoom; after a zoom, the visitor's zoom), its ground point well inside the island's pocket;
+    //   the island and its floats are whole in the part of the frame the file and the page's bands
+    //   leave free (24 px clear on desktops, 12 on phones), at rest and through the idle drift;
+    // - all through each turn the island's middle holds its place on screen (within a pixel and a
+    //   half, the glide easing in what the new bearing's fit changes), the island stays whole in the
+    //   free part, no frame moves its silhouette's box further than the turn itself turns it, and once
+    //   the bearing has arrived no frame moves it more than half a pixel: no swing, no jump at the end.
+    {
+      const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'focusSky', 'skyFile', 'skyPivot', 'turnSky', 'aim', 'elevationAt', 'skyFit', 'skyMarks'],
+        vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_FIT', 'YAW_RATE'],
+        code = [];
+      (function collect(node) {
+        if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        ts.forEachChild(node, collect);
+      })(syntax);
+      const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+      assert(code.length === want.length + vars.length && turning && glideSource && rotateSource && zoomSource, 'The Rotate-in-the-file check must find every piece it runs.');
+      const spin = {
+          T,
+          Math,
+          plan,
+          camera: new T.OrthographicCamera(),
+          controls: { minZoom: 0.45, target: new T.Vector3() },
+          target: new T.Vector3(),
+          shiftApplied: new T.Vector3(),
+          screenRight: new T.Vector3(),
+          screenUp: new T.Vector3(),
+          frameShift: 0,
+          frameDrop: 0,
+          panelEdge: 1,
+          width: 1,
+          height: 1,
+          yaw: 0,
+          targetYaw: 0,
+          targetZoom: 1,
+          // Down at the file's pitch, as the camera stands in it (the zoom keeps aim() at 1 throughout).
+          pitch: 1,
+          tween: false,
+          reduced: false,
+          dt: 1 / 60,
+          blend: 1 - Math.exp(-5.5 / 60),
+          focusedIds: ['sky-island'],
+          overviewFit: false,
+          inspect: null,
+          parkSelected: false,
+          autoFocus: true,
+          inspectionAutoFit: true,
+          lastInteraction: 0,
+          performance: { now: () => 0 },
+          CITY_MAX_ZOOM: 4,
+          STUDY_MAX_ZOOM: 8,
+          fitOverview() {},
+          align() {},
+        },
+        run = runInNewContext(
+          `${ts.transpileModule([...code, turning, glideSource, rotateSource, zoomSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ focusSky, followPanel, turnStep, glideStep, rotate, zoomBy, viewOffset, middle: SKY_FIT.getCenter(new T.Vector3()) })`,
+          spin,
+        ),
+        // One frame of step(): the panel offset followed, the turn, the glide, then the view handed over.
+        frameStep = () => {
+          run.followPanel();
+          run.turnStep();
+          run.glideStep();
+          if (!spin.tween) spin.target.copy(spin.controls.target);
+        },
+        settled = () => !spin.tween && Math.abs(spin.targetYaw - spin.yaw) <= 0.0001,
+        at = (w, h, bearing = spin.yaw, centre = spin.controls.target) => box(shape.map((p) => px(w, h, spin.camera.zoom, bearing, centre, p, filePitch))),
+        mid = (w, h) => px(w, h, spin.camera.zoom, spin.yaw, spin.controls.target, run.middle, filePitch),
+        stats = { stops: 0, frames: 0, hold: 0, end: 0 };
+      for (const [w, h, phone] of [[1440, 900], [1440, 789], [1280, 800], [1024, 768], [1920, 1080], [390, 844, true], [375, 812, true], [430, 932, true]]) {
+        const sheet = 0.69 * h,
+          shift = phone ? 0 : 492 / (2 * w),
+          drop = phone ? ((76 + sheet) / 2 - h / 2) / h : 0,
+          aspect = w / h,
+          vertical = Math.max(53, 76 / aspect),
+          // The free part of the frame, its margins in.
+          free = phone ? [12, 76 + 12, w - 12, sheet - 12] : [24, 76 + 24, w - 476 - 24, h - 76 - 24],
+          whole = ([x0, y0, x1, y1]) => x0 >= free[0] && y0 >= free[1] && x1 <= free[2] && y1 <= free[3];
+        Object.assign(spin.camera, { left: (-vertical * aspect) / 2, right: (vertical * aspect) / 2, top: vertical / 2, bottom: -vertical / 2 });
+        Object.assign(spin, { width: w, height: h, frameShift: shift, frameDrop: drop, yaw: fileBearing, targetYaw: fileBearing, autoFocus: true });
+        // The file as it frames the island, at rest.
+        run.focusSky();
+        spin.controls.target.copy(spin.target);
+        spin.camera.zoom = spin.targetZoom;
+        spin.tween = false;
+        /**
+         * Turn to rest after `presses` (each a function, run at the frame it names), checking every
+         * frame: the island whole in the free part (`framed`, unless the visitor has zoomed in), and, for
+         * a turn (not the zoom's own glide), its middle held, moved no further than it turns and still
+         * once it arrives.
+         */
+        const turn = (presses, label, framed = true, turning = true) => {
+          const was = mid(w, h);
+          let last = at(w, h),
+            arrived = false;
+          for (let f = 0; f < 900; f++) {
+            for (const [frame, press] of presses) if (frame === f) press();
+            if (f > Math.max(...presses.map(([frame]) => frame)) && settled()) break;
+            const before = spin.yaw;
+            frameStep();
+            stats.frames++;
+            const now = at(w, h),
+              m = mid(w, h),
+              // How far the turn alone carries a point of the silhouette this frame: its reach from the middle on screen, times the angle.
+              reach = Math.max(...[[now[0], now[1]], [now[2], now[3]], [now[0], now[3]], [now[2], now[1]]].map(([x, y]) => Math.hypot(x - m[0], y - m[1]))),
+              moved = Math.max(...now.map((n, i) => Math.abs(n - last[i])));
+            if (turning) {
+              stats.hold = Math.max(stats.hold, Math.hypot(m[0] - was[0], m[1] - was[1]));
+              assert(Math.hypot(m[0] - was[0], m[1] - was[1]) <= 1.5, `${label} at ${w} x ${h}: the island's middle moves ${Math.hypot(m[0] - was[0], m[1] - was[1]).toFixed(1)} px on screen at frame ${f}.`);
+            }
+            assert(!framed || whole(now), `${label} at ${w} x ${h}: at frame ${f} of the turn the island spans ${now.map((n) => n.toFixed(0)).join(', ')} px, out of the part of the frame left free.`);
+            assert(!turning || moved <= reach * Math.abs(spin.yaw - before) * 1.05 + 1, `${label} at ${w} x ${h}: frame ${f} moves the island's box ${moved.toFixed(1)} px for a turn of ${(spin.yaw - before).toFixed(4)}.`);
+            if (arrived && turning) {
+              stats.end = Math.max(stats.end, moved);
+              assert(moved <= 0.5, `${label} at ${w} x ${h}: the turn ends with a jump of ${moved.toFixed(2)} px at frame ${f}.`);
+            }
+            arrived ||= Math.abs(spin.targetYaw - spin.yaw) <= 0.0001;
+            last = now;
+          }
+          assert(settled(), `${label} at ${w} x ${h} never settles.`);
+        };
+        /** At rest: the file's own framing for this bearing (or the visitor's zoom), whole in the free part through the drift, its ground point in the pocket. */
+        const rest = (label, own = true) => {
+          stats.stops++;
+          const view = spin.controls.target.clone(),
+            zoom = spin.camera.zoom,
+            subject = view.clone().sub(spin.shiftApplied),
+            back = run.viewOffset(spin.yaw, new T.Vector3(), 1).normalize(),
+            ground = subject.clone().addScaledVector(back, -subject.y / back.y),
+            reach = (16 * Math.tan(scene.TOWN_PITCH)) / Math.tan(filePitch);
+          if (own) {
+            run.focusSky();
+            assert(spin.target.distanceTo(view) < 0.0025 && Math.abs(spin.targetZoom - zoom) < 0.0011, `${label} at ${w} x ${h} rests ${spin.target.distanceTo(view).toFixed(4)} from the file's own framing for its bearing, at zoom ${zoom.toFixed(4)} for ${spin.targetZoom.toFixed(4)}.`);
+            spin.target.copy(view);
+            spin.tween = false;
+          }
+          assert(Math.hypot(ground.x - S.x, ground.z - S.z) < reach - 3, `${label} at ${w} x ${h}: its ground point is ${Math.hypot(ground.x - S.x, ground.z - S.z).toFixed(1)} out, its pocket ${reach.toFixed(1)}.`);
+          if (own)
+            for (const d of [0, ...fileDrifts]) {
+              const b = at(w, h, spin.yaw + d);
+              assert(whole(b), `${label} at ${w} x ${h}${d ? `, drifted ${d.toFixed(3)}` : ''}: the island spans ${b.map((n) => n.toFixed(0)).join(', ')} px, out of the part of the frame left free.`);
+            }
+        };
+        rest('The file');
+        for (let k = 1; k <= 4; k++) {
+          turn([[0, run.rotate]], `Rotate stop ${k}`);
+          rest(`Rotate stop ${k}`);
+          assert(Math.abs(spin.yaw - fileBearing - (k * Math.PI) / 2) < 1e-6, `Rotate stop ${k} is not a quarter turn on.`);
+        }
+        // Two presses, the second mid-turn: two stops on, the island held all the way.
+        turn([[0, run.rotate], [24, run.rotate]], 'A second press mid-turn');
+        rest('Two stops on');
+        // After a press of + (the visitor's zoom, no longer the file's framing): the turn keeps it and the island's middle.
+        run.zoomBy(1.25);
+        turn([], 'The zoom', false, false);
+        const zoomed = spin.camera.zoom;
+        turn([[0, run.rotate]], 'Rotate after a zoom', false);
+        assert(Math.abs(spin.camera.zoom - zoomed) < 1e-9, `Rotate after a zoom at ${w} x ${h} changes the zoom from ${zoomed.toFixed(3)} to ${spin.camera.zoom.toFixed(3)}.`);
+        rest('Rotate after a zoom', false);
+      }
+      skyNav.rotate = `the island turned where it stands at ${stats.stops} Rotate stops (its middle held within ${stats.hold.toFixed(2)} px over ${stats.frames} frames of turning, ${stats.end.toFixed(2)} px a frame at most as each turn ends)`;
+    }
+
     // (d) Hidden where a reading frame would cut a slice of it, and only there: in the People
     // chapter's frames (its row, and each home or the residence picked from it) and the reading
     // page's last shot, as the glide into them starts and back once the glide out has ended; never in
@@ -1667,6 +1840,72 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       assert(shown({ tween: false }), 'The sky island does not come back once the glide has ended.');
       assert(shown({ cityMode: true, focusedIds: ['yunlong-liu'], tween: true }) && shown({ overviewFit: true }), 'The sky island is hidden in City mode.');
       assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: ['qin-li'] }), 'The sky island is hidden in Inspect.');
+    }
+    // (d2) The opening view (the reading page's hero, reset(): nothing framed and no park) hides it too
+    // (the art review's ninth finding): on a phone its tall frame showed a cut sliver of the rock, the
+    // puffs and a floating rock along the very top edge, and the island's shadow on the sea below it.
+    // It hides as the glide into the opening view starts and comes back once the glide out of it has
+    // ended (as in the People chapter), at once in City mode; a park or a chapter's place framed, it
+    // shows. The frames it would cut are measured here: the opening view on phones and upright tablets
+    // (the island's silhouette meets the frame), through the idle drift, where it now hides.
+    {
+      const pieces = [];
+      (function find(node) {
+        if (ts.isFunctionDeclaration(node) && ['skyHidden', 'followSky'].includes(node.name?.text)) pieces.push(node.getText(syntax));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(syntax) === 'SKY_HIDES')) pieces.push(node.getText(syntax));
+        ts.forEachChild(node, find);
+      })(syntax);
+      assert.equal(pieces.length, 3, 'The opening view\'s hiding check must find every piece it runs.');
+      const state = {
+          T,
+          Math,
+          plan,
+          cityMode: false,
+          inspect: null,
+          overviewFit: false,
+          focusedIds: ['town-hall'],
+          parkSelected: false,
+          tween: false,
+          island: { root: { visible: true } },
+          skyShown: true,
+          skyCast: false,
+          shadowFade: 1,
+          skyCasters: [],
+          camera: { updateMatrixWorld() {} },
+          skyShadowWanted: () => false,
+          LAND_MARKS: [],
+          frameShift: 0,
+          frameDrop: 0,
+          SKY_SHADOW: { fade: 0.18 },
+          reduced: false,
+          shadowFocus() {},
+        },
+        hiding = runInNewContext(`${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyHidden, followSky });`, state),
+        shown = (patch) => {
+          Object.assign(state, patch);
+          hiding.followSky(1 / 60);
+          return state.island.root.visible;
+        };
+      assert(shown({}), 'The sky island is hidden in the About chapter.');
+      // Back to the opening view (reset()): gone as the glide starts.
+      assert(!shown({ focusedIds: [], tween: true }) && !shown({ tween: false }), 'The sky island shows in the opening view.');
+      // On to a chapter: back only once the glide has ended.
+      assert(!shown({ focusedIds: ['town-hall'], tween: true }) && shown({ tween: false }), 'The sky island comes back before the glide out of the opening view has ended.');
+      // The corner park's frame (focusPark: nothing focused, the park selected) shows it, as before.
+      assert(shown({ focusedIds: [], parkSelected: true, tween: false }), 'The sky island is hidden in the corner park\'s frame.');
+      // City mode (its overview, a place's file, the island's own) and Inspect always show it.
+      assert(shown({ parkSelected: false, cityMode: true, tween: true }) && shown({ cityMode: true, overviewFit: true }), 'The sky island is hidden in City mode.');
+      assert(shown({ cityMode: false, overviewFit: false, inspect: {}, focusedIds: [] }), 'The sky island is hidden in Inspect.');
+      // Where it was cut: the opening view (the island's centre at zoom 1, no frame shift on a narrow
+      // page) on phones and upright tablets, whose reading page docks the stage 46% of the screen
+      // tall (320 px at the least: globals.css), at some moment of the idle drift.
+      let cut = 0;
+      for (const [w, screen] of [[360, 640], [375, 667], [375, 812], [390, 844], [414, 896], [430, 932], [768, 1024], [820, 1180]]) {
+        const h = Math.max(320, 0.46 * screen);
+        if (drifts.some((d) => overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, new T.Vector3(), p))), [0, 0, w, h]))) cut++;
+      }
+      assert(cut > 0, 'The check no longer finds the opening frame the sky island was cut by.');
+      skyNav.hero = `hidden in the opening view (it would be cut on ${cut} of 8 phone and tablet frames)`;
     }
     // Every other reading frame leaves it out of sight through the idle drift: each chapter's
     // subject framed beside the reading panel from 1024 wide (its buildings as their sites' boxes,
@@ -2219,5 +2458,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
