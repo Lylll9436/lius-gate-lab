@@ -771,30 +771,31 @@ export function skyVillaPoint(x: number, z: number): XZ {
  * mirror: town-sky-garden's FALL). Each leaves the rim on its bearing, east by north and west by
  * north: never the north rim, where the plane passes, nor the south and east-south-east faces,
  * where it would hang before the facade. Its frame's origin is the rim point at the deck's level
- * there (skyTop), +z out along the rim's normal; the stone spout's pool lies `pool` inland. The
- * water falls `drop` and ends in a matte cloud puff of radius `puff.r` whose middle hangs `out`
- * beyond the rim, `puff.rise` over it and `puff.sink` under it (a flat base). `width` is the
- * sheet's. No water reaches the sea.
+ * there (skyTop), +z out along the rim's normal; its stream wells up from under the lawn `head`
+ * inland and runs out through a notch in the coping (town-sky's), with rocks round it. The water
+ * falls `drop` and ends in a matte cloud puff of radius `puff.r` whose middle hangs `out` beyond the
+ * rim, `puff.rise` over it and `puff.sink` under it (a flat base). `width` is the sheet's. No water
+ * reaches the sea.
  */
 export const SKY_FALLS = {
   bearings: [(105 * Math.PI) / 180, (265 * Math.PI) / 180],
   drop: 4.5,
   width: 0.82,
   out: 0.67,
-  pool: 1.08,
+  head: 0.55,
   puff: { r: 1.3, rise: 0.85, sink: 0.62 },
 };
 /**
  * Each fall's slot, as fall() is stood in it: the rim point (`x`, `z`) at the deck's level there
  * (`y`), turned to the rim's outward normal (`ry`, rotation.y: the fall's +z, out over the sea);
- * `rise`, how much higher the deck is under the pool than at the rim (fall()'s option of that
- * name: the water lies level, so the spout stands that much taller at the rim); and its puff's
- * middle, reach, top and flat base, in the world.
+ * `rise`, how much higher the lawn is over the stream's head than at the rim (fall()'s option of
+ * that name: the stream's head lies under the lawn there); and its puff's middle, reach, top and
+ * flat base, in the world.
  */
 export const skyFalls = SKY_FALLS.bearings.map((bearing) => {
   const { x, z, nx, nz } = skyRim(bearing),
     y = skyTop(x, z),
-    pool = skyRim(bearing, -SKY_FALLS.pool),
+    spring = skyRim(bearing, -SKY_FALLS.head),
     puffY = y - SKY_FALLS.drop;
   return {
     bearing,
@@ -802,7 +803,7 @@ export const skyFalls = SKY_FALLS.bearings.map((bearing) => {
     y,
     z,
     ry: Math.atan2(nx, nz),
-    rise: skyTop(pool.x, pool.z) - y,
+    rise: skyTop(spring.x, spring.z) - y,
     puff: { x: x + nx * SKY_FALLS.out, y: puffY, z: z + nz * SKY_FALLS.out, r: SKY_FALLS.puff.r, top: puffY + SKY_FALLS.puff.rise, bottom: puffY - SKY_FALLS.puff.sink },
   };
 });

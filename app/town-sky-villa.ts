@@ -16,9 +16,13 @@ import type { Props } from './town-props';
  * the town); white paintwork for the frames, the doors, the dormers' fronts and the gutter; the
  * kerb's buff stone for the plinth, the terrace's walls and its steps' risers, and the residence's
  * forecourt flags on the terrace; a darker, warmer slate than the town's (the reference's roof, in
- * the slate family: less blue and no more saturated) on the slopes and the flats; lead for the rolls,
- * the dormers' cheeks and roofs and the flashings; cast iron for the balconies and the lamps'
- * housings, and the rainwater goods in the homes' softer grey (near-black ones drew an ink line);
+ * the slate family: less blue and no more saturated) on the slopes and the cap over the flat; the
+ * rolls on the hips and round the flat in a light slate grey, so they read as low lead rolls on the
+ * slates and never as pipes or rails lying on them; lead for the dormers' cheeks and roofs and the
+ * flashings; cast iron for the balconies; the wall lamps' housings in a dark bronze near the
+ * brick's own shade, their lenses dark smoked glass (by day; at night their wash lights them warm),
+ * so by day the lamps sit quietly on the brick; the rainwater goods in the homes' softer grey
+ * (near-black ones drew an ink line);
  * terracotta chimney cans; brass on the doors; the back door in the homes' green enamel, the window
  * boxes painted a muted green.
  */
@@ -29,8 +33,11 @@ export const VILLA_LOOK = {
   base: palette.kerb,
   paving: RESIDENCE_LOOK.paving,
   slate: '#5e6471',
+  roll: '#8a96a3',
   lead: palette.lead,
   iron: palette.metal,
+  housing: '#5c3d2a',
+  lens: '#33383b',
   rain: '#737c83',
   pots: palette.pantile,
   brass: palette.brass,
@@ -46,8 +53,11 @@ export const VILLA_FAMILY: Record<keyof typeof VILLA_LOOK, string> = {
   base: palette.kerb,
   paving: palette.pavement,
   slate: palette.slate,
+  roll: palette.slate,
   lead: palette.lead,
   iron: palette.metal,
+  housing: palette.bronze,
+  lens: palette.metal,
   rain: palette.metal,
   pots: palette.pantile,
   brass: palette.brass,
@@ -79,7 +89,10 @@ export const VILLA_SPRIG = '#3a5a34';
  *   corona in front of it, from `gutter[0]` to `gutter[1]` out and `gutter[2]` tall), the fascia, the
  *   rise to the flat and the run of the front and back slopes (`run`) and of the steeper end slopes
  *   (`runX`, so the side dormers stay clear of the hips); `bayPitch` the rise a unit of the bay's
- *   own low roof, which dies into the front slope in front of the middle dormer.
+ *   own low roof, which dies into the front slope in front of the middle dormer; `roll`, the rolls'
+ *   radius and how far each sits sunk in the arris it covers (a low half-round, never a pipe); `cap`,
+ *   the low hipped cap over the flat (its fascia, its rise and the run of its four slopes, which
+ *   leave a short ridge between them).
  * - `terrace`: its top (the ground floor's level), its depth from the main front wall, its half
  *   width, and its steps (half width, the run of a step and the number of risers).
  * - `chimney`: the two stacks (x either side, z, their plan and the shaft's height, where the cope
@@ -99,7 +112,7 @@ export const VILLA = {
   bands: [[2.06, 2.26], [3.62, 3.8]] as [number, number][],
   plinth: { base: 0.24, rustic: [0.22, 0.44] as [number, number], course: [0.42, 0.56] as [number, number] },
   cornice: { bed: [4.98, 5.06] as [number, number], modillions: [5.06, 5.24] as [number, number], corona: [5.24, 5.42] as [number, number], proud: 0.25 },
-  roof: { eave: 0.1, gutter: [0.1, 0.245, 0.13] as [number, number, number], fascia: 0.06, rise: 1.5, run: 1.55, runX: 1.05, bayPitch: 0.4 },
+  roof: { eave: 0.1, gutter: [0.1, 0.245, 0.13] as [number, number, number], fascia: 0.06, rise: 1.5, run: 1.55, runX: 1.05, bayPitch: 0.4, roll: [0.07, 0.025] as [number, number], cap: { fascia: 0.03, rise: 0.2, run: 0.7 } },
   terrace: { top: 0.5, depth: 1.6, hw: 3.3, steps: { hw: 0.67, run: 0.25, risers: 3 } },
   chimney: { x: 2.8, z: -0.945, w: 1.0, d: 0.62, top: 7.6 },
   back: { door: { w: 0.64, sill: 0.28, leaf: 1.56, fan: 1.84 }, stair: { w: 0.6, sill: 2.74, spring: 3.98 } },
@@ -111,13 +124,14 @@ export const VILLA = {
  * aWash (see city-materials' WASH_FRAGMENT): the scallop above it has faded by 0.85 up and the one
  * below by 0.45 down, so neither reaches the bands; `half` is the half width it fades out by, just
  * inside each pier's (the corners' 0.28, the bay's 0.25). The lenses glow with the same light
- * (`lens`, its strength: about twice a lit window, and under 1 in luminance, so a lens 0.14 across
- * spills nothing over its edges when the multisampled frame resolves; at 1.6 it was 2.4). The corner
+ * (`lens`, its strength: their glass is dark and smoked, about a twentieth of white paint's light,
+ * so they take that much more of it, to about twice a lit window, and under 1 in luminance, so a
+ * lens 0.14 across spills nothing over its edges when the multisampled frame resolves). The corner
  * piers' quoins take the same lamp's light (`quoin`): white stone is about five times as bright as
  * the brick under the warm wash, so at 0.3 they catch it a little brighter than the brick round them,
  * and the scallop runs on over them unbroken.
  */
-export const VILLA_LAMPS = { y: [0.7, 0.49], half: { corner: 0.27, bay: 0.24 }, strength: 1, lens: 0.6, quoin: 0.3 };
+export const VILLA_LAMPS = { y: [0.7, 0.49], half: { corner: 0.27, bay: 0.24 }, strength: 1, lens: 12.5, quoin: 0.3 };
 /**
  * The villa's night lights: one light a window (each sash's two panes, each French door's lights
  * and transom), every one in the 'villa' role (town-batch's WINDOW_MIX: warm, all lit in the
@@ -301,6 +315,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
   };
   /** A round rod of radius r from a to b (8 sides unless told), as a part in g's frame (the shell's without g). */
   const rods = new Map<string, T.BufferGeometry>();
+  /** A roll's boss where the hip rolls meet the flat's: a low dome, flattened to the rolls' own height. */
+  const BOSS = new T.IcosahedronGeometry(0.095, 1).scale(1, 0.75, 1);
   const rodPart = (a: T.Vector3, b: T.Vector3, r: number, g?: T.Object3D, sides = 8): Part => {
     const d = b.clone().sub(a),
       key = [r, d.length(), sides].map((n) => n.toFixed(4)).join('|');
@@ -498,7 +514,7 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
    *   a white slab with a moulded bed on two consoles, and a cast-iron railing of end posts with ball
    *   finials, a bottom rail, four square bars with knops and a handrail (a few fat members, so it
    *   reads as a railing and never as a dark slot, nor shimmers in front of the lit glass).
-   * - Up-and-down wall lamps on the piers (VILLA_LAMPS): iron housings with cream lenses.
+   * - Up-and-down wall lamps on the piers (VILLA_LAMPS): dark bronze housings with smoked lenses.
    * - The back: a green four-panel back door with a fanlight, in stone jambs under a hood on two
    *   consoles, on a threshold and a step; over it a tall round-headed stair window at the half
    *   landing, in jambs and voussoirs with a keystone, on a sill and corbels, breaking the band.
@@ -506,8 +522,10 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
    *   downpipe on the side wall from a hopper head under the cornice, held by sockets and ears and
    *   kicked out in a shoe over the plinth course.
    * - The roof: hipped, in a darker, warmer slate (one solid: its slopes take the slate's coursing),
-   *   lead rolls on its hips (each ending in a ball over the gutter) and round the flat top, with
-   *   bosses at the flat's corners and rolls across it; its eave breaks forward over the bay in a low
+   *   low half-round rolls in a light slate grey on its hips and round its flat, meeting in low
+   *   bosses at the flat's corners; over the flat a low hipped cap of slate (VILLA.roof.cap), which
+   *   takes the slates' coursing too, so the top reads as roof, never as an empty panel, with a roll
+   *   on its short ridge; its eave breaks forward over the bay in a low
    *   hipped roof of its own. Three dormers with white painted fronts between pilasters and lead
    *   cheeks: the middle one wider, with a pair of sashes under a white stone pediment and a slate
    *   gable roof with a lead ridge; the side ones with a sash under a white cornice and a low hipped
@@ -540,12 +558,13 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
       flags: Part[] = [], // the terrace's flags
       paint: Part[] = [], // white paintwork that casts (the dormers' fronts, the doors' panels)
       bars: Part[] = [], // slim white members: meeting rails, glazing bars, mullions, transoms (cast nothing)
-      iron: Part[] = [], // the balconies and the lamps' housings (cast nothing)
+      iron: Part[] = [], // the balconies (cast nothing)
+      housings: Part[] = [], // the lamps' housings, in dark bronze (cast nothing)
       rain: Part[] = [], // the downpipes and their hoppers (cast nothing)
       brass: Part[] = [], // the doors' knobs
       enamel: Part[] = [], // the back door's leaf
-      slates: Part[] = [], // the roof's flat, in slate
-      lead: Part[] = []; // rolls, the dormers' cheeks and roofs, the flashings
+      rolls: Part[] = [], // the rolls on the hips and round the flat, and their bosses
+      lead: Part[] = []; // the dormers' cheeks and roofs, the flashings
     const frontFace = faceAt(shell, 0, front, 0),
       bayFace = faceAt(shell, 0, bayFront, 0),
       backFace = faceAt(shell, 0, back, Math.PI),
@@ -873,13 +892,13 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
     /* -------------------------------------------------------------- */
     /* The wall lamps                                                  */
     /* -------------------------------------------------------------- */
-    // On each lamp pier's face: an iron housing 0.12 wide and 0.2 tall, its cream lenses over and
-    // under it lit with the wash (`glow`).
+    // On each lamp pier's face: a dark bronze housing 0.12 wide and 0.2 tall, its smoked lenses over
+    // and under it lit with the wash (`glow`) at night.
     for (const o of lampPiers) {
       const w = o.userData.wash as Wash;
-      iron.push(block(w.x - 0.06, w.x + 0.06, w.y - 0.1, w.y + 0.1, w.z - 0.01, w.z + 0.08));
+      housings.push(block(w.x - 0.06, w.x + 0.06, w.y - 0.1, w.y + 0.1, w.z - 0.01, w.z + 0.08));
       for (const s of [-1, 1]) {
-        const lens = box(shell, w.x, w.y + s * 0.135, w.z + 0.04, 0.14, 0.07, 0.1, L.paint, 'paint', { bevel: 0 });
+        const lens = box(shell, w.x, w.y + s * 0.135, w.z + 0.04, 0.14, 0.07, 0.1, L.lens, 'paint', { bevel: 0 });
         lens.castShadow = false;
         lens.userData.noShadow = true;
         const glow: Wash = { ...w, strength: VILLA_LAMPS.lens, glow: true };
@@ -981,24 +1000,29 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
     shell.add(roof);
     const [fx0, fz0] = hip.flat[0],
       [fx1, fz1] = hip.flat[2];
-    // Lead rolls: on each hip from just over the gutter (where a ball ends it) to the flat's corner,
-    // round the flat's edges (its ridges), with a boss where they meet, and across the flat every 1.1.
+    // Rolls, low half-rounds (each sunk in the arris it covers, R.roll[1] under it): on each hip from
+    // just over the gutter to the flat's corner, and round the flat's edges, meeting in a low boss at
+    // each corner. Over the flat a low hipped cap of slate (R.cap: its fascia, rise and runs), its
+    // short ridge under a roll of its own.
+    const [rr, sunk] = R.roll;
     for (let i = 0; i < 4; i++) {
-      const foot = v3(hip.eave[i][0], hip.y1 + 0.02, hip.eave[i][1]),
-        head = v3(hip.flat[i][0], hip.y2 + 0.03, hip.flat[i][1]),
-        start = foot.clone().lerp(head, 0.06);
-      lead.push(rodPart(start, head, 0.075, undefined, 10), { geometry: new T.IcosahedronGeometry(0.09, 1), matrix: placed(start.x, start.y + 0.01, start.z) });
-      lead.push({ geometry: new T.IcosahedronGeometry(0.1, 1), matrix: placed(head.x, head.y + 0.02, head.z) });
+      const foot = v3(hip.eave[i][0], hip.y1 - sunk, hip.eave[i][1]),
+        head = v3(hip.flat[i][0], hip.y2 - sunk, hip.flat[i][1]);
+      rolls.push(rodPart(foot.clone().lerp(head, 0.06), head, rr, undefined, 10), { geometry: BOSS, matrix: placed(head.x, hip.y2 - sunk, head.z) });
     }
     for (const [a, b] of [[[fx0, fz0], [fx1, fz0]], [[fx0, fz1], [fx1, fz1]], [[fx0, fz0], [fx0, fz1]], [[fx1, fz0], [fx1, fz1]]] as [number, number][][])
-      lead.push(rodPart(v3(a[0], hip.y2 + 0.03, a[1]), v3(b[0], hip.y2 + 0.03, b[1]), 0.075, undefined, 10));
-    slates.push(block(fx0 + 0.02, fx1 - 0.02, hip.y2 - 0.03, hip.y2 + 0.04, fz0 + 0.02, fz1 - 0.02));
+      rolls.push(rodPart(v3(a[0], hip.y2 - sunk, a[1]), v3(b[0], hip.y2 - sunk, b[1]), rr, undefined, 10));
     {
-      const n = Math.max(2, Math.round((fx1 - fx0) / 1.1));
-      for (let k = 1; k < n; k++) {
-        const x = fx0 + ((fx1 - fx0) * k) / n;
-        lead.push(rodPart(v3(x, hip.y2 + 0.06, fz0 + 0.06), v3(x, hip.y2 + 0.06, fz1 - 0.06), 0.05));
-      }
+      const cap = hippedRoof(fx0, fx1, fz0, fz1, hip.y2, R.cap.fascia, R.cap.rise, R.cap.run, R.cap.run),
+        m = new T.Mesh(cap.geometry, material(L.slate, 'slate')),
+        [rx0, rz0] = cap.flat[0],
+        [rx1, rz1] = cap.flat[2];
+      m.castShadow = m.receiveShadow = true;
+      m.userData.roof = true;
+      m.userData.eaveY = hip.y2;
+      m.name = 'sky-villa-roof-cap';
+      shell.add(m);
+      rolls.push(rodPart(v3(rx0, cap.y2 - sunk, (rz0 + rz1) / 2), v3(rx1, cap.y2 - sunk, (rz0 + rz1) / 2), rr, undefined, 10));
     }
     // The eave breaks forward over the bay: the bay's own low hipped roof (R.bayPitch), from a fascia
     // round its eave (R.eave out from the bay's walls) to where it dies into the front slope. An
@@ -1020,7 +1044,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
      * two pilasters, a sash (or a pair, the pediment's) on a white sill, a white stone cornice round
      * its head and cheeks, and a lead apron where its front meets the slates. The middle one carries
      * a pediment (a tympanum under a raking cornice, a ball at its apex) and a slate gable roof with a
-     * lead ridge running back into the slope; the side ones a low hipped slate roof on their cornice.
+     * low roll on its ridge running back into the slope; the side ones a low hipped slate roof on
+     * their cornice, a low roll on its ridge (with a ball on its end it read as a pipe).
      * (Lead flats on the side ones read from the town's height, and from behind over the main roof's
      * flat, as lidded grey boxes.)
      */
@@ -1070,10 +1095,10 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
         gable.userData.eaveY = top;
         gable.name = 'sky-villa-dormer-roof';
         shell.add(gable);
-        lead.push(rodPart(v3(x, ridge + 0.02, zr - 0.02), v3(x, ridge + 0.02, zb), 0.05));
+        rolls.push(rodPart(v3(x, ridge - V.roof.roll[1], zr - 0.02), v3(x, ridge - V.roof.roll[1], zb), V.roof.roll[0], undefined, 10));
       } else {
         // A low hipped slate roof flush with the corona, its hips at the sides' pitch, its ridge
-        // running back until it dies into the main slope; a lead roll on the ridge.
+        // running back until it dies into the main slope; a low roll on the ridge.
         const half = w / 2 + 0.13,
           rise = 0.16,
           zb = -0.15,
@@ -1088,7 +1113,7 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
         hipped.userData.eaveY = top;
         hipped.name = 'sky-villa-dormer-roof';
         shell.add(hipped);
-        lead.push(rodPart(v3(x, ridge + 0.015, zr - half), v3(x, ridge + 0.015, zb), 0.045), { geometry: new T.IcosahedronGeometry(0.06, 1), matrix: placed(x, ridge + 0.02, zr - half) });
+        rolls.push(rodPart(v3(x, ridge - V.roof.roll[1], zr - half), v3(x, ridge - V.roof.roll[1], zb), V.roof.roll[0], undefined, 10));
       }
       // The apron: a lead plate on the slope at the front's foot.
       const f = slopeFrame(shell, x, zf + 0.08, 0, hip.y2, R.rise / R.run, fz1);
@@ -1237,10 +1262,11 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
     parts(shell, paint, L.paint, 'paint');
     parts(shell, bars, L.paint, 'paint', { shadow: false });
     parts(shell, iron, L.iron, 'iron', { shadow: false });
+    parts(shell, housings, L.housing, 'iron', { shadow: false });
     parts(shell, rain, L.rain, 'iron', { shadow: false });
     parts(shell, brass, L.brass, 'brass', { shadow: false });
     parts(shell, enamel, L.door, 'enamel');
-    parts(shell, slates, L.slate, 'slate');
+    parts(shell, rolls, L.roll, 'paint');
     parts(shell, lead, L.lead, 'paint');
   }
   return { buildSkyVilla };

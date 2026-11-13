@@ -28,22 +28,19 @@ import { ellipsoid, roundBox, sculpt } from './town-sculpt';
 
 /**
  * The kit's colours. Each is no more saturated than its palette family (SKY_GARDEN_FAMILY): the
- * falls' water from the pool's muted turquoise through paler and paler aqua to foam white; the
- * clouds' muted white (less saturated than the palette's own) over a cooler, darker base; the
- * spouts' kerb stone and the furniture's pale dressed stone (the villa's); the rocks' greys (the
- * airport armour's) with a little earth, under turf; teak and a darker mahogany; brass, its
- * blackened eyecup and a dark lens; white china with a slate band, scones and a planter's soil.
+ * falls' stream in the pool's muted turquoise, the water at the lip the palette's own water's edge,
+ * paling down the fall to the foam white of its foot and its lumps; the clouds' muted white (less
+ * saturated than the palette's own) over a cooler, darker base; the furniture's pale dressed stone
+ * (the villa's); the rocks' greys (the airport armour's) with a little earth, under turf; teak and a
+ * darker mahogany; brass, its blackened eyecup and a dark lens; white china with a slate band,
+ * scones and a planter's soil.
  */
 export const SKY_GARDEN_LOOK = {
-  pool: '#5ab4cc',
-  poolRim: '#8fd0dc',
-  channel: '#a9dbe3',
-  pour: '#c3e6ec',
-  sheet: '#d6edee',
-  foam: '#eef6f3',
+  stream: '#5ab4cc',
+  water: palette.poolEdge,
+  foam: '#eaf6f2',
   cloud: '#f1f2ee',
   cloudBase: '#ccd4d9',
-  kerb: palette.kerb,
   stone: '#ece4d1',
   rock: '#8b8c85',
   rockDark: '#7f847f',
@@ -63,15 +60,11 @@ export const SKY_GARDEN_LOOK = {
 };
 /** Each colour's palette family: the colour may be no more saturated than it (check-town). */
 export const SKY_GARDEN_FAMILY: Record<keyof typeof SKY_GARDEN_LOOK, string> = {
-  pool: palette.poolWater,
-  poolRim: palette.poolEdge,
-  channel: palette.poolEdge,
-  pour: palette.poolSurface,
-  sheet: palette.poolSurface,
+  stream: palette.poolWater,
+  water: palette.poolEdge,
   foam: palette.white,
   cloud: palette.white,
   cloudBase: palette.white,
-  kerb: palette.kerb,
   stone: palette.render,
   rock: palette.lead,
   rockDark: palette.lead,
@@ -91,35 +84,42 @@ export const SKY_GARDEN_FAMILY: Record<keyof typeof SKY_GARDEN_LOOK, string> = {
 };
 
 /**
- * How much darker the clouds, the puffs and the falls go at full night, as the balloon does
- * (town-movers' BALLOON_NIGHT_DIM): they are lit like the town, but they are the pale, round things
- * that hang unshadowed over the dark sea, and under the moon they would read as bright as by day.
- * They keep 0.7 of their daylight: dimmed by half (the balloon's), they sank to the lawn's own
- * darkness and read as storm clouds; at 0.7 they stay a little paler than the lawn, calm against
- * the night sea. No glow.
+ * The pale parts at night, as the balloon is dimmed (town-movers' BALLOON_NIGHT_DIM): the colour each
+ * one's material takes at full night, a multiplier on its daylight paint (white keeps it as by day),
+ * reached through the dusk from white. They are lit like the town, but they are the pale, round
+ * things that hang unshadowed over the dark sea. `cloud` (the clouds): a cool moonlit grey that keeps
+ * most of their daylight, so under the moon they read as clouds a little paler than the lawn, as the
+ * town's own pale things do (at 0.7 grey they sank to slate lumps that read as boulders). `fall` (the
+ * falls' water, its lumps and the puff each ends in): dimmed less than the clouds and a little bluer,
+ * so a fall stays a pale blue-grey and never turns into a dark downpipe. No glow: nothing is emissive.
  */
-export const SKY_NIGHT_DIM = 0.3;
+export const SKY_NIGHT = { cloud: '#f6fbff', fall: '#fcfeff' };
 
 /**
- * A fall, in its own frame: the origin is the rim point it leaves (the outer edge of the deck's
- * top), +z points out over the sea and y 0 is the deck's top there.
- * - `drop`, `width`: by default, how far below y 0 the fall ends (the middle of its puff) and how
- *   wide its sheet is under the pour. `depth` is the sheet's depth over that width (0.54: softly
- *   rounded, never a ribbon that turns to a hairline seen from its edge), and `flare` its width at
- *   the puff over its width at the top: a veil that spreads as it falls, never a straight post.
- * - `nose`: how far the stone spout reaches past the rim; `bend` the radius the water turns down
- *   over it by (so the sheet hangs `nose` + `bend` - 0.02 out from the rim, over the puff's middle);
- *   `stream` the stream's half-depth in the channel; `basin` the radius of the pool's water (never
- *   less than the channel is wide) and how far its near side lies in from the rim; `kerb` the
- *   kerb's width and its height over the ground under the pool; `level` the water's level over
- *   that ground; `foot` how far the kerb and the sill run on below y 0, so a domed deck never shows
- *   a gap under them.
- * - The lumps (FALL_LUMPS, one cluster every spacing) stand up to `proud` of the sheet's faces; the
- *   pour (the thick water under the bend) covers a cluster by `cover`, for `pour[0]` down from the
- *   bend's end, and has thinned to the sheet by `pour[1]`. The clusters are about `pitch` apart
- *   (fallLayout fits a whole number of them to the drop) and slide one spacing every `period`
- *   seconds; `phase` is where the loop stands at time 0 (lumps mid-fall, one coming out of the
- *   pour).
+ * A fall, in its own frame: the origin is the rim point it leaves (on the line of the coping's nose,
+ * the deck's widest ring), +z points out over the sea and y 0 is the lawn's level there (the rim's
+ * skyTop). The owner's reference 2: thin water spilling over a natural edge.
+ * - The stream: it wells up from under the lawn `stream.head` inland (where town-sky's notch rocks
+ *   stand over its spring: `rise` is how much higher the lawn is there than at the rim) and runs out
+ *   through a notch in the coping (`notch`, cut by town-sky's coping: its floor's half-width, the ramp
+ *   up to the coping's top either side, and its floor's height): `stream.half` wide either side of
+ *   its middle and `stream.depth` either side of its middle line, its surface `stream.level` over y 0,
+ *   flush with the lawn's edge. No basin, no kerb: the water simply spills over the rim.
+ * - The lip: over the notch's nose the water curls down by `lip` (the radius of its middle line), a
+ *   short overhanging turn, never a pipe's elbow.
+ * - The sheet: `width` wide under the lip and `depth` of that deep, a flat sheet with soft edges
+ *   (FALL_OVAL), spreading to `flare` times as wide where it meets the puff. It hangs a little
+ *   forward as it falls, as water thrown over a lip does: from the lip's end straight on to the
+ *   puff's middle, `out` beyond the rim and `drop` under y 0.
+ * - The channel: down the middle of each face of the sheet runs a shallow channel `recess.depth`
+ *   deep, flat to `recess.flat` of its half-width and gone by `recess.edge`, and the lumps
+ *   (FALL_LUMPS) ride in it, their crowns under the sheet's own outline, so from any side nothing on
+ *   the fall's silhouette moves (the selection ring holds still round it). Under the lip the faces
+ *   are whole down to `hide[0]` (the loop's first cluster waits inside the water there) and the
+ *   channel is full by `hide[1]`.
+ * - The lumps' clusters are about `pitch` apart (fallLayout fits a whole number of them to the
+ *   sheet) and slide one spacing down it every `period` seconds; `phase` is where the loop stands at
+ *   time 0 (lumps mid-fall, one coming out of the whole water under the lip).
  * - `puff`: the cloud's radius; `puffRise` and `puffSink` how far it stands over and hangs under
  *   its middle (a flat base); `core` the round middle every puff has (the last cluster and the
  *   sheet's end hide inside it): its radius, and its middle over the puff's.
@@ -127,18 +127,14 @@ export const SKY_NIGHT_DIM = 0.3;
 export const FALL = {
   drop: 4.5,
   width: 0.82,
-  depth: 0.54,
-  flare: 1.6,
-  nose: 0.33,
-  bend: 0.36,
-  stream: 0.055,
-  basin: { back: 0.58, r: 0.5 },
-  kerb: { width: 0.16, height: 0.2 },
-  level: 0.16,
-  foot: 0.12,
-  proud: 0.07,
-  cover: 0.03,
-  pour: [0.86, 1.6] as [number, number],
+  depth: 0.24,
+  flare: 1.8,
+  out: 0.67,
+  stream: { half: 0.3, depth: 0.04, level: 0.035, head: 0.55 },
+  notch: { half: 0.42, ramp: 0.22, floor: -0.06 },
+  lip: 0.16,
+  recess: { depth: 0.052, flat: 0.45, edge: 0.75 },
+  hide: [0.9, 1.45] as [number, number],
   pitch: 1.04,
   period: 2.2,
   phase: 0.35,
@@ -148,59 +144,72 @@ export const FALL = {
   core: { r: 0.8, y: 0.05 },
 };
 /**
- * A cluster of lumps: swells of foam riding down the sheet, broader than tall. Each is an
- * ellipsoid sunk in a face of the sheet (`side` 1 the face to the sea, -1 the one to the rock)
- * until only its crown stands `proud`, so it meets the sheet at a shallow angle (a pill stuck on
- * the water reads as a rivet): its middle `x` across (in half-widths of the sheet) and `y` over the
- * cluster's own origin, its radii across (in half-widths), up and out. A big one and a small one a
- * face, set off from one another, so the fall reads from either side and no cluster is a ring.
+ * A cluster of lumps: low swells of white water riding down the sheet's channel, broader than tall.
+ * Each is an ellipsoid sunk in the channel's floor on a face of the sheet (`side` 1 the face to the
+ * sea, -1 the one to the rock) until only its crown stands `proud`, so it meets the water at a
+ * shallow angle (a pill stuck on the water reads as a rivet): its middle `x` across (in half-widths
+ * of the sheet under the lip) and `y` over the cluster's own origin, its radii across (in those
+ * half-widths), up and out. All of it lies within the channel's flat floor (`x` and its radius
+ * within FALL.recess.flat), so it never reaches the sheet's edges. A big one and a small one a face,
+ * set off from one another, so the fall reads from either side and no cluster is a ring.
  */
 export const FALL_LUMPS = [
-  { side: 1, x: -0.14, y: 0, r: [0.8, 0.24, 0.18], proud: 0.07 },
-  { side: 1, x: 0.5, y: -0.34, r: [0.42, 0.16, 0.14], proud: 0.055 },
-  { side: -1, x: 0.12, y: -0.04, r: [0.8, 0.24, 0.18], proud: 0.07 },
-  { side: -1, x: -0.5, y: -0.38, r: [0.42, 0.16, 0.14], proud: 0.055 },
+  { side: 1, x: -0.03, y: 0, r: [0.41, 0.15, 0.05], proud: 0.032 },
+  { side: 1, x: 0.2, y: -0.27, r: [0.24, 0.1, 0.045], proud: 0.026 },
+  { side: -1, x: 0.03, y: -0.04, r: [0.41, 0.15, 0.05], proud: 0.032 },
+  { side: -1, x: -0.2, y: -0.3, r: [0.24, 0.1, 0.045], proud: 0.026 },
 ] as const;
+/** The exponent of the sheet's section (a superellipse): flat faces, softly rounded edges. */
+export const FALL_OVAL = 4;
 /**
- * A fall's measures for a drop, a width and a `rise` (how much higher the deck is under the pool
- * than at the rim: the water lies level, so the spout stands that much taller at the rim): the
- * sheet's half-width and half-depth and the pour's; the channel's half-width; the pool (its water's
- * radius and its middle, inland of the rim); the water's level; `out`, how far from the rim the
- * sheet hangs; `head`, where the bend ends and the fall begins; a cluster's reach over and under
- * its origin; how many clusters there are, how far apart, and the first one's origin at the loop's
- * start (hidden in the pour; the last one, a spacing below its own start at the loop's end, is
- * hidden in the puff's core).
+ * A fall's measures for a drop, a width and a `rise` (how much higher the lawn is over the stream's
+ * head than at the rim): the sheet's half-width and half-depth under the lip; the stream's middle
+ * line (`mid`) and the lip's turn (its centre's height under the nose, the angle it turns through,
+ * and `top`, where it ends and the sheet begins); `lean`, how far out the sheet carries for each unit
+ * it falls; `line(y)`, the sheet's middle at a height; a cluster's reach over and under its origin;
+ * how many clusters there are, how far apart (in height: each slides along the sheet's lean), and
+ * the first one's origin at the loop's start (inside the whole water under the lip; the last one, a
+ * spacing below its own start at the loop's end, is hidden in the puff's core).
  */
 export function fallLayout(drop = FALL.drop, width = FALL.width, rise = 0) {
   const a = width / 2,
     b = a * FALL.depth,
-    level = rise + FALL.level,
-    head = level - FALL.stream - FALL.bend,
+    S = FALL.stream,
+    R = FALL.lip,
+    mid = S.level - S.depth,
+    centre = mid - R,
+    // The lip turns until its line, carried straight on, meets the puff's middle (out, -drop).
+    A = FALL.out,
+    B = -drop - centre,
+    turn = Math.asin(R / Math.hypot(A, B)) - Math.atan2(B, A),
+    top = { z: R * Math.sin(turn), y: centre + R * Math.cos(turn) },
+    lean = 1 / Math.tan(turn),
     over = Math.max(...FALL_LUMPS.map((l) => l.y + l.r[1])),
     under = -Math.min(...FALL_LUMPS.map((l) => l.y - l.r[1])),
-    first = head - 0.06 - over,
+    first = top.y - FALL.hide[0] + under + 0.03,
     // The last cluster ends the loop in the puff's core.
     travel = first + drop - FALL.core.y - 0.05,
-    count = Math.max(2, Math.round(travel / FALL.pitch)),
-    r = Math.max(FALL.basin.r, a + 0.09);
-  return { drop, width, rise, a, b, pour: { a: a + 0.05, b: b + FALL.proud + FALL.cover }, channel: a - 0.01, pool: { r, z: -(FALL.basin.back + r) }, level, out: FALL.nose - 0.02 + FALL.bend, head, over, under, first, count, spacing: travel / count };
+    count = Math.max(2, Math.round(travel / FALL.pitch));
+  return { drop, width, rise, a, b, mid, centre, turn, top, lean, out: FALL.out, line: (y: number) => top.z + lean * (top.y - y), over, under, first, count, spacing: travel / count };
 }
 export type FallLayout = ReturnType<typeof fallLayout>;
-/** The exponent of the fall's oval (a superellipse): softly rounded, fuller than an ellipse. */
-export const FALL_OVAL = 2.5;
 /**
- * The fall's oval `d` below the bend's end: its half-width and half-depth. The pour, then the neck
- * thinning to the sheet, then the sheet spreading (FALL.flare) down to its foot in the puff.
+ * The sheet `d` below the lip's end (in height): its half-width, its half-depth, the channel's
+ * depth down its faces, and its middle. It spreads (FALL.flare) to the puff's top and keeps that
+ * width into the puff; its faces are whole under the lip (FALL.hide) and channelled below.
  */
 export function fallSection(F: FallLayout, d: number) {
-  const [p0, p1] = FALL.pour,
-    foot = F.head + F.drop + 0.25;
-  if (d <= p0) return { a: F.pour.a, b: F.pour.b };
-  if (d <= p1) {
-    const u = T.MathUtils.smoothstep((d - p0) / (p1 - p0), 0, 1);
-    return { a: T.MathUtils.lerp(F.pour.a, F.a, u), b: T.MathUtils.lerp(F.pour.b, F.b, u) };
-  }
-  return { a: F.a * (1 + (FALL.flare - 1) * Math.min(1, (d - p1) / (foot - p1)) ** 1.15), b: F.b };
+  const flareTo = F.top.y + F.drop - FALL.puffRise,
+    spread = Math.min(1, Math.max(0, d) / flareTo) ** 1.15;
+  return { a: F.a * (1 + (FALL.flare - 1) * spread), b: F.b, recess: FALL.recess.depth * T.MathUtils.smoothstep(d, FALL.hide[0], FALL.hide[1]), z: F.line(F.top.y - d) };
+}
+/**
+ * How far out of the sheet's middle plane its face stands at `u` (a share of the half-width, -1 to
+ * 1) for a section `s`: the superellipse's face less the channel down its middle.
+ */
+export function fallFace(s: { b: number; recess: number }, u: number) {
+  const t = Math.min(1, Math.abs(u));
+  return s.b * (1 - t ** FALL_OVAL) ** (1 / FALL_OVAL) - s.recess * (1 - T.MathUtils.smoothstep(t, FALL.recess.flat, FALL.recess.edge));
 }
 /** Where a fall's loop stands at `time` (town time): 0 to 1, a spacing's slide. */
 export function fallPhase(time: number) {
@@ -222,15 +231,54 @@ export function cloudDrift(time: number, seed: number) {
 }
 
 /**
- * A floating rock at size 1: the airport armour's boulder (an icosahedron of `detail` 2, each corner
- * in or out by up to `jitter` / 2, shaded as the smooth rounded block), drawn down below its waist
- * into a blunt point (`taper` of its width left at the tip, the underside `stretch` times as deep),
- * about 2.1 across, 0.8 over its middle (the origin) and 1.6 under it: a chunk with a keel, since
- * from the town's high camera a flat pebble shows only its top. A low cap of turf and three
- * tussocks sit on it. It bobs by `bob` and rocks by `rock` radians every `period` seconds
- * (`periods`, picked by its seed).
+ * A floating rock at size 1: a chunk of rock, not a drop. Two of the airport armour's boulders (an
+ * icosahedron of `detail` 2, each corner in or out by up to `jitter` / 2, shaded as the smooth
+ * rounded block): a big one (`top`, its half sizes) and a smaller one (`keel`) set under it and off
+ * to one side (`at`: how far out from under its middle and how far down), so the lump has a keel
+ * (from the town's high camera a flat pebble shows only its top) and an outline of its own. A thin,
+ * irregular patch of turf (`turf`: its reach over the big stone's top, how far it stands proud of
+ * it, and how much its outline wanders) lies on the big one's top, set off its middle; no tussocks
+ * (three small balls on a green cap read as eyes). Each seed turns, tilts and sizes its stones and
+ * its patch its own way, so no two are alike. About 2.1 across, 0.75 over its middle (the origin)
+ * and 1.4 under it. It bobs by `bob` and rocks by `rock` radians every `period` seconds (`periods`,
+ * picked by its seed).
  */
-export const ROCK = { detail: 2, jitter: 0.08, taper: 0.3, stretch: 2, bob: 0.12, rock: 0.035, periods: [9, 10.5, 12] };
+export const ROCK = {
+  detail: 2,
+  jitter: 0.08,
+  top: [1.0, 0.6, 0.86] as [number, number, number],
+  keel: { r: [0.7, 0.62, 0.62] as [number, number, number], at: [0.32, -0.5] as [number, number] },
+  turf: { reach: 0.68, proud: 0.09, wander: 0.22 },
+  bob: 0.12,
+  rock: 0.035,
+  periods: [9, 10.5, 12],
+};
+/** The armour stones' shape (ROCK.detail): an icosahedron with its corners merged, so a corner moved moves every face round it. */
+let STONE: T.BufferGeometry | null = null;
+/**
+ * One of the airport armour's boulders (town-airport's boulder(), copied: its helpers stay its own)
+ * at size 1, about 2 across: the icosahedron pushed part way toward a rounded block (`square`, 0.3
+ * to 0.65 by its seed), each corner in or out by up to ROCK.jitter / 2, with the rounded block's own
+ * analytic normals, so it shades as one smooth chunk and no facet shows. Squash and turn it as it is
+ * placed (a matrix takes its normals through the squash).
+ */
+export function boulder(seed: number, square = 0.3 + 0.35 * hash(seed * 7.31 + 1.913)) {
+  STONE ??= mergeVertices(new T.IcosahedronGeometry(1, ROCK.detail).deleteAttribute('normal').deleteAttribute('uv'));
+  const geometry = STONE.clone(),
+    p = geometry.getAttribute('position'),
+    normals = new Float32Array(p.count * 3),
+    n = new T.Vector3(),
+    u = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    u.fromBufferAttribute(p, i);
+    const block = (u.x ** 4 + u.y ** 4 + u.z ** 4) ** -0.25,
+      k = (1 + square * (block - 1)) * (1 + ROCK.jitter * (hash(seed * 31.7 + i * 3.17) - 0.5));
+    n.set(u.x ** 3, u.y ** 3, u.z ** 3).normalize().multiplyScalar(square).addScaledVector(u, 1 - square).normalize().toArray(normals, i * 3);
+    p.setXYZ(i, u.x * k, u.y * k, u.z * k);
+  }
+  geometry.setAttribute('normal', new T.BufferAttribute(normals, 3));
+  return geometry;
+}
 /** A rock's pose at `time`: how far it has risen (in units of its size) and how it tips, and its period. */
 export function rockBob(time: number, seed: number) {
   const period = ROCK.periods[Math.floor(hash(seed * 3.7 + 2) * ROCK.periods.length) % ROCK.periods.length],
@@ -515,162 +563,100 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     return p;
   }
   /**
-   * The pale parts' night: once batched, a pivot's meshes take the kit's own copy of the batch
-   * material they share (the same shader program, one copy for the whole kit), so their colour can
-   * follow the night without darkening everything else made of cloth (the balloon's way). They
-   * take no shadow either: a cloud half in the island's shadow reads as a grey boulder.
+   * The pale parts' night (SKY_NIGHT): once batched, a pivot's meshes take the kit's own copy of the
+   * batch material they share for their role (the same shader program: one copy for the clouds, one
+   * for the falls), so their colour can follow the night without darkening everything else made of
+   * cloth (the balloon's way). They take no shadow either: a cloud half in the island's shadow reads
+   * as a grey boulder.
    */
-  const own = new Map<T.Material, T.MeshStandardMaterial>();
-  function dim(g: T.Object3D, night: number) {
-    const f = 1 - SKY_NIGHT_DIM * night;
+  const own = new Map<string, T.MeshStandardMaterial>(),
+    nightTone = { cloud: new T.Color(SKY_NIGHT.cloud), fall: new T.Color(SKY_NIGHT.fall) };
+  function dim(g: T.Object3D, night: number, role: keyof typeof SKY_NIGHT) {
     for (const part of g.children) {
       if (!(part instanceof T.Mesh) || !(part.material instanceof T.MeshStandardMaterial) || !part.material.vertexColors) continue;
-      if (!part.material.userData.skyGardenOwn) {
-        const shared = part.material;
-        let copy = own.get(shared);
+      if (part.material.userData.skyGardenOwn !== role) {
+        const shared = part.material,
+          key = `${role}:${shared.uuid}`;
+        let copy = own.get(key);
         if (!copy) {
           copy = shared.clone();
           copy.onBeforeCompile = (shader, renderer) => shared.onBeforeCompile(shader, renderer);
           copy.customProgramCacheKey = () => shared.customProgramCacheKey();
-          copy.userData.skyGardenOwn = true;
-          own.set(shared, copy);
+          copy.userData.skyGardenOwn = role;
+          own.set(key, copy);
         }
         part.material = copy;
         part.receiveShadow = false;
       }
-      part.material.color.setScalar(f);
+      part.material.color.setRGB(1, 1, 1).lerp(nightTone[role], night);
     }
   }
 
   /* ---------------------------------------------------------------- */
   /* The falls                                                         */
   /* ---------------------------------------------------------------- */
+  /** Columns round the water's section, at shares `u` of its half-width: over its top face (or the sheet's face to the sea) from right to left, then back under it. */
+  const FACE = [0.95, 0.85, 0.72, 0.6, 0.45, 0.28, 0, -0.28, -0.45, -0.6, -0.72, -0.85, -0.95],
+    COLUMNS: [number, number][] = [[1, 0], ...FACE.map((u): [number, number] => [u, 1]), [-1, 0], ...FACE.map((u): [number, number] => [-u, -1])];
   /**
-   * The spout's stone, one mesh: a kerb in one sweep from the spout's nose back along the channel,
-   * round the pool and forward again (a keyhole seen from above), its top softly rounded, and the
-   * sill the water runs over, its nose just inside the kerb's ends. Both run on below y 0 inside
-   * the rim; past the rim the spout is a slab under the water.
+   * The water, one tube from the spring to the puff: its section a flat oval laid across the flow
+   * (the stream's in the notch, flat and thin; the sheet's down the fall, FALL_OVAL with its channel,
+   * fallFace), swept along the stream's middle line under the lawn's edge, round the lip's short turn
+   * and straight down the sheet's lean to its foot in the puff. Its paint is on its vertices: the
+   * stream's muted turquoise paling to the water's edge at the lip, then down the fall from the water
+   * to foam white at the puff, with a few faint streaks of deeper water down it, so nothing scrolls
+   * and nothing can crawl.
    */
-  function spout(g: T.Object3D, F: FallLayout) {
-    const half = F.channel + 0.02, // the channel's half-width
-      kw = FALL.kerb.width / 2,
-      line = half + kw, // the kerb's middle
-      ring = F.pool.r + kw,
-      top = F.rise + FALL.kerb.height,
-      under = F.rise - 0.03,
-      end = FALL.nose,
-      // The straight runs meet the ring where the ring is as far out as they are.
-      a0 = Math.asin(line / ring),
-      join = F.pool.z + ring * Math.cos(a0),
-      path: { x: number; z: number; nx: number; nz: number; foot: number }[] = [];
-    // From the right-hand end back to the pool, round it, and forward on the left.
-    path.push({ x: line, z: end, nx: 1, nz: 0, foot: under }, { x: line, z: 0.02, nx: 1, nz: 0, foot: under }, { x: line, z: -0.02, nx: 1, nz: 0, foot: -FALL.foot });
-    const N = 16;
-    for (let k = 0; k <= N; k++) {
-      const a = a0 + ((Math.PI * 2 - 2 * a0) * k) / N;
-      path.push({ x: ring * Math.sin(a), z: F.pool.z + ring * Math.cos(a), nx: Math.sin(a), nz: Math.cos(a), foot: -FALL.foot });
-    }
-    path.push({ x: -line, z: -0.02, nx: -1, nz: 0, foot: -FALL.foot }, { x: -line, z: 0.02, nx: -1, nz: 0, foot: under }, { x: -line, z: end, nx: -1, nz: 0, foot: under });
-    const section = (foot: number): [number, number][] => [[-kw, foot], [-kw, top - 0.05], [-kw + 0.03, top], [kw - 0.03, top], [kw, top - 0.05], [kw, foot]],
-      pos: number[] = [],
-      index: number[] = [],
-      W = 6;
-    for (const s of path) for (const [o, y] of section(s.foot)) pos.push(s.x + s.nx * o, y, s.z + s.nz * o);
-    for (let k = 0; k + 1 < path.length; k++)
-      for (let i = 0; i + 1 < W; i++) {
-        const a = k * W + i,
-          b = (k + 1) * W + i;
-        index.push(a, a + 1, b, a + 1, b + 1, b);
-      }
-    const kerb = new T.BufferGeometry();
-    kerb.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    kerb.setIndex(index);
-    kerb.computeVertexNormals();
-    // Its two ends, flat: a fan each, facing out over the sea.
-    const ends: number[] = [];
-    for (const [k, flip] of [[0, false], [path.length - 1, true]] as const) {
-      const pts = section(path[k].foot).map(([o, y]) => [path[k].x + path[k].nx * o, y, path[k].z]);
-      for (let i = 1; i + 1 < pts.length; i++) ends.push(...pts[0], ...(flip ? pts[i] : pts[i + 1]), ...(flip ? pts[i + 1] : pts[i]));
-    }
-    const caps = new T.BufferGeometry();
-    caps.setAttribute('position', new T.Float32BufferAttribute(ends, 3));
-    caps.setAttribute('normal', new T.Float32BufferAttribute(ends.map((_, i) => (i % 3 === 2 ? 1 : 0)), 3));
-    const sillTop = F.rise + 0.07,
-      sillHalf = half + 0.04,
-      m = solid(
-        g,
-        [
-          { geometry: kerb, tint: L.kerb },
-          { geometry: caps, tint: L.kerb },
-          // The sill's body under the channel, and its nose over the rim.
-          { geometry: chamfered(2 * sillHalf, sillTop + FALL.foot, 0.02 - join + 0.1), tint: L.kerb, matrix: placed(0, (sillTop - FALL.foot) / 2, (0.02 + join - 0.1) / 2) },
-          { geometry: chamfered(2 * sillHalf, sillTop - under, FALL.nose + 0.045), tint: L.kerb, matrix: placed(0, (sillTop + under) / 2, (FALL.nose - 0.055) / 2) },
-        ],
-        'stone',
-        'sky-fall-spout',
-        ['kerb'],
-      );
-    kerb.dispose();
-    caps.dispose();
-    return m;
-  }
-  /** The pool's paint at (x, z) from its middle: turquoise there, paler toward its kerb (R). */
-  const poolTint = (x: number, z: number, R: number, c: T.Color) => blend(c, L.pool, L.poolRim, smooth(Math.hypot(x, z) / R, 0.25, 1));
-  /**
-   * The stream: one tube swept from the pool along the channel, down over the sill's nose in a
-   * quarter turn and on down to the puff, its section a soft-cornered oval laid across the flow
-   * (flat in the channel, thick in the pour under the bend, then the sheet, which spreads as it
-   * falls: fallSection). Its paint runs from the pool's own turquoise through paler aqua to foam at
-   * its foot, and down the fall every few columns of vertices are a shade bluer: soft streaks, in
-   * the geometry's own colours, so nothing scrolls and nothing can crawl.
-   */
-  function streamGeometry(F: FallLayout, seed: number) {
-    type Station = { z: number; y: number; nz: number; ny: number; a: number; b: number; e: number; from: string; to: string; f: number; streak: number; pool?: boolean };
-    const yc = F.level - FALL.stream,
-      z0 = FALL.nose - 0.02,
-      R = FALL.bend,
-      foot = -F.drop - 0.25,
+  function waterGeometry(F: FallLayout, seed: number) {
+    type Station = { z: number; y: number; ny: number; nz: number; a: number; b: number; recess: number; e: number; tone: (c: T.Color) => void; streak: number };
+    const S = FALL.stream,
+      R = FALL.lip,
       stations: Station[] = [],
-      flat = { nz: 0, ny: 1, a: F.channel, e: 5, streak: 0 };
-    // Out of the pool (its end just under the pool's own surface, in the pool's own paint) and along the channel.
-    stations.push({ ...flat, z: F.pool.z + 0.2, y: F.level - 0.045, b: 0.03, from: L.poolRim, to: L.poolRim, f: 0, pool: true });
-    for (const [z, f] of [[F.pool.z + 0.42, 0], [(F.pool.z + z0) / 2 + 0.2, 0.55], [z0, 1]]) stations.push({ ...flat, z, y: yc, b: FALL.stream, from: L.poolRim, to: L.channel, f, pool: f === 0 });
-    // Over the nose: a quarter turn, thickening into the pour.
-    const B = 6;
+      flatOval = 5,
+      // The stream's top under the lawn at its head (the lawn there stands `rise` over y 0).
+      headTop = Math.min(S.level, F.rise - 0.03),
+      water = (f: number) => (c: T.Color) => blend(c, L.stream, L.water, f);
+    // The stream: from under the lawn, over the notch's floor to the nose (z 0).
+    for (const [z, f] of [[-S.head, 0], [-0.3, 0.45], [-0.12, 0.8], [0, 1]])
+      stations.push({ z, y: z === -S.head ? headTop - S.depth : F.mid, ny: 1, nz: 0, a: S.half, b: S.depth, recess: 0, e: flatOval, tone: water(f), streak: 0 });
+    // The lip: its short turn, the stream widening and thickening into the sheet.
+    const B = 5,
+      grow = (t: number) => smooth(t, 0, 1);
     for (let k = 1; k <= B; k++) {
       const t = k / B,
-        th = (t * Math.PI) / 2,
-        u = smooth(t, 0, 1);
-      stations.push({ z: z0 + R * Math.sin(th), y: F.head + R * Math.cos(th), nz: Math.sin(th), ny: Math.cos(th), a: lerp(F.channel, F.pour.a, u), b: lerp(FALL.stream, F.pour.b, u), e: lerp(5, FALL_OVAL, u), from: L.channel, to: L.pour, f: t, streak: u });
+        th = t * F.turn;
+      stations.push({ z: R * Math.sin(th), y: F.centre + R * Math.cos(th), ny: Math.cos(th), nz: Math.sin(th), a: lerp(S.half, F.a, grow(t)), b: lerp(S.depth, F.b, 0.75 * grow(t)), recess: 0, e: lerp(flatOval, FALL_OVAL, grow(t)), tone: water(1), streak: 0.5 * t });
     }
-    // The pour, the neck, and the sheet spreading down to its foot in the puff.
-    const [p0, p1] = FALL.pour,
-      fall = (d: number) => stations.push({ z: F.out, y: F.head - d, nz: 1, ny: 0, ...fallSection(F, d), e: FALL_OVAL, from: L.sheet, to: L.foam, f: smooth(d, p1, F.head - foot), streak: 1 });
-    for (const d of [p0 / 2, p0]) fall(d);
-    for (const t of [0.25, 0.5, 0.75, 1]) fall(p0 + (p1 - p0) * t);
-    const N = Math.max(3, Math.round((F.head - p1 - foot) / 0.7));
-    for (let k = 1; k <= N; k++) fall(p1 + ((F.head - p1 - foot) * k) / N);
-    // The pour is still the pour's colour: its sheet tone comes in down the neck.
-    for (const s of stations) if (s.nz === 1 && F.head - s.y < p1 + 1e-6) Object.assign(s, { from: L.pour, to: L.sheet, f: smooth(F.head - s.y, p0 * 0.5, p1) });
-    const M = 14,
+    // The sheet, straight down its lean to its foot in the puff: from the water at the lip to foam.
+    const foot = F.top.y + F.drop - 0.15,
+      foam = F.top.y + F.drop - FALL.puffRise,
+      n = Math.hypot(1, F.lean),
+      [h0, h1] = FALL.hide,
+      depths = [0.12, 0.3, 0.55, h0 - 0.05, (h0 + h1) / 2, h1];
+    for (let d = h1 + 0.55; d < foot - 0.2; d += 0.55) depths.push(d);
+    depths.push(foot);
+    for (const d of depths) {
+      const s = fallSection(F, d),
+        f = smooth(d, 0.1, foam) ** 0.85;
+      stations.push({ z: s.z, y: F.top.y - d, ny: F.lean / n, nz: 1 / n, a: s.a, b: d < 0.3 ? lerp(0.75 * F.b, F.b, smooth(d, 0, 0.3)) : s.b, recess: s.recess, e: FALL_OVAL, tone: (c) => blend(c, L.water, L.foam, f), streak: 1 - f });
+    }
+    const M = COLUMNS.length,
       pos: number[] = [],
       col: number[] = [],
       index: number[] = [],
       c = new T.Color(),
-      blue = new T.Color(L.channel),
-      streaks = Array.from({ length: M }, (_, i) => (hash(seed * 7.7 + i * 3.3) > 0.56 ? 0.3 + 0.3 * hash(seed * 1.9 + i * 5.1) : 0));
+      deep = new T.Color(L.stream),
+      streaks = COLUMNS.map((_, i) => (hash(seed * 7.7 + i * 3.3) > 0.62 ? 0.18 + 0.14 * hash(seed * 1.9 + i * 5.1) : 0));
     for (const s of stations)
-      for (let i = 0; i < M; i++) {
-        const phi = ((i + 0.5) / M) * Math.PI * 2,
-          cx = Math.sign(Math.cos(phi)) * Math.abs(Math.cos(phi)) ** (2 / s.e),
-          sw = Math.sign(Math.sin(phi)) * Math.abs(Math.sin(phi)) ** (2 / s.e);
-        pos.push(s.a * cx, s.y + s.b * sw * s.ny, s.z + s.b * sw * s.nz);
-        if (s.pool) poolTint(s.a * cx, s.z - F.pool.z, F.pool.r + 0.02, c);
-        else blend(c, s.from, s.to, s.f);
-        c.lerp(blue, streaks[i] * s.streak * (1 - 0.5 * (s.nz === 1 ? smooth(F.head - s.y, p1, F.head - foot) : 0)));
+      COLUMNS.forEach(([u, side], i) => {
+        // Across the face: the oval's own face (the stream's flat one) less the sheet's channel.
+        const w = side * (s.e === FALL_OVAL ? fallFace(s, u) : s.b * (1 - Math.abs(u) ** s.e) ** (1 / s.e));
+        pos.push(u * s.a, s.y + w * s.ny, s.z + w * s.nz);
+        s.tone(c);
+        c.lerp(deep, streaks[i] * s.streak);
         col.push(c.r, c.g, c.b);
-      }
-    // The oval runs from the flow's right over its top to its left, so these faces look out.
+      });
+    // The ring runs from the flow's right over its top to its left, so these faces look out.
     for (let k = 0; k + 1 < stations.length; k++)
       for (let i = 0; i < M; i++) {
         const a = k * M + i,
@@ -685,81 +671,75 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     return geometry;
   }
   /**
-   * The water that stands still, one mesh on a pivot of its own (it dims at night): the pool, a low
-   * dome inside its kerb; the stream (streamGeometry); and the puff the fall ends in.
+   * The water that stands still, one mesh on a pivot of its own (it dims at night): the stream, its
+   * lip and the sheet (waterGeometry) and the puff the fall ends in.
    */
   function stillWater(g: T.Object3D, F: FallLayout, seed: number) {
-    const y0 = F.level,
-      R = F.pool.r + 0.02;
     return solid(
       g,
-      [
-        {
-          // Nearly level out to the kerb, where it turns down out of sight: the stream leaves it with no step.
-          geometry: turned(turns([[R, y0 - 0.085], [R * 0.965, y0 - 0.022], [R * 0.9, y0 - 0.007], [0, y0 - 0.003]]), 16),
-          tint: (p, _n, c) => poolTint(p.x, p.z, R, c),
-          matrix: placed(0, 0, F.pool.z),
-        },
-        { geometry: streamGeometry(F, seed) },
-        { geometry: cloudGeometry(puffLobes(seed, FALL.puff), CLOUD.fillet, CLOUD.puffGrid, -FALL.puffSink), matrix: placed(0, -F.drop, F.out) },
-      ],
+      [{ geometry: waterGeometry(F, seed) }, { geometry: cloudGeometry(puffLobes(seed, FALL.puff), CLOUD.fillet, CLOUD.puffGrid, -FALL.puffSink), matrix: placed(0, -F.drop, F.out) }],
       'fabric',
       'sky-fall-water',
-      ['pool', 'poolRim', 'channel', 'pour', 'sheet', 'foam', 'cloud', 'cloudBase'],
+      ['stream', 'water', 'foam', 'cloud', 'cloudBase'],
       { shadow: false },
     );
   }
   /**
    * The lumps, one mesh on a pivot inside the still water's: `count` clusters alike (FALL_LUMPS), a
-   * spacing apart down the sheet, each lump a smooth ellipsoid half sunk in one of the sheet's
-   * faces, foam white on top and the sheet's own tone where it meets the sheet.
+   * spacing apart down the sheet's lean, each lump a smooth ellipsoid of foam white sunk in the
+   * channel's floor on a face of the sheet, its crown under the sheet's outline.
    */
   function lumps(g: T.Object3D, F: FallLayout) {
     const parts: Part[] = [],
-      big = blob([1, 1, 1], 12, 6),
-      small = blob([1, 1, 1], 8, 5);
+      big = blob([1, 1, 1], 10, 5),
+      small = blob([1, 1, 1], 8, 4),
+      n = Math.hypot(1, F.lean),
+      // The sheet's face normal (to the sea), and its tilt off the vertical.
+      normal = new T.Vector3(0, F.lean / n, 1 / n),
+      tilt = -Math.atan(F.lean),
+      floor = F.b - FALL.recess.depth;
     for (let k = 0; k < F.count; k++)
       for (const l of FALL_LUMPS) {
         const [rx, ry, rz] = l.r,
-          sink = rz - l.proud;
+          y = F.first - k * F.spacing + l.y,
+          at = new T.Vector3(l.x * F.a, y, F.line(y)).addScaledVector(normal, l.side * (floor + l.proud - rz));
         parts.push({
-          geometry: rx > 0.5 ? big : small,
-          // The sheet's own tone where it leaves the sheet, foam on its crown.
-          tint: (q, _n, c) => blend(c, L.sheet, L.foam, smooth(q.z * l.side, sink / rz - 0.05, 0.97)),
-          matrix: new T.Matrix4().compose(new T.Vector3(l.x * F.a, F.first - k * F.spacing + l.y, l.side * (F.b - sink)), new T.Quaternion().setFromEuler(new T.Euler(0, 0, l.side * 0.1)), new T.Vector3(rx * F.a, ry, rz)),
+          geometry: rx > 0.3 ? big : small,
+          tint: L.foam,
+          matrix: new T.Matrix4().compose(at, new T.Quaternion().setFromEuler(new T.Euler(tilt, 0, l.side * 0.08)), new T.Vector3(rx * F.a, ry, rz)),
         });
       }
-    const m = solid(g, parts, 'fabric', 'sky-fall-lumps', ['sheet', 'foam'], { shadow: false });
+    const m = solid(g, parts, 'fabric', 'sky-fall-lumps', ['foam'], { shadow: false });
     big.dispose();
     small.dispose();
     return m;
   }
   /**
-   * A short waterfall: it leaves the deck's rim over a stone spout fed by a small pool (so the
-   * water has a source) and ends `drop` below the deck in a matte cloud puff; no water reaches the
-   * sea. The water is opaque and matte: a softly rounded oval sheet `width` across and about half
-   * as deep, spreading as it falls, in pale colours on its vertices. A few chunky lumps slide down
-   * it in a loop: the one mesh moves a spacing down and back (fallPhase), the cluster beyond either
-   * end hidden in the thick pour under the lip and in the puff. Nothing scrolls in a shader, so
-   * nothing can crawl. Stand its origin on the rim's outer edge at the deck's top, +z out over the
-   * sea; `rise` is how much higher the deck is under the pool (its middle 1.08 in from the rim)
-   * than at the rim; `seed` picks the puff's lobes and the streaks.
+   * A short waterfall (FALL): a stream that wells up under the lawn's edge, runs out through a notch
+   * in the coping (town-sky cuts it, and sets rocks round it) and spills over the rim, curls down over
+   * a short lip and falls as a thin, flat sheet, leaning a little forward and spreading, to end
+   * `drop` below the deck in a matte cloud puff; no water reaches the sea. The water is opaque and
+   * matte, its paint on its vertices. A few low swells of white water slide down the channel in the
+   * sheet's faces in a loop: the one mesh moves a spacing down the sheet's lean and back (fallPhase),
+   * the cluster beyond either end hidden in the whole water under the lip and in the puff. Nothing
+   * scrolls in a shader, so nothing can crawl. Stand its origin on the rim at the lawn's level there,
+   * +z out over the sea; `rise` is how much higher the lawn is over the stream's head (FALL.stream.head
+   * inland); `seed` picks the puff's lobes and the streaks.
    */
   function fall({ drop = FALL.drop, width = FALL.width, rise = 0, seed = 1 }: { drop?: number; width?: number; rise?: number; seed?: number } = {}) {
     const F = fallLayout(drop, width, rise),
       g = new T.Group();
     g.name = 'sky-fall';
     g.userData.fall = F;
-    spout(g, F);
     const water = pivot(g, 'sky-fall-still');
     stillWater(water, F, seed);
     const moving = pivot(water, 'sky-fall-moving');
-    moving.position.z = F.out;
     lumps(moving, F);
-    const settle = (_time: number, night = 0) => dim(water, night),
+    const settle = (_time: number, night = 0) => dim(water, night, 'fall'),
       slide = (time: number, night = 0) => {
-        moving.position.y = -fallPhase(time) * F.spacing;
-        dim(moving, night);
+        const s = fallPhase(time) * F.spacing;
+        moving.position.set(0, -s, s * F.lean);
+        dim(moving, night, 'fall');
       };
     settle(0, 0);
     slide(0, 0);
@@ -783,93 +763,64 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     const update = (time: number, night = 0) => {
       const d = cloudDrift(time, seed);
       drift.position.set(d.x * size, d.y * size, 0);
-      dim(drift, night);
+      dim(drift, night, 'cloud');
     };
     update(0, 0);
     animated.push({ object: drift, update });
     return g;
   }
-  /** The armour stones' shape (ROCK.detail): an icosahedron with its corners merged, so a corner moved moves every face round it. */
-  let stone: T.BufferGeometry | null = null;
   /**
-   * A floating rock's geometry (the airport armour's boulder, copied whole with its analytic
-   * normals, then drawn down to a blunt point): the rounded block's own normals carried through the
-   * squash and the taper, so it shades as one smooth chunk and no facet shows.
-   */
-  function rockGeometry(size: number, seed: number) {
-    stone ??= mergeVertices(new T.IcosahedronGeometry(1, ROCK.detail).deleteAttribute('normal').deleteAttribute('uv'));
-    const h = (k: number) => hash(seed * 7.31 + k * 1.913),
-      geometry = stone.clone(),
-      p = geometry.getAttribute('position'),
-      normals = new Float32Array(p.count * 3),
-      n = new T.Vector3(),
-      square = 0.3 + 0.35 * h(1),
-      sx = size * (0.95 + 0.2 * h(2)),
-      sy = size * (0.72 + 0.16 * h(3)),
-      sz = size * (0.85 + 0.2 * h(4));
-    for (let i = 0; i < p.count; i++) {
-      const ux = p.getX(i),
-        uy = p.getY(i),
-        uz = p.getZ(i),
-        block = (ux ** 4 + uy ** 4 + uz ** 4) ** -0.25,
-        k = (1 + square * (block - 1)) * (1 + ROCK.jitter * (hash(seed * 31.7 + i * 3.17) - 0.5));
-      // The rounded block's normal, through the squash.
-      n.set(ux ** 3, uy ** 3, uz ** 3).normalize().multiplyScalar(square).add(new T.Vector3(ux, uy, uz).multiplyScalar(1 - square)).normalize();
-      n.set(n.x / sx, n.y / sy, n.z / sz);
-      let x = ux * k * sx,
-        y = uy * k * sy,
-        z = uz * k * sz;
-      if (y < 0) {
-        // Below the waist: narrower and deeper toward the tip; the normal follows the taper.
-        const t = Math.min(1, -y / sy),
-          s = 1 - (1 - ROCK.taper) * t ** 1.4,
-          ds = ((1 - ROCK.taper) * 1.4 * t ** 0.4) / sy,
-          dy = 1 + 2 * (ROCK.stretch - 1) * t;
-        n.set(n.x / s, (n.y - (ds * (x * n.x + z * n.z)) / s) / dy, n.z / s);
-        y *= 1 + (ROCK.stretch - 1) * t;
-        x *= s;
-        z *= s;
-      }
-      p.setXYZ(i, x, y, z);
-      n.normalize().toArray(normals, i * 3);
-    }
-    geometry.setAttribute('normal', new T.BufferAttribute(normals, 3));
-    return { geometry, sx, sy, sz };
-  }
-  /**
-   * A small floating rock (rockGeometry) with a low cap of turf and three tussocks on top, one mesh:
-   * its greys are the armour's, lighter toward the top, with a band of earth under the turf. Its
-   * origin is its middle: at size 1 it is about 2.1 across and reaches 0.8 up and 1.6 down. It bobs
-   * and rocks slowly on town time (rockBob) and casts nothing.
+   * A small floating rock (ROCK), one mesh: its two boulders in one of the armour's greys, lighter
+   * toward the top, the big one's top a little earthy under its patch of turf. Its origin is its
+   * middle. It bobs and rocks slowly on town time (rockBob) and casts nothing.
    */
   function floatingRock({ size = 0.6, seed = 1 }: { size?: number; seed?: number } = {}) {
     const g = new T.Group();
     g.name = 'sky-rock';
     const bob = pivot(g, 'sky-rock-bob'),
       h = (k: number) => hash(seed * 5.77 + k * 2.31),
-      { geometry, sx, sy, sz } = rockGeometry(size, seed),
       grey = [L.rock, L.rockDark, L.rockPale][Math.floor(h(1) * 3) % 3],
       tone = 0.94 + 0.12 * h(2),
-      tip = -sy * ROCK.stretch,
-      turn = placed(0, 0, 0, 0.16 * (h(3) - 0.5), h(4) * Math.PI * 2, 0.16 * (h(5) - 0.5)),
-      tuft = Math.max(0.05, 0.15 * size),
+      K = ROCK.keel,
+      // The big stone's half sizes, each a little its own, and its turn and tilt.
+      top = ROCK.top.map((r, k) => r * size * (0.9 + 0.2 * h(3 + k))) as [number, number, number],
+      turn = new T.Euler(0.24 * (h(6) - 0.5), h(7) * Math.PI * 2, 0.24 * (h(8) - 0.5)),
+      // The keel: under the big stone, off to the side its seed picks.
+      side = h(9) * Math.PI * 2,
+      keel = new T.Vector3(Math.cos(side) * K.at[0] * size, K.at[1] * size, Math.sin(side) * K.at[0] * size),
+      bottom = keel.y - K.r[1] * size,
+      stone = (p: T.Vector3, n: T.Vector3, c: T.Color) => blend(c, grey, L.earth, 0.6 * smooth(p.y, 0.2 * top[1], 0.95 * top[1]) * smooth(n.y, 0.4, 0.9), tone * lerp(0.8, 1.04, smooth(p.y, bottom, top[1]))),
       parts: Part[] = [
-        { geometry, tint: (p, _n, c) => blend(c, grey, L.earth, 0.75 * smooth(p.y, -0.15 * sy, 0.6 * sy), tone * lerp(0.8, 1.04, smooth(p.y, tip, sy))), matrix: turn },
-        // The turf: a low dome sunk in the top, so only its crown shows over the stone.
+        { geometry: boulder(seed * 3 + 1, 0.6 + 0.2 * h(10)), tint: stone, matrix: new T.Matrix4().compose(new T.Vector3(), new T.Quaternion().setFromEuler(turn), new T.Vector3(...top)) },
         {
-          geometry: new T.SphereGeometry(1, 14, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(0.76 * sx, 0.32 * size, 0.76 * sz),
-          tint: (p, _n, c) => blend(c, L.turfDark, L.turf, smooth(p.y, 0.1 * size, 0.3 * size)),
-          matrix: turn.clone().multiply(placed(0, sy - 0.2 * size, 0)),
+          geometry: boulder(seed * 3 + 2, 0.5 + 0.25 * h(11)),
+          tint: stone,
+          matrix: new T.Matrix4().compose(keel, new T.Quaternion().setFromEuler(new T.Euler(0.3 * (h(12) - 0.5), h(13) * Math.PI * 2, 0.3 * (h(14) - 0.5))), new T.Vector3(...K.r.map((r, k) => r * size * (0.9 + 0.2 * h(15 + k))))),
         },
       ];
-    for (let k = 0; k < 3; k++) {
-      const a = h(6) * Math.PI * 2 + k * 2.1 + 0.5 * (h(7 + k) - 0.5),
-        d = 0.3 + 0.12 * h(10 + k),
-        q = Math.max(0.055, tuft * (1 - 0.2 * k));
-      parts.push({ geometry: pebble([q, q * 0.85, q]), tint: k % 2 ? L.turfDark : L.turf, matrix: turn.clone().multiply(placed(Math.cos(a) * d * sx, sy + 0.05 * size, Math.sin(a) * d * sz, 0, h(13 + k) * 3, 0)) });
+    // The turf: a flat, closed lens with a wandering outline, sunk in the big stone's top off its
+    // middle, so only a thin, irregular patch of it shows over the stone.
+    {
+      const T0 = ROCK.turf,
+        cap = new T.SphereGeometry(1, 18, 6),
+        q = cap.getAttribute('position'),
+        phase = h(18) * Math.PI * 2;
+      for (let i = 0; i < q.count; i++) {
+        const a = Math.atan2(q.getZ(i), q.getX(i)),
+          k = 1 + T0.wander * (0.65 * Math.sin(2 * a + phase) + 0.35 * Math.sin(3 * a + 2.1 * phase));
+        q.setXYZ(i, q.getX(i) * k, q.getY(i), q.getZ(i) * k);
+      }
+      cap.computeVertexNormals();
+      const off = (0.12 + 0.1 * h(19)) * size,
+        at = new T.Vector3(Math.cos(side + Math.PI) * off, top[1] * 0.94 + (T0.proud - 0.12) * size, Math.sin(side + Math.PI) * off);
+      parts.push({
+        geometry: cap,
+        tint: (p, _n, c) => blend(c, L.turfDark, L.turf, smooth(p.y, at.y - 0.02 * size, at.y + 0.1 * size)),
+        matrix: new T.Matrix4().compose(at, new T.Quaternion().setFromEuler(new T.Euler(turn.x * 0.6, h(20) * Math.PI * 2, turn.z * 0.6)), new T.Vector3(T0.reach * top[0], 0.12 * size, T0.reach * top[2])),
+      });
     }
     solid(bob, parts, 'stone', 'sky-rock-body', ['rock', 'rockDark', 'rockPale', 'earth', 'turf', 'turfDark'], { shadow: false });
-    geometry.dispose();
+    parts.forEach((p) => p.geometry.dispose());
     g.userData.period = rockBob(0, seed).period;
     const update = (time: number) => {
       const b = rockBob(time, seed);
