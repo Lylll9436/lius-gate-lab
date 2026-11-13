@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { runInNewContext } from 'node:vm';
+import { Script, createContext, runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as T from 'three';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -445,11 +445,12 @@ assert(
 // centre dropped out of the mask, and a part standing proud of another (a balcony, the coping)
 // lost the pixels where it covers the sample but not the centre; the ring then drew gold squiggles
 // across the building's own faces (the sky island's rock and villa, worst on phones, and the Town
-// Hall). A pixel test needs a browser, so this holds the shaders to the fix instead: the tolerance
-// grows with the depth's slope across the pixel (k·fwidth; the sample is at most half a pixel off,
-// so k is at least 0.5, and at most 4 so a lamp or a tree still stands in front), the test is drawn
-// with the beauty pass's samples, and a single-sample pass keeps the mask to the pixels whose
-// centre the building covers, so the ring outside the silhouette stays where it was.
+// Hall). A pixel test needs a browser, so this holds the ink to the fix by what it does, not by how
+// its shaders are spelt: the numbers it was tuned to; both mask passes built on the one depth test
+// it exports; that test and the centre pass's keep test run on synthetic depths, as JS twins and as
+// the shaders themselves; the test drawn with the beauty pass's samples; and a single-sample pass
+// keeping the mask to the pixels whose centre the building covers, so the ring outside the
+// silhouette stays where it was.
 {
   const pass = await import('three/addons/postprocessing/Pass.js');
   const ink = {};
@@ -457,6 +458,49 @@ assert(
     exports: ink,
     require: (id) => ({ three: T, 'three/addons/postprocessing/Pass.js': pass })[id],
   });
+  // The numbers, as INK measured them: the fixed bias; the slope factor k = 2 (the resolved sample
+  // is up to half a pixel off the centre, so k is at least 0.5; at most 4, or a lamp or a tree before
+  // a building no longer counts as in front); and the centre pass keeping a pixel that any one of the
+  // test's samples passed (anything over half of R8's smallest step).
+  assert.deepEqual(
+    [ink.INK_BIAS, ink.INK_SLOPE, ink.INK_KEEP],
+    [0.000015, 2, 0.5 / 255],
+    'The selection ring’s depth test is not tuned as measured (bias 0.000015, slope factor 2, a pixel kept over half an R8 step): measure the ring again in a browser before changing it.',
+  );
+  /**
+   * A mask pass's fragment shader run as JS on synthetic inputs, enough for the ink's two small ones
+   * and the ways they might be rewritten: GLSL's types go, `discard` throws, and the built-ins they
+   * read are given. Returns (depth, scene, fwidth, tested) => whether the pass writes the pixel.
+   */
+  const fragment = (glsl) => {
+    const js = glsl
+      .replace(/\buniform\s+\w+\s+\w+\s*;/g, '')
+      .replace(
+        /\b(?:void|bool|float|int|vec[234])\s+(\w+)\s*\(([^)]*)\)\s*\{/g,
+        (_, name, params) => `function ${name}(${params.replace(/\b(?:(?:in|const)\s+)*(?:bool|float|int|vec[234])\s+/g, '')}){`,
+      )
+      .replace(/\b(?:const\s+)?(?:bool|float|int|vec[234])\s+(?=\w+\s*=)/g, 'let ')
+      .replace(/\bdiscard\b/g, 'throw discarded');
+    const script = new Script('(function(){' + js + '\nmain();})()'),
+      context = createContext({ texture2D: (sampler) => ({ r: sampler }), vec4: (...v) => v, resolution: 1, discarded: {} });
+    return (depth, scene, fwidth, tested = 0) => {
+      Object.assign(context, {
+        // fwidth of the fragment's own depth is the slope given; of anything else, no number.
+        fwidth: (v) => (v === depth ? fwidth : NaN),
+        gl_FragCoord: { z: depth, xy: 0 },
+        sceneDepth: scene,
+        tested,
+        gl_FragColor: null,
+      });
+      try {
+        script.runInContext(context);
+      } catch (e) {
+        if (e === context.discarded) return false;
+        throw e;
+      }
+      return context.gl_FragColor?.[0] > 0;
+    };
+  };
   const calls = [];
   let current = null;
   const renderer = {
@@ -481,18 +525,53 @@ assert(
   ring.render();
   assert.equal(calls.length, 4, 'A ringed building draws the beauty pass, the depth test, its pixel centres and the composite.');
   const [beauty, test, keep, composite] = calls;
-  for (const [name, call] of [['depth test', test], ['centre pass', keep]]) {
-    const shader = call.override?.fragmentShader ?? '';
-    const k = shader.match(/0\.000015\s*\+\s*([\d.]+)\s*\*\s*fwidth\(\s*gl_FragCoord\.z\s*\)/);
+  for (const [name, call] of [['depth test', test], ['centre pass', keep]])
     assert(
-      k && /gl_FragCoord\.z\s*<=\s*texture2D\(\s*sceneDepth/.test(shader),
-      `The selection mask's ${name} must compare against the beauty pass's depth with a tolerance that grows with the depth's slope (0.000015 + k·fwidth(gl_FragCoord.z)), or the ring draws squiggles across the building's own faces.`,
+      call.override?.fragmentShader?.includes(ink.INK_DEPTH_TEST),
+      `The selection mask's ${name} is not built on the ink's one depth test (INK_DEPTH_TEST).`,
     );
-    assert(+k[1] >= 0.5 && +k[1] <= 4, `The selection mask's slope factor is ${k[1]}: at least 0.5 (half a pixel to the resolved sample), at most 4 (occluders still count).`);
+  // What the tests do, on synthetic depths (the depth buffer's 0 to 1; fw, the depth's slope across
+  // the pixel): the building's own face, nearer by 0.375·fwidth at the resolved sample than at the
+  // centre, is in front; an occluder 4·fwidth in front of it is not, and nor is a pixel behind at its
+  // centre that none of the test's samples found in front; but one sample of the beauty pass's in
+  // front (a resolve of 1/samples) keeps the pixel. The JS twins say so, and the passes' own shaders,
+  // run as JS, do what the twins do: here, and over a sweep of depths and slopes round the slack's edge.
+  const samples = beauty.target.samples,
+    depthPass = fragment(test.override.fragmentShader),
+    centrePass = fragment(keep.override.fragmentShader);
+  for (const [what, k, tested, front, kept] of [
+    ['its own face, nearer by 0.375·fwidth at the resolved sample', 0.375, 0, true, true],
+    ['an occluder 4·fwidth in front', 4, 0, false, false],
+    ['behind at its centre, but one of the test’s samples in front', 4, 1 / samples, false, true],
+    ['behind at its centre, and no sample in front', 4, 0, false, false],
+  ]) {
+    const z = 0.5,
+      fw = 0.001,
+      scene = z - k * fw;
+    assert.equal(ink.inkInFront(z, scene, fw), front, `The selection mask's depth test (its JS twin) gets ${what} wrong.`);
+    assert.equal(ink.inkKeeps(ink.inkInFront(z, scene, fw), tested), kept, `The selection mask's centre pass (its JS twin) gets ${what} wrong.`);
+    assert.equal(depthPass(z, scene, fw), front, `The selection mask's depth test (its shader) gets ${what} wrong.`);
+    assert.equal(centrePass(z, scene, fw, tested), kept, `The selection mask's centre pass (its shader) gets ${what} wrong.`);
   }
+  for (const fw of [0, 0.00001, 0.0003, 0.001, 0.02])
+    for (let k = -8; k <= 8; k += 0.125)
+      for (const tested of [0, 1 / 255, 1 / samples, 1]) {
+        const z = 0.4,
+          scene = z - k * fw;
+        // Skip the slack's very edge, where the order of the sums decides.
+        if (Math.abs(z - (scene + ink.INK_BIAS + ink.INK_SLOPE * fw)) < 1e-12) continue;
+        const front = ink.inkInFront(z, scene, fw);
+        assert.equal(depthPass(z, scene, fw), front, `The selection mask's depth test shader and its twin disagree at fwidth ${fw}, the scene ${k}·fwidth nearer.`);
+        assert.equal(centrePass(z, scene, fw, tested), ink.inkKeeps(front, tested), `The selection mask's centre pass shader and its twin disagree at fwidth ${fw}, the scene ${k}·fwidth nearer, tested ${tested}.`);
+      }
   assert(beauty.target.samples > 1, 'The beauty pass is multisampled.');
   assert.equal(test.target.samples, beauty.target.samples, 'The selection mask’s depth test is drawn with the beauty pass’s samples.');
   assert.equal(keep.target.samples, 0, 'The mask is kept to pixel centres in a single-sample pass.');
+  assert.deepEqual(
+    [test.target.texture.format, keep.target.texture.format],
+    [T.RedFormat, T.RedFormat],
+    'The selection mask’s targets hold one channel each: only whether the building is there.',
+  );
   assert.equal(keep.override.uniforms.tested.value, test.target.texture, 'The centre pass reads the depth test’s samples.');
   assert.equal(composite.material?.uniforms?.selection?.value, keep.target.texture, 'The composite rings the kept mask.');
   ring.dispose();
@@ -500,5 +579,5 @@ assert(
   building.material.dispose();
 }
 console.log(
-  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose mask tests depth with a slope-scaled tolerance at the beauty pass’s samples.',
+  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose two mask passes share one depth test, tuned as measured and run on synthetic depths (its JS twins and its shaders agree), drawn at the beauty pass’s samples into one-channel masks.',
 );
