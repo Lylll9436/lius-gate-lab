@@ -90,7 +90,8 @@ export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: numbe
  * models' rules, framing and Inspect do not fit it). Everything of it hangs under `root`, which the
  * scene picks, rings, shades and hides as one: `land` its deck (the lawn, the paths and what stands
  * on them), `rock` its underside (the rock and the coping), `air` what hangs off the deck or beside
- * it, and `shell` its villa, in the villa's own frame (front +z, y 0 the deck's level).
+ * it, and `shell` its villa, in the villa's own frame (front +z, y 0 the deck's level); and, after
+ * them, Alison's figure (her root, 'alison', town-sky's alison()), which goes about the garden.
  */
 export type SkyIsland = { root: T.Group; land: T.Group; rock: T.Group; air: T.Group; shell: T.Group };
 
@@ -154,6 +155,22 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
   const { batch, windows } = createBatch(ctx);
+  /**
+   * A figure batched part by part (the body, each hip and knee, each arm, and each prop a figure
+   * holds: every child of its root on its own, and every joint in a child on its own), so its joints
+   * still bend.
+   */
+  function batchFigure(root: T.Object3D) {
+    for (const part of root.children) {
+      const joints = part.children.filter((o) => o instanceof T.Group);
+      for (const joint of joints) {
+        part.remove(joint);
+        batch(joint as T.Group, { contact: 'none' });
+      }
+      batch(part as T.Group, { contact: 'none' });
+      if (joints.length) part.add(...joints);
+    }
+  }
   const { box } = kit, { tree, flowerBed, moorland } = nature, { bench, cycleHoop, lamp, trafficSignals, phoneBox, bin, pavilion, memoryBoard, crane, picnic, wellington } = props;
   /**
    * The herd answers the pointer as the Corner park does (its label; a click opens Life, where
@@ -256,8 +273,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // The airport's island, its road and causeway (the Departures Hall is a building, below).
   airportGround(airportLand);
   yield 'airport ground';
-  // The sky island: its deck, and its villa in the shell's own frame on it; then the rock under it,
-  // sculpted from a distance grid (tens of ms), in a phase of its own.
+  // The sky island: its deck, and its villa in the shell's own frame on it, and Alison in her chair
+  // at tea; then the rock under it, sculpted from a distance grid (tens of ms), in a phase of its own.
   skyIsland.skyGround(sky.land, sky.air);
   {
     const site = plan.sites['sky-island'];
@@ -265,6 +282,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     sky.shell.rotation.y = site.rotation;
     buildSkyVilla(sky.shell, site);
   }
+  const alison = skyIsland.alison(sky.root);
   yield 'sky ground';
   skyIsland.skyUnderside(sky.rock);
   yield 'sky rock';
@@ -422,6 +440,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   batch(sky.land, { floor: plan.skyTop });
   batch(sky.rock, { contact: 'none' });
   batch(sky.air, { contact: 'none' });
+  // Alison, part by part as the town's figures are, so her joints still bend and her props still come and go.
+  batchFigure(alison);
   yield 'batch sky';
   batch(parkGroup);
   yield 'batch park';
@@ -436,18 +456,6 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // The sky island's villa, on its deck.
   batch(sky.shell, { place: 'sky-island', floor: plan.skyTop });
   yield 'batch sky villa';
-  /** A figure batched part by part (the body, each hip and knee, each arm), so its joints still bend. */
-  function batchFigure(root: T.Object3D) {
-    for (const part of root.children) {
-      const joints = part.children.filter((o) => o instanceof T.Group);
-      for (const joint of joints) {
-        part.remove(joint);
-        batch(joint as T.Group, { contact: 'none' });
-      }
-      batch(part as T.Group, { contact: 'none' });
-      if (joints.length) part.add(...joints);
-    }
-  }
   for (const walker of walkers) batchFigure(walker.root);
   batchFigure(dogWalker);
   batchFigure(cyclist);

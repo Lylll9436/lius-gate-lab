@@ -7,6 +7,7 @@ import type { Kit } from './town-kit';
 import { BLOOMS, type Nature } from './town-nature';
 import type { Props } from './town-props';
 import type { SkyGarden } from './town-sky-garden';
+import { createAlison, poseAlison } from './sky-figure';
 
 /**
  * The sky island's colours, each no more saturated than its palette family: the lawn's two mown
@@ -685,6 +686,34 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     dimAtNight(g);
   }
 
-  return { skyGround, skyUnderside, standAt, skySlots };
+  /* ---------------------------------------------------------------- */
+  /* Alison                                                            */
+  /* ---------------------------------------------------------------- */
+  /**
+   * Alison Heppenstall's figure (sky-figure's createAlison) on the island, in `root` (the island's
+   * own root, outside every static batch: her root is a pivot of its own), going about her day from
+   * town time alone: plan.alisonDay says where she is and what she does, poseAlison poses her, and
+   * she stands on the lawn there (skyTop) or sits on her chair. So Pause and reduced motion, which
+   * hold the town at time 0, leave her in her chair at tea, her cup resting on its saucer. Night and
+   * rain change nothing, as for the town's walkers. Returns her root, which the town batches part by
+   * part as it does its figures (it is `prebatched`: never by the animated loop).
+   */
+  function alison(root: T.Group) {
+    const { root: figure, joints, props: held } = createAlison(material);
+    figure.userData.keepSeparate = true;
+    figure.userData.prebatched = true;
+    root.add(figure);
+    const update = (time: number) => {
+      const day = plan.alisonDay(time),
+        { lift } = poseAlison(joints, held, day.pose, day.phase, { seat: day.seat, amount: day.amount, step: day.step, side: day.side });
+      figure.position.set(day.x, plan.skyTop(day.x, day.z) + lift, day.z);
+      figure.rotation.y = day.heading;
+    };
+    update(0);
+    ctx.animated.push({ object: figure, update });
+    return figure;
+  }
+
+  return { skyGround, skyUnderside, standAt, skySlots, alison };
 }
 export type SkyIsland = ReturnType<typeof createSkyIsland>;

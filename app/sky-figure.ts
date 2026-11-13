@@ -9,8 +9,8 @@ import { ellipsoid, sculpt } from './town-sculpt';
  * person: long, loose, curly ginger hair, dark rectangular glasses, a black long-sleeved top with a
  * small pale pendant, fair skin, dark trousers. Her hands carry a watering can, or a teacup and its
  * saucer, or a book; poseAlison() sets every joint and prop for a pose and a phase, from nothing
- * else, so town time can drive it and a paused town holds it. Nothing in the town builds her yet:
- * the sky island's own task places her and scripts her day.
+ * else, so town time can drive it and a paused town holds it. The sky island (town-sky's alison())
+ * stands her on its deck and poses her through her day from town-plan's alisonDay.
  */
 type Material = (c: string, k?: SurfaceKind) => T.MeshStandardMaterial;
 type V3 = [number, number, number];
@@ -829,13 +829,36 @@ function sole(a: number, b: number) {
   const c = a + b;
   return HIP - 0.14 * Math.cos(a) - 0.135 * Math.cos(c) - 0.025 * Math.sin(c) - Math.hypot(0.035 * Math.cos(c), 0.09 * Math.sin(c));
 }
+/** From the hip to the middle of the shoe, down a straight leg (thigh 0.14, shin 0.135); and the shoe's half sizes under its middle (its sole is flattened). */
+const LEG = 0.275,
+  SHOE: V3 = [0.058, 0.0352, 0.09];
+const kneeFrame = new T.Matrix4(),
+  shoeAt = new T.Vector3();
+/**
+ * The lowest point of a leg's shoe over the floor under her root, however the leg is turned (its
+ * hip, `leg`, and its `knee`, as posed): the bottom of the shoe's ellipsoid, carried by both joints.
+ */
+function soleOf(leg: T.Object3D, knee: T.Object3D) {
+  leg.updateMatrix();
+  knee.updateMatrix();
+  const m = kneeFrame.multiplyMatrices(leg.matrix, knee.matrix),
+    e = m.elements;
+  shoeAt.set(0, -0.135, 0.025).applyMatrix4(m);
+  // The ellipsoid's lowest point: its middle less its reach straight down (the y row of its turn).
+  return shoeAt.y - Math.hypot(SHOE[0] * e[1], SHOE[1] * e[5], SHOE[2] * e[9]);
+}
 const smooth = T.MathUtils.smoothstep,
   TAU = Math.PI * 2;
 
 /** The 'water' pose: her lean, how far her shoulders reach in, up and forward, the can's grip in her -x hand, and its tilt (spout down) and turn (towards her middle). */
 const WATER = { lean: 0.14, reach: [0.01, 0.015, 0.04] as V3, grip: [-0.125, 0.636, 0.26] as V3, tilt: 0.62, yaw: 0.25 };
-/** The 'sip' pose: her lean and reach, the saucer's foot where her +x hand holds it, in front of her, and her lips (the cup's axis there, before the lean). */
-const SIP = { lean: 0.05, reach: [0.012, 0, 0.035] as V3, saucer: [0.03, 0.468, 0.214] as V3, lips: [0, 0.655, 0.178] as V3 };
+/**
+ * The 'sip' pose: her lean and reach, the saucer's foot where her +x hand holds it, in front of her,
+ * and her lips (the cup's axis there, before the lean). At the sky island's tea table the saucer is
+ * held over the table's near edge, its foot a little over the top (at 0.468 it and the hand under its
+ * rim dipped 4 mm into it).
+ */
+const SIP = { lean: 0.05, reach: [0.012, 0, 0.035] as V3, saucer: [0.03, 0.482, 0.214] as V3, lips: [0, 0.655, 0.178] as V3 };
 /** The 'read' pose: her lean and reach, the book's spine where she holds it, and its tilt (the pages up and a little towards her). */
 const READ = { lean: 0.05, reach: [0.012, 0, 0.03] as V3, book: [0, 0.478, 0.215] as V3, tilt: -0.2 };
 /** The 'telescope' pose's stoop (from the hips) and how far her shoulders reach in, up and forward. */
@@ -878,6 +901,9 @@ export const ALISON_TELESCOPE = (() => {
  *   `amount` (1 by default) scales the gait, so 0 is 'stand' and a walk can ease in and out.
  * - 'water': standing, the can held out in her -x hand by its handle and tipped, so its rose hangs
  *   over a border in front of her (ALISON.rose), swaying gently along it; her other hand on her hip.
+ *   `step` (0 to 1) takes her through a sidestep along the border that moves her root `side` ([x,
+ *   z] in her frame), her root moved there by side x smoothstep(step) by whoever places her (step
+ *   0, the default: feet together).
  * - 'sit': on a seat, hands on her thighs.
  * - 'sip': seated, the saucer held in front of her in her +x hand, the cup lifted from it to her
  *   lips and down again in her -x hand (on the saucer from 0.88 round to 0.12, at her lips from
@@ -885,7 +911,7 @@ export const ALISON_TELESCOPE = (() => {
  * - 'telescope': standing, stooped a little to the eyepiece (ALISON_TELESCOPE), both hands on the tube.
  * - 'read': seated, an open book held by its near corners.
  */
-export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose, phase: number, opts: { seat?: number; amount?: number } = {}) {
+export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose, phase: number, opts: { seat?: number; amount?: number; step?: number; side?: [number, number] } = {}) {
   const u = ((phase % 1) + 1) % 1;
   // At ease: upright, legs straight, arms down and a little out, elbows soft, no props.
   lean(j, 0);
@@ -923,6 +949,28 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
     can.rotation.set(WATER.tilt + 0.05 * Math.sin(u * TAU * 2), WATER.yaw + 0.1 * sway, 0, 'YXZ');
     // Her other hand rests on her hip, its elbow out.
     reach(j, 1, leaned([0.19, 0.455, 0.03], WATER.lean), [0.9, -0.1, -0.5]);
+    // A sidestep along the bed: `step` of the way through one that takes her root `side` ([x, z] in
+    // her frame, mostly to her right), while whoever places her moves her root there by side x
+    // smoothstep(step). The foot on that side (her right, to her right) steps out over the first
+    // half and the other follows over the second, each lifted a little as it swings; the planted
+    // one stays where it was, its leg leaning as she goes over it.
+    const step = opts.step ?? 0,
+      [sx, sz] = opts.side ?? [0, 0];
+    if (step > 0 && step < 1 && Math.hypot(sx, sz) > 0) {
+      const moved = smooth(step, 0, 1),
+        lead = sx < 0 ? 0 : 1,
+        feet = lead === 0 ? [smooth(step, 0, 0.5), smooth(step, 0.5, 1)] : [smooth(step, 0.5, 1), smooth(step, 0, 0.5)],
+        swing = [0, 1].map((k) => (feet[k] > 0 && feet[k] < 1 ? Math.sin(Math.PI * (k === lead ? 2 * step : 2 * step - 1)) : 0));
+      j.legs.forEach((leg, k) => {
+        // The foot's place from its hip (x across, z ahead): how far it has come, less how far her root has.
+        const ox = sx * (feet[k] - moved),
+          oz = sz * (feet[k] - moved),
+          across = Math.asin(ox / LEG);
+        leg.rotation.set(-Math.asin(oz / (LEG * Math.cos(across))) - 0.35 * swing[k], 0, across);
+        j.knees[k].rotation.set(0.7 * swing[k], 0, 0);
+      });
+      lift = -Math.min(soleOf(j.legs[0], j.knees[0]), soleOf(j.legs[1], j.knees[1]));
+    }
   } else if (name === 'sit') {
     for (const k of [0, 1] as const) reach(j, k, [(k ? 1 : -1) * 0.1, 0.42, 0.075], [(k ? 1 : -1) * 0.8, -0.2, -0.6]);
   } else if (name === 'sip') {
