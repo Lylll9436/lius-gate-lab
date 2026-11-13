@@ -828,7 +828,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // The camera's pitch as it stands (0, the town's: viewOffset), unless a check brings it down.
     pitch: 0,
   };
-  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, viewOffset, skyReach, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH });`,
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH });`,
     scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
@@ -1791,6 +1791,165 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       skyNav.rotate = `the island turned where it stands at ${stats.stops} Rotate stops (its middle held within ${stats.hold.toFixed(2)} px over ${stats.frames} frames of turning, ${stats.end.toFixed(2)} px a frame at most as each turn ends)`;
     }
 
+    // (c4) The sun's shadow box in the island's own file (the 3D review's fourth finding: on portrait
+    // phones the file never took it, the villa, the tree, the tea set and Alison casting nothing on
+    // the lawn, for a sliver of the north-west coast in the corner above the sheet). city-scene's own
+    // skyShadowWanted, run as followSky runs it (on the camera as it stands, at the pitch it settles
+    // at, the hand-over's `on` carried from one call to the next), on the file's real framings:
+    // page.tsx's fileFrame as measured on the page, beside the file's panel on desktops
+    // (the 460 px file and its 16 px margin and gutter: a shift of 492 / 2w), above the peeking sheet
+    // on portrait phones (the masthead's foot at 58, the sheet's top 259.9 above the stage's foot: a
+    // drop of -100.95 / h) and above the 768 x 1024 tablet's sheet (-0.2629). There
+    // - at the file's bearing and the next Rotate stop the island takes the box as the file settles
+    //   and keeps it all through the idle drift; the other two stops, which look past the island at
+    //   the town's west coast or at the airport, never keep it;
+    // - every other place's file and City mode's overview keep the town's box, through the drift;
+    // - a pan from the file toward the town hands the box back to the town by the time a twentieth
+    //   of the free part of the frame is its land, and before any of its buildings (their sites'
+    //   boxes, at full height) stands whole in it.
+    {
+      const shadowPieces = [];
+      (function collect(node) {
+        if (ts.isFunctionDeclaration(node) && ['skyShadowWanted', 'bandShare', 'skyFit'].includes(node.name?.text)) shadowPieces.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['SKY_SHADOW', 'TOWN_WATERLINE', 'LAND_MARKS', '[rockX, rockZ]'].includes(d.name.getText(syntax)))) shadowPieces.push(node.getText(syntax).replace(/^export\s+/, ''));
+        ts.forEachChild(node, collect);
+      })(syntax);
+      assert.equal(shadowPieces.length, 7, 'The shadow box check must find every piece it runs.');
+      assert(/skyShadowWanted\(camera, LAND_MARKS, frameShift, frameDrop, skyCast\)/.test(source), 'followSky no longer asks skyShadowWanted about the camera as it stands.');
+      const sun = runInNewContext(`${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyShadowWanted, bandShare, SKY_SHADOW, TOWN_WATERLINE, LAND_MARKS })`, { T, Math, plan }),
+        // The scene's camera for a w x h stage (resize()), looking at `centre` from `bearing` at `low` of the way down to the file's pitch.
+        lens = (w, h) => {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect);
+          return new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180);
+        },
+        look = (camera, centre, bearing, low, zoom) => {
+          camera.position.copy(centre).add(scene.viewOffset(bearing, new T.Vector3(), low));
+          camera.lookAt(centre);
+          camera.zoom = zoom;
+          camera.updateProjectionMatrix();
+          camera.updateMatrixWorld(true);
+          return camera;
+        },
+        // The island's file framed at a bearing, and the pitch the camera settles at there (aim at the file's zoom).
+        fileView = (w, h, shift, drop, bearing) => {
+          frame(w, h, shift, bearing);
+          Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
+          scene.focusSky();
+          const out = { zoom: view.targetZoom, centre: view.target.clone(), low: scene.aim(view.targetZoom) };
+          Object.assign(view, { frameDrop: 0, focusedIds: [], pitch: 0 });
+          return out;
+        },
+        right = (shift) => 1 - 4 * Math.max(0, shift),
+        bottom = (drop) => -1 - 4 * Math.min(0, drop),
+        shore = (camera, shift, drop) => sun.bandShare(sun.TOWN_WATERLINE, camera, right(shift), bottom(drop)),
+        // The town's buildings as their sites' boxes, and whether one stands whole in the free part of the frame.
+        sites = Object.values(plan.sites)
+          .filter((s) => s.id !== 'sky-island')
+          .map((s) => {
+            const c = Math.cos(s.rotation),
+              n = Math.sin(s.rotation),
+              corners = [];
+            for (const dx of [-1, 1]) for (const dz of [-1, 1]) for (const y of [0, s.height]) corners.push(new T.Vector3(s.x + ((dx * s.w) / 2) * c + ((dz * s.d) / 2) * n, y, s.z - ((dx * s.w) / 2) * n + ((dz * s.d) / 2) * c));
+            return { id: s.id, corners };
+          }),
+        wholeIn = (camera, shift, drop) =>
+          sites.find((s) =>
+            s.corners.every((p) => {
+              const q = p.clone().project(camera);
+              return q.x > -1 && q.x < right(shift) && q.y > bottom(drop) && q.y < 1;
+            }),
+          ),
+        desktopFiles = [[1024, 768], [1280, 720], [1280, 800], [1366, 657], [1440, 900], [1920, 1080], [2560, 1440]].map(([w, h]) => [w, h, 492 / (2 * w), 0]),
+        portraitFiles = [[360, 640], [360, 740], [375, 667], [375, 812], [390, 844], [393, 852], [412, 915], [414, 896], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]),
+        files = [...desktopFiles, ...portraitFiles, [768, 1024, 0, -0.2629]],
+        worst = { rest: 0, drift: 0 };
+      assert(sun.SKY_SHADOW.shore[1] < sun.SKY_SHADOW.shore[0], 'The sun\'s shadow box changes hands over the town\'s shore without slack.');
+      for (const [w, h, shift, drop] of files)
+        for (let stop = 0; stop < 4; stop++) {
+          const bearing = fileBearing + (stop * Math.PI) / 2,
+            { zoom, centre, low } = fileView(w, h, shift, drop, bearing),
+            camera = look(lens(w, h), centre, bearing, low, zoom),
+            at = `${w} x ${h}${stop ? ` at Rotate stop ${stop}` : ''}`;
+          if (stop < 2) {
+            worst.rest = Math.max(worst.rest, shore(camera, shift, drop));
+            assert(sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, false), `The sky island's file at ${at} does not take the sun's shadow box as it settles (the town's island takes ${(shore(camera, shift, drop) * 100).toFixed(1)}% of the free part of the frame).`);
+            for (const d of fileDrifts) {
+              look(camera, centre, bearing + d, low, zoom);
+              worst.drift = Math.max(worst.drift, shore(camera, shift, drop));
+              assert(sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `The sky island's file at ${at}, drifted ${d.toFixed(3)}, gives the sun's shadow box back to the town (its island takes ${(shore(camera, shift, drop) * 100).toFixed(1)}% of the free part).`);
+            }
+          } else
+            for (const d of [0, ...fileDrifts]) {
+              look(camera, centre, bearing + d, low, zoom);
+              assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `The sky island's file at ${at}, drifted ${d.toFixed(3)}, keeps the sun's shadow box with the town in view.`);
+            }
+        }
+      // Every other place's file, from its own front (City mode's frameCity), and City mode's overview.
+      view.models = new Map(
+        buildings
+          .filter((b) => b.model !== 'sky')
+          .map((b) => {
+            const s = plan.sites[b.id],
+              root = new T.Group(),
+              mesh = new T.Mesh(new T.BoxGeometry(s.w, s.height, s.d));
+            mesh.position.y = s.height / 2;
+            root.add(mesh);
+            root.position.set(s.x, 0, s.z);
+            root.rotation.y = s.rotation;
+            root.updateMatrixWorld(true);
+            return [b.id, { root }];
+          }),
+      );
+      let others = 0;
+      for (const [w, h, shift, drop] of [...desktopFiles, ...portraitFiles]) {
+        for (const id of view.models.keys()) {
+          const bearing = plan.chapterBearings[nav.facingChapter(nav.contentForBuilding(id))] ?? Math.PI / 4;
+          frame(w, h, shift, bearing);
+          Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: [id] });
+          view.target.set(0, 0, 0);
+          scene.fitFocused();
+          assert.equal(scene.aim(view.targetZoom), 0, `${id}'s file at ${w} x ${h} comes down to the sky island's pitch.`);
+          const camera = lens(w, h);
+          for (const d of [0, ...drifts]) {
+            look(camera, view.target, bearing + d, 0, view.targetZoom);
+            others++;
+            assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `${id}'s file at ${w} x ${h}, drifted ${d.toFixed(2)}, gives the sun's shadow box to the sky island.`);
+          }
+        }
+        frame(w, h, shift, Math.PI / 4);
+        Object.assign(view, { frameDrop: drop, focusedIds: [], cityMode: true, overviewFit: true });
+        scene.fitOverview();
+        const camera = look(lens(w, h), view.target, Math.PI / 4, 0, view.targetZoom);
+        assert(!sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, true), `City mode's overview at ${w} x ${h} gives the sun's shadow box to the sky island.`);
+        Object.assign(view, { frameDrop: 0, cityMode: false, overviewFit: false });
+      }
+      view.models = new Map();
+      view.panelEdge = 1;
+      // Pans from the file, at its pitch and zoom, toward the town's middle, the People side's homes
+      // and the airport (the ground point slides there, the target keeping its lift): the hand-over
+      // run frame by frame.
+      let pans = 0;
+      for (const [w, h, shift, drop] of [desktopFiles[1], desktopFiles[4], desktopFiles[5], portraitFiles[4], portraitFiles[8]])
+        for (const goal of [new T.Vector3(0, 0, 0), new T.Vector3(-22, 0, 1), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z)]) {
+          const { zoom, centre, low } = fileView(w, h, shift, drop, fileBearing),
+            camera = lens(w, h);
+          let on = true,
+            handed = false;
+          for (let k = 0; k <= 400; k++) {
+            look(camera, centre.clone().add(new T.Vector3(goal.x - centre.x, 0, goal.z - centre.z).multiplyScalar(k / 400)), fileBearing, low, zoom);
+            const share = shore(camera, shift, drop),
+              whole = wholeIn(camera, shift, drop);
+            on = sun.skyShadowWanted(camera, sun.LAND_MARKS, shift, drop, on);
+            handed ||= !on;
+            assert(!on || (share <= sun.SKY_SHADOW.shore[0] && !whole), `Panning the sky island's file at ${w} x ${h} toward ${goal.x}, ${goal.z}, the island keeps the sun's shadow box with ${(share * 100).toFixed(1)}% of the free part of the frame the town's${whole ? ` and ${whole.id} whole in it` : ''}.`);
+          }
+          pans++;
+          assert(handed && !on, `Panning the sky island's file at ${w} x ${h} toward ${goal.x}, ${goal.z} never gives the town its shadow box back.`);
+        }
+      skyNav.shadow = `the sun's shadow box the sky island's own in its file on ${files.length} framings (the town's island at most ${(worst.rest * 100).toFixed(1)}% of the free part at rest, ${(worst.drift * 100).toFixed(1)}% through the drift), the town's in ${others} frames of its other files and its overview and on ${pans} pans from the file`;
+    }
+
     // (d) Hidden where a reading frame would cut a slice of it, and only there: in the People
     // chapter's frames (its row, and each home or the residence picked from it) and the reading
     // page's last shot, as the glide into them starts and back once the glide out has ended; never in
@@ -2458,5 +2617,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );

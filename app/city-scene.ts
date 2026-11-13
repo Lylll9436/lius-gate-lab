@@ -468,20 +468,61 @@ export function skyFit() {
 /**
  * The sun's shadow when the view is close in on the sky island (skyShadowWanted): its box, round
  * the island's own frame (`centre`, `radius`), in which the island casts on itself; the zoom from
- * which the view counts as close in (the second, and down to the first once it is), how many of
- * the town's waterline marks may show meanwhile (the second, and up to the first once it is) and
- * how long the shadows take to fade out before the box moves and to fade back in after.
+ * which the view counts as close in (the second, and down to the first once it is); how many marks
+ * of the land that must not show at all may show meanwhile (`land`, likewise up to the first once it
+ * is) and how much of the free part of the frame the town's own island may take (`shore`, likewise:
+ * a portrait phone's file shows a sliver of its north-west coast in the corner above the sheet, its
+ * beach and the grass behind it, the corner of a roof at the idle drift's extreme, 2.8% of the free
+ * part at rest and 3.9% through the drift at most); and how long the shadows take to fade out
+ * before the box moves and to fade back in after.
  */
-export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], land: [4, 2], fade: 0.18 };
+export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], land: [4, 2], shore: [0.05, 0.04], fade: 0.18 };
+/** The town's island out to its waterline (3.3 past its outline), as skyShadowWanted measures it. */
+const TOWN_WATERLINE = plan.islandOutline.map(([x, z]) => new T.Vector3(x, 0, z).multiplyScalar(1 + 3.3 / Math.hypot(x, z)));
+/**
+ * How much of the free part of the frame (x from -1 to `right`, y from `bottom` to 1, in the
+ * camera's clip space) a closed outline on the sea's level takes: the outline as `camera` projects
+ * it (a flat outline stays one simple polygon) clipped to that part, an edge at a time, its area as
+ * a share of the part's.
+ */
+function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom: number) {
+  const p = new T.Vector3();
+  let polygon: number[] = [];
+  for (const point of outline) {
+    p.copy(point).project(camera);
+    polygon.push(p.x, p.y);
+  }
+  for (const [axis, edge, side] of [[0, -1, 1], [0, right, -1], [1, bottom, 1], [1, 1, -1]]) {
+    const kept: number[] = [],
+      n = polygon.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n,
+        a = side * (polygon[2 * i + axis] - edge),
+        b = side * (polygon[2 * j + axis] - edge);
+      if (a >= 0) kept.push(polygon[2 * i], polygon[2 * i + 1]);
+      if (a >= 0 !== b >= 0) kept.push(polygon[2 * i] + ((polygon[2 * j] - polygon[2 * i]) * a) / (a - b), polygon[2 * i + 1] + ((polygon[2 * j + 1] - polygon[2 * i + 1]) * a) / (a - b));
+    }
+    polygon = kept;
+    if (!polygon.length) return 0;
+  }
+  let area = 0;
+  for (let i = 0, n = polygon.length / 2; i < n; i++) {
+    const j = (i + 1) % n;
+    area += polygon[2 * i] * polygon[2 * j + 1] - polygon[2 * j] * polygon[2 * i + 1];
+  }
+  return Math.abs(area) / 2 / ((right + 1) * (1 - bottom));
+}
 /**
  * Whether the sun's shadow should frame the sky island rather than the town. The island lies
  * outside the town's shadow box at most suns and bearings, and a box wide enough for both would
  * cost the whole town a fifth of its shadows' sharpness; so one box serves whichever the view is
  * on. It is the island's while the view is close in on it (SKY_SHADOW.zoom), its middle in the
- * frame, and next to none of the town's land (`land`: its waterline marks) shows in the part of
- * the frame the file's panel (`shift`) or sheet (`drop`) leaves free: the island's own file, and a
- * view panned or zoomed about it. `on` says it is the island's now, which it stays a little
- * longer either way.
+ * frame, and the town is next to absent from the part of the frame the file's panel (`shift`) or
+ * sheet (`drop`) leaves free: no more than SKY_SHADOW.land of `land`'s marks (the lighthouse's rock
+ * and the airport's island in the town's frames), and its own island (TOWN_WATERLINE) at most a
+ * sliver of it (SKY_SHADOW.shore), whose beach and grass go without shadows meanwhile. That is the
+ * island's own file, and a view panned or zoomed about it. `on` says it is the island's now, which
+ * it stays a little longer either way.
  */
 export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[], shift: number, drop: number, on: boolean) {
   const Z = SKY_SHADOW;
@@ -495,7 +536,7 @@ export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[],
     p.copy(mark).project(camera);
     if (p.x > -1 && p.x < right && p.y > bottom && p.y < 1 && ++seen > Z.land[on ? 0 : 1]) return false;
   }
-  return true;
+  return bandShare(TOWN_WATERLINE, camera, right, bottom) <= Z.shore[on ? 0 : 1];
 }
 
 /**
@@ -1161,8 +1202,11 @@ export async function createCity(
     SKY_FIT = skyFit();
   /** How far up the line of sight the sky island's framing raises its target from the ground (focusSky). */
   const SKY_LIFT = 6.5;
-  /** The town's land for skyShadowWanted: the waterline round the island, the lighthouse's rock and the airport's armour. */
-  const LAND_MARKS = islandMarks.filter((p) => p.y === 0);
+  /**
+   * The town's land that skyShadowWanted lets none of show: the lighthouse's rock and the airport's
+   * island to its armour's toe (it measures the town's own island by its waterline instead).
+   */
+  const LAND_MARKS = [new T.Vector3(rockX, 0, rockZ), ...plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z))];
   /** The reading frames that would show a cut slice of the sky island: the People chapter's places. */
   const SKY_HIDES = new Set<BuildingId>(plan.chapterSubjects.people);
   /**
