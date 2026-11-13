@@ -758,11 +758,17 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
 // Timed builds. Timed once by the wall clock, a build fails on a busy machine (or a slower one, as a
 // CI runner may be) with no change in its code. So a build timed here runs three times, and each
 // run is timed against a yardstick run just before and just after it (fixed three.js work of the
-// kind the builds do: cylinders turned and merged, their normals and box worked out): its time
-// over the pace those two give (their mean over YARDSTICK, the yardstick's ms when the limits were
-// set, on an Apple M5 Pro) is its time at the limits' pace. The fastest run at that pace is held
-// to the build's limit. A busy or slower machine is slower at both alike, and passes; each limit is
-// about three times what its build took when it was set, so a build five times slower fails.
+// kind the builds do: cylinders turned and merged, their normals and box worked out). The machine's
+// pace for the run is the faster of those two yardsticks over YARDSTICK (a fixed 12 ms, about the
+// yardstick's time in this check, on an Apple M5 Pro under the other lanes' load, when the limits
+// were first set), and the run's ms over that pace is its time at the limits' pace. The fastest run
+// at that pace is held to the build's limit. A busy or slower machine is slower at both alike, and
+// passes; each limit is about three times what its build takes at that pace (MAINTENANCE.md's
+// airport ground entry has the calibration), so a build five times slower fails. The faster
+// yardstick, not the two's mean: a pause (the collector clearing up after a phase, the machine busy
+// elsewhere) only ever slows a yardstick, and the one after a heavy phase often pays for it; paced
+// by the mean, such a run looked up to twice as fast as it ran, and the fastest of three was most
+// often that run.
 const YARDSTICK = 12,
   { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
 /** The yardstick's time, in ms. */
@@ -774,42 +780,45 @@ const yardstick = () => {
   merged.computeBoundingBox();
   return performance.now() - begin;
 };
-/** A run's time (ms) between yardsticks of `before` and `after` ms: { paced: its ms at the limits' pace, ms, pace }. */
+/** A run's time (ms) between yardsticks of `before` and `after` ms: { paced: its ms at the limits' pace, ms, pace, before, after }. */
 const atPace = (ms, before, after) => {
-  const pace = (before + after) / 2 / YARDSTICK;
-  return { paced: ms / pace, ms, pace };
+  const pace = Math.min(before, after) / YARDSTICK;
+  return { paced: ms / pace, ms, pace, before, after };
 };
+/** The fastest of a build's runs (each atPace's) at the limits' pace, with all of them (`runs`). */
+const fastestOf = (runs) => ({ ...runs.reduce((a, b) => (b.paced < a.paced ? b : a)), runs });
 /**
  * A build timed three times over: each run builds (timed) from what `setup` gives it (untimed).
- * Its fastest run at the limits' pace (atPace) and what the first run built.
+ * Its fastest run at the limits' pace (fastestOf) and what the first run built.
  */
 const timeBuild = (setup, build) => {
-  let fastest,
-    first,
+  const runs = [];
+  let first,
     before = yardstick();
   for (let run = 0; run < 3; run++) {
     const given = setup(),
       begin = performance.now(),
       built = build(given),
       ms = performance.now() - begin,
-      after = yardstick(),
-      time = atPace(ms, before, after);
-    if (!fastest || time.paced < fastest.paced) fastest = time;
+      after = yardstick();
+    runs.push(atPace(ms, before, after));
     if (!run) first = built;
     before = after;
   }
-  return { ...fastest, built: first };
+  return { ...fastestOf(runs), built: first };
 };
-/** Holds a timed build's fastest run (atPace) to its limit, in ms at the limits' pace. */
-const inTime = (what, { paced, ms, pace }, limit) =>
-  assert(paced < limit, `${what} takes ${Math.round(paced)} ms at the limits' pace, over its ${limit} ms (${Math.round(ms)} ms here, the yardstick at ${pace.toFixed(2)} times its ${YARDSTICK} ms).`);
+/** Holds a timed build's fastest run (fastestOf) to its limit, in ms at the limits' pace. */
+const inTime = (what, { paced, ms, pace, runs }, limit) =>
+  assert(
+    paced < limit,
+    `${what} takes ${Math.round(paced)} ms at the limits' pace, over its ${limit} ms (${Math.round(ms)} ms here, the faster yardstick at ${pace.toFixed(2)} times its ${YARDSTICK} ms; its runs ${runs.map((r) => `${Math.round(r.ms)} ms between yardsticks of ${r.before.toFixed(1)} and ${r.after.toFixed(1)}`).join(', ')}).`,
+  );
 // The page builds the same town a phase at a time, handing the main thread back in between. (Timed
 // builds, above: the town is built in phases three times over, a yardstick between every two
 // phases, each phase at its fastest.)
 const { buildTownInPhases } = await load('town-build');
 const phaseNames = [],
-  phaseTimes = new Map(),
-  stepTimes = [];
+  stepRuns = [];
 let phased;
 for (let run = 0; run < 3; run++) {
   let before = yardstick();
@@ -817,26 +826,26 @@ for (let run = 0; run < 3; run++) {
     const begin = performance.now(),
       step = phases.next(),
       ms = performance.now() - begin,
-      after = yardstick(),
-      time = atPace(ms, before, after);
-    if (!stepTimes[k] || time.paced < stepTimes[k].paced) stepTimes[k] = time;
+      after = yardstick();
+    (stepRuns[k] ??= []).push(atPace(ms, before, after));
     before = after;
     if (step.done) {
       phased ??= step.value;
       break;
     }
     if (!run) phaseNames.push(step.value);
-    phaseTimes.set(step.value, stepTimes[k]);
   }
 }
-const longestPhase = Math.max(...stepTimes.map((t) => t.ms));
+const stepTimes = stepRuns.map(fastestOf),
+  phaseTimes = new Map(phaseNames.map((name, k) => [name, stepTimes[k]])),
+  longestPhase = Math.max(...stepTimes.map((t) => t.ms));
 assert(phaseNames.length >= 10, 'The town is built in phases: ' + phaseNames.join(', '));
 assert.equal(new Set(phaseNames).size, phaseNames.length, 'Every phase has its own name.');
 // The airport's ground is built and batched in phases of its own (never in 'batch land', the
 // longest), each held to its own limit (timed builds, above), and its hall batches in its own phase too.
 assert.equal(phaseNames[phaseNames.indexOf('park, harbour and landmarks') + 1], 'airport ground', 'The airport ground is not built after the landmarks.');
 assert.equal(phaseNames[phaseNames.indexOf('batch land') + 1], 'batch airport', 'The airport is not batched right after the land.');
-for (const [name, limit] of [['airport ground', 150], ['batch airport', 150], ['batch departures hall', 75]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+for (const [name, limit] of [['airport ground', 150], ['batch airport', 170], ['batch departures hall', 90]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
 let phasedMeshes = 0,
   phasedTriangles = 0;
 phased.city.traverse((o) => {
@@ -5772,7 +5781,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       still = all.filter((m) => m.parent === root),
       movers = ctx.animated.map((e) => e.object);
     assert(all.length <= 14 && trisOf(all) <= 16000, `The garden costs ${all.length} meshes and ${trisOf(all)} triangles.`);
-    inTime('The garden\'s build', gardenTime, 100);
+    inTime('The garden\'s build', gardenTime, 85);
     assert.deepEqual(still.map((m) => `${m.material.userData.surfaceKind}|${m.castShadow}`).sort(), ['brass|false', 'stone|true', 'wood|true'], 'The garden\'s static parts do not merge into casting stone and timber and brass that casts nothing.');
     assert(movers.length === 9 && movers.every((o) => o.children.filter((c) => c.isMesh).length === 1), 'A moving part of the garden is not one mesh.');
     assert(ctx.lamps.length === 1 && globes.parent === lampSet && all.includes(globes) && !globes.material.vertexColors, 'The lamps\' globes were batched, or are not one mesh.');
@@ -6699,7 +6708,7 @@ let skyReport = '';
   assert.equal(phaseNames[phaseNames.indexOf('sky ground') + 1], 'sky rock', 'The sky island\'s rock is not sculpted in a phase of its own.');
   assert.equal(phaseNames[phaseNames.indexOf('batch airport') + 1], 'batch sky', 'The sky island is not batched right after the airport.');
   assert(phaseNames.includes('batch sky villa'), 'The sky island\'s villa is not batched in a phase of its own.');
-  for (const [name, limit] of [['sky ground', 450], ['sky rock', 150], ['batch sky', 50], ['batch sky villa', 200]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+  for (const [name, limit] of [['sky ground', 550], ['sky rock', 300], ['batch sky', 70], ['batch sky villa', 270]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   each(model.land, (p) => assert(Math.abs(p.x - S.x) > S.b + 4 || Math.abs(p.z - S.z) > S.a + 4, 'Something of the sky island is in the land\'s batch.'));
   // Nothing two-sided, nothing that cuts holes, nothing see-through (its water, foam and clouds are
   // opaque too); every mesh batched, with a surface kind (but the garden lamps' globes, the lamps' own
