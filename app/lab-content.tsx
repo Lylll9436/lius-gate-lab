@@ -748,10 +748,11 @@ function ContinueExploring({
 
 /**
  * The sky island's City file while a neighbour's record is published for it (Alison Heppenstall's).
- * Under the file's eyebrow (her name and her group's) and title (the island's): her role and
- * affiliation, her short profile, her group on a flat tint with the way out to its website, her
- * staff page, her full profile folded away as on a person's card, the villa, and the places next to
- * it. No photo of her, nor a monogram in its place: the site shows none.
+ * Under the file's eyebrow (her name and her group's) and title (the island's): her name again, for
+ * screen readers only, then her role and affiliation, her short profile, her group on a flat tint
+ * with the way out to its website, her staff page, her full profile folded away as on a person's
+ * card, the villa, and the places next to it. No photo of her, nor a monogram in its place: the
+ * site shows none.
  */
 function NeighbourFile({
   neighbour,
@@ -769,6 +770,9 @@ function NeighbourFile({
   return (
     <div className="record neighbour-file">
       <p className="neighbour-role">
+        {/* Her name, for a screen reader that starts at the focused title (the island's): only the
+            eyebrow above it names her. Hidden from view as the stage caption's chip is. */}
+        <span className="neighbour-name">{`${neighbour.title[locale]}${zh ? '，' : ', '}`}</span>
         <span className="eyebrow">{neighbour.role[locale]}</span>
         <span className="institution">{neighbour.affiliation[locale]}</span>
       </p>

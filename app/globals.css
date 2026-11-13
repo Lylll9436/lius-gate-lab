@@ -1619,6 +1619,22 @@ body:has(.mode-explore),
   gap: 4px;
   margin-bottom: 10px;
 }
+/* Her role and affiliation, the first facts in her file, in the text's own ink: the third ink, as on
+   a person's file, measured 2.2 to 2.9:1 over the sea glass by day. */
+.neighbour-role .eyebrow,
+.neighbour-role .institution {
+  color: var(--ink);
+}
+/* Her name, for screen readers only (the eyebrow above the title shows it): hidden as the stage
+   caption's chip is. */
+.neighbour-role .neighbour-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 /* Her profile in the text's own ink at its size, so that on a 1440 × 900 screen her group's button
    shows whole on the file's first screen, in English too. */
 .neighbour-file .record-lead {

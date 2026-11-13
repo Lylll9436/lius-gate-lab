@@ -626,6 +626,14 @@ const textsOf = (html) =>
   [...html.split(/<[^>]*>/), ...[...html.matchAll(/\saria-label="([^"]*)"/g)].map((m) => m[1])]
     .map((t) => decoded(t).trim())
     .filter(Boolean);
+/** A start tag's attributes, parsed: each name to its value (entities decoded; '' for one with no value), in any order. */
+const attrsOf = (tag) => Object.fromEntries([...tag.matchAll(/\s([^\s="'>/]+)(?:="([^"]*)")?/g)].map((m) => [m[1], decoded(m[2] ?? '')]));
+/** The elements of rendered markup in document order: each start tag's name, attributes and classes, and where it ends. */
+const elementsOf = (html) =>
+  [...html.matchAll(/<([a-z][\w-]*)(\s[^>]*)?>/g)].map((m) => {
+    const attrs = attrsOf(m[2] ?? '');
+    return { name: m[1], attrs, classes: (attrs.class ?? '').split(/\s+/).filter(Boolean), end: m.index + m[0].length };
+  });
 /**
  * The links off the site in rendered markup that do not open a new tab with neither a way back to
  * the page nor its address sent along: every https link and every target="_blank" must carry
@@ -922,8 +930,8 @@ async function siteOver(name, testCatalog) {
 }
 // The sky island's City file (#city/sky-island). The island keeps its name; while her record is
 // published its category names her and her group, as a home's names its resident's role (the file's
-// eyebrow, the Directory, the hover label), and its file is hers, in this order: her role and
-// affiliation, her short profile, her group (its full name, what it does, the one tie, and the way out
+// eyebrow, the Directory, the hover label), and its file is hers, in this order: her name (for screen
+// readers only), her role and affiliation, her short profile, her group (its full name, what it does, the one tie, and the way out
 // to its website, its address on the button and read aloud), her staff page, her full profile folded
 // away, the villa, and the places next to it. No photo of her, nor a monogram in its place. It stands
 // in the Directory and the tour after the Visiting PhD Residence and before the airport.
@@ -945,6 +953,7 @@ async function siteOver(name, testCatalog) {
       site = locale === 'zh' ? 'UIA 官网 · urban-ai.uk' : 'UIA website · urban-ai.uk',
       aria = locale === 'zh' ? 'UIA 官网：urban-ai.uk，在新标签页打开' : 'UIA website: urban-ai.uk, opens in a new tab';
     const order = [
+      alison.title[locale],
       alison.role[locale],
       alison.affiliation[locale],
       alison.summary[locale],
@@ -978,6 +987,32 @@ async function siteOver(name, testCatalog) {
     // Her full profile is folded away, a disclosure as on a person's card (its state is the browser's).
     assert(/<details class="neighbour-profile"><summary>[^<]*<svg/.test(html), 'Her full profile is not a closed disclosure.');
     assert(!/<img|portrait|monogram/.test(html), 'The island’s file shows a photo of her, or a monogram for one.');
+    // Her name opens the body, for a screen reader that starts at the focused title (the island's,
+    // with her name only in the eyebrow above it): the role line's first child, hidden from view.
+    const elements = elementsOf(html),
+      roleLine = elements.findIndex((e) => e.name === 'p' && e.classes.includes('neighbour-role')),
+      name = elements[roleLine + 1];
+    assert(
+      roleLine >= 0 &&
+        name?.name === 'span' &&
+        name.classes.includes('neighbour-name') &&
+        decoded(html.slice(name.end, html.indexOf('</span>', name.end))) === alison.title[locale] + (locale === 'zh' ? '，' : ', '),
+      'The island’s file (' + locale + ') does not name her at the start of its body, for a screen reader.',
+    );
+  }
+  // The role line: her name hidden as the stage caption's chip is (out of the flow, clipped to
+  // nothing), and her role and affiliation in the text's own ink, not the third ink, which measured
+  // 2.2 to 2.9:1 over the sea glass by day. Site-wide tokens are untouched.
+  {
+    const sheet = (await fs.readFile(path.join(root, 'app/globals.css'), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, ''),
+      declared = (selector) =>
+        [...sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+          .filter((m) => m[1].split(',').map((s) => s.trim()).includes(selector))
+          .flatMap((m) => m[2].split(';').map((d) => d.trim()));
+    for (const d of ['position: absolute', 'width: 1px', 'height: 1px', 'overflow: hidden', 'clip-path: inset(50%)'])
+      assert(declared('.neighbour-role .neighbour-name').includes(d), 'Her name in the island’s file is not hidden as the stage caption’s chip is: ' + d);
+    for (const selector of ['.neighbour-role .eyebrow', '.neighbour-role .institution'])
+      assert(declared(selector).includes('color: var(--ink)'), 'Her ' + selector.split(' .')[1] + ' line in the island’s file is not in the text’s own ink.');
   }
   // Were her record not published, the island would be the island's own again: its category and
   // summary, the villa and the places next to it, and nothing of hers or UIA's.
