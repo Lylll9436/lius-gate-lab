@@ -921,8 +921,9 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
     figure.userData.prebatched = true;
     root.add(figure);
     const update = (time: number) => {
+      // (alisonDay's answer carries poseAlison's options by their own names.)
       const day = plan.alisonDay(time),
-        { lift } = poseAlison(joints, held, day.pose, day.phase, { seat: day.seat, amount: day.amount, step: day.step, side: day.side, rest: day.rest });
+        { lift } = poseAlison(joints, held, day.pose, day.phase, day);
       figure.position.set(day.x, plan.skyTop(day.x, day.z) + lift, day.z);
       figure.rotation.y = day.heading;
     };

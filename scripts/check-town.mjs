@@ -4488,6 +4488,8 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 //   pose depends on nothing but its arguments; a walk of amount 0 is 'stand', and one phase of it
 //   is one of the residents' strides. The can's rose stays about ALISON.rose, ahead of her toes,
 //   and at the telescope her eye is behind the eyepiece ALISON places, looking down its tube.
+//   'take' bends her to the can where it stands and up again with it: her soles stay on her floor,
+//   and from the bottom of her stoop on her hand is on its handle.
 {
   const { createAlison, poseAlison, alisonHand, ALISON, ALISON_POSES, ALISON_HOLDS, ALISON_TELESCOPE, HAIR_SATURATION } = await load('sky-figure'),
     { createResident, animateResident, HEAD } = await load('city-people'),
@@ -4696,9 +4698,9 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     same = (a, b) => a.every((n, i) => Math.abs(n - b[i]) < 1e-12),
     grip = (prop, at) => v.set(...at).applyMatrix4(prop.matrixWorld).clone(),
     palm = [new T.Vector3(), new T.Vector3()],
-    shows = { water: ['can', 'water'], sip: ['cup', 'saucer'], set: ['cup', 'saucer'] },
+    shows = { water: ['can', 'water'], sip: ['cup', 'saucer'], set: ['cup', 'saucer'], take: ['can'] },
     phases = [...Array.from({ length: 25 }, (_, s) => s / 24), -0.25, 7.6];
-  assert.deepEqual([...ALISON_POSES], ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'rise', 'set']);
+  assert.deepEqual([...ALISON_POSES], ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'rise', 'set', 'take']);
   for (const name of ALISON_POSES)
     for (const seat of name === 'sit' || name === 'sip' || name === 'set' || name === 'rise' ? [undefined, 0.38] : [undefined])
       for (const phase of phases) {
@@ -4728,6 +4730,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
           name === 'water' ? [grip(props.can, ALISON_HOLDS.can), null]
           : name === 'sip' ? [grip(props.cup, ALISON_HOLDS.cup), grip(props.saucer, ALISON_HOLDS.saucer)]
           : name === 'telescope' ? ALISON_TELESCOPE.grips.map((c) => new T.Vector3(...c).applyMatrix4(root.matrixWorld))
+          : name === 'take' && T.MathUtils.clamp(phase, 0, 1) >= 0.42 ? [grip(props.can, ALISON_HOLDS.can), null]
           : [null, null];
         holds.forEach((h, k) => h && assert(palm[k].distanceTo(h) < 2e-3, `${at}: her hand ${k} is ${palm[k].distanceTo(h).toFixed(3)} off what it holds.`));
         // The same arguments give the same pose, whatever she did in between.
@@ -4985,6 +4988,143 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       assert(travel >= 0.15 && ways >= 2, `The lock ${k} down her back travels only ${travel.toFixed(3)} from side to side (${ways} changes of way): it hangs like a mop's strand, not a curl.`);
     }
   }
+}
+// Alison's can and her look through the telescope, as she takes them up and leaves them (lane C2b:
+// the six moments of her day that were one-frame switches, the can and its water at each border's
+// start and end and her stoop at the telescope), on her own build:
+// - each pose's ends are the poses either side of it, exactly: 'take' at 0 is 'stand' with the can
+//   standing where `can` says, and at 1 'stand' carrying it; 'water' with `lift`, `pour` and `front`
+//   at 0 is 'stand' carrying it; 'telescope' at `stoop` 0 is 'stand' (carrying the can, with
+//   `carry`); a walk of no gait carrying the can is 'stand' carrying it;
+// - carrying it (standing and through a stride), its handle is in her -x hand, it is level, and it
+//   keeps 0.02 or more from her legs;
+// - the can's tubes (its handle and its spout) face out the way their normals do (drawn one-sided,
+//   an inward tube shows its far wall and lets what is inside it show through);
+// - the water: shown only while some of it is out of the rose (`front` over 0) and not all of it
+//   down in the bed (`tail` under 1); its first bead never moves as the stream comes; coming, the
+//   beads go down the line in order, the lowest one with the front and none past its own place,
+//   all of them at their places at the front's full length; going, the beads keep their order, the
+//   top one leaves first and none is above the tail, all of them at the end `sink` past the last
+//   bead's place; and a small change of either moves no bead more than in proportion.
+{
+  const { createAlison, poseAlison, alisonHand, ALISON_HOLDS, ALISON_STREAM, ALISON_KERB } = await load('sky-figure'),
+    { createCityMaterials } = await load('city-materials'),
+    { root, joints, props } = createAlison(createCityMaterials().material),
+    v = new T.Vector3(),
+    parts = [joints.body, ...joints.legs, ...joints.knees, ...joints.arms, ...joints.elbows, ...Object.values(props)],
+    pose = (name, phase, opts = {}) => {
+      const { lift } = poseAlison(joints, props, name, phase, opts);
+      root.position.set(0, lift, 0);
+      root.updateMatrixWorld(true);
+      return lift;
+    },
+    snapshot = () => parts.flatMap((o) => [...o.matrixWorld.elements, o.visible ? 1 : 0]),
+    same = (a, b, eps = 1e-9) => a.length === b.length && a.every((n, i) => Math.abs(n - b[i]) < eps),
+    grip = (prop, at) => new T.Vector3(...at).applyMatrix4(prop.matrixWorld),
+    can = ALISON_KERB;
+  pose('stand', 0, { can });
+  const standing = snapshot();
+  pose('take', 0, { can });
+  assert(same(snapshot(), standing), "'take' at 0 is not 'stand' with the can where it stands.");
+  pose('stand', 0, { carry: true });
+  const carrying = snapshot();
+  for (const end of [
+    { what: "'take' at 1", name: 'take', phase: 1, opts: { can } },
+    { what: "'water' brought down (lift, pour and front 0)", name: 'water', phase: 0.37, opts: { lift: 0, pour: 0, front: 0 } },
+    { what: "'telescope' at stoop 0 carrying the can", name: 'telescope', phase: 0, opts: { stoop: 0, carry: true } },
+    { what: 'a walk of no gait carrying the can', name: 'walk', phase: 0.3, opts: { amount: 0, carry: true } },
+  ]) {
+    pose(end.name, end.phase, end.opts);
+    assert(same(snapshot(), carrying), `${end.what} is not 'stand' carrying the can.`);
+  }
+  pose('stand', 0);
+  const free = snapshot();
+  pose('telescope', 0, { stoop: 0 });
+  assert(same(snapshot(), free), "'telescope' at stoop 0 is not 'stand'.");
+  // Carrying: in her hand, level, clear of her legs (each leg a capsule from its hip through its
+  // knee to its shoe's middle, 0.065 thick at the thigh and 0.055 at the shin).
+  const segment = (p, a, b) => {
+      const ab = b.clone().sub(a),
+        t = T.MathUtils.clamp(p.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1);
+      return { d: p.distanceTo(a.clone().addScaledVector(ab, t)), t };
+    },
+    canMesh = props.can.children.find((m) => m.isMesh);
+  let legGap = Infinity,
+    handGap = 0,
+    tilt = 0;
+  for (let s = 0; s <= 24; s++) {
+    if (s < 24) pose('walk', s / 24, { carry: true });
+    else pose('stand', 0, { carry: true });
+    handGap = Math.max(handGap, alisonHand(joints, 0).applyMatrix4(root.matrixWorld).distanceTo(grip(props.can, ALISON_HOLDS.can)));
+    tilt = Math.max(tilt, 1 - new T.Vector3(0, 1, 0).applyQuaternion(props.can.getWorldQuaternion(new T.Quaternion())).y);
+    const legs = joints.legs.map((leg, k) => [leg.getWorldPosition(new T.Vector3()), joints.knees[k].getWorldPosition(new T.Vector3()), new T.Vector3(0, -0.135, 0.025).applyMatrix4(joints.knees[k].matrixWorld)]),
+      q = canMesh.geometry.attributes.position;
+    for (let i = 0; i < q.count; i++) {
+      v.fromBufferAttribute(q, i).applyMatrix4(canMesh.matrixWorld);
+      for (const [hip, knee, shoe] of legs) legGap = Math.min(legGap, segment(v, hip, knee).d - 0.065, segment(v, knee, shoe).d - 0.055);
+    }
+  }
+  assert(handGap < 2e-3 && tilt < 1e-9 && legGap >= 0.02, `Carrying the can, her hand is ${handGap.toFixed(4)} off its handle, it tips ${tilt.toExponential(1)}, or it comes ${legGap.toFixed(3)} from her leg.`);
+  // The can's tubes face out.
+  {
+    const q = canMesh.geometry.attributes.position,
+      n = canMesh.geometry.attributes.normal,
+      a = new T.Vector3(),
+      b = new T.Vector3(),
+      c = new T.Vector3();
+    let inward = 0;
+    for (let i = 0; i < q.count; i += 3) {
+      a.fromBufferAttribute(q, i);
+      b.fromBufferAttribute(q, i + 1);
+      c.fromBufferAttribute(q, i + 2);
+      const face = b.clone().sub(a).cross(c.clone().sub(a));
+      if (face.lengthSq() < 1e-14) continue;
+      const normal = new T.Vector3().fromBufferAttribute(n, i).add(v.fromBufferAttribute(n, i + 1)).add(new T.Vector3().fromBufferAttribute(n, i + 2));
+      if (face.dot(normal) < 0) inward++;
+    }
+    assert.equal(inward, 0, `${inward} faces of her can face inward.`);
+  }
+  // The water, as its front comes down and its tail goes after it (in her frame, along its own line).
+  const S = ALISON_STREAM,
+    last = (S.count - 1) * S.gap,
+    beadMesh = props.water.children.find((m) => m.isMesh),
+    per = beadMesh.geometry.attributes.position.count / S.count,
+    // Each bead's distance down the line from where the first sits when the stream is whole.
+    along = () => {
+      const q = beadMesh.geometry.attributes.position;
+      return Array.from({ length: S.count }, (_, k) => {
+        let y = 0;
+        for (let i = k * per; i < (k + 1) * per; i++) y += q.getY(i);
+        return -y / per;
+      });
+    };
+  let moved = 0;
+  for (const [front, tail] of [[0, 0], [1, 1], [0.6, 1]]) {
+    pose('water', 0.2, { front, tail });
+    assert(!props.water.visible, `The water shows at front ${front} and tail ${tail}.`);
+  }
+  let before = null;
+  for (let k = 1; k <= 40; k++) {
+    const front = k / 40;
+    pose('water', 0.2, { front, tail: 0 });
+    const at = along();
+    assert(props.water.visible && Math.abs(at[0]) < 1e-6 && at.every((d, i) => d <= i * S.gap + 1e-6 && (!i || d >= at[i - 1] - 1e-6)) && Math.abs(at.at(-1) - front * last) < 1e-6, `Coming (front ${front}), the beads are at ${at.map((d) => d.toFixed(3)).join(', ')} down the line.`);
+    if (before) moved = Math.max(moved, ...at.map((d, i) => Math.abs(d - before[i])));
+    before = at;
+  }
+  assert(before.every((d, i) => Math.abs(d - i * S.gap) < 1e-6), 'The whole stream is not each bead at its own place.');
+  for (let k = 1; k < 40; k++) {
+    const tail = k / 40;
+    pose('water', 0.2, { front: 1, tail });
+    const at = along(),
+      top = tail * (last + S.sink);
+    assert(props.water.visible && at.every((d, i) => d >= top - 1e-6 && d >= i * S.gap - 1e-6 && (!i || d >= at[i - 1] - 1e-6)) && at[0] > 0 === tail > 0, `Going (tail ${tail}), the beads are at ${at.map((d) => d.toFixed(3)).join(', ')} down the line.`);
+    moved = Math.max(moved, ...at.map((d, i) => Math.abs(d - before[i])));
+    before = at;
+  }
+  assert(before.every((d) => Math.abs(d - (39 / 40) * (last + S.sink)) < 1e-6), 'At its end the stream has not gone on down the line past its last bead.');
+  assert(moved <= ((last + S.sink) / 40) * 1.001, `A step of a fortieth moves a bead ${moved.toFixed(4)} down the line.`);
+  pose('stand', 0);
 }
 // The Wellington statue as built (before batching, at its own origin): the bronze stands on its
 // plate, touching it only over the plate (in at least three of its corners: three hooves down, one
@@ -7507,7 +7647,7 @@ let skyReport = '';
       { createBatch } = await load('town-batch'),
       { createCityMaterials } = await load('city-materials'),
       { skyBorder } = await load('town-sky'),
-      { createAlison, poseAlison, alisonHand, ALISON, ALISON_TELESCOPE, ALISON_HOLDS, ALISON_POSES } = await load('sky-figure'),
+      { createAlison, poseAlison, alisonHand, ALISON, ALISON_TELESCOPE, ALISON_HOLDS, ALISON_POSES, CAN_FOOT } = await load('sky-figure'),
       { TEA, TELESCOPE, FALL, CLOUD, GARDEN_LAMP, SKY_NIGHT } = G,
       slots = skySlots(),
       SEATS = plan.SKY_SEATS,
@@ -7979,9 +8119,14 @@ let skyReport = '';
     //   lawn; seated, her thighs are on her chair's seat; in a sidestep the planted foot stays put;
     // - at tea her hands are on the cup and the saucer, the cup resting on it between sips, and nothing
     //   of her is in her chair's back (its posts and rail, behind her hair), its seat or the table's top;
-    //   watering, her hand is on the can's handle, its rose over the bed, and the can clears the
-    //   border (its kerb, mound and blooms) all the way along both stretches; at the telescope her eye
-    //   is 0.05 to 0.08 behind its eyepiece, on its line of sight, and her hands on its tube;
+    //   watering, her hand is on the can's handle, its rose over the bed while the water shows, and the
+    //   can clears the border (its kerb, mound and blooms) all the way along both stretches; at the
+    //   telescope, once she is stooped to it, her eye is 0.05 to 0.08 behind its eyepiece, on its line
+    //   of sight, and her hands on its tube (her +x one, while her -x one holds the can at her side);
+    // - her can: in her hand whenever she has it (watering, carrying it, and from the bottom of her
+    //   stoop to take it up on); otherwise it stands exactly at its place (SKY_DAY.can), level and turned
+    //   as that says, on the west border's kerb: its foot on the kerb's top, nothing of it in the
+    //   border's mound or below its kerb;
     // - from the island's file (its bearing, at its own pitch) nothing of her ever shows over the
     //   villa's front door.
     {
@@ -7993,7 +8138,7 @@ let skyReport = '';
         legs = ['leg-left', 'leg-right'].map(joint),
         arms = ['arm-left', 'arm-right'].map(joint),
         joints = { root: her, body: joint('body'), legs, knees: legs.map((l) => l.getObjectByName('knee')), arms, elbows: arms.map((a) => a.getObjectByName('elbow')) },
-        held = { can: joint('watering-can'), cup: joint('teacup'), saucer: joint('saucer') },
+        held = { can: joint('watering-can'), cup: joint('teacup'), saucer: joint('saucer'), water: joint('water-stream') },
         /** Her pose at day time t, as the town's frame loop sets it; returns alisonDay's answer. */
         at = (t, night = 0, rain = 0) => {
           entry[0].update(t, night, rain);
@@ -8204,6 +8349,7 @@ let skyReport = '';
           return {
             b,
             k,
+            group: g,
             // The highest over a point's cell and its neighbours.
             height(x, z) {
               const ix = Math.round((x - x0) / cell),
@@ -8230,11 +8376,21 @@ let skyReport = '';
         eyeWorst = 0,
         handWorst = 0,
         tubeWorst = 0,
-        cupWorst = 0;
-      const seen = new Set();
+        cupWorst = 0,
+        placeWorst = 0;
+      const seen = new Set(),
+        canHome = new T.Vector3(D.can.x, D.can.y, D.can.z),
+        // Her can's handle in her -x hand.
+        canInHand = () => hand(0).distanceTo(grip(held.can, ALISON_HOLDS.can)) < 2e-3;
       for (let t = 0; t < D.period; t += 0.5) {
         const s = at(t);
         seen.add(s.pose);
+        // Her can: in her hand where she has it; elsewhere exactly at its place, level.
+        if (s.pose === 'water' || (s.pose === 'take' ? s.phase >= 0.42 : s.carry)) handWorst = Math.max(handWorst, hand(0).distanceTo(grip(held.can, ALISON_HOLDS.can)));
+        else {
+          const turn = new T.Euler().setFromQuaternion(held.can.getWorldQuaternion(new T.Quaternion()), 'YXZ');
+          placeWorst = Math.max(placeWorst, grip(held.can, CAN_FOOT).distanceTo(canHome), Math.abs(plan.angleDiff(turn.y, D.can.ry)), Math.abs(turn.x), Math.abs(turn.z));
+        }
         visit(her, (p) => {
           const [u, w] = fileFlat(p);
           if (u > doorBox[0] && u < doorBox[2] && w > doorBox[1] && w < doorBox[3]) overDoor++;
@@ -8254,18 +8410,17 @@ let skyReport = '';
             if (s.phase === 0) cupWorst = Math.max(cupWorst, grip(held.cup, [0.058, -0.037, 0]).distanceTo(grip(held.saucer, [0, 0.036, 0])));
           }
         } else if (s.pose !== 'rise') soleWorst = Math.max(soleWorst, Math.abs(soleGap()));
-        if (s.pose === 'telescope') {
+        if (s.pose === 'telescope' && s.stoop === 1) {
           const eye = new T.Vector3(0, 0.772, 0.137).applyMatrix4(joints.body.matrixWorld),
             toPiece = eyepiece.clone().sub(eye);
           eyeWorst = Math.max(eyeWorst, toPiece.length() < 0.05 || toPiece.length() > 0.08 ? Infinity : 1 - toPiece.normalize().dot(tube));
-          for (const k of [0, 1]) {
+          for (const k of s.carry ? [1] : [0, 1]) {
             const off = hand(k).sub(eyepiece),
               along = off.dot(tube);
             tubeWorst = Math.max(tubeWorst, Math.abs(off.clone().addScaledVector(tube, -along).length() - (ALISON_TELESCOPE.radius + 0.043)), along < -0.02 || along > 0.2 ? Infinity : 0);
           }
         }
         if (s.pose === 'water') {
-          handWorst = Math.max(handWorst, hand(0).distanceTo(grip(held.can, ALISON_HOLDS.can)));
           const bed = beds[s.station === 'water-east' ? 0 : 1];
           let rose = null;
           visit(held.can, (p) => {
@@ -8275,14 +8430,15 @@ let skyReport = '';
           });
           // (Over the kerb's own outline, drawn in at the border's outer end: the east one's east.)
           const [x0, x1] = bed.k ? [bed.b.x - bed.b.w / 2 + SKY_BEDS.trim, bed.b.x + bed.b.w / 2] : [bed.b.x - bed.b.w / 2, bed.b.x + bed.b.w / 2 - SKY_BEDS.trim];
-          assert(rose.x > x0 + 0.05 && rose.x < x1 - 0.05 && rose.z > bed.b.z - bed.b.d / 2 + 0.05 && rose.z < bed.b.z + bed.b.d / 2 - 0.05, `At ${t} s her can's rose is off the ${s.station} border, at ${fmt3(rose.x)}, ${fmt3(rose.z)}.`);
+          if (held.water.visible) assert(rose.x > x0 + 0.05 && rose.x < x1 - 0.05 && rose.z > bed.b.z - bed.b.d / 2 + 0.05 && rose.z < bed.b.z + bed.b.d / 2 - 0.05, `At ${t} s her can's rose is off the ${s.station} border, at ${fmt3(rose.x)}, ${fmt3(rose.z)}.`);
         }
       }
       // Through a sidestep (the east border's third): the planted foot (the left over the first half,
       // the right over the second) stays put, her lower sole on the lawn, the can over the border.
       {
         const act = D.acts.find((a) => a.kind === 'water' && a.station === 'water-east'),
-          t0 = act.t0 + W.first + 2 * (W.stepTime + W.pause),
+          // (Each stretch starts with the can coming up and tipping: SKY_WATERING's lift and tilt.)
+          t0 = act.t0 + W.lift + W.tilt + W.first + 2 * (W.stepTime + W.pause),
           shoe = (k) => new T.Vector3(0, -0.135, 0.025).applyMatrix4(joints.knees[k].matrixWorld),
           planted = [];
         let slide = 0;
@@ -8298,8 +8454,20 @@ let skyReport = '';
         }
         assert(slide < 0.005, `In a sidestep her planted foot slides ${fmt3(slide)}.`);
       }
+      // Her can's place: standing on the west border's kerb, its foot on the kerb's top, nothing of it
+      // in the border's mound or under its kerb (the border's own height, kerb, mound and blooms).
+      {
+        at(0);
+        const bed = beds[1],
+          kerb = bed.b.floor + 0.22,
+          foot = grip(held.can, CAN_FOOT);
+        let sunk = Infinity;
+        visit(held.can, (p) => (sunk = Math.min(sunk, p.y - bed.height(p.x, p.z))));
+        assert(!canInHand() && Math.abs(foot.y - kerb) < 1e-6 && bed.height(foot.x, foot.z) <= kerb + 1e-6 && sunk > -0.005 && Math.abs(D.can.y - kerb) < 1e-9, `Her can stands with its foot ${fmt3(foot.y - kerb)} off the west border's kerb, or goes ${fmt3(-sunk)} into the border.`);
+      }
       at(0);
-      assert(['sip', 'sit', 'stand', 'walk', 'water', 'telescope'].every((p) => seen.has(p)), `Her day shows only ${[...seen].join(', ')}.`);
+      assert(placeWorst < 1e-9, `Set down, her can strays ${placeWorst} from its place on the kerb.`);
+      assert(['sip', 'sit', 'stand', 'walk', 'water', 'telescope', 'take'].every((p) => seen.has(p)), `Her day shows only ${[...seen].join(', ')}.`);
       assert(overDoor === 0, `From the island's file ${overDoor} points of her show over the villa's front door.`);
       assert(soleWorst < 8e-3, `Standing, her lower sole is ${fmt3(soleWorst)} off the lawn.`);
       assert(handWorst < 2e-3 && cupWorst < 5e-3, `Her hands are ${fmt3(handWorst)} off the cup, the saucer or the can, or her cup ${fmt3(cupWorst)} off its saucer.`);
@@ -8309,13 +8477,18 @@ let skyReport = '';
       skyReport += `; Alison's day ${D.period} s (tea, the two borders, the telescope; ${(lawn * dt).toFixed(1)} s of it walking on the lawn by her chair), her hair ${fmt3(chairGap)} clear of her chair's back, her can ${fmt3(canGap)} over the borders`;
 
       // Her day frame by frame (the art review's seventh finding: getting up and sitting down were
-      // one-frame jumps of 0.5 sideways, her cup and saucer vanishing from her hands): in place, as
-      // the town poses her, a sixtieth of a second at a time over the whole day and on past its wrap,
-      // - her root never moves more than 0.03 in a frame;
-      // - her body, her legs, her arms and her props (each part's own points, where they show) never
-      //   jump more than 0.03 in a frame, and no prop comes or goes, but where she takes up or puts
-      //   away the watering can and its water and sets to or leaves the telescope (lane F's water and
-      //   telescope poses, which she takes and leaves standing still: only walk and stand blend);
+      // one-frame jumps of 0.5 sideways, her cup and saucer vanishing from her hands; lane C2b: the
+      // can and its water came and went and her stoop at the telescope set, in a frame, six times a
+      // day): in place, as the town poses her, a sixtieth of a second at a time over the whole day and
+      // on past its wrap,
+      // - her root never moves more than 0.015 in a frame;
+      // - her body, her legs, her arms and her props (each part's own points, where they show, the
+      //   water's beads among them) never jump more than 0.025 in a frame, anywhere in her day;
+      // - nothing of hers comes or goes where it could be seen: her can, her cup and her saucer always
+      //   show, and the water's flag changes only while nothing of it can be seen from any side (at the
+      //   frame it shows, rays from eight bearings at the file's pitch, the town's and a high one at
+      //   each of its beads' points meet the can or the border's bed first: it is inside the can's
+      //   rose, or down in the bed);
       // - getting up (SKY_TEA.rise to the end of its 'rise') and sitting down she comes out of her
       //   chair and goes back into it in no less than 0.8 s, and her cup and saucer stand on the
       //   table's top, at her place (SKY_DAY.saucer), from the moment she has set them down until she
@@ -8336,31 +8509,59 @@ let skyReport = '';
             }
             return out;
           },
-          // The moments a pose she takes standing still comes or goes (lane F's water and telescope).
-          standingSwitch = (a, b) => a.pose !== b.pose && [a.pose, b.pose].some((p) => p === 'water' || p === 'telescope') && [a.pose, b.pose].every((p) => p === 'water' || p === 'telescope' || p === 'stand'),
           worst = { root: 0, body: 0, legs: 0, arms: 0, props: 0 },
           rise = D.acts.filter((a) => a.kind === 'rise'),
-          saucerAt = new T.Vector3(D.saucer.x, D.saucer.y, D.saucer.z);
+          saucerAt = new T.Vector3(D.saucer.x, D.saucer.y, D.saucer.z),
+          // What can hide the water: her can and the borders' beds.
+          hiders = [],
+          looks = [],
+          ray = new T.Raycaster();
+        for (const g of [held.can, ...beds.map((b) => b.group)]) g.traverse((o) => o.isMesh && hiders.push(o));
+        for (const pitch of [SKY_PITCH, Math.atan2(35, 38), 1.2]) for (let k = 0; k < 8; k++) looks.push(new T.Vector3(-Math.sin((k * Math.PI) / 4) * Math.cos(pitch), -Math.sin(pitch), -Math.cos((k * Math.PI) / 4) * Math.cos(pitch)));
+        /** How many of the water's beads' points could be seen (as it is posed now). */
+        const waterSeen = () => {
+          const bead = held.water.children.find((m) => m.isMesh),
+            q = bead.geometry.attributes.position,
+            per = q.count / 4,
+            middle = new T.Vector3();
+          let count = 0;
+          for (let k = 0; k < 4; k++) {
+            middle.set(0, 0, 0);
+            for (let i = k * per; i < (k + 1) * per; i++) middle.add(v.fromBufferAttribute(q, i).applyMatrix4(bead.matrixWorld));
+            middle.divideScalar(per);
+            for (let i = k * per; i < (k + 1) * per; i += 3) {
+              const p = v.fromBufferAttribute(q, i).applyMatrix4(bead.matrixWorld).clone().lerp(middle, 0.03);
+              if (looks.some((d) => (ray.set(p.clone().addScaledVector(d, -4), d), (ray.far = 4 - 1e-4), !ray.intersectObjects(hiders, false).length))) count++;
+            }
+          }
+          return count;
+        };
         assert(rise.length === 2 && rise.every((a) => a.t1 - a.t0 >= 0.8) && rise[0].t0 === plan.SKY_TEA.rise, 'She does not get up and sit down, each over 0.8 s or more.');
         let prev = (at(0), sample()),
           prevDay = plan.alisonDay(0),
-          switches = 0,
+          flips = 0,
           awayWorst = 0;
         for (let n = 1; n <= Math.round(D.period / frame) + 60; n++) {
           const t = n * frame,
             day = at(t),
             now = sample();
           worst.root = Math.max(worst.root, now.root.distanceTo(prev.root));
-          assert(now.root.distanceTo(prev.root) <= 0.03, `At ${t.toFixed(3)} s her root jumps ${fmt3(now.root.distanceTo(prev.root))}.`);
-          if (standingSwitch(prevDay, day)) switches++;
-          else {
-            for (const k of Object.keys(parts)) {
-              let most = 0;
-              now[k].forEach((p, i) => p && prev[k][i] && (most = Math.max(most, p.distanceTo(prev[k][i]))));
-              worst[k] = Math.max(worst[k], most);
-              assert(most <= 0.03, `At ${t.toFixed(3)} s (${prevDay.pose} to ${day.pose}) her ${k} jump ${fmt3(most)}.`);
-            }
-            assert(now.vis.every((v, i) => v === prev.vis[i]), `At ${t.toFixed(3)} s (${prevDay.pose} to ${day.pose}) a prop of hers comes or goes.`);
+          assert(now.root.distanceTo(prev.root) <= 0.015, `At ${t.toFixed(3)} s her root jumps ${fmt3(now.root.distanceTo(prev.root))}.`);
+          for (const k of Object.keys(parts)) {
+            let most = 0;
+            now[k].forEach((p, i) => p && prev[k][i] && (most = Math.max(most, p.distanceTo(prev[k][i]))));
+            worst[k] = Math.max(worst[k], most);
+            assert(most <= 0.025, `At ${t.toFixed(3)} s (${prevDay.pose} to ${day.pose}) her ${k} jump ${fmt3(most)}.`);
+          }
+          const changed = Object.keys(held).filter((name, i) => now.vis[i] !== prev.vis[i]);
+          assert(changed.every((name) => name === 'water'), `At ${t.toFixed(3)} s (${prevDay.pose} to ${day.pose}) her ${changed.join(' and ')} comes or goes.`);
+          if (changed.length) {
+            // The water, where it is in the frame it shows.
+            flips++;
+            if (!held.water.visible) at(t - frame);
+            const seen = waterSeen();
+            if (!held.water.visible) at(t);
+            assert(seen === 0, `At ${t.toFixed(3)} s her water ${held.water.visible ? 'comes' : 'goes'} with ${seen} points of it in sight.`);
           }
           // Away from her chair, her cup and saucer stand at her place on the table.
           const inHands = day.pose === 'sip' || day.pose === 'set';
@@ -8368,14 +8569,15 @@ let skyReport = '';
             assert(held.saucer.visible && held.cup.visible, `At ${t.toFixed(3)} s her cup and saucer are gone.`);
             awayWorst = Math.max(awayWorst, grip(held.saucer, [0, 0, 0]).distanceTo(saucerAt));
           }
+          assert(held.can.visible, `At ${t.toFixed(3)} s her can is gone.`);
           prev = now;
           prevDay = day;
         }
         at(0);
-        assert(switches === 6 && awayWorst < 1e-6, `Her day takes up or leaves the can or the telescope ${switches} times, or her cup and saucer stray ${awayWorst} from her place on the table.`);
+        assert(flips === 4 && awayWorst < 1e-6, `Her water comes or goes ${flips} times in a day, not at each border's start and end, or her cup and saucer stray ${awayWorst} from her place on the table.`);
         const fromTable = TEA.top + slots.tea.y - D.saucer.y;
         assert(Math.abs(fromTable) < 1e-9, `Her saucer stands ${fromTable} off the tea table's top.`);
-        skyReport += `, frame by frame her root ${fmt3(worst.root)} and her joints and props ${fmt3(Math.max(worst.body, worst.legs, worst.arms, worst.props))} at most a sixtieth of a second, her cup and saucer left on the table while she is away`;
+        skyReport += `, frame by frame her root ${fmt3(worst.root)} and her joints and props ${fmt3(Math.max(worst.body, worst.legs, worst.arms, worst.props))} at most a sixtieth of a second (no switch of pose nor prop anywhere in it; her water out of sight each time it comes and goes), her cup and saucer left on the table while she is away`;
       }
 
       // The garden lamps never stand in front of her or behind her on screen (the art review's third
@@ -8455,8 +8657,8 @@ let skyReport = '';
             const tris = triangles(lamp);
             return flats.map((flat) => spans(tris, flat));
           }),
-          // Her body, and her cup and saucer only while they are in her hands.
-          hers = (s) => triangles(her, (m) => !(m.parent === held.cup || m.parent === held.saucer) || s.pose === 'sip' || s.pose === 'set'),
+          // Her body, her cup and saucer only while they are in her hands, and her can only while she has it.
+          hers = (s) => triangles(her, (m) => (!(m.parent === held.cup || m.parent === held.saucer) || s.pose === 'sip' || s.pose === 'set') && (m.parent !== held.can || canInHand())),
           step = 0.1,
           runs = plan.SKY_LAMPS.map(() => bearings.map(() => ({ from: -1, poses: new Set() }))),
           bad = [];
