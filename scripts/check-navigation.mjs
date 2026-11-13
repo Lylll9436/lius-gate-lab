@@ -2018,7 +2018,9 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // page.tsx's fileFrame as measured on the page, beside the file's panel on desktops
     // (the 460 px file and its 16 px margin and gutter: a shift of 492 / 2w), above the peeking sheet
     // on portrait phones (the masthead's foot at 58, the sheet's top 259.9 above the stage's foot: a
-    // drop of -100.95 / h) and above the 768 x 1024 tablet's sheet (-0.2629). There
+    // drop of -100.95 / h), beside the panel and above the bars on phones held sideways (where the
+    // camera comes down at the file's own fit, under SKY_SHADOW.zoom: SKY_SHADOW.low lets it count as
+    // close in) and above the 768 x 1024 tablet's sheet (-0.2629). There
     // - at the file's bearing and the next Rotate stop the island takes the box as the file settles
     //   and keeps it all through the idle drift; the other two stops, which look past the island at
     //   the town's west coast or at the airport, never keep it;
