@@ -811,20 +811,12 @@ function NeighbourFile({
 }
 
 /**
- * A text's first sentence: up to its first full stop, question or exclamation mark (in English one
- * followed by a space or the end), the whole text if it has none. A group's one-line introduction is
- * the first sentence of its summary.
- */
-const firstSentence = (text: string) =>
-  text.match(/^[\s\S]*?(?:[.!?](?=\s|$)|[。！？])/)?.[0] ?? text;
-
-/**
  * The reading page's Neighbours card, at the end of the chapter that hosts a neighbour's place
  * (About, for the sky island), after the chapter's own sections. On a flat tint as the island's
- * file's group: her group in one line (the first sentence of its summary), the neighbour as one of
- * its leaders, the one tie the sources state, and two ways on: the group's website, and her place
- * in the city. It is that place's reading address (#read/sky-island), so the island's "Read on the
- * page" lands here, its heading taking the focus.
+ * file's group: her group in one line (its intro, a sentence of its own in the record, never cut
+ * from its summary), the neighbour as one of its leaders, the one tie the sources state, and two
+ * ways on: the group's website, and her place in the city. It is that place's reading address
+ * (#read/sky-island), so the island's "Read on the page" lands here, its heading taking the focus.
  */
 function NeighboursCard({
   neighbour,
@@ -849,8 +841,8 @@ function NeighboursCard({
       </p>
       <p>
         {zh
-          ? `${firstSentence(group.summary.zh)}${neighbour.title.zh} 是 ${group.name.zh} 的团队负责人之一。`
-          : `${firstSentence(group.summary.en)} ${neighbour.title.en} is one of its group leaders.`}
+          ? `${group.intro.zh}${neighbour.title.zh} 是 ${group.name.zh} 的团队负责人之一。`
+          : `${group.intro.en} ${neighbour.title.en} is one of its group leaders.`}
       </p>
       <p className="neighbour-tie">{group.connection[locale]}</p>
       <div className="neighbours-actions">

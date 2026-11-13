@@ -79,6 +79,11 @@ export type NeighbourGroup = {
   name: Localized;
   /** Its full name as it writes it, kept in English in the Chinese copy too. */
   fullName: Localized;
+  /**
+   * It in one sentence, for the reading page's Neighbours card, which goes on with the neighbour as
+   * one of its leaders: a sentence that stands on its own, ending in a full stop.
+   */
+  intro: Localized;
   /** What it does, paraphrased from its own site. */
   summary: Localized;
   /** Its tie to Liu’s Gate as the sources state it, and nothing stronger. */
@@ -305,7 +310,14 @@ const neighbourKeys = [
   'sections',
   'links',
 ];
-const groupKeys = ['name', 'fullName', 'summary', 'connection', 'site'];
+const groupKeys = [
+  'name',
+  'fullName',
+  'intro',
+  'summary',
+  'connection',
+  'site',
+];
 /**
  * What is wrong with a neighbour's text, each fault in words of its own: a language missing or
  * blank, Chinese in the English, a Chinese text with no Chinese in it (the English pasted in,
@@ -416,12 +428,18 @@ function neighbourErrors(value: Record<string, unknown>): string[] {
     if (!object(group))
       errors.push(
         at +
-          '.group must be an object with name, fullName, summary, connection and site.',
+          '.group must be an object with name, fullName, intro, summary, connection and site.',
       );
     else {
       errors.push(...unknownKeys(at + '.group', group, groupKeys));
       // The group's names stay as it writes them (UIA, Urban Intelligence & Analytics).
-      for (const field of ['name', 'fullName', 'summary', 'connection'])
+      for (const field of [
+        'name',
+        'fullName',
+        'intro',
+        'summary',
+        'connection',
+      ])
         errors.push(
           ...textErrors(
             at + '.group.' + field,

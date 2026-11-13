@@ -29,6 +29,10 @@
       "en": "Urban Intelligence & Analytics",
       "zh": "Urban Intelligence & Analytics"
     },
+    "intro": {
+      "en": "UIA is a group that studies how cities work and how they change, using data, computer models and artificial intelligence.",
+      "zh": "UIA 是一个研究团队，用数据、计算机模型和人工智能来理解城市如何运行、如何变化。"
+    },
     "summary": {
       "en": "UIA is a group that studies how cities work and how they change, using data, computer models and artificial intelligence. It builds simulations of cities and the people who live in them, much of it with agent-based models, microsimulation and synthetic populations, so that decision-makers can try out what a policy might do before they commit to it. Its projects range across housing, transport, energy, health and the environment.",
       "zh": "UIA 是一个研究团队，用数据、计算机模型和人工智能来理解城市如何运行、如何变化。团队为城市及其居民建立仿真模型，多采用智能体模型、微观模拟与合成人口等方法，让决策者在定下政策之前，先看看它可能带来什么。项目涉及住房、交通、能源、健康与环境。"

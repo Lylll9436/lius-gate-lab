@@ -29,9 +29,13 @@
       "en": "Example Group",
       "zh": "Example Group"
     },
+    "intro": {
+      "en": "Example: the group in one sentence — replace before publishing.",
+      "zh": "示例：用一句话介绍这个团队，请替换。"
+    },
     "summary": {
-      "en": "Example one-line introduction of the group. Example description — replace before publishing",
-      "zh": "示例：一句话介绍这个团队。示例，请替换"
+      "en": "Example description of what the group does — replace before publishing",
+      "zh": "示例：这个团队做什么，请替换"
     },
     "connection": {
       "en": "Example tie, only as its own sources state it — replace before publishing",
