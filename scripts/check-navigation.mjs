@@ -918,7 +918,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       vertical = Math.max(53, 76 / aspect),
       camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
       controls = new OrbitControls(camera, null),
-      held = { T, Math, plan, camera, controls, shiftApplied: new T.Vector3(), tween: false, panSlack: Infinity, pitch: 0 },
+      held = { T, Math, plan, camera, controls, shiftApplied: new T.Vector3(), tween: false, panSlack: Infinity, pitch: 0, panPitch: 0 },
       pan = runInNewContext(panScript, held);
     controls.domElement = { clientWidth: w, clientHeight: h };
     Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true });
@@ -942,6 +942,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       worst = { move: 0, beyond: -Infinity, deck: -Infinity, lift: 0, reached: Infinity };
     return {
       held,
+      pan,
       ground,
       worst,
       // One frame: the pointer's move (if any), then the frame loop's hold and update.
@@ -1732,6 +1733,108 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       skyNav.sideways = `on phones on their side at its own fit, ${(sidewaysLow * 100).toFixed(1)}% of the way down at least, the island whole and its corners ${(sideways.fog * 100).toFixed(0)}% into the fog at most (${(sideways.town * 100).toFixed(0)}% in their widest view of the town)`;
       assert(seaReach < SEA_SIZE / 2 - 10, `Close in on the sky island at its pitch the frame sees ${seaReach.toFixed(0)} out, past the sea's ${SEA_SIZE / 2}.`);
       skyNav.file = `at its own pitch (${((filePitch * 180) / Math.PI).toFixed(0)} degrees, its ground point ${D.toFixed(1)} out in a pocket of ${((16 * Math.tan(scene.TOWN_PITCH)) / Math.tan(filePitch)).toFixed(1)})`;
+    }
+
+    // (c2b) Zoomed out from the pocket's edge (the 3D review's seventh finding): as the camera's pitch
+    // rises back to the town's over the two seconds of its ease, the pocket shrinks to the town
+    // pitch's reach (skyReach) and the line of sight swings the ground point along itself; held to
+    // the shrinking pocket, the view was drawn back toward the island by OrbitControls' own clamp,
+    // with no hand on it (58 px at 1440 x 900 from the pocket's far edge, 177 px from its side). Through
+    // three's real OrbitControls and the scene's own hold (holdPan, panRegion, skyReach), pitch step
+    // and aim: from the file at its pitch, a drag out to the pocket's edge (outward, to either side),
+    // a second's rest, then a zoom out past the file's close view with no input after it: the target
+    // stands still on screen all through the pitch's ease (under half a pixel in all); then a drag on
+    // outward is held within the slack the ease left (half a unit), and a drag back in takes that
+    // slack away again, on desktops and on phones on their side.
+    {
+      let pitchSource;
+      (function find(node) {
+        if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+        ts.forEachChild(node, find);
+      })(syntax);
+      assert(pitchSource, 'The pocket check must find the frame loop\'s pitch step.');
+      let still = 0,
+        absorbed = 0,
+        eases = 0;
+      for (const [w, h, shift, drop] of [[1440, 900, 492 / 2880, 0], [1280, 720, 492 / 2560, 0], landscapeFiles[0], landscapeFiles[3], landscapeFiles[7]])
+        for (const [dx, dy, way] of [[0, 8, 'out'], [8, 0, 'aside'], [-8, 0, 'to the other side']]) {
+          const { zoom: fit, low } = settles(w, h, shift, drop),
+            subject = view.target.clone().sub(view.shiftApplied),
+            drive = drivePan(fileBearing, w, h),
+            { held } = drive,
+            { camera, controls } = held,
+            align = () => {
+              camera.position.copy(controls.target).add(scene.viewOffset(fileBearing, new T.Vector3(), held.pitch));
+              camera.lookAt(controls.target);
+              camera.updateMatrixWorld();
+            };
+          // aim, as the scene asks it, about this frame's file (the fit is the frame's own).
+          frame(w, h, shift, fileBearing);
+          Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'] });
+          Object.assign(held, { pitch: low, panPitch: low });
+          controls.target.copy(subject);
+          camera.zoom = fit;
+          camera.updateProjectionMatrix();
+          align();
+          controls.update();
+          const pitchStep = runInNewContext(`${ts.transpileModule(pitchSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};pitchStep;`, {
+              Math,
+              T,
+              reduced: false,
+              dt: 1 / 60,
+              YAW_RATE: 2.5,
+              camera,
+              align,
+              aim: (zoom) => scene.aim(zoom),
+              get pitch() {
+                return held.pitch;
+              },
+              set pitch(p) {
+                held.pitch = p;
+              },
+            }),
+            frameOf = (px = 0, py = 0) => {
+              pitchStep();
+              return drive.frame(px, py);
+            },
+            out = () => {
+              const g = drive.ground(),
+                r = drive.pan.panRegion(g);
+              return g.distanceTo(r.centre) - r.radius;
+            };
+          for (let f = 0; f < 240; f++) frameOf(dx, dy);
+          for (let f = 0; f < 60; f++) frameOf();
+          // The zoom out (as a wheel's: the camera's zoom at once, the frame loop's pitch to follow).
+          camera.zoom = Math.min(1.15, 0.7 * fit);
+          camera.updateProjectionMatrix();
+          const start = controls.target.clone(),
+            pixels = () => {
+              const d = controls.target.clone().sub(start);
+              return Math.hypot(d.dot(new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0)), d.dot(new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1))) * ((h * camera.zoom) / (camera.top - camera.bottom));
+            };
+          let frames = 0;
+          for (; frames < 400 && Math.abs(scene.aim(camera.zoom) - held.pitch) > 0; frames++) frameOf();
+          for (let f = 0; f < 30; f++) frameOf();
+          eases++;
+          still = Math.max(still, pixels());
+          assert(frames > 60 && held.pitch === scene.aim(camera.zoom) && pixels() < 0.5, `Zoomed out from the sky island's pocket's edge (dragged ${way}) at ${w} x ${h}, the view moves ${pixels().toFixed(2)} px by itself over ${frames} frames of the pitch's ease.`);
+          // A drag on outward, now the pitch has settled: held within the slack the ease left.
+          const slack = held.panSlack;
+          absorbed = Math.max(absorbed, slack);
+          const g0 = drive.ground(),
+            outward = g0.clone().sub(new T.Vector3(S.x, 0, S.z)).setLength(60).add(g0);
+          for (let f = 0; f < 120; f++) {
+            const g = frameOf(...drive.toward(outward.x, outward.z));
+            const d = drive.pan.panRegion(g),
+              beyondPocket = g.distanceTo(d.centre) - d.radius;
+            assert(beyondPocket <= slack + 0.5, `Dragged on outward from the eased pocket (dragged ${way}) at ${w} x ${h}, the view gets ${beyondPocket.toFixed(2)} out of its region, past the slack of ${slack.toFixed(2)} the ease left.`);
+          }
+          // And dragged back in toward the island, the slack goes and stays gone.
+          for (let f = 0; f < 240; f++) frameOf(...drive.toward(S.x, S.z));
+          assert(held.panSlack < 0.5 && out() < 0.5, `Dragged back in after the eased pocket (dragged ${way}) at ${w} x ${h}, the view keeps ${held.panSlack.toFixed(2)} of slack.`);
+          Object.assign(view, { frameDrop: 0, focusedIds: [] });
+        }
+      skyNav.pocket = `a view zoomed out from the sky island's pocket's edge left where it stands through ${eases} pitch eases (${still.toFixed(2)} px at most, ${absorbed.toFixed(1)} of slack taken up at most)`;
     }
 
     // (c3) Rotate in its own file turns the island where it stands (the art review's first finding:
@@ -2726,5 +2829,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.sideways}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );

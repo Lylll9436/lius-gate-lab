@@ -996,7 +996,14 @@ export async function createCity(
    * touch, with its subject out of the regions (a glide between the People side and the airport
    * crosses open water, 2.5 out): the visitor is then handed the view where it is, held within how
    * far out it was (`panSlack`, which only ever shrinks until the next glide), and can only pan it
-   * back in. Pulled in at once, the view jumped as the touch landed.
+   * back in. Pulled in at once, the view jumped as the touch landed. And while the camera's pitch
+   * changes (the sky island's file zoomed out past its close view, or back in), the regions move
+   * under a view that stands still: the island's pocket shrinks as the pitch rises (skyReach), and
+   * the line of sight swings the ground point along itself. The slack then grows to take up whatever
+   * that puts the view out by (`panPitch`, the pitch at the last hold), so the clamp never pulls it:
+   * zoomed out from the pocket's edge, OrbitControls drew the view 58 px back toward the island over
+   * the two seconds of the pitch's ease at 1440 x 900, with no hand on it. A drag meanwhile is still
+   * held by the last frame's limit, and once the pitch has settled the slack only shrinks again.
    */
   function holdPan() {
     const back = panBack.copy(camera.position).sub(controls.target).normalize(),
@@ -1008,8 +1015,10 @@ export async function createCity(
     }
     const lift = (ground.y - excess) / back.y;
     ground.addScaledVector(back, -ground.y / back.y);
-    const region = panRegion(ground);
-    panSlack = tween ? Infinity : Math.min(panSlack, Math.max(0, ground.distanceTo(region.centre) - region.radius));
+    const region = panRegion(ground),
+      out = Math.max(0, ground.distanceTo(region.centre) - region.radius);
+    panSlack = tween ? Infinity : pitch !== panPitch && panSlack < Infinity ? Math.max(panSlack, out) : Math.min(panSlack, out);
+    panPitch = pitch;
     controls.cursor.copy(shiftApplied).add(region.centre).addScaledVector(back, lift);
     controls.maxTargetRadius = tween ? Infinity : region.radius + panSlack;
   }
@@ -1066,8 +1075,10 @@ export async function createCity(
     targetZoom = 1,
     shownZoom = 1,
     tween = true,
-    // How far out of the pan regions the visitor was handed the view (holdPan).
+    // How far out of the pan regions the visitor was handed the view (holdPan), and the pitch the
+    // last hold was made at.
     panSlack = Infinity,
+    panPitch = 0,
     planMode = false,
     inViewport = true,
     inspect: T.Group | null = null,
