@@ -594,9 +594,12 @@ export default function Home() {
       // The read-through ends on the whole island once the footer comes into view. (Even at
       // the bottom of the page the footer stays below the reading line on most screens, so
       // its arrival is the cue: the reader is then on the last chapter's closing lines.)
+      // More than a pixel of it: the last chapter is at least a screen tall, and opened at
+      // its top (a fraction of a pixel off, as the cards above it leave it) the footer can
+      // sit a fraction of a pixel inside the window with only that chapter on screen.
       const footer = document.querySelector<HTMLElement>('.site-footer');
       setEnding(
-        !!footer && footer.getBoundingClientRect().top < window.innerHeight,
+        !!footer && footer.getBoundingClientRect().top < window.innerHeight - 1,
       );
       // Keep a deeper address (a person) while their chapter is the active one.
       // The address is checked now, not in the state update below: React may run

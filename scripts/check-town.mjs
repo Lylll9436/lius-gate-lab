@@ -755,32 +755,88 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
   });
   assert(netVertices > 50, 'The drying net is missing from the no-shadow cloth.');
 }
-// The page builds the same town a phase at a time, handing the main thread back in between.
+// Timed builds. Timed once by the wall clock, a build fails on a busy machine (or a slower one, as a
+// CI runner may be) with no change in its code. So a build timed here runs three times, and each
+// run is timed against a yardstick run just before and just after it (fixed three.js work of the
+// kind the builds do: cylinders turned and merged, their normals and box worked out): its time
+// over the pace those two give (their mean over YARDSTICK, the yardstick's ms when the limits were
+// set, on an Apple M5 Pro) is its time at the limits' pace. The fastest run at that pace is held
+// to the build's limit. A busy or slower machine is slower at both alike, and passes; each limit is
+// about three times what its build took when it was set, so a build five times slower fails.
+const YARDSTICK = 12,
+  { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+/** The yardstick's time, in ms. */
+const yardstick = () => {
+  const begin = performance.now(),
+    turn = new T.Matrix4(),
+    merged = mergeGeometries(Array.from({ length: 240 }, (_, i) => new T.CylinderGeometry(0.3, 0.4, 1, 18, 3).applyMatrix4(turn.makeRotationY(i * 0.7).setPosition(i % 13, i % 7, i % 11))));
+  merged.computeVertexNormals();
+  merged.computeBoundingBox();
+  return performance.now() - begin;
+};
+/** A run's time (ms) between yardsticks of `before` and `after` ms: { paced: its ms at the limits' pace, ms, pace }. */
+const atPace = (ms, before, after) => {
+  const pace = (before + after) / 2 / YARDSTICK;
+  return { paced: ms / pace, ms, pace };
+};
+/**
+ * A build timed three times over: each run builds (timed) from what `setup` gives it (untimed).
+ * Its fastest run at the limits' pace (atPace) and what the first run built.
+ */
+const timeBuild = (setup, build) => {
+  let fastest,
+    first,
+    before = yardstick();
+  for (let run = 0; run < 3; run++) {
+    const given = setup(),
+      begin = performance.now(),
+      built = build(given),
+      ms = performance.now() - begin,
+      after = yardstick(),
+      time = atPace(ms, before, after);
+    if (!fastest || time.paced < fastest.paced) fastest = time;
+    if (!run) first = built;
+    before = after;
+  }
+  return { ...fastest, built: first };
+};
+/** Holds a timed build's fastest run (atPace) to its limit, in ms at the limits' pace. */
+const inTime = (what, { paced, ms, pace }, limit) =>
+  assert(paced < limit, `${what} takes ${Math.round(paced)} ms at the limits' pace, over its ${limit} ms (${Math.round(ms)} ms here, the yardstick at ${pace.toFixed(2)} times its ${YARDSTICK} ms).`);
+// The page builds the same town a phase at a time, handing the main thread back in between. (Timed
+// builds, above: the town is built in phases three times over, a yardstick between every two
+// phases, each phase at its fastest.)
 const { buildTownInPhases } = await load('town-build');
 const phaseNames = [],
-  phaseTimes = new Map();
-let longestPhase = 0,
-  phased;
-for (const phases = buildTownInPhases(); ; ) {
-  const begin = performance.now(),
-    step = phases.next(),
-    took = performance.now() - begin;
-  longestPhase = Math.max(longestPhase, took);
-  if (step.done) {
-    phased = step.value;
-    break;
+  phaseTimes = new Map(),
+  stepTimes = [];
+let phased;
+for (let run = 0; run < 3; run++) {
+  let before = yardstick();
+  for (let k = 0, phases = buildTownInPhases(); ; k++) {
+    const begin = performance.now(),
+      step = phases.next(),
+      ms = performance.now() - begin,
+      after = yardstick(),
+      time = atPace(ms, before, after);
+    if (!stepTimes[k] || time.paced < stepTimes[k].paced) stepTimes[k] = time;
+    before = after;
+    if (step.done) {
+      phased ??= step.value;
+      break;
+    }
+    if (!run) phaseNames.push(step.value);
+    phaseTimes.set(step.value, stepTimes[k]);
   }
-  phaseNames.push(step.value);
-  phaseTimes.set(step.value, took);
 }
+const longestPhase = Math.max(...stepTimes.map((t) => t.ms));
 assert(phaseNames.length >= 10, 'The town is built in phases: ' + phaseNames.join(', '));
 assert.equal(new Set(phaseNames).size, phaseNames.length, 'Every phase has its own name.');
 // The airport's ground is built and batched in phases of its own (never in 'batch land', the
-// longest), each well under a fifth of a second, and its hall batches in its own phase too.
+// longest), each held to its own limit (timed builds, above), and its hall batches in its own phase too.
 assert.equal(phaseNames[phaseNames.indexOf('park, harbour and landmarks') + 1], 'airport ground', 'The airport ground is not built after the landmarks.');
 assert.equal(phaseNames[phaseNames.indexOf('batch land') + 1], 'batch airport', 'The airport is not batched right after the land.');
-for (const name of ['airport ground', 'batch airport', 'batch departures hall'])
-  assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
+for (const [name, limit] of [['airport ground', 150], ['batch airport', 150], ['batch departures hall', 75]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
 let phasedMeshes = 0,
   phasedTriangles = 0;
 phased.city.traverse((o) => {
@@ -5312,27 +5368,29 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   // The budget, batched as the island will batch it: static parts with the deck as their floor, moving
   // parts one by one.
   {
-    const { ctx, garden, batch } = fresh(),
-      deck = 10.472,
-      root = new T.Group(),
-      begin = performance.now();
-    root.position.set(-52, deck, -24);
-    root.rotation.y = 0.4;
-    const put = (g, x, y, z, ry = 0) => {
-      g.position.set(x, y, z);
-      g.rotation.y = ry;
-      root.add(g);
-      return g;
-    };
-    const pale = [put(garden.fall({ seed: 1 }), 6, 0, 0, Math.PI / 2), put(garden.fall({ seed: 2 }), -6, 0, 0, -Math.PI / 2), put(garden.cloud({ seed: 1 }), 9, 1, 3), put(garden.cloud({ seed: 2, size: 0.8 }), -9, 2, -3)];
-    for (const k of [1, 2, 3]) put(garden.floatingRock({ seed: k, size: 0.4 + 0.15 * k }), 8, -3, k * 2);
-    put(garden.teaTable(), 0, 0, 3);
-    put(garden.telescope(), 4, 0, 3);
-    const lampSet = put(garden.gardenLamps([{ x: -2, z: 4 }, { x: 2, z: 4 }, { x: -2, z: 5 }, { x: 2, z: 5 }]), 0, 0, 0);
-    put(garden.urn(), -3, 0, 2);
-    put(garden.urn(), 3, 0, 2);
-    root.updateMatrixWorld(true);
-    const built = performance.now() - begin,
+    const deck = 10.472,
+      // (Timed builds, above: each run from a context of its own; the checks below take the first.)
+      gardenTime = timeBuild(fresh, ({ ctx, garden, batch }) => {
+        const root = new T.Group();
+        root.position.set(-52, deck, -24);
+        root.rotation.y = 0.4;
+        const put = (g, x, y, z, ry = 0) => {
+          g.position.set(x, y, z);
+          g.rotation.y = ry;
+          root.add(g);
+          return g;
+        };
+        const pale = [put(garden.fall({ seed: 1 }), 6, 0, 0, Math.PI / 2), put(garden.fall({ seed: 2 }), -6, 0, 0, -Math.PI / 2), put(garden.cloud({ seed: 1 }), 9, 1, 3), put(garden.cloud({ seed: 2, size: 0.8 }), -9, 2, -3)];
+        for (const k of [1, 2, 3]) put(garden.floatingRock({ seed: k, size: 0.4 + 0.15 * k }), 8, -3, k * 2);
+        put(garden.teaTable(), 0, 0, 3);
+        put(garden.telescope(), 4, 0, 3);
+        const lampSet = put(garden.gardenLamps([{ x: -2, z: 4 }, { x: 2, z: 4 }, { x: -2, z: 5 }, { x: 2, z: 5 }]), 0, 0, 0);
+        put(garden.urn(), -3, 0, 2);
+        put(garden.urn(), 3, 0, 2);
+        root.updateMatrixWorld(true);
+        return { ctx, batch, root, pale, lampSet };
+      }),
+      { ctx, batch, root, pale, lampSet } = gardenTime.built,
       globes = ctx.lamps[0];
     batch(root, { floor: () => deck });
     for (const entry of ctx.animated) batch(entry.object, { contact: 'none' });
@@ -5341,7 +5399,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       still = all.filter((m) => m.parent === root),
       movers = ctx.animated.map((e) => e.object);
     assert(all.length <= 14 && trisOf(all) <= 16000, `The garden costs ${all.length} meshes and ${trisOf(all)} triangles.`);
-    assert(built < 300, `The garden takes ${Math.round(built)} ms to build.`);
+    inTime('The garden\'s build', gardenTime, 100);
     assert.deepEqual(still.map((m) => `${m.material.userData.surfaceKind}|${m.castShadow}`).sort(), ['brass|false', 'stone|true', 'wood|true'], 'The garden\'s static parts do not merge into casting stone and timber and brass that casts nothing.');
     assert(movers.length === 9 && movers.every((o) => o.children.filter((c) => c.isMesh).length === 1), 'A moving part of the garden is not one mesh.');
     assert(ctx.lamps.length === 1 && globes.parent === lampSet && all.includes(globes) && !globes.material.vertexColors, 'The lamps\' globes were batched, or are not one mesh.');
@@ -6266,12 +6324,12 @@ let skyReport = '';
   assert(her && her.userData.keepSeparate && her.userData.prebatched, 'Alison is not on the sky island\'s root, a pivot of her own outside its batches.');
   assert.deepEqual(sky.root.children, [sky.land, sky.rock, sky.air, sky.shell, her], 'The sky island\'s root holds something else than its ground, its rock, its air, its villa and Alison.');
   assert(sky.shell.position.equals(new T.Vector3(site.x, site.y, site.z)) && sky.shell.rotation.y === site.rotation && sky.land.position.lengthSq() === 0 && sky.rock.position.lengthSq() === 0, 'The villa\'s shell is not in its own frame on the deck.');
-  // Built and batched in phases of its own (never in 'batch land', the longest), each well under a fifth of a second.
+  // Built and batched in phases of its own (never in 'batch land', the longest), each held to its own limit (timed builds, above).
   assert.equal(phaseNames[phaseNames.indexOf('airport ground') + 1], 'sky ground', 'The sky island\'s ground is not built after the airport\'s.');
   assert.equal(phaseNames[phaseNames.indexOf('sky ground') + 1], 'sky rock', 'The sky island\'s rock is not sculpted in a phase of its own.');
   assert.equal(phaseNames[phaseNames.indexOf('batch airport') + 1], 'batch sky', 'The sky island is not batched right after the airport.');
   assert(phaseNames.includes('batch sky villa'), 'The sky island\'s villa is not batched in a phase of its own.');
-  for (const name of ['sky ground', 'sky rock', 'batch sky', 'batch sky villa']) assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
+  for (const [name, limit] of [['sky ground', 450], ['sky rock', 150], ['batch sky', 50], ['batch sky villa', 200]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   each(model.land, (p) => assert(Math.abs(p.x - S.x) > S.b + 4 || Math.abs(p.z - S.z) > S.a + 4, 'Something of the sky island is in the land\'s batch.'));
   // Nothing two-sided, nothing that cuts holes, nothing see-through (its water, foam and clouds are
   // opaque too); every mesh batched, with a surface kind (but the garden lamps' globes, the lamps' own
@@ -6852,13 +6910,25 @@ let skyReport = '';
         // behind them.)
         if (!drift) {
           let seen = 0;
-          // (About two thousand of its still points a bearing: a ray against the island costs some milliseconds.)
-          for (let k = 0; k < still.length; k += Math.ceil(still.length / 2000)) {
-            through(still[k]);
-            if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(still[k]) ?? 1) > 0.01) continue;
+          // One still point of it in each 0.6 square of the screen, the one nearest the camera (about
+          // four hundred a bearing: a ray against the island costs some milliseconds).
+          const front = new Map();
+          for (const p of still) {
+            const [u, w] = flat(p),
+              cell = Math.floor(u / 0.6) + ' ' + Math.floor(w / 0.6),
+              near = p.dot(back);
+            if (!(front.get(cell)?.near >= near)) front.set(cell, { p, near });
+          }
+          for (const { p } of front.values()) {
+            through(p);
+            const hits = ray.intersectObjects(roots, true);
+            if ((hits[0]?.point.distanceTo(p) ?? 1) > 0.01) continue;
             seen++;
-            const picked = pickTarget(ray, models, model.parkHit, pick);
-            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${still[k].toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
+            // pickTarget casts this same ray at the island's root again: it is handed the island's own
+            // hits from the cast above, as that cast gives them (the same ray, the same meshes).
+            const own = hits.filter((h) => under(h.object, sky.root)),
+              picked = pickTarget(Object.create(ray, { intersectObject: { value: (o, ...rest) => (o === sky.root ? own : ray.intersectObject(o, ...rest)) } }), models, model.parkHit, pick);
+            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${p.toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
           }
           assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
           seenAll += seen;
@@ -8087,19 +8157,25 @@ let skyReport = '';
     { createNature } = await load('town-nature'),
     { createKit } = await load('town-kit'),
     { createCityMaterials, wallWash, washLight, WASH_PEAK } = await load('city-materials'),
-    library = createCityMaterials(),
-    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
-    kit = createKit(ctx),
     town = model.sky,
     site = plan.sites['sky-island'],
-    shell = new T.Group(),
-    begin = performance.now();
-  // On its site on the deck, as town-build stands the town's own shell (the town is built in summer).
-  shell.position.copy(town.shell.position);
-  shell.rotation.copy(town.shell.rotation);
-  createSkyVilla(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSkyVilla(shell, site);
-  shell.updateMatrixWorld(true);
-  const built = performance.now() - begin;
+    // (Timed builds, above: each run from a context of its own; the checks below take the first.)
+    villaTime = timeBuild(
+      () => {
+        const library = createCityMaterials(),
+          ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] };
+        return { ctx, kit: createKit(ctx), shell: new T.Group() };
+      },
+      ({ ctx, kit, shell }) => {
+        // On its site on the deck, as town-build stands the town's own shell (the town is built in summer).
+        shell.position.copy(town.shell.position);
+        shell.rotation.copy(town.shell.rotation);
+        createSkyVilla(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSkyVilla(shell, site);
+        shell.updateMatrixWorld(true);
+        return { ctx, shell };
+      },
+    ),
+    { ctx, shell } = villaTime.built;
   {
     // (Box3.setFromObject's precise reach: every vertex, as the batches have them.)
     const mine = new T.Box3().setFromObject(shell, true),
@@ -8431,13 +8507,13 @@ let skyReport = '';
     for (const u of [b.max.y - 0.04 - w.y, b.min.y - w.y]) assert(wallWash(0, u, w.half) < 0.02, `A lamp's wash reaches its pier's end (${u.toFixed(2)} from it).`);
     assert(Math.abs(w.x - (b.min.x + b.max.x) / 2) < 1e-6 && w.half <= (b.max.x - b.min.x) / 2 + 1e-6 && wallWash(w.half, 0.3, w.half) === 0, `A lamp's wash spills past its pier's sides (lamp ${w.x.toFixed(3)}, half ${w.half}; pier ${b.min.x.toFixed(3)} to ${b.max.x.toFixed(3)}).`);
   }
-  // The town's own villa, batched in its own phase ('batch sky villa', held under 200 ms with the
+  // The town's own villa, batched in its own phase ('batch sky villa', held to its limit with the
   // island's other phases in the block before), its contact shade from the lawn under it.
   const batched = meshesOf(town.shell);
   let tris = 0;
   for (const m of batched) tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
   assert(batched.length <= 16 && tris <= 45000, `The villa costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
-  assert(built < 200, `The villa takes ${Math.round(built)} ms to build.`);
+  inTime('The villa\'s build', villaTime, 150);
   const solid = batched.filter((m) => !['glass', 'paving'].includes(m.material.userData.surfaceKind));
   assert(new Set(solid.map((m) => m.material.customProgramCacheKey())).size === 1 && solid[0].material.customProgramCacheKey() === 'lius-bake-solid', 'The villa\'s solids do not share the bake program.');
   for (const m of batched) {

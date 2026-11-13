@@ -165,6 +165,28 @@ assert.deepEqual(nav.pickRoute('reading', 'sky-island'), ['city', 'sky-island'])
     ).length === 1;
   assert(routed, 'A pick on the model no longer goes through pickRoute (page.tsx, createCity’s pick callback): the sky island would not open in the city from the reading page.');
 }
+// The read-through ends on the whole island once the footer is more than a pixel into the window
+// (page.tsx: the argument of the setEnding that reads the footer, from its syntax tree, run against
+// footers about the window's foot). The last chapter is at least a screen tall, and opened at its
+// top a fraction of a pixel off (as the cards above it leave it) the footer sat 0.22 px inside a
+// 1440 x 900 window: About opened on the end shot, not the gate.
+{
+  const file = 'app/page.tsx',
+    tree = ts.createSourceFile(file, await fs.readFile(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+    tests = [];
+  (function find(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === 'setEnding' && node.arguments.length === 1 && /\bfooter\b/.test(node.arguments[0].getText(tree))) tests.push(node.arguments[0].getText(tree));
+    ts.forEachChild(node, find);
+  })(tree);
+  assert.equal(tests.length, 1, 'The end shot check must find the one setEnding that reads the footer.');
+  const test = ts.transpileModule(`(${tests[0]});`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText,
+    ending = (top, innerHeight) => runInNewContext(test, { footer: top === null ? null : { getBoundingClientRect: () => ({ top }) }, window: { innerHeight } });
+  assert(
+    [[899.78, 900], [900.19, 900], [1080.05, 1080], [899.5, 900], [null, 900]].every(([top, h]) => !ending(top, h)) &&
+      [[890, 900], [649.28, 900], [829.05, 1080]].every(([top, h]) => ending(top, h)),
+    'The reading page ends on the whole island with its footer under a pixel into the window, or not once the footer is well in view (page.tsx, setEnding).',
+  );
+}
 // The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
 // and the overview's list of places names it there too.
 assert.deepEqual(nav.readingChapters, [
@@ -1508,10 +1530,15 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         return out;
       };
     assert(filePitch > (28 * Math.PI) / 180 - 1e-9 && filePitch < (34 * Math.PI) / 180 && scene.TOWN_PITCH === Math.atan2(35, 38), 'The sky island\'s file no longer comes down to about 30 degrees, or the town\'s pitch moved.');
-    // (Its idle drift turns SKY_DRIFT as far as the town's: city-scene reads it off the pitch.)
+    // (Its idle drift turns SKY_DRIFT as far as the town's: city-scene reads it off the pitch. Its
+    // own drift code (driftAt, above) run idle through the drift's minute and a half, a second
+    // apart, each frame long enough to reach its target (blend 3): at the town's pitch it swings
+    // 0.16 either way (drifts, above), at the island's (pitch 1) SKY_DRIFT of that throughout.)
     const SKY_DRIFT = Number(/\bSKY_DRIFT = ([\d.]+)[,;]/.exec(source)?.[1]),
-      fileDrifts = drifts.map((d) => d * SKY_DRIFT);
-    assert(SKY_DRIFT > 0.4 && SKY_DRIFT <= 1 && /Math\.sin\(time \* 0\.07\) \* 0\.16 \* \(1 \+ \(SKY_DRIFT - 1\) \* Math\.min\(1, pitch\)\)/.test(source), 'The idle drift no longer keeps SKY_DRIFT of its angle at the sky island\'s pitch.');
+      fileDrifts = drifts.map((d) => d * SKY_DRIFT),
+      swing = (pitch) => Array.from({ length: 90 }, (_, time) => driftAt(false, { time, pitch, SKY_DRIFT, blend: 3 })),
+      [townSwing, skySwing] = [swing(0), swing(1)];
+    assert(SKY_DRIFT > 0.4 && SKY_DRIFT <= 1 && Math.abs(Math.max(...townSwing.map(Math.abs)) - 0.16) < 2e-4 && skySwing.every((d, k) => Math.abs(d - SKY_DRIFT * townSwing[k]) < 1e-12), 'The idle drift no longer keeps SKY_DRIFT of its angle at the sky island\'s pitch.');
     for (const [w, h] of [[1024, 768], [1280, 800], [1366, 768], [1440, 900], [1536, 864], [1920, 1080], [2560, 1440]]) {
       const { zoom, centre, subject, ground, reach, held } = fileAt(w, h, 492 / (2 * w), 0),
         out = Math.hypot(ground.x - S.x, ground.z - S.z);
