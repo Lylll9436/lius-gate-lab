@@ -6572,16 +6572,13 @@ let skyReport = '';
   const areaOf = (hull) => Math.abs(hull.reduce((sum, a, i) => sum + a[0] * hull[(i + 1) % hull.length][1] - hull[(i + 1) % hull.length][0] * a[1], 0)) / 2;
   /**
    * The clouds and floating rocks the garden hangs in their slots (plan.SKY_CLOUDS and SKY_ROCKS),
-   * each as the surface of a volume in its slot's frame (FLOAT_PROXY, in units of the slot's size)
-   * that holds lane G's piece through its whole drift or bob (fitted to the pieces, and held to them
-   * in the garden's check below): a cloud, widest near its base, inside an upright wall on an ellipse
-   * 2.55 along its length (its own 1.95 and its drift's 0.4) by 1.12 across, from 0.07 under its base
-   * (the bob) to 0.4 over it, under a dome 1.1 high; a rock inside an ellipsoid 1.3 across (it
-   * rocks), 1.2 over its middle (its tussocks) and 1.8 under it (its keel). They stand in for the
-   * pieces wherever a check below measures the island's shape on screen or in the air through the
-   * motion (check-navigation's boxes are round these).
+   * each as the surface of the volume that stands in for it (plan.SKY_FLOAT_PROXY, in its slot's
+   * frame and in units of its size; check-navigation measures the same volumes): it holds lane G's
+   * piece through its whole drift or bob, as the garden's check below holds it to. They stand in for
+   * the pieces wherever a check below measures the island's shape on screen or in the air through
+   * the motion.
    */
-  const FLOAT_PROXY = { cloud: { a: 2.55, c: 1.12, base: -0.07, wall: 0.4, cap: 1.1 }, rock: { r: 1.3, up: 1.2, down: 1.8 } },
+  const FLOAT_PROXY = plan.SKY_FLOAT_PROXY,
     /** How far into its proxy a point lies (in its slot's frame, in units of its size): 1 on its surface. */
     proxyMeasure = (kind, [x, y, z]) => {
       if (kind === 'rock') return (x * x + z * z) / FLOAT_PROXY.rock.r ** 2 + (y / (y > 0 ? FLOAT_PROXY.rock.up : FLOAT_PROXY.rock.down)) ** 2;
@@ -7819,10 +7816,10 @@ let skyReport = '';
   //   else on the island moves but the rock's night;
   // - through their whole drift and bob the clouds and rocks keep SKY_FLOAT_LIMITS (tucked no more than
   //   0.5 under the rim, 0.4 clear of the rock, under the rim's lawn, south of `north` and east of
-  //   `west`, out of the villa's box) and stay inside FLOAT_BOX, the proxies the island's other checks
-  //   and check-navigation use; the falls' water under the rim keeps 0.3 clear of the rock's cliffs
-  //   and shoulders; the island stays inside the rain's square but for the west fall's puff, which pokes
-  //   out by 2.2 at the most (the placement accepted 1.8 for it);
+  //   `west`, out of the villa's box) and stay inside plan.SKY_FLOAT_PROXY, the proxies the island's
+  //   other checks and check-navigation use; the falls' water under the rim keeps 0.3 clear of the
+  //   rock's cliffs and shoulders; the island stays inside the rain's square but for the west fall's
+  //   puff, which pokes out by 2.2 at the most (the placement accepted 1.8 for it);
   // - nothing of the garden stands on her walk (the paths' width) or within her reach where she stands;
   // - at night the clouds dim on one material of the kit's own and the falls (their water, lumps and
   //   puffs) on another, to SKY_NIGHT's colours, with
@@ -8204,7 +8201,7 @@ let skyReport = '';
       const L = plan.SKY_FLOAT_LIMITS,
         villaBox = new T.Box3().setFromObject(sky.shell).expandByScalar(0.3);
       // The clouds and rocks through their drift and bob: within the limits, clear of the rock, and
-      // inside their proxies (FLOAT_BOX, in their slots' frames).
+      // inside their proxies (plan.SKY_FLOAT_PROXY, in their slots' frames).
       for (const [name, list, kind] of [['sky-cloud', plan.SKY_CLOUDS, 'cloud'], ['sky-float', plan.SKY_ROCKS, 'rock']])
         frames(name).forEach((frame, n) => {
           const f = list[n];
@@ -8221,7 +8218,7 @@ let skyReport = '';
               assert(plan.skyDistance(p.x, p.z) >= -L.tuck && p.y <= L.top && p.z >= L.north && p.x >= L.west && Math.abs(p.x) <= 58 && Math.abs(p.z) <= 58 && !villaBox.containsPoint(p), `The garden's ${kind} ${n} leaves its limits at ${fmt(p)}.`);
               assert(!nearRock(p, L.clear), `The garden's ${kind} ${n} comes within ${L.clear} of the rock at ${fmt(p)}.`);
               const l = p.clone().applyMatrix4(inv).divideScalar(f.size);
-              assert(proxyMeasure(kind, l.toArray()) <= 1, `The garden's ${kind} ${n} leaves its proxy (FLOAT_PROXY) at ${fmt(p)}.`);
+              assert(proxyMeasure(kind, l.toArray()) <= 1, `The garden's ${kind} ${n} leaves its proxy (plan.SKY_FLOAT_PROXY) at ${fmt(p)}.`);
             });
           }
           entry.update(0, 0, 0);

@@ -1573,22 +1573,23 @@ const laneD3 = {};
       stops = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4],
       drifts = Array.from({ length: 17 }, (_, k) => -0.16 + k * 0.02),
       // Its silhouette: the overview's marks, its rim's widest ring dense; and the clouds' and rocks'
-      // slots as points on check-town's FLOAT_PROXY volumes round them, which hold lane G's pieces
-      // through their whole drift and bob (units of the slot's size): a cloud inside an upright wall on
-      // an ellipse 2.55 by 1.12, from 0.07 under its base to 0.4 over it, under a dome 1.1 high; a rock
-      // inside an ellipsoid 1.3 across, 1.2 up and 1.8 down.
+      // slots as points on the volumes that stand in for them (plan.SKY_FLOAT_PROXY, in units of the
+      // slot's size, which check-town holds lane G's pieces inside through their whole drift and bob):
+      // a cloud inside an upright wall on an ellipse, from under its base to over it, under a dome; a
+      // rock inside an ellipsoid.
       outline = [...scene.SKY_MARKS, ...plan.skyOutline(0, 64).map((p) => new T.Vector3(p.x, S.top - S.ring, p.z))],
+      { cloud: FC, rock: FR } = plan.SKY_FLOAT_PROXY,
       floatAt = (f, x, y, z) => new T.Vector3(f.x + (x * Math.cos(f.ry) + z * Math.sin(f.ry)) * f.size, f.y + y * f.size, f.z + (-x * Math.sin(f.ry) + z * Math.cos(f.ry)) * f.size),
       floats = [
         ...plan.SKY_CLOUDS.flatMap((f) =>
           Array.from({ length: 24 }, (_, k) => [Math.cos((k / 24) * Math.PI * 2), Math.sin((k / 24) * Math.PI * 2)]).flatMap(([c, s]) => [
-            ...[-0.07, 0.4].map((y) => floatAt(f, c * 2.55, y, s * 1.12)),
-            ...[1, 2, 3, 4, 5, 6].map((b) => floatAt(f, c * 2.55 * Math.cos((b / 6) * (Math.PI / 2)), 0.4 + Math.sin((b / 6) * (Math.PI / 2)) * 1.1, s * 1.12 * Math.cos((b / 6) * (Math.PI / 2)))),
+            ...[FC.base, FC.wall].map((y) => floatAt(f, c * FC.a, y, s * FC.c)),
+            ...[1, 2, 3, 4, 5, 6].map((b) => floatAt(f, c * FC.a * Math.cos((b / 6) * (Math.PI / 2)), FC.wall + Math.sin((b / 6) * (Math.PI / 2)) * FC.cap, s * FC.c * Math.cos((b / 6) * (Math.PI / 2)))),
           ]),
         ),
         ...plan.SKY_ROCKS.flatMap((f) =>
           Array.from({ length: 24 }, (_, k) => [Math.cos((k / 24) * Math.PI * 2), Math.sin((k / 24) * Math.PI * 2)]).flatMap(([c, s]) =>
-            Array.from({ length: 9 }, (_, b) => (b / 8) * Math.PI - Math.PI / 2).map((w) => floatAt(f, c * 1.3 * Math.cos(w), Math.sin(w) * (w > 0 ? 1.2 : 1.8), s * 1.3 * Math.cos(w))),
+            Array.from({ length: 9 }, (_, b) => (b / 8) * Math.PI - Math.PI / 2).map((w) => floatAt(f, c * FR.r * Math.cos(w), Math.sin(w) * (w > 0 ? FR.up : FR.down), s * FR.r * Math.cos(w))),
           ),
         ),
       ],

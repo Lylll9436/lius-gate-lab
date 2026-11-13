@@ -970,6 +970,16 @@ export type SkyFloat = { x: number; y: number; z: number; ry: number; size: numb
  */
 export const SKY_FLOAT_LIMITS = { tuck: 0.5, clear: 0.4, top: SKY.top - SKY.dome, north: SKY.z - 5, west: -58 };
 /**
+ * The volumes that stand in for the clouds and floating rocks wherever check-town and
+ * check-navigation measure the island's shape on screen or in the air through the motion, each in
+ * its slot's frame and in units of its size (fitted to lane G's pieces; check-town holds each piece
+ * inside its own through its whole drift and bob): a cloud, widest near its base, inside an upright
+ * wall on an ellipse `a` along its length (its own 1.95 and its drift's 0.4) by `c` across, from
+ * `base` under its base (the bob) to `wall` over it, under a dome `cap` high; a rock inside an
+ * ellipsoid `r` across (it rocks), `up` over its middle and `down` under it (its keel).
+ */
+export const SKY_FLOAT_PROXY = { cloud: { a: 2.55, c: 1.12, base: -0.07, wall: 0.4, cap: 1.1 }, rock: { r: 1.3, up: 1.2, down: 1.8 } };
+/**
  * The clouds (lane G's cloud(): its origin the middle of its flat base, long along its x, about
  * 3.6 x 1.3 x 2 at size 1, drifting 0.4 x size either way along its length): one low off the
  * south-east rim, toward the town, and one smaller off the south-west, both under the deck's level.
