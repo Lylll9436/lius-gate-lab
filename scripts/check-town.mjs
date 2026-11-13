@@ -5120,15 +5120,16 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
 }
 // The sky island: a floating island of its own off the north-west headland (plan.SKY), built in its
-// own groups and phases. Its deck, lawn, paths, coping and rock; its villa's stand-in; the slots and
-// stations its garden and her figure are to take; its pointer volume, its overview marks, its own
-// frame and its shadows; and its clearances from the coast, the land on screen and everything that
-// moves. (check-navigation holds its framings: the overview, its file, the tour and where it is hidden.)
+// own groups and phases. Its deck, lawn, paths, coping and rock; its villa in place (the next block
+// checks the villa's own build); the slots and stations its garden and her figure are to take; its
+// pointer volume, its overview marks, its own frame and its shadows; and its clearances from the
+// coast, the land on screen and everything that moves. (check-navigation holds its framings: the
+// overview, its file, the tour and where it is hidden.)
 let skyReport = '';
 {
   const { WATER } = await load('town-shared'),
     { SKY_LOOK, SKY_LAWN, SKY_COPING, SKY_ROCK, skySlots } = await load('town-sky'),
-    { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted } = await load('city-scene'),
+    { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted, TOWN_PITCH, SKY_PITCH } = await load('city-scene'),
     { SEA_SHADOW, createSeaShadow } = await load('city-water'),
     { palette } = await load('town-shared'),
     { sunOffsetFor } = await load('city-atmosphere'),
@@ -5149,9 +5150,10 @@ let skyReport = '';
     stops = [0, 1, 2, 3].map((k) => Math.PI / 4 + (k * Math.PI) / 2),
     file = plan.chapterBearings['sky-island'],
     drifts = [-0.16, -0.08, 0, 0.08, 0.16],
-    // A view's axes at a bearing (city-scene's viewOffset): the way back to the camera, screen right and up.
-    axes = (bearing) => {
-      const back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+    // A view's axes at a bearing (city-scene's viewOffset), at the town's pitch unless given one: the
+    // way back to the camera, screen right and up.
+    axes = (bearing, pitch = TOWN_PITCH) => {
+      const back = pitch === TOWN_PITCH ? new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize() : new T.Vector3(Math.sin(bearing) * Math.cos(pitch), Math.sin(pitch), Math.cos(bearing) * Math.cos(pitch)),
         right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
         up = new T.Vector3().crossVectors(back, right);
       return { back, right, up, flat: (p) => [p.x * right.x + p.z * right.z, p.x * up.x + p.y * up.y + p.z * up.z] };
@@ -5219,7 +5221,11 @@ let skyReport = '';
 
   /* ---------------- the spot, the deck's maths and the sea below ---------------- */
   assert(S.x === -52 && S.z === -24 && S.H === 10.5 && Math.abs(S.top - (WATER + S.H)) < 1e-9 && S.a === 7.5 && S.b === 6 && Math.abs(S.heading - Math.PI / 2) < 1e-12, 'The sky island is off its decided spot, height or outline.');
-  assert(Math.abs(S.top - S.depth - 2.352) < 1e-9, 'The rock\'s tip is no longer 2.4 above the sea.');
+  // The rock's tip: as deep as the sea allows and no deeper, 1.5 over it (lower, it reads as a stilt
+  // standing in the water), and leaning SKY.lean out toward the island's file's camera, so that from
+  // there it hangs clear below the body's near side.
+  const tipAt = plan.skyTip();
+  assert(Math.abs(tipAt.y - (S.top - S.depth)) < 1e-9 && Math.abs(tipAt.y - WATER - 1.5) < 1e-9 && S.lean >= 0.5 && S.lean <= 1.5 && Math.abs(Math.hypot(tipAt.x - S.x, tipAt.z - S.z) - S.lean) < 1e-9 && Math.abs(plan.angleDiff(Math.atan2(tipAt.x - S.x, tipAt.z - S.z), file)) < 1e-9, `The rock's tip is at ${[tipAt.x, tipAt.y, tipAt.z].map((n) => n.toFixed(2)).join(', ')}.`);
   // The villa: front due south (turned more than about 15 degrees toward the camera's right at the
   // opening bearing, it loses the key light there and in its file), its house block's middle 0.8
   // north of the island's, its foot on the deck. Its file is seen from the gate's bearing (no new
@@ -5227,8 +5233,8 @@ let skyReport = '';
   const [houseX, houseZ] = plan.skyVillaPoint(0, (V.house.back + V.house.front) / 2);
   assert(site.rotation === 0 && site.y === S.top && V.back === 0.8 && Math.abs(houseX - S.x) < 1e-9 && Math.abs(houseZ - (S.z - V.back)) < 1e-9, 'The villa is off its place on the deck, or no longer faces due south.');
   assert(site.w === V.w && site.d === V.d && site.height === V.height && V.house.front - V.house.back === 4.4 && 2 * V.house.hw === 6.4, 'The villa\'s site is not its footprint.');
-  // Lane V's villa reaches 8.164 over its y 0 and the placement caps the island's roofline at the
-  // deck plus 8.2, so its y 0 may stand no higher than 10.50 (on the dome's crest, not above it).
+  // The villa's tallest can reaches 8.17 over its y 0 and the placement caps the island's roofline
+  // at the deck plus 8.2, so its y 0 may stand no higher than 10.50 (on the dome's crest, not above it).
   assert(site.y <= 10.5 && V.chimneys.cans <= V.height && V.height <= 8.2, 'The villa\'s foot or its chimneys stand over the placement\'s cap.');
   assert.equal(file, plan.chapterBearings['lius-gate'], 'The sky island\'s file brings a new bearing.');
   assert(Math.abs(plan.angleDiff(file, site.rotation) - 34.7 * deg) < 0.01, 'The sky island\'s file no longer sees the villa\'s front 35 degrees off, on its lit side.');
@@ -5332,7 +5338,6 @@ let skyReport = '';
     ...SKY_LOOK.earth.map((c, k) => ['earth ' + k, c, palette.soil]),
     ['seam', SKY_LOOK.seam, palette.kerb],
     ...SKY_LOOK.rock.map((c, k) => ['rock ' + k, c, palette.kerb]),
-    ['dressing', SKY_LOOK.dressing, palette.render],
   ])
     assert(hsv(colour).s <= hsv(family).s + 1e-9, `The sky island's ${name} (${colour}) is more saturated than its family.`);
   // The earth's beds are brown and step darker downward; the rock is a warm grey, far greyer than
@@ -5345,7 +5350,6 @@ let skyReport = '';
     assert(rock.every((c) => c.s < 0.15 && c.v > 0.4 && c.v < 0.65) && hsv(SKY_LOOK.seam).s < 0.15, 'The rock is not a warm grey.');
   }
   assert.deepEqual(SKY_LOOK.lawn, [palette.grassDark, palette.grassLight]);
-  assert(SKY_LOOK.brick === palette.brick && SKY_LOOK.slate === palette.slate && SKY_LOOK.base === palette.kerb && SKY_LOOK.pots === palette.pantile, 'The stand-in villa left the town\'s palette.');
 
   /* ---------------- the deck: lawn and paths ---------------- */
   const grounds = sky.land.children.filter((o) => o.isMesh),
@@ -5401,7 +5405,7 @@ let skyReport = '';
     // The coping is everything above the rock's flat top: its top SKY's 0.14 under the deck's level,
     // 0.11 proud of the lawn beside it, its nose the deck's widest ring, on the rim's line and no further.
     const copingTop = Math.max(...SKY_COPING.profile.map(([, y]) => y)),
-      flat = S.top - SKY_ROCK.cone.top;
+      flat = S.top - SKY_ROCK.body.top;
     let top = -Infinity,
       widest = -Infinity,
       widestY = 0,
@@ -5434,7 +5438,7 @@ let skyReport = '';
     // overview is fitted to it.
     assert(flat < S.top - S.dome - 0.1 && S.top + SKY_COPING.profile.at(-1)[1] < flat - 0.05, 'The rock\'s flat top is not under the turf, or the coping\'s underside no longer ends inside it.');
     assert(proud > 0.1 && proud <= 0.4 && north <= 0, `The rock stands ${proud.toFixed(2)} proud of the rim (${north.toFixed(2)} at the north tip).`);
-    assert(Math.abs(tip.y - (S.top - S.depth)) < 0.1 && Math.hypot(tip.x - S.x, tip.z - S.z) < 0.4, `The rock's tip is at ${tip.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+    assert(Math.abs(tip.y - tipAt.y) < 0.1 && Math.hypot(tip.x - tipAt.x, tip.z - tipAt.z) < 0.4, `The rock's tip is at ${tip.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
     // Smooth, never faceted: wherever triangles meet at a point they share one normal there (a
     // faceted mesh has one a face), each a unit long and close to its faces' own. Sculpted on a grid
     // no finer than 0.2 (chunky: nothing under about half a unit survives it).
@@ -5474,62 +5478,107 @@ let skyReport = '';
     assert(corners / seen.size > 4, 'The rock\'s triangles share no corners.');
     assert(lean / corners > 0.97 && worst > 0.3, `The rock's normals lean ${(lean / corners).toFixed(3)} on average (${worst.toFixed(2)} at worst) from its faces.`);
     assert(rockTriangles >= 8000 && rockTriangles <= 16000 && SKY_ROCK.grid >= 0.2, `The rock costs ${rockTriangles} triangles.`);
-    // Chunky shoulders hung under the rim: on the east and west flanks (45 degrees from every Rotate
-    // stop) the earth stands proud of the rim and hangs 2 or more under the deck; at the deck's
-    // north and south ends, which stand furthest out toward the cameras, what hangs within half a
-    // unit of the rim is shallow, so the spike is the lowest thing on screen (checked below).
-    let flank = 0,
-      ends = 0;
+    // A chunk of land, not a plate: all round the rim the earth stands as cliffs (within half a unit
+    // of the rim's line) down to SKY_ROCK.body.cliff under the deck or deeper, its shoulders proud of
+    // them; and under each fall (within 12 degrees of its bearing) nothing stands out past the rim,
+    // so the water hangs clear of the rock.
+    const deepest = Array.from({ length: 36 }, () => 0),
+      underFalls = plan.skyFalls.map(() => -Infinity);
     each(sky.rock, (q) => {
       const bearing = Math.atan2(q.x - S.x, q.z - S.z),
         d = plan.skyDistance(q.x, q.z),
-        depth = S.top - q.y;
-      if (d > 0 && Math.abs(Math.abs(bearing) - Math.PI / 2) < 20 * deg) flank = Math.max(flank, depth);
-      if (d > -0.5 && (Math.abs(bearing) < 25 * deg || Math.abs(bearing) > 155 * deg)) ends = Math.max(ends, depth);
+        depth = S.top - q.y,
+        k = Math.round((((bearing / deg) % 360) + 360) / 10) % 36;
+      if (d > -0.5) deepest[k] = Math.max(deepest[k], depth);
+      plan.skyFalls.forEach((f, j) => {
+        if (depth > 0.6 && Math.abs(plan.angleDiff(bearing, f.bearing)) < 12 * deg) underFalls[j] = Math.max(underFalls[j], d);
+      });
     });
-    assert(flank >= 2 && ends <= 1.3, `The rock's shoulders hang ${flank.toFixed(2)} under the deck on its flanks and ${ends.toFixed(2)} at its ends.`);
+    assert(Math.min(...deepest) >= SKY_ROCK.body.cliff && SKY_ROCK.body.cliff >= 1.2, `The rock's cliffs stand only ${Math.min(...deepest).toFixed(2)} deep at a bearing of the rim.`);
+    assert(underFalls.every((d) => d <= 0), `The rock stands ${Math.max(...underFalls).toFixed(2)} past the rim under a fall.`);
     // The earth in beds, darker downward, each change a paler seam; down the spike the earth gives
-    // way to rock, far greyer than it.
+    // way to rock, far greyer than it. (Read through the sea's bounce, which the next check holds.)
+    // Whatever faces down is lifted by the bounce (SKY_ROCK.bounce: under the town's high sun the
+    // underside reads as brown earth and grey rock, never as a hole): faces turned straight down are
+    // that much brighter than the same beds' near-vertical ones.
     {
       const colour = undersides[0].geometry.attributes.color,
         bands = { top: [], mid: [], low: [], seam: [] },
         mean = (list) => list.reduce((s, c) => s.add(c), new T.Color(0, 0, 0)).multiplyScalar(1 / list.length),
-        grey = (c) => (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)) / Math.max(c.r, c.g, c.b);
+        grey = (c) => (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)) / Math.max(c.r, c.g, c.b),
+        under = (ny) => T.MathUtils.smoothstep(-ny, -0.1, 0.8),
+        B = SKY_ROCK.bounce,
+        down = [],
+        side = [];
+      assert(B.every((k) => k >= 0.8 && k <= 2.5) && SKY_ROCK.night >= 0.3 && SKY_ROCK.night < 1, 'The underside\'s bounce or its night dim is out of its range.');
       for (let i = 0; i < p.count; i += 3) {
         const depth = S.top - p.getY(i),
-          c = new T.Color().fromBufferAttribute(colour, i);
-        if (depth > 0.6 && depth < 1.2) bands.top.push(c);
-        else if (depth > 2.3 && depth < 3.1) bands.mid.push(c);
-        else if (depth > 4.6 && depth < 6) bands.low.push(c);
-        if (Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) bands.seam.push(c);
+          u = under(n.getY(i)),
+          c = new T.Color().fromBufferAttribute(colour, i),
+          base = new T.Color(c.r / (1 + B[0] * u), c.g / (1 + B[1] * u), c.b / (1 + B[2] * u));
+        if (depth > 0.6 && depth < 1.2) bands.top.push(base);
+        else if (depth > 2.3 && depth < 3.1) bands.mid.push(base);
+        else if (depth > SKY_ROCK.spike[1] + 0.2 && depth < S.depth - 0.4) bands.low.push(base);
+        if (Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) bands.seam.push(base);
+        // (The earth of the upper two beds only: the rock outcrops in them are grey.)
+        if (depth > 0.6 && depth < SKY_ROCK.beds[1] - 0.3 && grey(c) > 0.4) (n.getY(i) < -0.85 ? down : Math.abs(n.getY(i)) < 0.35 ? side : []).push(c);
       }
       const [top, mid, low, seam] = [bands.top, bands.mid, bands.low, bands.seam].map(mean),
         luma = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
       assert(luma(top) > luma(mid) && luma(seam) > (luma(top) + luma(mid)) / 2, 'The underside\'s beds do not read as strata.');
       assert(grey(top) > 0.25 && grey(mid) > 0.2 && grey(low) < grey(mid) / 2, 'The earth under the deck is not brown, or the spike is not rock.');
+      // (Its near-vertical faces take a little of it too: measured, about 1.6 times the light.)
+      assert(down.length > 20 && side.length > 20 && mean(down).r / mean(side).r > 1 + 0.35 * B[0] && luma(mean(down)) / luma(mean(side)) > 1 + 0.3 * B[1], 'The underside\'s down-turned faces are not lifted by the sea\'s bounce.');
     }
     skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles so far of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles})`;
   }
 
-  /* ---------------- the villa's stand-in ---------------- */
+  /* ---------------- the villa in place ---------------- */
   {
-    // Inside its footprint on the deck, a unit or more in from the rim, from just under the turf up
-    // to its cans (lane V's measures, under the placement's cap); its chimney copes where the
-    // overview's marks have them.
-    const bounds = new T.Box3().setFromObject(sky.shell),
-      C = V.chimneys;
-    assert(Math.abs(bounds.max.y - (site.y + C.cans)) < 0.01 && bounds.min.y < S.top - 0.2 && bounds.min.y > S.top - 0.5, `The stand-in villa reaches from ${bounds.min.y.toFixed(2)} to ${bounds.max.y.toFixed(2)}.`);
+    // The villa (town-sky-villa's buildSkyVilla; the next block checks its build) on its site:
+    // SKY_VILLA, the plan's copy of its measures that the overview's marks, the island's frame, the
+    // borders and the stations are made from, is its VILLA's. It stands inside its footprint on the
+    // deck, a unit or more in from the rim, from its feet under the turf (VILLA.foot) up to its
+    // tallest can, under the placement's cap; its downpipes and its back door's hood and step reach
+    // the footprint's sides and back, its chimney copes stand where the overview's marks have them,
+    // and its steps come down to the lawn on the south.
+    const { VILLA } = await load('town-sky-villa'),
+      bounds = new T.Box3().setFromObject(sky.shell),
+      C = V.chimneys,
+      H = V.house;
+    assert(
+      V.w === 2 * VILLA.hx && V.d === 2 * VILLA.hz && V.height === VILLA.top && H.hw === VILLA.wall.hw && H.back === VILLA.wall.back && H.front === VILLA.wall.front && H.cornice === VILLA.cornice.corona[1] && Math.abs(H.flat - (H.cornice + VILLA.roof.fascia + VILLA.roof.rise)) < 1e-9 && H.eave === VILLA.roof.eave && H.gutter === VILLA.roof.gutter[1] && H.pipes === VILLA.hx && H.rear === -VILLA.hz,
+      'SKY_VILLA\'s house no longer mirrors the villa\'s VILLA.',
+    );
+    assert(
+      V.terrace.top === VILLA.terrace.top && Math.abs(V.terrace.front - (H.front + VILLA.terrace.depth)) < 1e-9 && V.terrace.hw === VILLA.terrace.hw && V.steps.hw === VILLA.terrace.steps.hw && V.steps.risers === VILLA.terrace.steps.risers && Math.abs(V.steps.front - (V.terrace.front + VILLA.terrace.steps.run * (V.steps.risers - 1))) < 1e-9,
+      'SKY_VILLA\'s terrace or steps no longer mirror the villa\'s.',
+    );
+    assert(C.x === VILLA.chimney.x && C.z === VILLA.chimney.z && C.hw === VILLA.chimney.w / 2 && C.hd === VILLA.chimney.d / 2 && C.top === VILLA.chimney.top && C.cans <= V.height, 'SKY_VILLA\'s chimneys no longer mirror the villa\'s.');
+    assert(Math.abs(bounds.max.y - (site.y + C.cans)) < 0.002 && Math.abs(bounds.min.y - (site.y + VILLA.foot)) < 1e-4, `The villa reaches from ${bounds.min.y.toFixed(3)} to ${bounds.max.y.toFixed(3)}, not from its feet to its tallest can.`);
+    assert(Math.abs(bounds.max.x - site.x - H.pipes) < 1e-3 && Math.abs(bounds.min.x - site.x + H.pipes) < 1e-3 && Math.abs(bounds.min.z - site.z - H.rear) < 1e-3, 'The villa\'s downpipes or its back step no longer reach where SKY_VILLA has them.');
     each(sky.shell, (p) => {
       assert(plan.onSky(p.x, p.z, -1), `The villa stands ${(-plan.skyDistance(p.x, p.z)).toFixed(2)} from the rim.`);
       assert(Math.abs(p.x - site.x) <= V.w / 2 + 1e-3 && Math.abs(p.z - site.z) <= V.d / 2 + 1e-3, `The villa leaves its footprint at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
     });
-    const copes = [];
-    each(sky.shell, (p) => p.y > site.y + C.top + 0.02 && p.y < site.y + C.cope.top + 1e-3 && copes.push(p.clone()));
-    const [cx, cz] = plan.skyVillaPoint(C.x, C.z);
-    assert(copes.length && Math.abs(Math.max(...copes.map((p) => p.x)) - (cx + C.cope.hw)) < 0.02 && Math.abs(Math.min(...copes.map((p) => p.z)) - (cz - C.cope.hd)) < 0.02, 'The chimney copes are off the overview\'s marks.');
+    // The copes (the stacks' white stone under the cans, over the shafts' tops): where the marks put them.
+    for (const side of [-1, 1]) {
+      const copes = [],
+        [cx, cz] = plan.skyVillaPoint(side * C.x, C.z);
+      sky.shell.traverse((o) => {
+        if (!o.isMesh || o.material.userData.surfaceKind === 'pantile') return;
+        const q = o.geometry.attributes.position;
+        for (let i = 0; i < q.count; i++) {
+          v.fromBufferAttribute(q, i).applyMatrix4(o.matrixWorld);
+          if (v.y > site.y + C.top + 0.02 && v.y < site.y + C.cope.top + 1e-3 && Math.abs(v.x - cx) < 1 && Math.abs(v.z - cz) < 1) copes.push(v.clone());
+        }
+      });
+      const reach = new T.Box3().setFromPoints(copes);
+      assert(copes.length && Math.abs(reach.max.x - cx - C.cope.hw) < 0.02 && Math.abs(cx - reach.min.x - C.cope.hw) < 0.02 && Math.abs(reach.max.z - cz - C.cope.hd) < 0.02 && Math.abs(cz - reach.min.z - C.cope.hd) < 0.02, `The ${side < 0 ? 'west' : 'east'} chimney's cope spans ${reach.min.x.toFixed(2)}..${reach.max.x.toFixed(2)}, ${reach.min.z.toFixed(2)}..${reach.max.z.toFixed(2)}, off the overview's marks.`);
+    }
     // The terrace and its steps are on the front, to the south; the lawn at the steps' foot is the deck's level, near enough.
     const [, stepsZ] = plan.skyVillaPoint(0, V.steps.front);
-    assert(stepsZ > houseZ && S.top - plan.skyTop(S.x, stepsZ) < 0.08 && Math.abs(bounds.max.z - stepsZ) < 0.01, 'The steps do not come down to the lawn on the south side.');
+    assert(stepsZ > houseZ && S.top - plan.skyTop(S.x, stepsZ) < 0.08 && bounds.max.z > stepsZ && bounds.max.z - site.z <= V.d / 2 + 1e-3, 'The steps do not come down to the lawn on the south side.');
   }
 
   /* ---------------- slots and stations ---------------- */
@@ -5553,14 +5602,15 @@ let skyReport = '';
     const [, terraceZ] = plan.skyVillaPoint(0, V.terrace.front);
     // Each a unit or more in from the rim, on the lawn south of the villa (south of its terrace's
     // front, 0.3 clear of the terrace and its steps), and never where she would hide the facade:
-    // from the file's bearing and the opening one, the line of sight past the top of her (1.2 up,
-    // hair and all) comes down to the terrace's level before it reaches the house.
+    // from the file's bearing (at its own lower pitch, city-scene's SKY_PITCH) and the opening one,
+    // the line of sight past the top of her (1.2 up, hair and all) comes down to the terrace's level
+    // before it reaches the house.
     for (const [name, p] of Object.entries(stations)) {
       const [fx, fz] = [Math.abs(p.x - site.x), p.z - site.z];
       assert(plan.onSky(p.x, p.z, -1), `${name} is ${(-plan.skyDistance(p.x, p.z)).toFixed(2)} from the rim.`);
       assert(p.z > terraceZ && !(fx < V.terrace.hw + 0.3 && fz < V.terrace.front + 0.3) && !(fx < V.steps.hw + 0.3 && fz < V.steps.front + 0.3), `${name} is not on the lawn south of the villa.`);
       for (const bearing of [file, Math.PI / 4]) {
-        const { back } = axes(bearing),
+        const { back } = axes(bearing, bearing === file ? SKY_PITCH : TOWN_PITCH),
           drop = (1.2 - V.terrace.top) / (back.y / Math.hypot(back.x, back.z)),
           behind = [p.x - (back.x / Math.hypot(back.x, back.z)) * drop, p.z - (back.z / Math.hypot(back.x, back.z)) * drop],
           [fx, fz] = [behind[0] - site.x, behind[1] - site.z];
@@ -5666,7 +5716,7 @@ let skyReport = '';
     assert.equal(marks.length, 16 + 8 + 1 + 1 + 2 * 6);
     assert(marks.slice(0, 16).every((m) => Math.abs(plan.skyDistance(m.x, m.z)) < 1e-6 && Math.abs(m.y - (S.top - S.ring)) < 1e-9), 'The rim\'s marks are off its widest ring.');
     assert(marks.slice(16, 24).every((m) => Math.abs(m.y - (site.y + C.cans)) < 1e-6 && Math.abs(Math.abs(Math.abs(m.x - S.x) - C.x) - C.cope.hw) < 1e-9 && Math.abs(Math.abs(m.z - (site.z + C.z)) - C.cope.hd) < 1e-9), 'The chimneys\' marks are off the copes.');
-    assert(marks[24].distanceTo(new T.Vector3(-49.4, 15.002, -29)) < 1e-6 && marks[25].distanceTo(new T.Vector3(-52, 2.352, -24)) < 1e-6, 'The tree\'s or the tip\'s mark moved.');
+    assert(marks[24].distanceTo(new T.Vector3(-49.4, 15.002, -29)) < 1e-6 && marks[25].distanceTo(new T.Vector3(tipAt.x, tipAt.y, tipAt.z)) < 1e-6, 'The tree\'s or the tip\'s mark moved.');
     // They hold what is built: the overview is fitted to their box on screen, and from the four
     // Rotate stops and the file's bearing nothing of the island shows more than 0.3 outside it (the
     // rock's shoulders, a little proud of the rim). (The floats hang on the town's side, inside the
@@ -5680,22 +5730,57 @@ let skyReport = '';
       worst = Math.max(worst, marked[0] - island[0], marked[1] - island[1], island[2] - marked[2], island[3] - marked[3]);
     }
     assert(worst <= 0.3, `The sky island shows ${worst.toFixed(2)} outside the overview's marks.`);
-    // The underside tapers to a point for the eye: from each of those bearings its tip is the lowest
-    // thing of it on screen by half a unit or more (a deep shoulder toward the camera would hang as
-    // low as the tip and hide the point behind a flat, lumpy bottom).
-    let spike = Infinity;
-    const tip = new T.Vector3(S.x, S.top - S.depth, S.z);
-    for (const bearing of [...stops, file]) {
-      const { flat } = axes(bearing),
-        low = flat(tip)[1];
+    // The body reads as a floating rock, not a plate (the owner's reference 2: a grass top on an
+    // inverted cone of earth and rock tapering to a point). On screen, at a view's bearing and pitch:
+    // D, the deck's height (its widest ring, far rim to near rim); V, how far the underside's lowest
+    // point hangs below the near rim; and the silhouette's width under the near rim at three
+    // quarters and nine tenths of V, as shares of the deck's width.
+    const body = (bearing, pitch) => {
+      const { flat } = axes(bearing, pitch),
+        ring = plan.skyOutline(0, 256).map((q) => flat(new T.Vector3(q.x, S.top - S.ring, q.z))),
+        under = [];
+      each(sky.rock, (q) => under.push(flat(q)));
+      const D = Math.max(...ring.map(([, w]) => w)) - Math.min(...ring.map(([, w]) => w)),
+        wide = Math.max(...ring.map(([u]) => u)) - Math.min(...ring.map(([u]) => u)),
+        near = Math.min(...ring.map(([, w]) => w)),
+        low = Math.min(...under.map(([, w]) => w)),
+        V = near - low,
+        width = (f) => {
+          const at = near - f * V,
+            us = under.filter(([, w]) => Math.abs(w - at) < 0.05 * V).map(([u]) => u);
+          return (Math.max(...us) - Math.min(...us)) / wide;
+        },
+        [, tipW] = flat(new T.Vector3(tipAt.x, tipAt.y, tipAt.z));
+      return { ratio: V / D, narrow: [width(0.75), width(0.9)], tipLowest: Math.abs(tipW - low) < 0.15 };
+    };
+    // In its own file (the view a visitor opens it in, at its own lower pitch, city-scene's
+    // SKY_PITCH) the rock hangs below the deck by 0.6 or more of the deck's own height, and narrows
+    // to its tip: a fifth of the deck's width at three quarters of the way down, a tenth at nine
+    // tenths, the tip the lowest thing on screen. (At the town's pitch, from the file's bearing, it
+    // showed 0.11 of it: a plate with a knob under it.)
+    const own = body(file, SKY_PITCH);
+    let tipSpike = Infinity;
+    {
+      const { flat } = axes(file, SKY_PITCH),
+        low = flat(new T.Vector3(tipAt.x, tipAt.y, tipAt.z))[1];
       each(sky.rock, (p) => {
-        if (p.y > tip.y + 2.5) spike = Math.min(spike, flat(p)[1] - low);
+        if (p.y > tipAt.y + 2.5) tipSpike = Math.min(tipSpike, flat(p)[1] - low);
       });
     }
-    assert(spike >= 0.5, `A shoulder of the rock hangs within ${spike.toFixed(2)} of its tip on screen.`);
-    skyReport += `, its spike ${spike.toFixed(2)} below its shoulders on screen`;
+    assert(own.ratio >= 0.6 && own.narrow[0] <= 0.25 && own.narrow[1] <= 0.12 && own.tipLowest && tipSpike >= 0.5, `In its file the sky island's rock hangs ${own.ratio.toFixed(2)} of the deck's height below it, ${own.narrow.map((x) => x.toFixed(2)).join(' and ')} of its width at three quarters and nine tenths of the way down, its tip ${tipSpike.toFixed(2)} below the rest.`);
+    // From the Rotate stops and the file's bearing at the town's own pitch (the City overview and the
+    // reading frames that pass it) it reads as a chunk of land: the body hangs 0.18 or more of the
+    // deck's height under it (S1's showed 0.11 to 0.14) and narrows to a fifth of its width by nine
+    // tenths of the way down.
+    let leastAtTown = Infinity;
+    for (const bearing of [...stops, file]) {
+      const m = body(bearing, TOWN_PITCH);
+      leastAtTown = Math.min(leastAtTown, m.ratio);
+      assert(m.ratio >= 0.18 && m.narrow[1] <= 0.2, `At bearing ${bearing.toFixed(2)} the sky island's rock hangs only ${m.ratio.toFixed(2)} of the deck's height below it, ${m.narrow[1].toFixed(2)} of its width near its foot.`);
+    }
+    skyReport += `, its rock ${own.ratio.toFixed(2)} of the deck's height below it in its file (${leastAtTown.toFixed(2)} or more at the town's pitch), its tip ${tipSpike.toFixed(2)} below the rest there`;
     // Its own frame: the deck less its rounded ends, from 1.5 above the rock's tip to the pots.
-    assert(fit.min.distanceTo(new T.Vector3(-57.5, 3.852, -30)) < 1e-6 && fit.max.distanceTo(new T.Vector3(-46.5, 18.652, -18)) < 1e-6, 'The sky island\'s own frame moved.');
+    assert(fit.min.distanceTo(new T.Vector3(-57.5, tipAt.y + 1.5, -30)) < 1e-6 && fit.max.distanceTo(new T.Vector3(-46.5, 18.652, -18)) < 1e-6, 'The sky island\'s own frame moved.');
     assert(SKY_SHADOW.centre.distanceTo(fit.getCenter(new T.Vector3())) < 1e-9 && SKY_SHADOW.radius === 14, 'The sky island\'s shadow box is off its frame.');
     // That box holds the whole island and what hangs by it at any sun: nothing further than its
     // half-size from the middle.
@@ -5730,9 +5815,10 @@ let skyReport = '';
       seenAll = 0,
       nearestLand = Infinity,
       hitLand = Infinity;
+    // (The file's bearing at the file's own lower pitch, as a visitor points at it there.)
     for (const bearing of [...stops, file])
       for (const drift of bearing === file ? [0] : drifts) {
-        const { back, right, up, flat } = axes(bearing + drift);
+        const { back, right, up, flat } = axes(bearing + drift, bearing === file ? SKY_PITCH : TOWN_PITCH);
         dir.copy(back).negate();
         // (a) Wherever its own surface is the first thing on a view ray, the pointer is on the island.
         if (!drift) {
@@ -5747,8 +5833,8 @@ let skyReport = '';
           assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
           seenAll += seen;
           // (b) The open sky beside it, over it and under it answers nothing of it: a unit clear of
-          // its volume's outline all round, and from a unit straight under the rock's tip (nearer,
-          // the pointer is within the slack the volume keeps round the tip, as round any building).
+          // its volume's outline all round, and from a unit under the rock's lowest point on screen
+          // (nearer, the pointer is within the slack the volume keeps round it, as round any building).
           const outline = hullOf(corners.map(flat)),
             mid = outline.reduce((sum, p) => [sum[0] + p[0] / outline.length, sum[1] + p[1] / outline.length], [0, 0]),
             centre = SKY_SHADOW.centre,
@@ -5759,9 +5845,12 @@ let skyReport = '';
             through(beside);
             assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the open sky beside the sky island answers as it.`);
           }
+          // (Under its lowest point on screen: the tip leans toward the file's camera, so from the far
+          // side its belly hangs lower on screen than the tip does.)
+          const lowest = built.reduce((a, b) => (flat(b)[1] < flat(a)[1] ? b : a));
           for (const below of [1, 1.6, 2.4]) {
-            through(new T.Vector3(S.x, S.top - S.depth - below, S.z));
-            assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the air ${below} under the rock's tip answers as the sky island.`);
+            through(lowest.clone().addScaledVector(up, -below));
+            assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the air ${below} under the rock's lowest point on screen answers as the sky island.`);
           }
           // (c) It hugs the island: the volume's outline is about a third bigger than the island's own
         // at most (the villa's box over its terrace and the slab over the lawn are most of that).
@@ -5795,6 +5884,33 @@ let skyReport = '';
     // And without it (the checks' town, a scene with none) the pointer is as it was.
     assert.equal(pickTarget(ray, models, model.parkHit), null);
     skyReport += `, its rim ${coast.toFixed(1)} from the waterline, ${nearestLand.toFixed(2)} of sea kept from land on screen (its pointer volume ${Math.max(0, hitLand).toFixed(2)}) and the pointer on it at ${seenAll} points`;
+  }
+
+  /* ---------------- its night ---------------- */
+  {
+    // The underside dims at night as the balloon does (SKY_ROCK.night: a pale mass never hangs lit
+    // in the night sky), on its own copies of the batch materials, so nothing else of the town
+    // darkens; and it keeps a faint fill of its own (SKY_ROCK.fill: the night's high moon lights
+    // nothing that faces down, and it went black), a dark brown, far from a glow (under 0.02 in
+    // linear luminance, a twentieth of a lit window's). Its group is in the town's animated list,
+    // batched in its own phase ('batch sky'), never again by the animated loop.
+    const entry = model.animated.find((e) => e.object === sky.rock),
+      parts = sky.rock.children.filter((o) => o.isMesh),
+      others = new Set();
+    assert(entry && sky.rock.userData.prebatched, 'The underside does not dim at night, or the animated loop batches it again.');
+    entry.update(0, 1);
+    city.traverse((o) => {
+      if (o.isMesh && o.parent !== sky.rock) others.add(o.material);
+    });
+    const fill = new T.Color(SKY_ROCK.fill),
+      luminance = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    for (const o of parts) {
+      assert(!others.has(o.material), 'The underside dims a material the town shares.');
+      assert(Math.abs(o.material.color.r - (1 - SKY_ROCK.night)) < 1e-6 && o.material.emissive.equals(fill), 'The underside stays bright at night, or has no fill.');
+    }
+    assert(luminance(fill) > 0.005 && luminance(fill) < 0.02 && fill.r > fill.g && fill.g > fill.b, `The underside's night fill (${SKY_ROCK.fill}) is black, a glow or not a brown.`);
+    entry.update(0, 0);
+    assert(parts.every((o) => o.material.color.r === 1 && o.material.emissive.getHex() === 0), 'The underside stays dim, or keeps its fill, by day.');
   }
 
   /* ---------------- its shadows ---------------- */
@@ -5937,6 +6053,473 @@ let skyReport = '';
     }
     assert(least >= 2, `The sky island stands ${least.toFixed(1)} from a chapter's subject on screen.`);
   }
+}
+// The sky villa (town-sky-villa's buildSkyVilla) on the sky island, in place: its parts as the town
+// builds them (the same builder, the town's season, a shell on the villa's site on the deck; the
+// town's own is batched by now, a mesh a material, so its parts are built again here, and must
+// reach exactly as the town's own does), then the town's own batched villa and its lights:
+// - its size: a house about 6.4 by 4.4 and 7 to its roof's flat, a terrace 1.6 to 2 deep and 0.4 to
+//   0.6 high, chimneys about 1 over the roof;
+// - every part has a surface kind; nothing is two-sided, transparent or cut out; its colours are
+//   VILLA_LOOK's, none more saturated than its palette family (VILLA_FAMILY), and the window boxes'
+//   planting is the homes' own for the season (WINDOW_BOX, with the winter sprigs); its slate is
+//   darker than the town's (the owner's reference) and no louder;
+// - it stays inside its footprint box (VILLA.hx, hz, top: at most 6.9 wide, 6.8 deep and, at the
+//   chimney cans, 8.2 over the deck, the placement's cap on the island's roofline), and nothing
+//   goes below the deck's top but the plinth's, the terrace's and the steps' foot (to VILLA.foot),
+//   which the domed lawn buries all round: nothing floats over it or shows a gap at its foot;
+// - every joined piece (each run of faces sharing corners) that is not a pane is 0.07 across or
+//   more every way (thinner ones twinkle as the view moves);
+// - its detail goes all the way round (the owner, on the first renders: "注意别墅的建模细节要足够";
+//   the City overview's Rotate stops show every face): each face carries at least so many dressings
+//   (pieces standing out of its wall); L-shaped quoins at all four corners; a downpipe and its hopper
+//   at each corner; a gutter round the eaves; lead rolls on the hips and round the flat; three
+//   dormers under their roofs, the middle one's a pediment; two stacks, each capped by two brick
+//   courses corbelled out, with cans of different heights; the back door with its fanlight and its
+//   step, and the stair window, which breaks the band; a window box under every first-floor sash,
+//   planted in every season and clear of its glass as the town's camera sees it; balconies of a few
+//   fat bars with wide gaps; the terrace's flags as geometry and urns on its corner piers;
+// - its French doors are glass on the bay's front, facing +z, five panes a floor (four lights and a
+//   transom light) on three floors;
+// - batched by the town (its own phase, 'batch sky villa', after the town's buildings, its contact
+//   shade from the lawn) it costs at most 16 meshes and 45,000 triangles (the owner's budget for the
+//   detail pass), its solids share the one bake program (which carries the wall wash), nothing of
+//   it cuts holes, and every varying read is declared;
+// - its night (the town's own window list: which rooms stay lit is seeded by where each stands): one
+//   light a window, in roles of its own (outside the town's room shares and its night lamps): the
+//   front door's is the 'entrance', warm and never out; the rest are 'villa' rooms, all lit and
+//   warm at 20:00 and still at 23:00, then about half go out, no two together, and the rest stay
+//   lit through the deep night;
+// - the wash: eight lamps, on the front faces of the corner and bay piers of the two lower floors;
+//   their brick, the corner piers' quoins and the lenses the only washed parts, each scallop faded out
+//   before the bands over and under its pier and at the pier's sides; a quoin catches its lamp a
+//   little brighter than the brick round it, a lens brighter still and under 1 in luminance (nothing
+//   spills off it); in the town's batches the quoins carry their own wash, and its level is the
+//   night's, through the town's own material library (setNight).
+{
+  const { createSkyVilla, VILLA, VILLA_LOOK, VILLA_FAMILY, VILLA_LAMPS, VILLA_WINDOWS, VILLA_ENTRANCE, VILLA_SPRIG } = await load('town-sky-villa'),
+    { WINDOW_BOX } = await load('town-homes'),
+    { palette } = await load('town-shared'),
+    { createProps } = await load('town-props'),
+    { createNature } = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials, wallWash, washLight, WASH_PEAK } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    town = model.sky,
+    site = plan.sites['sky-island'],
+    shell = new T.Group(),
+    begin = performance.now();
+  // On its site on the deck, as town-build stands the town's own shell (the town is built in summer).
+  shell.position.copy(town.shell.position);
+  shell.rotation.copy(town.shell.rotation);
+  createSkyVilla(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSkyVilla(shell, site);
+  shell.updateMatrixWorld(true);
+  const built = performance.now() - begin;
+  {
+    // (Box3.setFromObject's precise reach: every vertex, as the batches have them.)
+    const mine = new T.Box3().setFromObject(shell, true),
+      theirs = new T.Box3().setFromObject(town.shell, true),
+      at = (b) => [...b.min.toArray(), ...b.max.toArray()].map((n) => n.toFixed(3)).join(', ');
+    assert(mine.min.distanceTo(theirs.min) < 1e-4 && mine.max.distanceTo(theirs.max) < 1e-4 && town.shell.position.equals(new T.Vector3(site.x, site.y, site.z)), `The town's villa (${at(theirs)}) is not the one buildSkyVilla builds on its site (${at(mine)}).`);
+  }
+  const toShell = shell.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    hex = (c) => '#' + new T.Color(c).getHexString(),
+    looks = new Map(Object.entries(VILLA_LOOK).map(([k, c]) => [hex(c), k])),
+    feet = new Set(['sky-villa-plinth', 'sky-villa-terrace', 'sky-villa-steps']),
+    meshesOf = (g) => {
+      const out = [];
+      g.traverse((o) => o.isMesh && out.push(o));
+      return out;
+    };
+  /** Each run of joined faces in a mesh (faces sharing a corner), as its box in the shell's frame. */
+  const pieces = (m) => {
+    const q = m.geometry.attributes.position,
+      index = m.geometry.index,
+      key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k))),
+      corner = (t, j) => (index ? index.getX(t * 3 + j) : t * 3 + j),
+      m4 = toShell.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let t = 0; t < (index ? index.count : q.count) / 3; t++) for (const j of [1, 2]) parent.set(find(key(corner(t, j))), find(key(corner(t, 0))));
+    const boxes = new Map();
+    for (let i = 0; i < q.count; i++) {
+      const r = find(key(i));
+      if (!boxes.has(r)) boxes.set(r, new T.Box3());
+      boxes.get(r).expandByPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4));
+    }
+    return [...boxes.values()];
+  };
+  const parts = meshesOf(shell);
+  assert(parts.length > 50, `The villa is only ${parts.length} parts.`);
+  // Its size against the town's (the homes are 2.6 x 4.2, the Town Hall 7.4 x 4.6 and 9.5 tall):
+  // a house about 6.4 by 4.4 whose three storeys and roof reach about 7, its chimney cans
+  // about 1 higher and under the placement's cap on the island's roofline (the deck's top + 8.2); a
+  // terrace about the house's width, 1.6 to 2 deep and 0.4 to 0.6 high; at most 6.8 deep in all.
+  {
+    const flat = VILLA.cornice.corona[1] + VILLA.roof.fascia + VILLA.roof.rise,
+      wide = 2 * VILLA.wall.hw,
+      deep = VILLA.wall.front - VILLA.wall.back,
+      terrace = VILLA.terrace,
+      reach = new T.Box3();
+    for (const m of parts) reach.union(new T.Box3().setFromObject(m).applyMatrix4(toShell));
+    assert(Math.abs(wide - 6.4) <= 0.2 && Math.abs(deep - 4.4) <= 0.2 && Math.abs(flat - 7) <= 0.2, `The villa's house is ${wide} x ${deep.toFixed(2)} and ${flat.toFixed(2)} to its flat.`);
+    assert(Math.abs(terrace.hw - VILLA.wall.hw) <= 0.2 && terrace.depth >= 1.6 && terrace.depth <= 2 && terrace.top >= 0.4 && terrace.top <= 0.6, `The villa's terrace is ${2 * terrace.hw} x ${terrace.depth}, ${terrace.top} high.`);
+    assert(2 * VILLA.hx <= 7 && 2 * VILLA.hz <= 6.8 + 1e-9 && VILLA.top <= 8.2, `The villa's box is ${2 * VILLA.hx} x ${2 * VILLA.hz} x ${VILLA.top}.`);
+    assert(reach.max.y - flat >= 0.9 && reach.max.y - flat <= 1.3, `The villa's chimneys end ${(reach.max.y - flat).toFixed(2)} over its roof.`);
+  }
+  // Its slate: the reference's darker roof, darker than the town's (linear value) and no louder.
+  {
+    const value = (c) => Math.max(...new T.Color(c).toArray());
+    assert(value(VILLA_LOOK.slate) < 0.85 * value(palette.slate) && VILLA_FAMILY.slate === palette.slate, `The villa's slate ${VILLA_LOOK.slate} is not darker than the town's.`);
+  }
+  // The window boxes' planting, by season: the homes' own (WINDOW_BOX), and the winter sprigs.
+  const planting = (season) => new Set([WINDOW_BOX[season].leaf, ...WINDOW_BOX[season].blooms, VILLA_SPRIG].map(hex)),
+    dressings = []; // every joined piece but the glass: its box, size and middle, its mesh's kind, colour and name
+  for (const m of parts) {
+    const kind = m.material.userData.surfaceKind,
+      colour = hex(m.material.color),
+      what = `The villa's ${m.name || kind + ' ' + colour}`;
+    assert(kind, `${what} has no surface kind.`);
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest, `${what} is two-sided, transparent or cut out.`);
+    if (kind === 'foliage') assert(planting(ctx.season).has(colour), `${what} is not the window boxes' ${ctx.season} planting.`);
+    else {
+      const look = looks.get(colour);
+      assert(look, `${what} is not one of VILLA_LOOK's colours.`);
+      assert(hsv(colour).s <= hsv(hex(VILLA_FAMILY[look])).s + 1e-3, `${what} is louder than its family (${look}: ${hex(VILLA_FAMILY[look])}).`);
+    }
+    const p = m.geometry.attributes.position,
+      m4 = toShell.clone().multiply(m.matrixWorld),
+      floor = feet.has(m.name) ? VILLA.foot : 0;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m4);
+      assert(Math.abs(v.x) <= VILLA.hx + 1e-6 && Math.abs(v.z) <= VILLA.hz + 1e-6 && v.y <= VILLA.top + 1e-6, `${what} leaves the villa's footprint box at ${v.toArray().map((n) => n.toFixed(3)).join(", ")}.`);
+      assert(v.y >= floor - 1e-6, `${what} goes below ${floor === 0 ? "the deck's top" : 'its foot'} at ${v.toArray().map((n) => n.toFixed(3)).join(", ")}.`);
+      // In place, a foot's bottom lies 0.1 or more under the domed lawn, wherever it is: the lawn
+      // falls away from the deck's crest (0.13 at the footprint's back corners), so a foot that
+      // stopped at y 0 would hang over it with a gap of sky under its edge.
+      if (floor < 0 && v.y < VILLA.foot + 0.01) {
+        const w = v.clone().applyMatrix4(shell.matrixWorld);
+        assert(w.y <= plan.skyTop(w.x, w.z) - 0.1, `${what}'s foot stands ${(w.y - plan.skyTop(w.x, w.z)).toFixed(3)} from the lawn at ${w.x.toFixed(2)}, ${w.z.toFixed(2)}, not under it.`);
+      }
+    }
+    if (kind === 'glass') continue;
+    for (const b of pieces(m)) {
+      const size = b.getSize(new T.Vector3());
+      assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `${what} has a piece ${size.toArray().map((n) => n.toFixed(3)).join(' x ')} at ${b.getCenter(new T.Vector3()).toArray().map((n) => n.toFixed(2)).join(", ")}.`);
+      dressings.push({ b, s: size, c: b.getCenter(new T.Vector3()), kind, colour, name: m.name });
+    }
+  }
+  // Its detail, all the way round (the owner's "注意别墅的建模细节要足够"; the City overview's Rotate
+  // stops show its sides and back).
+  {
+    const { hw, back, front } = VILLA.wall,
+      bayFront = front + VILLA.bay.out,
+      proud = VILLA.pier.proud,
+      of = (colour) => dressings.filter((p) => p.colour === hex(colour)),
+      stone = of(VILLA_LOOK.stone),
+      lead = of(VILLA_LOOK.lead),
+      rain = of(VILLA_LOOK.rain);
+    // Each face's dressings: pieces whose middle stands out of its wall by 0.45 at most, along the
+    // wall, from the plinth course to the cornice's bed. The minimums are about five sixths of the
+    // counts when this was written (front 204, back 100, each side 106; the first build, before the
+    // detail pass, had 106, 45 and 30).
+    const faces = [
+      { face: 'front', least: 175, on: (c) => (c.z > front && c.z <= front + 0.45 && Math.abs(c.x) <= hw + 0.1) || (c.z > bayFront && c.z <= bayFront + 0.45 && Math.abs(c.x) <= VILLA.bay.hw + 0.1) },
+      { face: 'back', least: 85, on: (c) => c.z < back && c.z >= back - 0.45 && Math.abs(c.x) <= hw + 0.1 },
+      { face: 'east', least: 90, on: (c) => c.x > hw && c.x <= hw + 0.45 && c.z >= back - 0.1 && c.z <= front + 0.1 },
+      { face: 'west', least: 90, on: (c) => c.x < -hw && c.x >= -hw - 0.45 && c.z >= back - 0.1 && c.z <= front + 0.1 },
+    ];
+    for (const { face, least, on } of faces) {
+      const n = dressings.filter((p) => p.c.y > 0.4 && p.c.y < VILLA.cornice.bed[0] && on(p.c)).length;
+      assert(n >= least, `The villa's ${face} carries ${n} dressings, under ${least}.`);
+    }
+    // Quoins: L-shaped stones round each corner pier's arris, stacked course on course (so a storey's
+    // run is one joined piece): on every corner a run on each storey, wrapping both faces.
+    for (const sx of [-1, 1])
+      for (const cz of [front + proud, back - proud]) {
+        const cx = sx * (hw + proud),
+          runs = stone.filter((p) => p.b.min.x < cx && p.b.max.x > cx && p.b.min.z < cz && p.b.max.z > cz && p.s.y >= 1 && p.s.x >= 0.15 && p.s.z >= 0.15);
+        assert(runs.length === 3 && VILLA.storeys.every(([y0, y1]) => runs.some((p) => p.b.min.y <= Math.max(y0, VILLA.plinth.course[1]) + 1e-3 && p.b.max.y >= y1 - 1e-3)), `The villa's corner at ${cx}, ${cz.toFixed(2)} has ${runs.length} runs of quoins, not one a storey.`);
+      }
+    // Rainwater: a gutter round the eaves on the corona; at each corner, on the side walls, a
+    // downpipe of 3.5 or more under a hopper head.
+    const eave = VILLA.cornice.corona[1];
+    assert(of(VILLA_LOOK.paint).some((p) => p.s.x > 2 * hw + 0.3 && p.s.z > bayFront - back + 0.3 && p.b.min.y >= eave - 1e-3 && p.b.max.y <= eave + 0.15), 'The villa has no gutter round its eaves.');
+    const pipes = rain.filter((p) => p.s.y >= 3.5);
+    assert(pipes.length === 4 && pipes.every((p) => Math.abs(p.c.x) > hw && Math.abs(p.c.x) < hw + 0.2 && Math.min(Math.abs(p.c.z - front), Math.abs(p.c.z - back)) < 0.8), `The villa has ${pipes.length} downpipes, not one at each corner of the side walls.`);
+    for (const p of pipes) assert(rain.some((h) => h.s.y >= 0.2 && h.s.y < 0.3 && h.b.min.y > 4.5 && Math.abs(h.c.x - p.c.x) < 0.1 && Math.abs(h.c.z - p.c.z) < 0.1), `The downpipe at ${p.c.z.toFixed(2)} has no hopper head.`);
+    // The roof: a lead roll on each of its four hips and each edge of its flat (they meet at bosses,
+    // so they are one joined piece: looked for from above, at each hip's and each edge's middle).
+    {
+      const R = VILLA.roof,
+        x1 = hw + R.eave,
+        z0 = back - R.eave,
+        z1 = front + R.eave,
+        fx = x1 - R.runX,
+        fz0 = z0 + R.run,
+        fz1 = z1 - R.run,
+        y1 = VILLA.cornice.corona[1] + R.fascia,
+        y2 = y1 + R.rise,
+        down = new T.Vector3(0, -1, 0).transformDirection(shell.matrixWorld),
+        solids = parts.filter((m) => m.material.userData.surfaceKind !== 'glass'),
+        top = (x, y, z) => new T.Raycaster(new T.Vector3(x, y + 1, z).applyMatrix4(shell.matrixWorld), down).intersectObjects(solids, false)[0],
+        spots = [];
+      for (const sx of [-1, 1]) for (const [ze, zf] of [[z0, fz0], [z1, fz1]]) spots.push(['a hip', (sx * (x1 + fx)) / 2, (y1 + y2) / 2, (ze + zf) / 2]);
+      for (const z of [fz0, fz1]) spots.push(["the flat's edge", 0.6, y2, z]);
+      for (const sx of [-1, 1]) spots.push(["the flat's edge", sx * fx, y2, fz0 + 0.2]); // (behind the stacks' copes)
+      for (const [what, x, y, z] of spots) {
+        const hit = top(x, y, z);
+        assert(hit && hex(hit.object.material.color) === hex(VILLA_LOOK.lead), `No lead roll on ${what} at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      }
+    }
+    // Three dormers under roofs of their own and white cornices, the middle one's pediment over it.
+    assert.equal(parts.filter((m) => m.name === 'sky-villa-dormer-roof').length, 3, "The villa's dormers lack their roofs.");
+    assert(stone.filter((p) => p.b.min.y > 6.5 && p.b.max.y < 6.8 && p.s.y >= 0.13 && p.s.x > 0.8 && p.c.z > 0.4).length === 3, "The villa's dormers lack their cornices.");
+    assert(stone.some((p) => Math.abs(p.c.x) < 0.05 && p.s.x > 1.2 && p.b.min.y > 6.7 && p.c.z > 1), 'The middle dormer has no pediment.');
+    // The stacks: over the shaft a cap corbelled out in two brick courses, each wider than the one
+    // under it; three cans of at least two heights; a lead flashing down the slope at each side.
+    for (const sx of [-1, 1]) {
+      const { x, z, d } = VILLA.chimney,
+        bricks = dressings.filter((p) => p.kind === 'brick' && Math.abs(p.c.x - sx * x) < 0.1 && Math.abs(p.c.z - z) < 0.1).sort((a, b) => a.b.min.y - b.b.min.y),
+        cans = dressings.filter((p) => p.kind === 'pantile' && Math.abs(p.c.x - sx * x) < 0.5 && Math.abs(p.c.z - z) < 0.2),
+        flashings = lead.filter((p) => p.s.y > 1 && Math.abs(p.c.x - sx * x) < 0.3 && Math.abs(Math.abs(p.c.z - z) - d / 2 - 0.05) < 0.1);
+      assert(bricks.length === 3 && bricks[1].s.x > bricks[0].s.x + 0.05 && bricks[2].s.x > bricks[1].s.x + 0.05 && bricks[2].s.y <= 0.15, 'A stack lacks its corbelled cap.');
+      assert(cans.length === 3 && new Set(cans.map((p) => p.s.y.toFixed(2))).size >= 2, 'A stack lacks cans of different heights.');
+      assert.equal(flashings.length, 2, 'A stack lacks its flashings.');
+    }
+    // The back: its door (an enamelled leaf on the back wall) with a fanlight and a step, and over it
+    // the stair window across the upper band, which breaks for it: nothing solid stands out of the
+    // wall in front of its glass at the band's height.
+    const at = (m) => {
+        const b = new T.Box3(),
+          q = m.geometry.attributes.position,
+          m4 = toShell.clone().multiply(m.matrixWorld);
+        for (let i = 0; i < q.count; i++) b.expandByPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4));
+        return b;
+      },
+      glassOf = (group) => parts.find((m) => m.material.userData.surfaceKind === 'glass' && m.userData.windowGroup === group);
+    assert(parts.some((m) => m.material.userData.surfaceKind === 'enamel' && at(m).max.z < back + 0.15) && glassOf('sky-island-back-door') && parts.some((m) => m.name === 'sky-villa-steps' && at(m).max.z < back), 'The villa has no back door with a fanlight and a step.');
+    const stair = glassOf('sky-island-back-stair'),
+      [b0, b1] = VILLA.bands[1];
+    assert(stair && at(stair).max.y - at(stair).min.y > 1.2 && at(stair).min.y < b0 && at(stair).max.y > b1, 'The back has no stair window across the upper band.');
+    {
+      const ray = new T.Raycaster(new T.Vector3(0.15, (b0 + b1) / 2, back - 1).applyMatrix4(shell.matrixWorld), new T.Vector3(0, 0, 1).transformDirection(shell.matrixWorld)),
+        hit = ray.intersectObjects(parts.filter((m) => m.material.userData.surfaceKind !== 'glass'), false)[0];
+      assert(!hit || hit.distance > 0.99, `Something stands in front of the stair window at the band, ${hit && (1 - hit.distance).toFixed(2)} out of the wall.`);
+    }
+    // The balconies: on each front a few fat uprights (two end posts, four bars) with gaps of 0.18 or more.
+    for (const [y, out] of [[VILLA.storeys[1][0] + 0.02, 0.5], [VILLA.storeys[2][0] + 0.02, 0.46]]) {
+      const pz = bayFront + out - 0.07,
+        uprights = of(VILLA_LOOK.iron).filter((p) => Math.abs(p.c.z - pz) < 0.06 && p.b.min.y >= y - 0.01 && p.s.y >= 0.25 && p.b.max.y < y + 0.7).sort((a, b) => a.c.x - b.c.x);
+      assert(uprights.length === 6, `A balcony's front has ${uprights.length} uprights, not six.`);
+      for (let i = 1; i < uprights.length; i++) assert(uprights[i].b.min.x - uprights[i - 1].b.max.x >= 0.18, `A balcony's bars stand ${(uprights[i].b.min.x - uprights[i - 1].b.max.x).toFixed(3)} apart.`);
+    }
+    // The terrace: its flags as geometry (a layer 0.07 thick, its top the terrace's; they butt, so
+    // they are counted by their top faces, two triangles each), urns on its corner piers.
+    const flags = parts.find((m) => m.name === 'sky-villa-flags'),
+      fb = at(flags),
+      urns = stone.filter((p) => p.s.y >= 0.4 && p.b.min.y > VILLA.terrace.top + 0.5 && p.c.z > front + VILLA.terrace.depth - 0.4);
+    let tops = 0;
+    {
+      const q = flags.geometry.attributes.position,
+        m4 = toShell.clone().multiply(flags.matrixWorld),
+        y = (i) => v.fromBufferAttribute(q, i).applyMatrix4(m4).y;
+      for (let t = 0; t < q.count; t += 3) if ([t, t + 1, t + 2].every((i) => Math.abs(y(i) - VILLA.terrace.top) < 1e-4)) tops++;
+    }
+    assert(flags.material.userData.surfaceKind === 'stone' && Math.abs(fb.max.y - VILLA.terrace.top) < 1e-4 && Math.abs(fb.min.y - VILLA.terrace.top + 0.07) < 1e-4 && tops / 2 >= 20, `The terrace's flags are not laid as geometry (${tops / 2} flags).`);
+    assert(urns.length === 2 && urns.every((p) => Math.abs(p.c.x) > hw - 0.3), "The terrace's corner piers carry no urns.");
+  }
+  // The window boxes, in every season: one under each first-floor sash (the lower pane of each
+  // '-1-' group), planted with that season's planting, and nothing of it over the glass's foot as
+  // the town's camera sees it (35 up for every 38 out, as the homes' boxes are checked).
+  {
+    const RISE = 35 / 38,
+      boxes = (meshes, toS, season) => {
+        const lowest = new Map();
+        for (const m of meshes) {
+          if (m.material.userData.surfaceKind !== 'glass' || !m.userData.sashPane || !/-1-/.test(m.userData.windowGroup ?? '')) continue;
+          const c = m.getWorldPosition(new T.Vector3()).applyMatrix4(toS),
+            was = lowest.get(m.userData.windowGroup);
+          if (!was || c.y < was.c.y) lowest.set(m.userData.windowGroup, { m, c });
+        }
+        assert.equal(lowest.size, 8, `The villa has ${lowest.size} first-floor sashes, not eight.`);
+        const leaves = meshes.filter((m) => m.material.userData.surfaceKind === 'foliage');
+        for (const [group, { m, c }] of lowest) {
+          const n = new T.Vector3(0, 0, 1).transformDirection(toS.clone().multiply(m.matrixWorld)),
+            across = new T.Vector3(0, 1, 0).cross(n),
+            foot = c.y - m.geometry.parameters.height / 2;
+          let planted = 0;
+          for (const f of leaves) {
+            const F = toS.clone().multiply(f.matrixWorld),
+              q = f.geometry.attributes.position;
+            let here = false;
+            for (let i = 0; i < q.count; i++) {
+              v.fromBufferAttribute(q, i).applyMatrix4(F).sub(c);
+              const out = v.dot(n);
+              if (out <= 0 || out > 0.4 || Math.abs(v.dot(across)) > 0.6 || v.y > 0.3 || v.y < -0.4) continue;
+              here = true;
+              assert(c.y + v.y - out * RISE < foot + 0.005, `${group}'s window box stands over its glass in ${season} (${(c.y + v.y - out * RISE - foot).toFixed(3)}).`);
+            }
+            if (here) {
+              planted++;
+              assert(planting(season).has(hex(f.material.color)), `${group}'s window box is not planted for ${season}.`);
+            }
+          }
+          assert(planted >= 3, `${group} has no planted window box in ${season}.`);
+        }
+      };
+    boxes(parts, toShell, ctx.season);
+    for (const season of ['spring', 'autumn', 'winter']) {
+      const c2 = { ...ctx, season },
+        k2 = createKit(c2),
+        s2 = new T.Group();
+      createSkyVilla(c2, k2, createProps(c2, k2), createNature(c2, k2)).buildSkyVilla(s2, { id: 'sky-island' });
+      s2.updateMatrixWorld(true);
+      boxes(meshesOf(s2), new T.Matrix4(), season);
+    }
+  }
+  // Its French doors: glass on the bay's front, facing +z.
+  const doors = parts.filter((m) => m.userData.frenchDoor),
+    bayFront = VILLA.wall.front + VILLA.bay.out;
+  assert.equal(doors.length, 15, 'The villa lacks its French doors: four lights and a transom light on each of three floors.');
+  for (const d of doors) {
+    const at = d.getWorldPosition(new T.Vector3()).applyMatrix4(toShell),
+      facing = new T.Vector3(0, 0, 1).transformDirection(d.matrixWorld).transformDirection(toShell);
+    assert(d.material.userData.surfaceKind === 'glass' && facing.z > 0.999 && at.z > bayFront && at.z < bayFront + 0.1 && Math.abs(at.x) < VILLA.bay.hw, `A French door's pane is off the bay's front at ${at.toArray().map((n) => n.toFixed(2)).join(", ")}.`);
+  }
+  // The wash: eight lamps (each pier's brick, and its two lenses glowing with it), on the front faces
+  // of the lower two floors' corner and bay piers; each scallop gone before the bands and the
+  // pier's sides. The corner piers' quoins on those floors (a mesh a pier) take their pier's lamp,
+  // at their own strength.
+  const washed = parts.filter((m) => m.userData.wash),
+    lamps = washed.filter((m) => !m.userData.wash.glow && m.material.userData.surfaceKind === 'brick'),
+    quoins = washed.filter((m) => !m.userData.wash.glow && m.material.userData.surfaceKind !== 'brick'),
+    lenses = washed.filter((m) => m.userData.wash.glow);
+  assert(lamps.length === 8 && quoins.length === 4 && lenses.length === 16, `The villa has ${lamps.length} washed piers, ${quoins.length} washed quoin runs and ${lenses.length} lenses, not 8, 4 and 16.`);
+  for (const m of quoins) {
+    const w = m.userData.wash,
+      pier = lamps.find((p) => ['x', 'y', 'z', 'half'].every((k) => Math.abs(p.userData.wash[k] - w[k]) < 1e-6)),
+      b = new T.Box3().setFromObject(m).applyMatrix4(toShell);
+    assert(pier && m.material.userData.surfaceKind === 'stone' && w.strength === VILLA_LAMPS.quoin && w.nz === 1 && w.nx === 0 && Math.abs(pier.userData.wash.half - VILLA_LAMPS.half.corner) < 1e-6, "A washed quoin run does not take its corner pier's lamp.");
+    assert(b.min.y < w.y && b.max.y > w.y && b.max.z > w.z, 'A washed quoin run is not on its lamp pier.');
+  }
+  for (const m of lamps) {
+    const w = m.userData.wash,
+      b = new T.Box3(),
+      p = m.geometry.attributes.position,
+      m4 = toShell.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < p.count; i++) b.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m4));
+    assert(m.material.userData.surfaceKind === 'brick' && w.nz === 1 && w.nx === 0 && Math.abs(w.z - b.max.z) < 1e-6, 'A lamp is not on the front face of a brick pier.');
+    assert(VILLA.storeys.slice(0, 2).some(([y0, y1]) => w.y > y0 && w.y < y1), 'A lamp is not on the ground or first floor.');
+    for (const u of [b.max.y - 0.04 - w.y, b.min.y - w.y]) assert(wallWash(0, u, w.half) < 0.02, `A lamp's wash reaches its pier's end (${u.toFixed(2)} from it).`);
+    assert(Math.abs(w.x - (b.min.x + b.max.x) / 2) < 1e-6 && w.half <= (b.max.x - b.min.x) / 2 + 1e-6 && wallWash(w.half, 0.3, w.half) === 0, `A lamp's wash spills past its pier's sides (lamp ${w.x.toFixed(3)}, half ${w.half}; pier ${b.min.x.toFixed(3)} to ${b.max.x.toFixed(3)}).`);
+  }
+  // The town's own villa, batched in its own phase ('batch sky villa', held under 200 ms with the
+  // island's other phases in the block before), its contact shade from the lawn under it.
+  const batched = meshesOf(town.shell);
+  let tris = 0;
+  for (const m of batched) tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
+  assert(batched.length <= 16 && tris <= 45000, `The villa costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
+  assert(built < 200, `The villa takes ${Math.round(built)} ms to build.`);
+  const solid = batched.filter((m) => !['glass', 'paving'].includes(m.material.userData.surfaceKind));
+  assert(new Set(solid.map((m) => m.material.customProgramCacheKey())).size === 1 && solid[0].material.customProgramCacheKey() === 'lius-bake-solid', 'The villa\'s solids do not share the bake program.');
+  for (const m of batched) {
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent, `The villa's ${m.material.name} batch is two-sided or transparent.`);
+    const s = patchedShader(m.material),
+      fv = varyings(s.fragmentShader);
+    assert(!s.fragmentShader.includes('discard'), `The villa's ${m.material.name} batch cuts holes.`);
+    for (const name of varyings(s.vertexShader)) assert(!new RegExp('\\b' + name + '\\b').test(s.fragmentShader) || fv.has(name), `${m.material.name}: ${name} read but not declared`);
+  }
+  {
+    const s = patchedShader(solid[0].material);
+    assert(s.vertexShader.includes('attribute vec4 aWash') && s.vertexShader.includes('vWash = aWash') && s.fragmentShader.includes('totalEmissiveRadiance+=washLevel*vWash.x'), 'The bake program does not carry the wall wash.');
+    // Only a negative w lets the wash in: a mesh without aWash reads WebGL's generic value (w 1).
+    assert(s.fragmentShader.includes('if(vWash.w<0.&&washLevel>0.)'), 'The wall wash is not gated on a negative w.');
+    assert(s.uniforms.washLevel === model.materialLibrary.washLevel, 'The bake program does not read the town\'s shared wash level.');
+  }
+  const washes = batched.filter((m) => m.geometry.getAttribute('aWash'));
+  assert(washes.length >= 1 && washes.every((m) => ['stone', 'paint'].includes(m.material.userData.surfaceKind)), `The wash is on the villa's ${washes.map((m) => m.material.name).join(', ')}.`);
+  {
+    let strongest = 0,
+      lit = 0;
+    for (const m of washes) {
+      const a = m.geometry.getAttribute('aWash');
+      for (let i = 0; i < a.count; i++) {
+        strongest = Math.max(strongest, a.getX(i));
+        if (a.getX(i) > 0) lit++;
+        // A washed vertex carries its half width negated; the rest of its batch carries zeros.
+        assert(a.getX(i) > 0 ? a.getW(i) < 0 : a.getW(i) <= 0, `A villa vertex's wash has strength ${a.getX(i)} and w ${a.getW(i)}.`);
+      }
+    }
+    assert(lit > 0 && Math.abs(strongest - Math.max(VILLA_LAMPS.lens, VILLA_LAMPS.strength)) < 1e-6, `The villa's wash is ${lit} lit vertices at most ${strongest}.`);
+    // The quoins keep their own wash in the town's batches: on each front corner, on both lit
+    // floors, white stone washed at the quoins' strength.
+    const { hw, front } = VILLA.wall,
+      corners = new Set();
+    for (const m of washes) {
+      if (m.material.userData.surfaceKind !== 'stone') continue;
+      const a = m.geometry.getAttribute('aWash'),
+        q = m.geometry.attributes.position,
+        m4 = toShell.clone().multiply(m.matrixWorld);
+      for (let i = 0; i < a.count; i++) {
+        if (Math.abs(a.getX(i) - VILLA_LAMPS.quoin) > 1e-6) continue;
+        v.fromBufferAttribute(q, i).applyMatrix4(m4);
+        const storey = VILLA.storeys.findIndex(([y0, y1]) => v.y >= y0 - 0.2 && v.y <= y1 + 0.05);
+        if (Math.abs(v.x) > hw - 0.3 && v.z > front && storey >= 0 && storey < 2) corners.add(`${Math.sign(v.x)} ${storey}`);
+      }
+    }
+    assert.equal(corners.size, 4, `The town's villa washes its quoins on ${[...corners].join(', ') || 'no corner'}, not on both front corners of both lit floors.`);
+  }
+  // A lens (white paint, lit at the wash's peak) against the brick under the same lamp: brighter
+  // than the brick's wash, and under 1 in luminance (linear), as a window's glow is. Brighter than
+  // that, a lens 0.14 across spills over its edges when the multisampled frame resolves. A quoin
+  // (white stone, about five times the brick's albedo under the warm light) between the two.
+  {
+    const Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
+      lit = (albedo, strength) => Y(washLight().multiply(new T.Color(albedo))) * strength * wallWash(0, WASH_PEAK, VILLA_LAMPS.half.bay),
+      lens = lit(VILLA_LOOK.paint, VILLA_LAMPS.lens),
+      brick = lit(VILLA_LOOK.brick, VILLA_LAMPS.strength),
+      quoin = lit(VILLA_LOOK.stone, VILLA_LAMPS.quoin);
+    assert(lens <= 1 && lens > 2 * brick && brick > 0.15 && quoin > brick && quoin < lens, `A lens glows at ${lens.toFixed(2)}, a quoin at ${quoin.toFixed(2)} and the brick under its lamp at ${brick.toFixed(2)}.`);
+    // Its colour (sRGB, at full value) is no louder than the lanterns' glass.
+    const light = washLight();
+    assert(hsv('#' + light.multiplyScalar(1 / Math.max(light.r, light.g, light.b)).getHexString()).s <= hsv(palette.lantern).s + 1e-3, 'The wash is a louder colour than the lanterns.');
+  }
+  // The lamps are on from dusk to dawn: the wash's level is the night's, set with the night by the
+  // town's own material library (the scene's frame loop calls its setNight).
+  for (const night of [0, 0.4, 1, 0]) {
+    model.materialLibrary.setNight(night);
+    assert.equal(model.materialLibrary.washLevel.value, night, `The wash is at ${model.materialLibrary.washLevel.value} at night ${night}.`);
+  }
+  // Its night lights: one a window (24 sashes, three sets of French doors, three dormers, the back
+  // door's fanlight and the stair window). The front door's is the hall's (the fixed 'entrance' role:
+  // warm, never out); the rest are 'villa' rooms, all lit and warm in the evening, of which about
+  // half go out, late and no two together, and the rest stay lit till morning.
+  const own = model.windows.filter((p) => p.place === 'sky-island'),
+    groups = new Set(parts.filter((m) => m.material.userData.surfaceKind === 'glass').map((m) => m.userData.windowGroup));
+  assert(own.length === groups.size && own.length === 32 && !groups.has(undefined), `The villa has ${own.length} lights for ${groups.size} windows.`);
+  const level = (p, h) => windowLevel(p.light, windowClock(h)),
+    entrance = own.filter((p) => p.role === VILLA_ENTRANCE),
+    rooms = own.filter((p) => p.role === VILLA_WINDOWS);
+  assert(VILLA_WINDOWS === 'villa' && VILLA_ENTRANCE === 'entrance' && entrance.length === 1 && rooms.length === 31, `The villa has ${entrance.length} entrance lights and ${rooms.length} rooms.`);
+  {
+    const at = entrance[0].at.clone().applyMatrix4(toShell);
+    assert(Math.abs(at.x) < VILLA.bay.hw && at.z > bayFront && at.y > VILLA.terrace.top && at.y < VILLA.storeys[0][1], `The entrance's light is not the front door's (${at.toArray().map((n) => n.toFixed(2)).join(', ')}).`);
+    for (const h of [20, 23, 2.5, 4, 5.4]) assert(level(entrance[0], h) > 0.5, `The front door is dark at ${h}.`);
+  }
+  // (Tint 0 is the warm white, 128 exactly today's glow; only above it does a pane turn cool.)
+  assert(own.every((p) => level(p, 20) > 0.1 && Math.round(p.light[1] * 255) <= 128), 'A villa window is dark or cool at 20:00.');
+  assert(rooms.every((p) => level(p, 23) > 0.1), 'A villa room is out before 23:00.');
+  const late = rooms.filter((p) => level(p, 2.5) > 0.1),
+    offs = rooms.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255);
+  assert(late.length >= 0.3 * rooms.length && late.length <= 0.7 * rooms.length, `${late.length} of the villa's ${rooms.length} rooms are lit at 02:30.`);
+  assert(late.every((p) => level(p, 4) > 0.1 && level(p, 5.4) > 0.1), 'A villa room lit at 02:30 goes out before morning.');
+  assert(offs.length === rooms.length - late.length && new Set(offs).size === offs.length, 'Two villa rooms go out together.');
+  skyReport += `; its villa ${batched.length} meshes and ${Math.round(tris)} triangles, ${late.length} of its ${rooms.length} rooms still lit at 02:30`;
 }
 console.log(
   `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
