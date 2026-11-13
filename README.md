@@ -41,7 +41,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/glasgow-sun.ts` | 格拉斯哥太阳位置、当地时间与季节，以及夜间窗灯随当地时间逐扇熄灭的时钟（`windowClock`）；首屏直接使用，不得引入 three（check-pages 会校验） |
 | `app/city-atmosphere.ts` | 雨、海鸥、主光方向（含晨昏的低角度日光） |
 | `app/city-water.ts` `app/city-ink.ts` | 水面着色器；最终合成（多重采样、接触阴影、选中光圈），深度方法参考 xi4u，MIT，见 THIRD_PARTY_NOTICES.md |
-| `app/city-materials.ts` `app/city-people.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、路灯、近看取景、悬停状态 |
+| `app/city-materials.ts` `app/city-people.ts` `app/sky-figure.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、天空之岛上的 Alison（她的样子与姿势；她的一天在 `town-plan.ts` 的 `alisonDay`）、路灯、近看取景、悬停状态 |
 | `app/city-data.ts` `app/city-districts.ts` `app/lab-navigation.ts` `app/lab-records.ts` `app/content-schema.ts` | 建筑文案、分区、地址与章节映射、内容目录与校验 |
 | `content/lab.json` | 人员、研究、活动、成果、研究记录（见 MAINTENANCE.md） |
 
