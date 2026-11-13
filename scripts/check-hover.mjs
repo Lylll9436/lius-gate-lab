@@ -113,6 +113,7 @@ const h = {
   // is its box's corners, and it has no clouds or rocks).
   cityMode: false,
   frameShift: 0,
+  frameDrop: 0,
   subjectPoints: new Map(),
   subjectAt: new T.Vector3(),
   SKY_MARKS: [-1, 1].flatMap((x) => [-1, 1].flatMap((y) => [-1, 1].map((z) => skyAt.clone().add(new T.Vector3(0.6 * x, 0.4 * y, 0.6 * z))))),
@@ -403,24 +404,27 @@ assert(
     },
     toy = { width: 240, height: 70 };
   let kept = 0;
-  for (const [cityMode, frameShift] of [[true, 0], [true, 0.17], [false, 0]]) {
-    Object.assign(h, { cityMode, frameShift });
+  for (const [cityMode, frameShift, frameDrop] of [[true, 0, 0], [true, 0.17, 0], [true, 0, -0.2], [false, 0, 0]]) {
+    Object.assign(h, { cityMode, frameShift, frameDrop });
     for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
       const e = eventAt(id);
       emit('pointermove', e);
       f.updateHover();
       const p = placeOf(id),
         free = cityMode && frameShift ? 800 * (1 - 2 * frameShift) + 16 : 800,
-        plainAt = api.labelPosition({ x: e.clientX - 42, y: e.clientY - 20 }, toy, { width: free, height: 500 }),
+        // Above a sheet: its top as the frame drop gives it (fileFrame centres the drop between the
+        // masthead's 58 px foot and the sheet's top).
+        foot = cityMode && frameDrop ? 500 * (1 + 2 * frameDrop) - 58 : 500,
+        plainAt = api.labelPosition({ x: e.clientX - 42, y: e.clientY - 20 }, toy, { width: free, height: foot }),
         s = f.subjectBox(id);
       assert(s && s.right > s.left && s.bottom > s.top, `The scene finds no box on screen for ${id}.`);
       if (cityMode) {
         kept++;
-        assert(p.x + toy.width <= free - 10 + 0.5 && !(p.x < s.right && p.x + toy.width > s.left && p.y < s.bottom && p.y + toy.height > s.top), `In City mode${frameShift ? ' beside the file' : ''} the label for ${id} lands at ${p.x}, ${p.y} on its place (${[s.left, s.top, s.right, s.bottom].map((n) => n.toFixed(0)).join(', ')}) or under the file.`);
+        assert(p.x + toy.width <= free - 10 + 0.5 && p.y + toy.height <= foot - 10 + 0.5 && !(p.x < s.right && p.x + toy.width > s.left && p.y < s.bottom && p.y + toy.height > s.top), `In City mode${frameShift ? ' beside the file' : frameDrop ? ' above the sheet' : ''} the label for ${id} lands at ${p.x}, ${p.y} on its place (${[s.left, s.top, s.right, s.bottom].map((n) => n.toFixed(0)).join(', ')}), under the file or under the sheet.`);
       } else assert(same(p, { x: Math.round(plainAt.x), y: Math.round(plainAt.y) }), `On the reading page the label for ${id} moves.`);
     }
   }
-  Object.assign(h, { cityMode: false, frameShift: 0 });
+  Object.assign(h, { cityMode: false, frameShift: 0, frameDrop: 0 });
   emit('pointerleave', eventAt('town-hall'));
   f.updateHover();
   // One label for a place at a time: City mode hides the caption's chip for the place under the pointer

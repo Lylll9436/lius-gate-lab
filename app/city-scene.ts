@@ -1890,12 +1890,16 @@ export async function createCity(
       const visible = id === b.id;
       element.style.visibility = visible ? 'visible' : 'hidden';
       if (visible) {
-        // In City mode the label keeps clear of the place it names, and of the file beside it (its
-        // left edge, from the frame shift: page.tsx's fileFrame).
+        // In City mode the label keeps clear of the place it names, of the file beside it (its left
+        // edge, from the frame shift) and of the sheet or bars below (their top, from the frame drop,
+        // which page.tsx's fileFrame centres between them and the masthead's 58 px foot).
         const p = labelPosition(
           { x: hover.x - rect.left, y: hover.y - rect.top },
           { width: element.offsetWidth, height: element.offsetHeight },
-          { width: cityMode && frameShift > 0 ? Math.min(width, width * (1 - 2 * frameShift) + 16) : width, height },
+          {
+            width: cityMode && frameShift > 0 ? Math.min(width, width * (1 - 2 * frameShift) + 16) : width,
+            height: cityMode && frameDrop < 0 ? Math.max(0, height * (1 + 2 * frameDrop) - 58) : height,
+          },
           cityMode ? subjectBox(b.id) : undefined,
         );
         element.style.transform =
