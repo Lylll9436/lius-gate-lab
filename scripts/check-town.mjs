@@ -755,32 +755,88 @@ const varyings = (src) => new Set([...src.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)
   });
   assert(netVertices > 50, 'The drying net is missing from the no-shadow cloth.');
 }
-// The page builds the same town a phase at a time, handing the main thread back in between.
+// Timed builds. Timed once by the wall clock, a build fails on a busy machine (or a slower one, as a
+// CI runner may be) with no change in its code. So a build timed here runs three times, and each
+// run is timed against a yardstick run just before and just after it (fixed three.js work of the
+// kind the builds do: cylinders turned and merged, their normals and box worked out): its time
+// over the pace those two give (their mean over YARDSTICK, the yardstick's ms when the limits were
+// set, on an Apple M5 Pro) is its time at the limits' pace. The fastest run at that pace is held
+// to the build's limit. A busy or slower machine is slower at both alike, and passes; each limit is
+// about three times what its build took when it was set, so a build five times slower fails.
+const YARDSTICK = 12,
+  { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+/** The yardstick's time, in ms. */
+const yardstick = () => {
+  const begin = performance.now(),
+    turn = new T.Matrix4(),
+    merged = mergeGeometries(Array.from({ length: 240 }, (_, i) => new T.CylinderGeometry(0.3, 0.4, 1, 18, 3).applyMatrix4(turn.makeRotationY(i * 0.7).setPosition(i % 13, i % 7, i % 11))));
+  merged.computeVertexNormals();
+  merged.computeBoundingBox();
+  return performance.now() - begin;
+};
+/** A run's time (ms) between yardsticks of `before` and `after` ms: { paced: its ms at the limits' pace, ms, pace }. */
+const atPace = (ms, before, after) => {
+  const pace = (before + after) / 2 / YARDSTICK;
+  return { paced: ms / pace, ms, pace };
+};
+/**
+ * A build timed three times over: each run builds (timed) from what `setup` gives it (untimed).
+ * Its fastest run at the limits' pace (atPace) and what the first run built.
+ */
+const timeBuild = (setup, build) => {
+  let fastest,
+    first,
+    before = yardstick();
+  for (let run = 0; run < 3; run++) {
+    const given = setup(),
+      begin = performance.now(),
+      built = build(given),
+      ms = performance.now() - begin,
+      after = yardstick(),
+      time = atPace(ms, before, after);
+    if (!fastest || time.paced < fastest.paced) fastest = time;
+    if (!run) first = built;
+    before = after;
+  }
+  return { ...fastest, built: first };
+};
+/** Holds a timed build's fastest run (atPace) to its limit, in ms at the limits' pace. */
+const inTime = (what, { paced, ms, pace }, limit) =>
+  assert(paced < limit, `${what} takes ${Math.round(paced)} ms at the limits' pace, over its ${limit} ms (${Math.round(ms)} ms here, the yardstick at ${pace.toFixed(2)} times its ${YARDSTICK} ms).`);
+// The page builds the same town a phase at a time, handing the main thread back in between. (Timed
+// builds, above: the town is built in phases three times over, a yardstick between every two
+// phases, each phase at its fastest.)
 const { buildTownInPhases } = await load('town-build');
 const phaseNames = [],
-  phaseTimes = new Map();
-let longestPhase = 0,
-  phased;
-for (const phases = buildTownInPhases(); ; ) {
-  const begin = performance.now(),
-    step = phases.next(),
-    took = performance.now() - begin;
-  longestPhase = Math.max(longestPhase, took);
-  if (step.done) {
-    phased = step.value;
-    break;
+  phaseTimes = new Map(),
+  stepTimes = [];
+let phased;
+for (let run = 0; run < 3; run++) {
+  let before = yardstick();
+  for (let k = 0, phases = buildTownInPhases(); ; k++) {
+    const begin = performance.now(),
+      step = phases.next(),
+      ms = performance.now() - begin,
+      after = yardstick(),
+      time = atPace(ms, before, after);
+    if (!stepTimes[k] || time.paced < stepTimes[k].paced) stepTimes[k] = time;
+    before = after;
+    if (step.done) {
+      phased ??= step.value;
+      break;
+    }
+    if (!run) phaseNames.push(step.value);
+    phaseTimes.set(step.value, stepTimes[k]);
   }
-  phaseNames.push(step.value);
-  phaseTimes.set(step.value, took);
 }
+const longestPhase = Math.max(...stepTimes.map((t) => t.ms));
 assert(phaseNames.length >= 10, 'The town is built in phases: ' + phaseNames.join(', '));
 assert.equal(new Set(phaseNames).size, phaseNames.length, 'Every phase has its own name.');
 // The airport's ground is built and batched in phases of its own (never in 'batch land', the
-// longest), each well under a fifth of a second, and its hall batches in its own phase too.
+// longest), each held to its own limit (timed builds, above), and its hall batches in its own phase too.
 assert.equal(phaseNames[phaseNames.indexOf('park, harbour and landmarks') + 1], 'airport ground', 'The airport ground is not built after the landmarks.');
 assert.equal(phaseNames[phaseNames.indexOf('batch land') + 1], 'batch airport', 'The airport is not batched right after the land.');
-for (const name of ['airport ground', 'batch airport', 'batch departures hall'])
-  assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
+for (const [name, limit] of [['airport ground', 150], ['batch airport', 150], ['batch departures hall', 75]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
 let phasedMeshes = 0,
   phasedTriangles = 0;
 phased.city.traverse((o) => {
@@ -5008,7 +5064,8 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 // - the budget: two falls, two clouds, three rocks, a tea set, a telescope, a set of four lamps and two
 //   urns cost at most 14 meshes and 16,000 triangles; the static parts merge into three families (stone,
 //   timber, brass) and each moving part is one mesh; every batched solid shares the bake program;
-// - at night the clouds, the puffs and the falls dim (SKY_NIGHT_DIM) on a material of the kit's own, with
+// - at night the clouds dim on one material of the kit's own and the falls (their water, lumps and puffs) on
+//   another, each to its own colour (SKY_NIGHT: a cool moonlit grey, the falls dimmed less), with
 //   no glow, and nothing else does; by day they are not dimmed; they take no shadow.
 {
   const G = await load('town-sky-garden'),
@@ -5019,7 +5076,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     { createCityMaterials } = await load('city-materials'),
     { createResident } = await load('city-people'),
     { palette } = await load('town-shared'),
-    { FALL, CLOUD, ROCK, TEA, TELESCOPE, GARDEN_LAMP, URN, SKY_NIGHT_DIM, SKY_GARDEN_LOOK: LOOK, SKY_GARDEN_FAMILY: FAMILY } = G;
+    { FALL, CLOUD, ROCK, TEA, TELESCOPE, GARDEN_LAMP, URN, SKY_NIGHT, SKY_GARDEN_LOOK: LOOK, SKY_GARDEN_FAMILY: FAMILY } = G;
   const fresh = () => {
     const library = createCityMaterials(),
       ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
@@ -5130,36 +5187,69 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
   const byName = (g, name) => meshesOf(g).find((m) => m.name === name);
 
-  // The fall.
+  // The fall: thin water spilling over a natural edge (the owner's reference 2), never plumbing. No
+  // basin, kerb or spout: nothing of it stands over its stream, which runs level out of the lawn's
+  // edge through town-sky's notch in the coping; a short lip, never an elbow; a flat sheet (0.5 wide
+  // or more and spreading as it falls, 0.15 deep or more so it never thins to a hairline from its
+  // edge, no deeper than 0.35 of its width so it never reads as a tube), its middle on the lean the
+  // layout gives; paler down the fall, from the water's edge at the lip to foam at the puff; a puff
+  // about 1.3 in radius that the sheet's foot ends inside, so no water reaches the sea. Its lumps
+  // are foam white and slide a spacing and back: the first cluster hidden inside the whole water
+  // under the lip at the loop's start and the last in the puff's core at its end, two clusters or
+  // more showing mid-fall at time 0 (the frame Pause and reduced motion hold), and through the whole
+  // loop never a point of them outside the sheet's own outline (its convex hull, ring by ring), so
+  // from any side nothing on the fall's silhouette moves and the selection ring round it holds still.
   {
     const F = built.fall.userData.fall,
       water = byName(built.fall, 'sky-fall-water'),
       lumps = byName(built.fall, 'sky-fall-lumps'),
-      spout = byName(built.fall, 'sky-fall-spout'),
       slide = lumps.parent,
       puffTop = -F.drop + FALL.puffRise,
-      neck = F.head - FALL.pour[1];
+      n = Math.hypot(1, F.lean),
+      // Out of the sheet's middle plane (to the sea), for a point of the fall.
+      out = (p) => (p.z - F.line(p.y)) / n;
     assert.deepEqual([F.drop, F.width, F.rise], [FALL.drop, FALL.width, 0], 'The fall\'s defaults moved.');
-    assert(FALL.width >= 0.5 && FALL.drop === 4.5 && Math.abs(FALL.puff - 1.3) < 1e-9, 'The fall is under 0.5 wide, or its drop or its puff moved.');
-    assert(water.parent.userData.keepSeparate && slide.userData.keepSeparate && slide.parent === water.parent && spout.parent === built.fall, 'The fall is not its spout, its still water on a pivot and its lumps on one inside it.');
-    // The spout: stone from the pool to past the rim; past the rim only a slab under the water.
-    const stone = new T.Box3().setFromObject(spout);
-    assert(spout.material.userData.surfaceKind === 'stone' && spout.castShadow && spout.userData.band, 'The spout is not a casting stone band.');
-    assert(Math.abs(stone.max.z - FALL.nose) < 1e-6 && stone.min.z < F.pool.z - F.pool.r && stone.min.y >= -FALL.foot - 1e-6 && Math.abs(stone.max.y - FALL.kerb.height) < 1e-6, `The spout runs from z ${stone.min.z.toFixed(2)} to ${stone.max.z.toFixed(2)} and y ${stone.min.y.toFixed(2)} to ${stone.max.y.toFixed(2)}.`);
-    each(spout, (p) => assert(p.z < 0.03 || p.y > -0.04, `The spout hangs below the deck's top past the rim at ${fmt(p)}.`));
-    // The sheet, from under the neck to the puff: 0.5 wide or more, softly rounded.
-    const rows = new Map();
-    each(water, (p) => {
-      if (p.y > neck + 1e-6 || p.y < puffTop + 0.2) return;
-      const k = p.y.toFixed(3),
-        row = rows.get(k) ?? rows.set(k, new T.Box3()).get(k);
-      row.expandByPoint(p);
+    assert(FALL.width >= 0.5 && FALL.drop === 4.5 && Math.abs(FALL.puff - 1.3) < 1e-9 && Math.abs(F.out - plan.SKY_FALLS.out) < 1e-9, 'The fall is under 0.5 wide, or its drop, its puff or its reach moved.');
+    assert(water.parent.userData.keepSeparate && slide.userData.keepSeparate && slide.parent === water.parent && meshesOf(built.fall).length === 2, 'The fall is not its still water on a pivot and its lumps on one inside it, and nothing else (no basin, kerb or spout).');
+    // Nothing over the stream; the stream level out of the lawn's edge to the lip.
+    let high = -Infinity;
+    each(water, (p) => (high = Math.max(high, p.y)));
+    built.fall.updateMatrixWorld(true);
+    each(lumps, (p) => (high = Math.max(high, p.y)), built.fall);
+    assert(Math.abs(high - FALL.stream.level) < 1e-6, `Something of the fall stands ${(high - FALL.stream.level).toFixed(3)} over its stream.`);
+    assert(F.top.z > 0.1 && F.top.z <= 0.2 && FALL.lip <= 0.2 && F.top.y > -0.25, `The fall turns down over a lip ${F.top.z.toFixed(2)} out and ${(-F.top.y).toFixed(2)} down: an elbow, not a lip.`);
+    // The sheet's rings, from under the lip to the puff's top.
+    const sheet = [];
+    each(water, (p, i) => {
+      if (p.y < F.top.y - 0.25 && p.y > puffTop + 0.05) sheet.push({ p: p.clone(), i });
     });
-    assert(rows.size >= 3, `The sheet has ${rows.size} rows between its neck and the puff.`);
-    for (const [y, row] of rows) {
-      const size = row.getSize(new T.Vector3());
-      assert(size.x >= 0.5 && size.x >= F.width - 0.03 && size.z >= 0.4 && Math.abs(row.getCenter(new T.Vector3()).z - F.out) < 1e-6, `The sheet is ${size.x.toFixed(3)} wide and ${size.z.toFixed(3)} deep at y ${y}.`);
+    sheet.sort((a, b) => b.p.y - a.p.y);
+    const rings = [];
+    for (const v of sheet) {
+      const ring = rings.at(-1);
+      if (ring && Math.abs(ring.y - v.p.y) < 0.04) {
+        ring.list.push(v);
+        ring.y = ring.list.reduce((s, q) => s + q.p.y, 0) / ring.list.length;
+      } else rings.push({ y: v.p.y, list: [v] });
     }
+    const colour = water.geometry.getAttribute('color'),
+      tone = (list) => list.reduce((s, q) => s + luminance(new T.Color().fromBufferAttribute(colour, q.i)), 0) / list.length;
+    assert(rings.length >= 6, `The sheet has ${rings.length} rings.`);
+    let wide = 0;
+    for (const ring of rings) {
+      const xs = ring.list.map((q) => q.p.x),
+        ws = ring.list.map((q) => out(q.p)),
+        width = Math.max(...xs) - Math.min(...xs),
+        depth = Math.max(...ws) - Math.min(...ws),
+        middle = (Math.max(...ws) + Math.min(...ws)) / 2;
+      assert(width >= 0.5 && width >= F.width - 0.03 && width >= wide - 1e-3 && depth >= 0.15 && depth <= 0.35 * width && Math.abs(middle) < 0.01, `The sheet is ${width.toFixed(3)} wide and ${depth.toFixed(3)} deep, ${middle.toFixed(3)} off its lean, at y ${ring.y.toFixed(2)}.`);
+      wide = width;
+    }
+    assert(wide >= 1.6 * F.width && FALL.flare >= 1.7, `The sheet spreads only to ${wide.toFixed(2)} over the puff.`);
+    // Paler down the fall: the water's edge at the lip, foam at the puff.
+    const first = tone(rings[0].list),
+      lastTone = tone(rings.at(-1).list);
+    assert(first < luminance(new T.Color(LOOK.foam)) * 0.75 && lastTone > first * 1.5 && lastTone > luminance(new T.Color(LOOK.water)), `The sheet does not pale from water at the lip (${first.toFixed(3)}) to foam at the puff (${lastTone.toFixed(3)}).`);
     // The puff: about 1.3 in radius round the sheet's line, flat underneath; the sheet's foot ends inside it.
     let reach = 0,
       low = Infinity,
@@ -5170,42 +5260,79 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       if (p.y < puffTop + 0.05 && Math.hypot(p.x, p.z - F.out) < 0.2) top = Math.max(top, p.y);
     });
     assert(reach > 1.1 && reach < 1.45 && Math.abs(low + F.drop + FALL.puffSink) < 0.03 && Math.abs(top - puffTop) < 0.06, `The puff reaches ${reach.toFixed(2)} out, ${(-F.drop - low).toFixed(2)} down and ${(top + F.drop).toFixed(2)} up.`);
-    const foot = G.fallSection(F, F.head + F.drop + 0.25);
-    assert(Math.hypot(foot.a, 0.25 + FALL.core.y) < FALL.core.r && low > -F.drop - 1, 'The sheet\'s foot is not inside the puff\'s core, or water falls on toward the sea.');
-    // The lumps: `count` clusters alike, a spacing apart; the loop's ends are hidden.
-    const oval = (p, grow = 0) => {
-      const s = G.fallSection(F, F.head - p.y);
-      return Math.abs(p.x / (s.a + grow)) ** G.FALL_OVAL + Math.abs(p.z / (s.b + grow)) ** G.FALL_OVAL;
-    };
+    const foot = G.fallSection(F, F.top.y + F.drop);
+    assert(Math.hypot(foot.a, FALL.core.y + 0.15) < FALL.core.r && low > -F.drop - 1, 'The sheet\'s foot is not inside the puff\'s core, or water falls on toward the sea.');
+    // The lumps: foam white, `count` clusters alike, a spacing apart down the lean.
+    const lumpColour = lumps.geometry.getAttribute('color');
+    for (let i = 0; i < lumpColour.count; i++) assert(Math.abs(luminance(new T.Color().fromBufferAttribute(lumpColour, i)) - luminance(new T.Color(LOOK.foam))) < 1e-3, 'A lump is not foam white.');
     assert.equal(pieces(lumps).length, F.count * G.FALL_LUMPS.length, 'The lumps are not the layout\'s clusters.');
-    assert(F.count >= 3 && Math.abs(F.spacing - FALL.pitch) < 0.2 && slide.position.x === 0 && Math.abs(slide.position.z - F.out) < 1e-9, `The fall has ${F.count} clusters ${F.spacing.toFixed(2)} apart, or its lumps are off its line.`);
+    assert(F.count >= 3 && Math.abs(F.spacing - FALL.pitch) < 0.2 && slide.position.x === 0, `The fall has ${F.count} clusters ${F.spacing.toFixed(2)} apart, or its lumps are off its line.`);
+    // A point's place in the sheet: its ring above and below (the hull of their (x, out) points).
+    const hullOf2 = (pts) => {
+        const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+          cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]),
+          half = (list) => {
+            const h = [];
+            for (const q of list) {
+              while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop();
+              h.push(q);
+            }
+            h.pop();
+            return h;
+          };
+        return [...half(sorted), ...half(sorted.reverse())];
+      },
+      hulls = rings.map((r) => ({ y: r.y, hull: hullOf2(r.list.map((q) => [q.p.x, out(q.p)])), face: r.list.map((q) => [q.p.x, out(q.p)]) })),
+      inside = (hull, [x, w], margin) => hull.every((a, k) => {
+        const b = hull[(k + 1) % hull.length];
+        return ((b[0] - a[0]) * (w - a[1]) - (b[1] - a[1]) * (x - a[0])) / Math.hypot(b[0] - a[0], b[1] - a[1]) >= margin;
+      }),
+      around = (y) => hulls.filter((h, k) => (h.y >= y && (hulls[k + 1]?.y ?? -Infinity) < y) || (h.y < y && (hulls[k - 1]?.y ?? Infinity) >= y));
     const cluster = (y) => Math.round((F.first - y + (F.over - F.under) / 2) / F.spacing),
-      seen = new Set();
-    each(lumps, (p) => {
-      const k = cluster(p.y);
-      seen.add(k);
-      // At the loop's start the first cluster is inside the pour's straight part.
-      if (k === 0) assert(p.y < F.head + 1e-6 && p.y > F.head - FALL.pour[0] - 1e-6 && oval(p, -0.005) < 1, `A lump of the first cluster shows at the loop's start at ${fmt(p)}.`);
-      // At its end the last one is inside the puff's core.
-      if (k === F.count - 1) assert(Math.hypot(p.x, p.y - F.spacing + F.drop - FALL.core.y, p.z) < FALL.core.r - 0.02, `A lump of the last cluster shows at the loop's end at ${fmt(p)}.`);
-    }, slide);
+      seen = new Set(),
+      showing = new Set();
+    for (const phase of [0, 0.2, 0.4, 0.6, 0.8, 0.999]) {
+      const s = phase * F.spacing;
+      slide.position.set(0, -s, s * F.lean);
+      built.fall.updateMatrixWorld(true);
+      each(lumps, (p) => {
+        const k = cluster(p.y + s);
+        if (phase === 0) seen.add(k);
+        // At the loop's start the first cluster is hidden inside the whole water under the lip.
+        if (phase === 0 && k === 0) assert(p.y < F.top.y - 0.25 && p.y > F.top.y - FALL.hide[0] && around(p.y).every((h) => inside(h.hull, [p.x, out(p)], 0.004)), `A lump of the first cluster shows at the loop's start at ${fmt(p)}.`);
+        // At its end the last one is inside the puff's core.
+        if (phase === 0.999 && k === F.count - 1) assert(Math.hypot(p.x, p.y + F.drop - FALL.core.y, p.z - F.out) < FALL.core.r - 0.02, `A lump of the last cluster shows at the loop's end at ${fmt(p)}.`);
+        // Down the sheet, never outside its outline.
+        if (p.y < F.top.y - 0.25 && p.y > puffTop + 0.05) {
+          const at = around(p.y);
+          assert(at.length && at.every((h) => inside(h.hull, [p.x, out(p)], 0.003)), `A lump stands out of the sheet's outline at ${fmt(p)} (phase ${phase}).`);
+        }
+      }, built.fall);
+    }
     assert.equal(seen.size, F.count, 'The lumps are not sorted into the layout\'s clusters.');
-    // Time 0: the phase is mid-loop, and two clusters or more show on the fall between the lip and the puff.
-    const show = new Set();
+    // Time 0: the phase is mid-loop, and two clusters or more show on the sheet, out of its channel.
+    slide.position.set(0, -G.fallPhase(0) * F.spacing, G.fallPhase(0) * F.spacing * F.lean);
     built.fall.updateMatrixWorld(true);
-    assert(G.fallPhase(0) > 0.15 && G.fallPhase(0) < 0.85 && Math.abs(slide.position.y + G.fallPhase(0) * F.spacing) < 1e-9, 'The fall\'s frozen frame is at an end of its loop.');
+    assert(G.fallPhase(0) > 0.15 && G.fallPhase(0) < 0.85, 'The fall\'s frozen frame is at an end of its loop.');
     each(lumps, (p) => {
-      if (p.y > puffTop + 0.05 && p.y < F.head && oval({ x: p.x, y: p.y, z: p.z - F.out }, 0.02) > 1) show.add(cluster(p.y + G.fallPhase(0) * F.spacing));
+      if (p.y < F.top.y - 0.25 && p.y > puffTop + 0.05) {
+        const s = G.fallSection(F, F.top.y - p.y),
+          w = Math.abs(out(p));
+        if (w > G.fallFace(s, p.x / s.a) + 0.01) showing.add(cluster(p.y + G.fallPhase(0) * F.spacing));
+      }
     }, built.fall);
-    assert(show.size >= 2, `Only ${show.size} clusters of lumps show mid-fall in the frozen frame.`);
-    // A fall on a domed deck: its water lies level, `rise` higher, and still ends `drop` under the rim.
+    assert(showing.size >= 2, `Only ${showing.size} clusters of lumps show mid-fall in the frozen frame.`);
+    // A fall on a domed deck: its stream's head lies under the lawn there, and it still ends `drop` under the rim.
     const { garden: other } = fresh(),
-      raised = other.fall({ rise: 0.25, width: 0.7, drop: 5 }),
+      raised = other.fall({ rise: 0.04, width: 0.7, drop: 5 }),
       R = raised.userData.fall;
     raised.updateMatrixWorld(true);
     const all = new T.Box3().setFromObject(raised);
-    assert(Math.abs(all.max.y - 0.25 - FALL.kerb.height) < 1e-6 && Math.abs(all.min.y + 5 + FALL.puffSink) < 0.03 && Math.abs(R.level - 0.25 - FALL.level) < 1e-9, 'A raised fall\'s water is not level over its pool, or its puff is off its drop.');
-    assert(new T.Box3().setFromObject(byName(raised, 'sky-fall-spout')).min.y >= -FALL.foot - 1e-6, 'A raised fall\'s spout hangs below its foot.');
+    let head = -Infinity;
+    each(byName(raised, 'sky-fall-water'), (p) => {
+      if (p.z < -FALL.stream.head + 0.01) head = Math.max(head, p.y);
+    });
+    assert(Math.abs(all.max.y - FALL.stream.level) < 1e-6 && Math.abs(all.min.y + 5 + FALL.puffSink) < 0.03 && head <= R.rise - 0.03 + 1e-6, 'A fall on a lower lawn does not keep its stream\'s head under the lawn, or its puff is off its drop.');
   }
 
   // The cloud: a flat base at y 0, its size, its base's paint darker and cooler than its top's.
@@ -5244,7 +5371,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(Math.abs(small.geometry.boundingBox.getSize(new T.Vector3()).x - size.x / 2) < 0.05 && Math.abs(trisOf([small]) - trisOf([body])) < 80, 'A cloud half the size is not half the cloud for the same triangles.');
   }
 
-  // The rock: the armour's smooth boulder with a keel, turf on top.
+  // The rock: a chunk of the armour's smooth boulders with a keel, a thin patch of turf on top.
   {
     const body = byName(built.rock, 'sky-rock-body'),
       bob = body.parent,
@@ -5263,7 +5390,21 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     }
     each(body, (p) => box.expandByPoint(p), bob);
     const size = 0.6;
-    assert(box.max.x - box.min.x > 1.6 * size && box.max.x - box.min.x < 2.6 * size && box.max.y > 0.6 * size && box.max.y < 1.1 * size && -box.min.y > 1.2 * size && -box.min.y > box.max.y * 1.4, `The rock spans ${fmt(box.min)} to ${fmt(box.max)}: no keel.`);
+    // A chunk of rock, not a drop: a keel deeper than its top is high, and no long point under it.
+    assert(box.max.x - box.min.x > 1.6 * size && box.max.x - box.min.x < 2.6 * size && box.max.y > 0.55 * size && box.max.y < 1.1 * size && -box.min.y > 0.9 * size && -box.min.y < 1.6 * size && -box.min.y > box.max.y * 1.3, `The rock spans ${fmt(box.min)} to ${fmt(box.max)}: no keel, or a drop.`);
+    // Two or three of the armour's boulders (each a whole icosahedron); no tussocks (no piece under
+    // a fifth of its size across: three small balls on a green cap read as eyes); its turf one thin
+    // patch over the big stone, standing under 0.12 of its size over the stone's top.
+    const all = pieces(body),
+      colour = body.geometry.getAttribute('color'),
+      // The turf is the green of it (its vertices greener than they are red or blue), the stones the rest.
+      green = (i) => colour.getY(i) > colour.getX(i) * 1.1 && colour.getY(i) > colour.getZ(i) * 1.3,
+      turfTop = new T.Box3(),
+      stoneTop = new T.Box3();
+    each(body, (p, i) => (green(i) ? turfTop : stoneTop).expandByPoint(p), bob);
+    const stones = all.length - 1;
+    assert(stones >= 2 && stones <= 3 && all.every((p) => p.faces === 20 * (ROCK.detail + 1) ** 2 || p.faces < 20 * (ROCK.detail + 1) ** 2 + 60) && all.every((p) => Math.min(p.box.max.x - p.box.min.x, p.box.max.z - p.box.min.z) >= 0.2 * size), `The rock is ${stones} boulders, or carries a piece under a fifth of its size across (a tussock).`);
+    assert(!turfTop.isEmpty() && turfTop.max.y - stoneTop.max.y > -0.04 * size && turfTop.max.y - stoneTop.max.y < 0.12 * size && turfTop.max.x - turfTop.min.x < 0.8 * (stoneTop.max.x - stoneTop.min.x), `The rock's turf is not one thin patch on its stone's top (${(turfTop.max.y - stoneTop.max.y).toFixed(3)} over it).`);
     assert(built.rock.userData.period > 0 && ROCK.periods.includes(built.rock.userData.period), 'The rock does not say its period.');
   }
 
@@ -5415,27 +5556,29 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   // The budget, batched as the island will batch it: static parts with the deck as their floor, moving
   // parts one by one.
   {
-    const { ctx, garden, batch } = fresh(),
-      deck = 10.472,
-      root = new T.Group(),
-      begin = performance.now();
-    root.position.set(-52, deck, -24);
-    root.rotation.y = 0.4;
-    const put = (g, x, y, z, ry = 0) => {
-      g.position.set(x, y, z);
-      g.rotation.y = ry;
-      root.add(g);
-      return g;
-    };
-    const pale = [put(garden.fall({ seed: 1 }), 6, 0, 0, Math.PI / 2), put(garden.fall({ seed: 2 }), -6, 0, 0, -Math.PI / 2), put(garden.cloud({ seed: 1 }), 9, 1, 3), put(garden.cloud({ seed: 2, size: 0.8 }), -9, 2, -3)];
-    for (const k of [1, 2, 3]) put(garden.floatingRock({ seed: k, size: 0.4 + 0.15 * k }), 8, -3, k * 2);
-    put(garden.teaTable(), 0, 0, 3);
-    put(garden.telescope(), 4, 0, 3);
-    const lampSet = put(garden.gardenLamps([{ x: -2, z: 4 }, { x: 2, z: 4 }, { x: -2, z: 5 }, { x: 2, z: 5 }]), 0, 0, 0);
-    put(garden.urn(), -3, 0, 2);
-    put(garden.urn(), 3, 0, 2);
-    root.updateMatrixWorld(true);
-    const built = performance.now() - begin,
+    const deck = 10.472,
+      // (Timed builds, above: each run from a context of its own; the checks below take the first.)
+      gardenTime = timeBuild(fresh, ({ ctx, garden, batch }) => {
+        const root = new T.Group();
+        root.position.set(-52, deck, -24);
+        root.rotation.y = 0.4;
+        const put = (g, x, y, z, ry = 0) => {
+          g.position.set(x, y, z);
+          g.rotation.y = ry;
+          root.add(g);
+          return g;
+        };
+        const pale = [put(garden.fall({ seed: 1 }), 6, 0, 0, Math.PI / 2), put(garden.fall({ seed: 2 }), -6, 0, 0, -Math.PI / 2), put(garden.cloud({ seed: 1 }), 9, 1, 3), put(garden.cloud({ seed: 2, size: 0.8 }), -9, 2, -3)];
+        for (const k of [1, 2, 3]) put(garden.floatingRock({ seed: k, size: 0.4 + 0.15 * k }), 8, -3, k * 2);
+        put(garden.teaTable(), 0, 0, 3);
+        put(garden.telescope(), 4, 0, 3);
+        const lampSet = put(garden.gardenLamps([{ x: -2, z: 4 }, { x: 2, z: 4 }, { x: -2, z: 5 }, { x: 2, z: 5 }]), 0, 0, 0);
+        put(garden.urn(), -3, 0, 2);
+        put(garden.urn(), 3, 0, 2);
+        root.updateMatrixWorld(true);
+        return { ctx, batch, root, pale, lampSet };
+      }),
+      { ctx, batch, root, pale, lampSet } = gardenTime.built,
       globes = ctx.lamps[0];
     batch(root, { floor: () => deck });
     for (const entry of ctx.animated) batch(entry.object, { contact: 'none' });
@@ -5444,7 +5587,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       still = all.filter((m) => m.parent === root),
       movers = ctx.animated.map((e) => e.object);
     assert(all.length <= 14 && trisOf(all) <= 16000, `The garden costs ${all.length} meshes and ${trisOf(all)} triangles.`);
-    assert(built < 300, `The garden takes ${Math.round(built)} ms to build.`);
+    inTime('The garden\'s build', gardenTime, 100);
     assert.deepEqual(still.map((m) => `${m.material.userData.surfaceKind}|${m.castShadow}`).sort(), ['brass|false', 'stone|true', 'wood|true'], 'The garden\'s static parts do not merge into casting stone and timber and brass that casts nothing.');
     assert(movers.length === 9 && movers.every((o) => o.children.filter((c) => c.isMesh).length === 1), 'A moving part of the garden is not one mesh.');
     assert(ctx.lamps.length === 1 && globes.parent === lampSet && all.includes(globes) && !globes.material.vertexColors, 'The lamps\' globes were batched, or are not one mesh.');
@@ -5457,12 +5600,17 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     const paleMeshes = pale.flatMap((g) => meshesOf(g)).filter((m) => m.material.userData.surfaceKind === 'fabric'),
       rest = solids.filter((m) => !paleMeshes.includes(m)),
       shared = new Set(rest.map((m) => m.material));
-    assert(SKY_NIGHT_DIM >= 0.3 && SKY_NIGHT_DIM < 1 && paleMeshes.length === 6, `The clouds hardly darken at night, or the pale parts are ${paleMeshes.length} meshes, not the falls' four and the clouds' two.`);
+    // (SKY_NIGHT: the clouds keep 0.85 or more of their daylight, turned a little cool: at 0.7 grey
+    // they read as slate boulders; the falls keep more than the clouds, never a dark downpipe.)
+    const tones = { cloud: new T.Color(SKY_NIGHT.cloud), fall: new T.Color(SKY_NIGHT.fall) },
+      roleOf = (m) => (pale.slice(0, 2).some((g) => meshesOf(g).includes(m)) ? 'fall' : 'cloud');
+    assert(paleMeshes.length === 6 && luminance(tones.cloud) >= 0.85 && tones.cloud.b >= tones.cloud.r && luminance(tones.fall) > luminance(tones.cloud) && [tones.cloud, tones.fall].every((c) => Math.max(c.r, c.g, c.b) <= 1), `The clouds hardly lighten from slate at night or glow, the falls dim more than the clouds, or the pale parts are ${paleMeshes.length} meshes, not the falls' four and the clouds' two.`);
     for (const entry of ctx.animated) entry.update(5, 1, 0);
-    assert.equal(new Set(paleMeshes.map((m) => m.material)).size, 1, 'The pale parts do not share one material of the kit\'s own.');
+    for (const role of ['fall', 'cloud']) assert.equal(new Set(paleMeshes.filter((m) => roleOf(m) === role).map((m) => m.material)).size, 1, `The ${role}s do not share one material of the kit's own.`);
+    assert(new Set(paleMeshes.map((m) => m.material)).size === 2, 'The falls and the clouds share their night.');
     for (const m of paleMeshes) {
       assert(!shared.has(m.material) && m.material.customProgramCacheKey() === 'lius-bake-solid', 'The clouds dim a material the town shares, or leave the solids\' program.');
-      assert(Math.abs(m.material.color.r - (1 - SKY_NIGHT_DIM)) < 1e-6 && m.material.color.r === m.material.color.b && m.material.emissive.getHex() === 0 && !m.receiveShadow && !m.castShadow, 'A cloud, a puff or a fall stays bright (or glows) at night, or takes a shadow.');
+      assert(m.material.color.equals(tones[roleOf(m)]) && m.material.emissive.getHex() === 0 && !m.receiveShadow && !m.castShadow, 'A cloud, a puff or a fall is not its night colour (or glows) at night, or takes a shadow.');
     }
     for (const m of rest) assert.equal(m.material.color.getHex(), 0xffffff, 'Something of the garden that is not pale dims at night.');
     for (const entry of ctx.animated) entry.update(5, 0, 0);
@@ -6364,12 +6512,12 @@ let skyReport = '';
   assert(her && her.userData.keepSeparate && her.userData.prebatched, 'Alison is not on the sky island\'s root, a pivot of her own outside its batches.');
   assert.deepEqual(sky.root.children, [sky.land, sky.rock, sky.air, sky.shell, her], 'The sky island\'s root holds something else than its ground, its rock, its air, its villa and Alison.');
   assert(sky.shell.position.equals(new T.Vector3(site.x, site.y, site.z)) && sky.shell.rotation.y === site.rotation && sky.land.position.lengthSq() === 0 && sky.rock.position.lengthSq() === 0, 'The villa\'s shell is not in its own frame on the deck.');
-  // Built and batched in phases of its own (never in 'batch land', the longest), each well under a fifth of a second.
+  // Built and batched in phases of its own (never in 'batch land', the longest), each held to its own limit (timed builds, above).
   assert.equal(phaseNames[phaseNames.indexOf('airport ground') + 1], 'sky ground', 'The sky island\'s ground is not built after the airport\'s.');
   assert.equal(phaseNames[phaseNames.indexOf('sky ground') + 1], 'sky rock', 'The sky island\'s rock is not sculpted in a phase of its own.');
   assert.equal(phaseNames[phaseNames.indexOf('batch airport') + 1], 'batch sky', 'The sky island is not batched right after the airport.');
   assert(phaseNames.includes('batch sky villa'), 'The sky island\'s villa is not batched in a phase of its own.');
-  for (const name of ['sky ground', 'sky rock', 'batch sky', 'batch sky villa']) assert(phaseTimes.get(name) < 200, `The '${name}' phase takes ${Math.round(phaseTimes.get(name))} ms.`);
+  for (const [name, limit] of [['sky ground', 450], ['sky rock', 150], ['batch sky', 50], ['batch sky villa', 200]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   each(model.land, (p) => assert(Math.abs(p.x - S.x) > S.b + 4 || Math.abs(p.z - S.z) > S.a + 4, 'Something of the sky island is in the land\'s batch.'));
   // Nothing two-sided, nothing that cuts holes, nothing see-through (its water, foam and clouds are
   // opaque too); every mesh batched, with a surface kind (but the garden lamps' globes, the lamps' own
@@ -6417,14 +6565,16 @@ let skyReport = '';
     ...SKY_LOOK.rock.map((c, k) => ['rock ' + k, c, palette.kerb]),
   ])
     assert(hsv(colour).s <= hsv(family).s + 1e-9, `The sky island's ${name} (${colour}) is more saturated than its family.`);
-  // The earth's beds are brown and step darker downward; the rock is a warm grey, far greyer than
-  // the earth; both are near the armour's greys in value (no black, no pale cream under the island).
+  // The earth's beds are browns, each a clear step in value from the next (the top bed dark, the
+  // middle one lighter, the lowest dark again, so the strata read); the rock is a cool grey, far
+  // greyer than the earth and darker than its lightest bed; both are near the armour's greys in value
+  // (no black, no pale cream under the island).
   {
     const look = (hex) => ({ ...hsv(hex), v: Math.max(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)) }),
       earth = SKY_LOOK.earth.map(look),
       rock = SKY_LOOK.rock.map(look);
-    assert(earth.every((c, k) => !k || c.v < earth[k - 1].v) && earth.every((c) => c.s > 0.3 && c.v > 0.35 && c.v < 0.6), 'The earth\'s beds are not browns that darken downward.');
-    assert(rock.every((c) => c.s < 0.15 && c.v > 0.4 && c.v < 0.65) && hsv(SKY_LOOK.seam).s < 0.15, 'The rock is not a warm grey.');
+    assert(earth.every((c, k) => !k || Math.abs(c.v - earth[k - 1].v) > 0.08) && earth[1].v > earth[0].v && earth.every((c) => c.s > 0.3 && c.v > 0.35 && c.v < 0.65), 'The earth\'s beds are not browns a clear step apart in value.');
+    assert(rock.every((c) => c.s < 0.15 && c.v > 0.4 && c.v < 0.65 && c.v < earth[1].v - 0.05) && hsv(SKY_LOOK.seam).s < 0.15, 'The rock is not a grey darker than the earth\'s lightest bed.');
   }
   assert.deepEqual(SKY_LOOK.lawn, [palette.grassDark, palette.grassLight]);
 
@@ -6499,7 +6649,8 @@ let skyReport = '';
       if (d < SKY_COPING.profile[0][0] - 0.05) assert(p.y < plan.skyTop(p.x, p.z) - 0.08, `The rock rises through the turf at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
       if (p.y > flat + 0.02) {
         top = Math.max(top, p.y);
-        if (d > widest) {
+        // (Clear of the falls' notches, where the coping sinks under the stream: checked below.)
+        if (d > widest && plan.skyFalls.every((f) => Math.hypot(p.x - f.x, p.z - f.z) > 1)) {
           widest = d;
           widestY = p.y;
         }
@@ -6576,8 +6727,9 @@ let skyReport = '';
     });
     assert(Math.min(...deepest) >= SKY_ROCK.body.cliff && SKY_ROCK.body.cliff >= 1.2, `The rock's cliffs stand only ${Math.min(...deepest).toFixed(2)} deep at a bearing of the rim.`);
     assert(underFalls.every((d) => d <= 0), `The rock stands ${Math.max(...underFalls).toFixed(2)} past the rim under a fall.`);
-    // The earth in beds, darker downward, each change a paler seam; down the spike the earth gives
-    // way to rock, far greyer than it. (Read through the sea's bounce, which the next check holds.)
+    // The earth in beds, each a clear step from the next (the middle one lighter than the top's), each
+    // change under a paler seam; down the spike the earth gives way to rock, far greyer than it. (Read
+    // through the sea's bounce, which the next check holds; the boulders' grey is left out of the beds.)
     // Whatever faces down is lifted by the bounce (SKY_ROCK.bounce: under the town's high sun the
     // underside reads as brown earth and grey rock, never as a hole): faces turned straight down are
     // that much brighter than the same beds' near-vertical ones.
@@ -6596,16 +6748,17 @@ let skyReport = '';
           u = under(n.getY(i)),
           c = new T.Color().fromBufferAttribute(colour, i),
           base = new T.Color(c.r / (1 + B[0] * u), c.g / (1 + B[1] * u), c.b / (1 + B[2] * u));
-        if (depth > 0.6 && depth < 1.2) bands.top.push(base);
-        else if (depth > 2.3 && depth < 3.1) bands.mid.push(base);
+        const earthy = grey(base) > 0.25;
+        if (depth > 0.6 && depth < 1.2 && earthy) bands.top.push(base);
+        else if (depth > 2.3 && depth < 3.1 && earthy) bands.mid.push(base);
         else if (depth > SKY_ROCK.spike[1] + 0.2 && depth < S.depth - 0.4) bands.low.push(base);
-        if (Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) bands.seam.push(base);
+        if ((Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) && earthy) bands.seam.push(base);
         // (The earth of the upper two beds only: the rock outcrops in them are grey.)
         if (depth > 0.6 && depth < SKY_ROCK.beds[1] - 0.3 && grey(c) > 0.4) (n.getY(i) < -0.85 ? down : Math.abs(n.getY(i)) < 0.35 ? side : []).push(c);
       }
       const [top, mid, low, seam] = [bands.top, bands.mid, bands.low, bands.seam].map(mean),
         luma = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-      assert(luma(top) > luma(mid) && luma(seam) > (luma(top) + luma(mid)) / 2, 'The underside\'s beds do not read as strata.');
+      assert(luma(mid) > luma(top) * 1.25 && luma(seam) > (luma(top) + luma(mid)) / 2, `The underside's beds do not read as strata (${[top, mid, seam].map((c) => luma(c).toFixed(3)).join(', ')}).`);
       assert(grey(top) > 0.25 && grey(mid) > 0.2 && grey(low) < grey(mid) / 2, 'The earth under the deck is not brown, or the spike is not rock.');
       // (Its near-vertical faces take a little of it too: measured, about 1.6 times the light.)
       assert(down.length > 20 && side.length > 20 && mean(down).r / mean(side).r > 1 + 0.35 * B[0] && luma(mean(down)) / luma(mean(side)) > 1 + 0.3 * B[1], 'The underside\'s down-turned faces are not lifted by the sea\'s bounce.');
@@ -6758,10 +6911,10 @@ let skyReport = '';
     assert.equal(plan.skyFalls.length, 2);
     for (const [k, f] of plan.skyFalls.entries()) {
       const rim = plan.skyRim(f.bearing),
-        pool = plan.skyRim(f.bearing, -plan.SKY_FALLS.pool),
+        spring = plan.skyRim(f.bearing, -plan.SKY_FALLS.head),
         slot = slots.falls[k];
       assert(Math.abs(plan.angleDiff(f.bearing, Math.PI)) > 40 * deg && Math.abs(plan.angleDiff(f.bearing, 45 * deg)) > 55 * deg, `Fall ${k} leaves the rim on the north or before the facade.`);
-      assert(near(f, rim) && f.y === plan.skyTop(rim.x, rim.z) && Math.abs(plan.angleDiff(f.ry, Math.atan2(rim.nx, rim.nz))) < 1e-9 && Math.abs(f.rise - (plan.skyTop(pool.x, pool.z) - f.y)) < 1e-9 && f.rise > 0 && f.rise < 0.2, `Fall ${k}'s slot is off the rim.`);
+      assert(near(f, rim) && f.y === plan.skyTop(rim.x, rim.z) && Math.abs(plan.angleDiff(f.ry, Math.atan2(rim.nx, rim.nz))) < 1e-9 && Math.abs(f.rise - (plan.skyTop(spring.x, spring.z) - f.y)) < 1e-9 && f.rise > 0 && f.rise < 0.2, `Fall ${k}'s slot is off the rim.`);
       assert(slot.x === f.x && slot.y === f.y && slot.z === f.z && slot.ry === f.ry && slot.rise === f.rise, `Fall ${k}'s garden slot is not its plan.`);
       assert(Math.abs(f.puff.x - (f.x + rim.nx * 0.67)) < 1e-9 && Math.abs(f.puff.y - (f.y - 4.5)) < 1e-9 && f.puff.r === 1.3 && Math.abs(f.puff.bottom - 5) < 0.1 && f.puff.bottom > WATER + 4.9, `Fall ${k}'s cloud puff is off its place.`);
     }
@@ -6945,13 +7098,25 @@ let skyReport = '';
         // behind them.)
         if (!drift) {
           let seen = 0;
-          // (About two thousand of its still points a bearing: a ray against the island costs some milliseconds.)
-          for (let k = 0; k < still.length; k += Math.ceil(still.length / 2000)) {
-            through(still[k]);
-            if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(still[k]) ?? 1) > 0.01) continue;
+          // One still point of it in each 0.6 square of the screen, the one nearest the camera (about
+          // four hundred a bearing: a ray against the island costs some milliseconds).
+          const front = new Map();
+          for (const p of still) {
+            const [u, w] = flat(p),
+              cell = Math.floor(u / 0.6) + ' ' + Math.floor(w / 0.6),
+              near = p.dot(back);
+            if (!(front.get(cell)?.near >= near)) front.set(cell, { p, near });
+          }
+          for (const { p } of front.values()) {
+            through(p);
+            const hits = ray.intersectObjects(roots, true);
+            if ((hits[0]?.point.distanceTo(p) ?? 1) > 0.01) continue;
             seen++;
-            const picked = pickTarget(ray, models, model.parkHit, pick);
-            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${still[k].toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
+            // pickTarget casts this same ray at the island's root again: it is handed the island's own
+            // hits from the cast above, as that cast gives them (the same ray, the same meshes).
+            const own = hits.filter((h) => under(h.object, sky.root)),
+              picked = pickTarget(Object.create(ray, { intersectObject: { value: (o, ...rest) => (o === sky.root ? own : ray.intersectObject(o, ...rest)) } }), models, model.parkHit, pick);
+            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${p.toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
           }
           assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
           seenAll += seen;
@@ -7013,10 +7178,11 @@ let skyReport = '';
   {
     // The underside dims at night as the balloon does (SKY_ROCK.night: a pale mass never hangs lit
     // in the night sky), on its own copies of the batch materials, so nothing else of the town
-    // darkens; and it keeps a faint fill of its own (SKY_ROCK.fill: the night's high moon lights
-    // nothing that faces down, and it went black), a dark brown, far from a glow (under 0.02 in
-    // linear luminance, a twentieth of a lit window's). Its group is in the town's animated list,
-    // batched in its own phase ('batch sky'), never again by the animated loop.
+    // darkens; and it keeps a fill of its own (SKY_ROCK.fill: the night's high moon lights nothing
+    // that faces down), a dark brown, far from a glow (under 0.04 in linear luminance, a tenth of a
+    // lit window's) but enough that the island's cone reads against the night sea (at 0.01, with half
+    // its daylight, it sank to near-black and only the selection ring traced it). Its group is in the
+    // town's animated list, batched in its own phase ('batch sky'), never again by the animated loop.
     const entry = model.animated.find((e) => e.object === sky.rock),
       parts = sky.rock.children.filter((o) => o.isMesh),
       others = new Set();
@@ -7031,7 +7197,7 @@ let skyReport = '';
       assert(!others.has(o.material), 'The underside dims a material the town shares.');
       assert(Math.abs(o.material.color.r - (1 - SKY_ROCK.night)) < 1e-6 && o.material.emissive.equals(fill), 'The underside stays bright at night, or has no fill.');
     }
-    assert(luminance(fill) > 0.005 && luminance(fill) < 0.02 && fill.r > fill.g && fill.g > fill.b, `The underside's night fill (${SKY_ROCK.fill}) is black, a glow or not a brown.`);
+    assert(luminance(fill) > 0.02 && luminance(fill) < 0.04 && fill.r > fill.g && fill.g > fill.b && SKY_ROCK.night <= 0.35, `The underside's night fill (${SKY_ROCK.fill}) is black, a glow or not a brown, or it keeps too little of its daylight (${1 - SKY_ROCK.night}).`);
     entry.update(0, 0);
     assert(parts.every((o) => o.material.color.r === 1 && o.material.emissive.getHex() === 0), 'The underside stays dim, or keeps its fill, by day.');
   }
@@ -7084,6 +7250,129 @@ let skyReport = '';
     look(new T.Vector3(0, 0, 0), 2.4);
     assert(!skyShadowWanted(camera, landMarks, 0, 0, true), 'With the sky island out of view the sun\'s shadow stays on it.');
     assert(SKY_SHADOW.zoom[0] < SKY_SHADOW.zoom[1] && SKY_SHADOW.zoom[1] > 1 && SKY_SHADOW.land[0] > SKY_SHADOW.land[1] && SKY_SHADOW.fade > 0.05 && SKY_SHADOW.fade < 0.4, 'The shadow box changes hands at the City overview\'s zoom, without slack, or abruptly.');
+  }
+
+  /* ---------------- the falls' notches, the rock's beds, the floats and the lamps' pools ---------------- */
+  // The art review of the merged island (findings 2, 4, 5 and 10):
+  // - each fall leaves the rim through a notch in the coping, never a basin or a spout: within
+  //   FALL.notch.half of its rim point the coping sinks under the stream's water (nothing of the stone
+  //   stands over it), clear of the notch it keeps its full height, and three of the rock's own
+  //   boulders (SKY_NOTCH.rocks) stand round it on the deck;
+  // - the earth's beds are level: at the depth of each bed change the earth's paint (less the sea's
+  //   bounce and the mottle) is the same all round the island (a wandering line smeared like paint),
+  //   and the boulders are pieces of their own, cool grey against the brown;
+  // - the three floating rocks are not clones;
+  // - the lamps' pools: one opaque mesh laid over the deck (SKY_POOL.lift over the lawn and the
+  //   paths), on the solids' one program so the night wash reaches it, casting nothing; its wash is
+  //   strongest at each lamp's foot (plan.SKY_LAMPS, wherever they stand) and gone by SKY_POOL.r; by
+  //   day its paint is the ground's under it (a lawn tone through the grass grain and the lawn's tint
+  //   under the island, or the gravel's).
+  {
+    const { FALL } = await load('town-sky-garden'),
+      { SKY_NOTCH, SKY_POOL } = await load('town-sky'),
+      fmt3 = (p) => p.toArray().map((n) => n.toFixed(2)).join(', '),
+      { WASH_PEAK } = await load('city-materials'),
+      rockMesh = sky.rock.children.find((o) => o.isMesh),
+      flat = S.top - SKY_ROCK.body.top;
+    for (const f of plan.skyFalls) {
+      let notch = -Infinity,
+        beside = -Infinity;
+      each(sky.rock, (p) => {
+        if (p.y < flat + 0.02) return;
+        const d = Math.hypot(p.x - f.x, p.z - f.z);
+        if (d < FALL.notch.half - 0.05) notch = Math.max(notch, p.y);
+        else if (d > FALL.notch.half + FALL.notch.ramp + 0.35 && d < FALL.notch.half + FALL.notch.ramp + 0.8) beside = Math.max(beside, p.y);
+      });
+      assert(notch <= f.y + FALL.notch.floor + 1e-4 && notch < f.y + FALL.stream.level - 2 * FALL.stream.depth && Math.abs(beside - (S.top + Math.max(...SKY_COPING.profile.map(([, y]) => y)))) < 1e-3, `The coping at the fall on bearing ${(f.bearing / deg).toFixed(0)} stands ${(notch - f.y).toFixed(3)} over the rim's lawn in its notch (${(beside - S.top).toFixed(3)} beside it).`);
+      const stone = sky.land.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === 'stone'),
+        frame = new T.Matrix4().compose(new T.Vector3(f.x, f.y, f.z), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), f.ry), new T.Vector3(1, 1, 1));
+      for (const r of SKY_NOTCH.rocks) {
+        const at = new T.Vector3(...r.c).applyMatrix4(frame);
+        let near = 0;
+        for (const m of stone) each(m, (p) => Math.abs(p.x - at.x) < r.h[0] + 0.05 && Math.abs(p.z - at.z) < r.h[0] + 0.05 && Math.abs(p.y - at.y) < r.h[1] + 0.05 && near++);
+        assert(near > 100 && Math.min(...r.h) >= 0.15, `No boulder stands by the fall's notch at ${fmt3(at)}.`);
+      }
+    }
+    // The beds, level all round (read through the bounce and the mottle, which the rock's builder lays on).
+    {
+      const { noise3 } = await load('town-sculpt'),
+        colour = rockMesh.geometry.attributes.color,
+        q = rockMesh.geometry.attributes.position,
+        nn = rockMesh.geometry.attributes.normal,
+        B = SKY_ROCK.bounce,
+        c = new T.Color(),
+        grey = (k) => (Math.max(k.r, k.g, k.b) - Math.min(k.r, k.g, k.b)) / Math.max(k.r, k.g, k.b),
+        lumOf = (k) => 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b,
+        cosH = Math.cos(S.heading),
+        sinH = Math.sin(S.heading);
+      for (const b of SKY_ROCK.beds.slice(0, 2)) {
+        const seen = [];
+        for (let i = 0; i < q.count; i++) {
+          const y = q.getY(i) - S.top;
+          if (Math.abs(-y - b) > 0.01) continue;
+          // Back into the rock's own frame (its long axis on x), where its mottle is laid.
+          const dx = q.getX(i) - S.x,
+            dz = q.getZ(i) - S.z,
+            lx = dx * cosH - dz * sinH,
+            lz = dx * sinH + dz * cosH,
+            u = T.MathUtils.smoothstep(-nn.getY(i), -0.1, 0.8),
+            mottle = 1 + 0.07 * (noise3(lx * 0.9 + 11.3, y * 1.4 + 5.2, lz * 0.9 + 2.9) - 0.5);
+          c.fromBufferAttribute(colour, i);
+          c.setRGB(c.r / (1 + B[0] * u) / mottle, c.g / (1 + B[1] * u) / mottle, c.b / (1 + B[2] * u) / mottle);
+          if (grey(c) > 0.25) seen.push(lumOf(c));
+        }
+        assert(seen.length > 40 && Math.max(...seen) - Math.min(...seen) < 0.01, `At the bed change ${b} under the deck the earth's paint wanders (${seen.length} points, ${(Math.max(...seen) - Math.min(...seen)).toFixed(3)} apart in luminance).`);
+      }
+    }
+    // The floats: three rocks, each its own shape.
+    {
+      const shapes = plan.SKY_ROCKS.map((r, k) => {
+        const frame = sky.land.children.filter((o) => o.name === 'sky-float')[k],
+          box = new T.Box3();
+        frame.updateMatrixWorld(true);
+        const inv = frame.matrixWorld.clone().invert();
+        each(frame, (p) => box.expandByPoint(p.clone().applyMatrix4(inv).divideScalar(r.size)));
+        return box.getSize(new T.Vector3());
+      });
+      for (let a = 0; a < shapes.length; a++)
+        for (let b = a + 1; b < shapes.length; b++) assert(shapes[a].distanceTo(shapes[b]) > 0.08, `Floating rocks ${a} and ${b} are clones (${fmt3(shapes[a])} and ${fmt3(shapes[b])}).`);
+    }
+    // The lamps' pools.
+    {
+      const pools = sky.land.children.filter((o) => o.isMesh && o.geometry.getAttribute('aWash')),
+        [pool] = pools;
+      assert(pools.length === 1 && !pool.castShadow && pool.material.vertexColors && pool.material.customProgramCacheKey() === 'lius-bake-solid' && !pool.material.transparent && pool.material.opacity === 1, 'The lamps\' pools are not one opaque mesh on the solids\' program, casting nothing.');
+      const q = pool.geometry.attributes.position,
+        w = pool.geometry.attributes.aWash,
+        col = pool.geometry.attributes.color,
+        tones = SKY_LOOK.lawn.map((h) => new T.Color(h)),
+        path = new T.Color(SKY_LOOK.path),
+        tint = [0.93, 0.95, 0.9],
+        nearest = (x, z) => Math.min(...plan.SKY_LAMPS.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
+        lit = plan.SKY_LAMPS.map(() => 0);
+      for (let i = 0; i < q.count; i++) {
+        const x = q.getX(i),
+          y = q.getY(i),
+          z = q.getZ(i),
+          over = y - plan.skyTop(x, z),
+          d = nearest(x, z),
+          r = col.getX(i),
+          g = col.getY(i),
+          b = col.getZ(i);
+        assert(Math.abs(over - SKY_POOL.lift) < 1e-4 || Math.abs(over - plan.SKY_PATHS.lift - SKY_POOL.lift) < 1e-4, `A lamp's pool lies ${over.toFixed(3)} over the deck at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        assert(Math.abs(w.getX(i) - SKY_POOL.strength) < 1e-6 && w.getW(i) < 0 && Math.abs(w.getZ(i) - (WASH_PEAK + (0.85 - WASH_PEAK) * Math.min(1, d / SKY_POOL.r))) < 1e-5 && d < SKY_POOL.r + SKY_POOL.cell * 1.5, `A lamp's pool is not lit from the nearest lamp's foot at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        if (Math.abs(over - SKY_POOL.lift) < 1e-4) {
+          // The lawn: one of its two tones, through a grain of 0.85 to 1.02 and the tint.
+          const fits = tones.some((t) => {
+            const k = r / (t.r * tint[0]);
+            return k > 0.85 && k < 1.02 && Math.abs(g - t.g * tint[1] * k) < 2e-3 && Math.abs(b - t.b * tint[2] * k) < 2e-3;
+          });
+          assert(fits, `A lamp's pool on the lawn is not the lawn's own colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        } else assert(Math.abs(r - path.r) < 1e-4 && Math.abs(g - path.g) < 1e-4 && Math.abs(b - path.b) < 1e-4, `A lamp's pool on the gravel is not the gravel's colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        plan.SKY_LAMPS.forEach(([lx, lz], k) => Math.hypot(x - lx, z - lz) < 0.3 && lit[k]++);
+      }
+      assert(lit.every((n) => n > 6), `A garden lamp has no pool at its foot (${lit.join(', ')}).`);
+    }
   }
 
   /* ---------------- everything that moves ---------------- */
@@ -7210,7 +7499,8 @@ let skyReport = '';
   //   and shoulders; the island stays inside the rain's square but for the west fall's puff, which pokes
   //   out by 2.2 at the most (the placement accepted 1.8 for it);
   // - nothing of the garden stands on her walk (the paths' width) or within her reach where she stands;
-  // - at night the falls, puffs and clouds dim by SKY_NIGHT_DIM on one material of the kit's own, with
+  // - at night the clouds dim on one material of the kit's own and the falls (their water, lumps and
+  //   puffs) on another, to SKY_NIGHT's colours, with
   //   no glow, and nothing else of the island does but the rock, on its own (above).
   {
     const G = await load('town-sky-garden'),
@@ -7221,7 +7511,7 @@ let skyReport = '';
       { createCityMaterials } = await load('city-materials'),
       { skyBorder } = await load('town-sky'),
       { createAlison, poseAlison, alisonHand, ALISON, ALISON_TELESCOPE, ALISON_HOLDS, ALISON_POSES } = await load('sky-figure'),
-      { TEA, TELESCOPE, FALL, CLOUD, GARDEN_LAMP, SKY_NIGHT_DIM } = G,
+      { TEA, TELESCOPE, FALL, CLOUD, GARDEN_LAMP, SKY_NIGHT } = G,
       slots = skySlots(),
       SEATS = plan.SKY_SEATS,
       ST = plan.SKY_STATIONS,
@@ -7279,8 +7569,9 @@ let skyReport = '';
         return [...out.values()];
       },
       // The garden's own meshes, as the town batched them: what stands in it (the deck's batch, less
-      // the lawn and the paths), the lamps' globes, and what moves (on its pivots).
-      standingMeshes = sky.land.children.filter((o) => o.isMesh && o !== lawn && o !== gravel),
+      // the lawn, the paths and the lamps' pools, the deck's own surface laid again over itself), the
+      // lamps' globes, and what moves (on its pivots).
+      standingMeshes = sky.land.children.filter((o) => o.isMesh && o !== lawn && o !== gravel && !o.geometry.getAttribute('aWash')),
       globes = model.lamps.filter((l) => under(l, sky.root)),
       gardenMoving = skyMoving.filter((e) => e.object !== sky.rock && e.object !== her);
 
@@ -7656,12 +7947,13 @@ let skyReport = '';
       const pale = gardenMoving.filter((e) => /^sky-(fall|cloud)-/.test(e.object.name)).flatMap((e) => e.object.children.filter((c) => c.isMesh)),
         others = [];
       sky.root.traverse((o) => o.isMesh && !pale.includes(o) && !globes.includes(o) && o.parent !== sky.rock && others.push(o));
-      // (They keep 0.6 to 0.7 of their daylight: dimmed by half, the balloon's, they sank to the lawn's
-      // own darkness at night and read as storm clouds; undimmed, they would hang lit over the sea.)
-      assert(SKY_NIGHT_DIM >= 0.3 && SKY_NIGHT_DIM <= 0.4, `The falls, puffs and clouds keep ${1 - SKY_NIGHT_DIM} of their daylight at night.`);
+      // (The clouds keep most of their daylight, a cool moonlit grey: at 0.7 grey they read as slate
+      // boulders over the night sea; the falls keep more, so a fall stays pale and never reads as a
+      // dark downpipe. The kit's check above holds SKY_NIGHT's values.)
+      const isFall = (m) => (pivotOf(m)?.name ?? '').startsWith('sky-fall-');
       for (const e of gardenMoving) e.update(5, 1, 0);
-      assert(new Set(pale.map((m) => m.material)).size === 1 && pale.length === 2 * 2 + plan.SKY_CLOUDS.length, 'The falls, puffs and clouds do not share one material of the garden kit\'s own.');
-      for (const m of pale) assert(Math.abs(m.material.color.r - (1 - SKY_NIGHT_DIM)) < 1e-9 && m.material.color.r === m.material.color.b && m.material.emissive.getHex() === 0 && !others.some((o) => o.material === m.material), 'A fall, a puff or a cloud stays bright at night, glows, or shares its material.');
+      assert(new Set(pale.map((m) => m.material)).size === 2 && new Set(pale.filter(isFall).map((m) => m.material)).size === 1 && pale.length === 2 * 2 + plan.SKY_CLOUDS.length, 'The falls and the clouds do not each share one material of the garden kit\'s own.');
+      for (const m of pale) assert(m.material.color.equals(new T.Color(isFall(m) ? SKY_NIGHT.fall : SKY_NIGHT.cloud)) && m.material.emissive.getHex() === 0 && !others.some((o) => o.material === m.material), 'A fall, a puff or a cloud is not its night colour at night, glows, or shares its material.');
       for (const o of others) assert(o.material.color.getHex() === 0xffffff, 'Something of the sky island but its rock and its pale parts dims at night.');
       for (const e of gardenMoving) e.update(0, 0, 0);
       for (const m of pale) assert.equal(m.material.color.getHex(), 0xffffff, 'The falls, puffs and clouds are dimmed by day.');
@@ -8267,19 +8559,25 @@ let skyReport = '';
     { createNature } = await load('town-nature'),
     { createKit } = await load('town-kit'),
     { createCityMaterials, wallWash, washLight, WASH_PEAK } = await load('city-materials'),
-    library = createCityMaterials(),
-    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
-    kit = createKit(ctx),
     town = model.sky,
     site = plan.sites['sky-island'],
-    shell = new T.Group(),
-    begin = performance.now();
-  // On its site on the deck, as town-build stands the town's own shell (the town is built in summer).
-  shell.position.copy(town.shell.position);
-  shell.rotation.copy(town.shell.rotation);
-  createSkyVilla(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSkyVilla(shell, site);
-  shell.updateMatrixWorld(true);
-  const built = performance.now() - begin;
+    // (Timed builds, above: each run from a context of its own; the checks below take the first.)
+    villaTime = timeBuild(
+      () => {
+        const library = createCityMaterials(),
+          ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] };
+        return { ctx, kit: createKit(ctx), shell: new T.Group() };
+      },
+      ({ ctx, kit, shell }) => {
+        // On its site on the deck, as town-build stands the town's own shell (the town is built in summer).
+        shell.position.copy(town.shell.position);
+        shell.rotation.copy(town.shell.rotation);
+        createSkyVilla(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSkyVilla(shell, site);
+        shell.updateMatrixWorld(true);
+        return { ctx, shell };
+      },
+    ),
+    { ctx, shell } = villaTime.built;
   {
     // (Box3.setFromObject's precise reach: every vertex, as the batches have them.)
     const mine = new T.Box3().setFromObject(shell, true),
@@ -8415,8 +8713,9 @@ let skyReport = '';
     const pipes = rain.filter((p) => p.s.y >= 3.5);
     assert(pipes.length === 4 && pipes.every((p) => Math.abs(p.c.x) > hw && Math.abs(p.c.x) < hw + 0.2 && Math.min(Math.abs(p.c.z - front), Math.abs(p.c.z - back)) < 0.8), `The villa has ${pipes.length} downpipes, not one at each corner of the side walls.`);
     for (const p of pipes) assert(rain.some((h) => h.s.y >= 0.2 && h.s.y < 0.3 && h.b.min.y > 4.5 && Math.abs(h.c.x - p.c.x) < 0.1 && Math.abs(h.c.z - p.c.z) < 0.1), `The downpipe at ${p.c.z.toFixed(2)} has no hopper head.`);
-    // The roof: a lead roll on each of its four hips and each edge of its flat (they meet at bosses,
-    // so they are one joined piece: looked for from above, at each hip's and each edge's middle).
+    // The roof: a roll on each of its four hips and each edge of its flat (they meet at bosses, so
+    // they are one joined piece: looked for from above, at each hip's and each edge's middle), in the
+    // rolls' light slate grey.
     {
       const R = VILLA.roof,
         x1 = hw + R.eave,
@@ -8436,8 +8735,37 @@ let skyReport = '';
       for (const sx of [-1, 1]) spots.push(["the flat's edge", sx * fx, y2, fz0 + 0.2]); // (behind the stacks' copes)
       for (const [what, x, y, z] of spots) {
         const hit = top(x, y, z);
-        assert(hit && hex(hit.object.material.color) === hex(VILLA_LOOK.lead), `No lead roll on ${what} at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        assert(hit && hex(hit.object.material.color) === hex(VILLA_LOOK.roll), `No roll on ${what} at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
       }
+    }
+    // The trims by day (the art review's finding 12): the wall lamps' lenses are dark smoked glass and
+    // their housings a dark bronze near the brick's own shade (no black boxes with white bars on the
+    // brick); the rolls are low half-rounds (sunk in the arris they cover, so they stand no more than
+    // their radius over it) in a light slate grey, with no balls at their feet over the gutters and
+    // none across the flat; and the flat carries a low hipped cap of slate (calm, never an empty
+    // panel), under the chimneys' copes.
+    {
+      const R = VILLA.roof,
+        y2 = VILLA.cornice.corona[1] + R.fascia + R.rise,
+        lum = (h) => {
+          const c = new T.Color(h);
+          return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        },
+        rolls = of(VILLA_LOOK.roll),
+        lensPieces = dressings.filter((p) => p.colour === hex(VILLA_LOOK.lens)),
+        housings = dressings.filter((p) => p.colour === hex(VILLA_LOOK.housing));
+      assert(lum(VILLA_LOOK.lens) < 0.05 && VILLA_FAMILY.housing === palette.bronze && lum(VILLA_LOOK.housing) > 0.4 * lum(VILLA_LOOK.brick) && lum(VILLA_LOOK.housing) < 0.9 * lum(VILLA_LOOK.brick) && lensPieces.length === 16 && housings.length === 8, `The wall lamps are ${lensPieces.length} lenses and ${housings.length} housings, not 16 dark lenses in 8 bronze housings near the brick's shade.`);
+      assert(!dressings.some((p) => p.colour === hex(VILLA_LOOK.paint) && lensPieces.some((l) => l.b.intersectsBox(p.b))), 'A wall lamp still shows white paint.');
+      assert(R.roll[0] >= 0.07 && R.roll[1] > 0 && R.roll[1] < R.roll[0] && hsv(VILLA_LOOK.roll).s <= hsv(palette.slate).s + 1e-3, 'The roof\'s rolls are not low half-rounds in the slate family.');
+      // No ball at a roll's foot: every roll piece near the eaves is a run along a hip, never a lump.
+      for (const p of rolls) if (p.b.min.y < VILLA.cornice.corona[1] + R.fascia + 0.3) assert(Math.max(p.s.x, p.s.z) > 0.5, `A ball sits at a roll's foot over the gutter at ${p.c.x.toFixed(2)}, ${p.c.z.toFixed(2)}.`);
+      const cap = parts.find((m) => m.name === 'sky-villa-roof-cap');
+      assert(cap && cap.material.userData.surfaceKind === 'slate', 'The flat has no low cap of slate.');
+      const capBox = new T.Box3().setFromObject(cap).applyMatrix4(toShell);
+      assert(Math.abs(capBox.min.y - y2) < 1e-3 && capBox.max.y - y2 > 0.12 && capBox.max.y - y2 < 0.3 && capBox.max.y < VILLA.chimney.top, `The flat's cap rises ${(capBox.max.y - y2).toFixed(2)} over it.`);
+      // No roll across the flat: inside the flat (clear of its edges) only the cap's own ridge roll.
+      const inner = rolls.filter((p) => p.c.y > y2 && Math.abs(p.c.x) < capBox.max.x - 0.3 && p.c.z > capBox.min.z + 0.3 && p.c.z < capBox.max.z - 0.3);
+      assert(inner.length === 1 && inner[0].c.y > capBox.max.y - 0.1, `${inner.length} rolls run across the villa's flat, not the cap's ridge roll alone.`);
     }
     // Three dormers under roofs of their own and white cornices, the middle one's pediment over it.
     assert.equal(parts.filter((m) => m.name === 'sky-villa-dormer-roof').length, 3, "The villa's dormers lack their roofs.");
@@ -8581,13 +8909,13 @@ let skyReport = '';
     for (const u of [b.max.y - 0.04 - w.y, b.min.y - w.y]) assert(wallWash(0, u, w.half) < 0.02, `A lamp's wash reaches its pier's end (${u.toFixed(2)} from it).`);
     assert(Math.abs(w.x - (b.min.x + b.max.x) / 2) < 1e-6 && w.half <= (b.max.x - b.min.x) / 2 + 1e-6 && wallWash(w.half, 0.3, w.half) === 0, `A lamp's wash spills past its pier's sides (lamp ${w.x.toFixed(3)}, half ${w.half}; pier ${b.min.x.toFixed(3)} to ${b.max.x.toFixed(3)}).`);
   }
-  // The town's own villa, batched in its own phase ('batch sky villa', held under 200 ms with the
+  // The town's own villa, batched in its own phase ('batch sky villa', held to its limit with the
   // island's other phases in the block before), its contact shade from the lawn under it.
   const batched = meshesOf(town.shell);
   let tris = 0;
   for (const m of batched) tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
   assert(batched.length <= 16 && tris <= 45000, `The villa costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
-  assert(built < 200, `The villa takes ${Math.round(built)} ms to build.`);
+  inTime('The villa\'s build', villaTime, 150);
   const solid = batched.filter((m) => !['glass', 'paving'].includes(m.material.userData.surfaceKind));
   assert(new Set(solid.map((m) => m.material.customProgramCacheKey())).size === 1 && solid[0].material.customProgramCacheKey() === 'lius-bake-solid', 'The villa\'s solids do not share the bake program.');
   for (const m of batched) {
@@ -8637,14 +8965,15 @@ let skyReport = '';
     }
     assert.equal(corners.size, 4, `The town's villa washes its quoins on ${[...corners].join(', ') || 'no corner'}, not on both front corners of both lit floors.`);
   }
-  // A lens (white paint, lit at the wash's peak) against the brick under the same lamp: brighter
-  // than the brick's wash, and under 1 in luminance (linear), as a window's glow is. Brighter than
-  // that, a lens 0.14 across spills over its edges when the multisampled frame resolves. A quoin
-  // (white stone, about five times the brick's albedo under the warm light) between the two.
+  // A lens (dark smoked glass by day, lit at the wash's peak at night) against the brick under the
+  // same lamp: brighter than the brick's wash, and under 1 in luminance (linear), as a window's glow
+  // is. Brighter than that, a lens 0.14 across spills over its edges when the multisampled frame
+  // resolves. A quoin (white stone, about five times the brick's albedo under the warm light) between
+  // the two.
   {
     const Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
       lit = (albedo, strength) => Y(washLight().multiply(new T.Color(albedo))) * strength * wallWash(0, WASH_PEAK, VILLA_LAMPS.half.bay),
-      lens = lit(VILLA_LOOK.paint, VILLA_LAMPS.lens),
+      lens = lit(VILLA_LOOK.lens, VILLA_LAMPS.lens),
       brick = lit(VILLA_LOOK.brick, VILLA_LAMPS.strength),
       quoin = lit(VILLA_LOOK.stone, VILLA_LAMPS.quoin);
     assert(lens <= 1 && lens > 2 * brick && brick > 0.15 && quoin > brick && quoin < lens, `A lens glows at ${lens.toFixed(2)}, a quoin at ${quoin.toFixed(2)} and the brick under its lamp at ${brick.toFixed(2)}.`);

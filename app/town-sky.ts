@@ -1,12 +1,13 @@
 import * as T from 'three';
-import type { SurfaceKind } from './city-materials';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, hash, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
 import type { Kit } from './town-kit';
 import { BLOOMS, type Nature } from './town-nature';
 import type { Props } from './town-props';
-import type { SkyGarden } from './town-sky-garden';
+import { FALL, boulder, type SkyGarden } from './town-sky-garden';
 import { createAlison, poseAlison } from './sky-figure';
 
 /**
@@ -23,9 +24,9 @@ export const SKY_LOOK = {
   lawn: [palette.grassDark, palette.grassLight],
   coping: '#b9b19c',
   path: '#c6b08a',
-  earth: ['#8d6c4f', '#7a5c44', '#665041'],
+  earth: ['#7a5236', '#9b7048', '#6e4f38'],
   seam: '#a2998a',
-  rock: ['#9e988c', '#86817a', '#6f6b65'],
+  rock: ['#8a8d88', '#757a76', '#666b68'],
 };
 /**
  * The lawn: mown in stripes `stripe` wide that run the deck's length (north-south, past the
@@ -52,6 +53,28 @@ export const SKY_COPING = {
   set: 0.025,
   tone: 0.06,
 };
+/**
+ * Where each fall's stream runs out over the rim (town-sky-garden's FALL), the coping is notched:
+ * over the stations within FALL.notch.half of the fall's rim point, easing back up over its `ramp`
+ * either side, its profile sinks to `profile` (the same points, o and y as SKY_COPING's: its top
+ * FALL.notch.floor over the rim's lawn, under the stream's water, its nose and underside drawn in
+ * after it, so the stone stays 0.07 or more thick and 0.3 clear of the falling sheet). Three of the
+ * rock's own boulders (`rocks`, the airport armour's shape: each one's middle and half sizes in the
+ * fall's own frame, x across, y over the rim's lawn, z out) line it: one either side, sunk in the
+ * coping over its ramps, and one over the stream's spring on the lawn behind it; `tone` lightens
+ * them toward the sky.
+ */
+export const SKY_NOTCH = (() => {
+  const top = FALL.notch.floor - plan.SKY.dome;
+  return {
+    profile: [[-0.46, top - 0.04], [-0.46, top - 0.01], [-0.41, top], [-0.14, top], [-0.04, top - 0.015], [0, top - 0.035], [-0.04, top - 0.05], [-0.14, top - 0.09], [-0.34, top - 0.12], [-0.62, -0.5]] as [number, number][],
+    rocks: [
+      { c: [-0.7, 0.06, -0.22], h: [0.34, 0.22, 0.3], seed: 3 },
+      { c: [0.68, 0.05, -0.18], h: [0.3, 0.2, 0.33], seed: 7 },
+      { c: [0.04, 0.12, -0.78], h: [0.42, 0.24, 0.3], seed: 11 },
+    ] as { c: [number, number, number]; h: [number, number, number]; seed: number }[],
+  };
+})();
 /**
  * One lobe of the underside, placed by the world bearing it hangs on (0 south, 90 east, as
  * everywhere in the plan): `proud`, how far its outer face stands past the earth body's surface at
@@ -116,19 +139,25 @@ export const SKY_ROCK = {
     lobe(80, 0.5, -2.8, 0.65, 0.9, 0.7, 0.08, true),
     lobe(200, 0.5, -3.3, 0.7, 0.9, 0.75, -0.08, true),
     lobe(292, 0.5, -3.6, 0.7, 0.9, 0.75, 0.1, true),
+    lobe(8, 0.55, -2.25, 0.62, 0.95, 0.6, -0.1, true),
+    lobe(50, 0.55, -3.5, 0.65, 0.9, 0.7, 0.1, true),
+    lobe(30, 0.42, -1.62, 0.55, 0.85, 0.5, 0.06, true),
+    lobe(68, 0.42, -1.75, 0.55, 0.8, 0.5, -0.06, true),
   ],
   round: 0.5,
+  rockRound: 0.3,
+  edge: 0.2,
   fillet: 0.6,
-  rockFillet: 0.3,
+  set: 0.82,
   bounce: [1.7, 1.35, 1.6] as [number, number, number],
-  night: 0.5,
-  fill: '#2a1d16',
+  night: 0.3,
+  fill: '#3f3026',
   cut: 0.2,
   beds: [1.9, 4.0, 6.4],
-  seam: [0.12, 0.4] as [number, number],
+  seam: [0.3, 0.75] as [number, number],
+  seamTone: 0.4,
+  change: 0.45,
   spike: [6.4, 7.4] as [number, number],
-  wander: 0.5,
-  outcrop: [0.15, 0.32],
 };
 
 /**
@@ -178,7 +207,7 @@ function lobeShape(l: Lobe, round: number): Shape {
     dz = Math.sin(b),
     body = bodySection(-l.y),
     r = body.share / Math.hypot(dx / S.a, dz / S.b) + l.proud - l.radial;
-  return roundBox([body.x + r * dx, l.y, body.z + r * dz], [l.radial, l.vertical, l.tangential], round * Math.min(l.radial, l.vertical, l.tangential), [l.tilt, Math.atan2(-dz, dx), 0]);
+  return roundBox([body.x + r * dx, l.y, body.z + r * dz], [l.radial, l.vertical, l.tangential], Math.max(SKY_ROCK.edge, round * Math.min(l.radial, l.vertical, l.tangential)), [l.tilt, Math.atan2(-dz, dx), 0]);
 }
 /** One point of a swept band: where it is, its outward normal (in x, z) and its base height. */
 type Station = { x: number; z: number; nx: number; nz: number; y: number };
@@ -286,6 +315,23 @@ export const SKY_OUTCROP_SHAPE = {
   ] as { c: [number, number, number]; h: [number, number, number]; round: number; rot: [number, number, number] }[],
 };
 
+/**
+ * The garden lamps' pools of light on the deck at night, as the street lamps on the square throw
+ * theirs, but with no light in the scene (a phone pays for every one) and nothing see-through: under
+ * the lamps (plan.SKY_LAMPS, wherever they stand) the deck's own surface (the lawn's stripes, the
+ * paths' gravel) is laid again over itself `lift` up, out to `r` from each lamp's foot, in the
+ * colour that ground shows by day (the lawn's grain and tint folded in) and a matte finish as rough
+ * as the lawn's, so by day it cannot be told from the ground. At night the town's wall wash
+ * (city-materials, through batch()'s aWash, at the night's level) lights it warm from the lamp's
+ * foot out: `strength` at the middle, fading to nothing at `r` (a vertex's u runs from the wash's
+ * peak at the foot out to where its scallop has faded, so the pool is round and soft-edged; where
+ * two pools meet each point takes the nearer lamp's). `cell` is the size its triangles are cut to,
+ * so the pool's fall-off is smooth.
+ */
+export const SKY_POOL = { r: 0.9, strength: 0.38, lift: 0.006, cell: 0.26 };
+/** Where the wash's up scallop has faded out (city-materials' WASH_SHAPE.upFade[1]). */
+const POOL_EDGE = 0.85;
+
 /* ------------------------------------------------------------------ */
 /* The sky island                                                      */
 /* ------------------------------------------------------------------ */
@@ -316,11 +362,14 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     const e = 0.05;
     return new T.Vector3(plan.skyTop(x - e, z) - plan.skyTop(x + e, z), 2 * e, plan.skyTop(x, z - e) - plan.skyTop(x, z + e)).normalize();
   }
+  /** The deck's own triangles as the lawn and the paths lay them (draped's record), for the lamps' pools. */
+  const deck = { lawn: [] as { a: plan.XZ; b: plan.XZ; c: plan.XZ; tone?: T.Color }[], gravel: [] as { a: plan.XZ; b: plan.XZ; c: plan.XZ }[] };
   /**
    * A flat surface laid on the lawn, `lift` over it, from the triangles it is given (in x, z, any
-   * winding: each is turned to face up); every vertex stands on the dome and takes its normal.
+   * winding: each is turned to face up); every vertex stands on the dome and takes its normal. Each
+   * triangle (turned to face up) is kept in `record` if one is given.
    */
-  function draped(lift: number) {
+  function draped(lift: number, record?: { a: plan.XZ; b: plan.XZ; c: plan.XZ; tone?: T.Color }[]) {
     const pos: number[] = [],
       nor: number[] = [],
       colours: number[] = [];
@@ -334,6 +383,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
         const turn = (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]);
         if (Math.abs(turn) < 1e-9) return;
         for (const p of turn > 0 ? [a, b, c] : [a, c, b]) put(p[0], p[1], tone);
+        record?.push(turn > 0 ? { a, b, c, tone } : { a, b: c, c: b, tone });
       },
       geometry() {
         const geometry = new T.BufferGeometry();
@@ -355,7 +405,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
       // A stripe's ends follow the turf's outline: how far it runs either way at lz across the deck.
       reach = (lz: number) => S.a * edge * Math.sqrt(Math.max(0, 1 - (lz / half) ** 2)),
       tones = L.lawn.map((c) => new T.Color(c)),
-      turf = draped(0);
+      turf = draped(0, deck.lawn);
     // The stripes' edges are whole stripes from the long axis, so the outermost stripe that shows
     // beside the coping is most of a stripe wide (0.74), never a sliver.
     const bounds = [-half];
@@ -377,7 +427,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
   function paths(g: T.Object3D) {
     const P = plan.SKY_PATHS,
       half = P.width / 2,
-      gravel = draped(P.lift);
+      gravel = draped(P.lift, deck.gravel);
     const disc = ([x, z]: plan.XZ, r: number, sides: number) => {
       const rim = (k: number): plan.XZ => [x + Math.cos((k / sides) * Math.PI * 2) * r, z + Math.sin((k / sides) * Math.PI * 2) * r];
       for (let k = 0; k < sides; k++) gravel.triangle([x, z], rim(k), rim(k + 1));
@@ -414,6 +464,96 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     ribbon(along(P.stem, false));
     disc([P.landing.x, P.landing.z], P.landing.r, 32);
     solid(g, gravel.geometry(), L.path, 'gravel', { shadow: false, ground: true, name: 'sky-paths' });
+  }
+  /**
+   * The lamps' pools (SKY_POOL), one mesh laid over the deck: the lawn's and the paths' own triangles
+   * near any lamp, cut to SKY_POOL.cell, at their own colours (the lawn's as its ground shader shows
+   * it under the island: its stripe, the grass map's grain and the lawn tint the empty ground masks
+   * leave, (0.93, 0.95, 0.90); the gravel's plain), each vertex carrying the nearer lamp's wash. As
+   * flat ground (`ground`) it takes no contact shade; it casts nothing.
+   */
+  function lampPools(g: T.Object3D) {
+    const P = SKY_POOL,
+      lamps = plan.SKY_LAMPS,
+      reach = P.r + P.cell,
+      map = material('#ffffff', 'grass').map,
+      image = map?.image as { data: Uint8Array; width: number; height: number } | undefined,
+      // The grain as the ground shader samples it: linear, bilinear at its finest level, repeating.
+      lut = Float32Array.from({ length: 256 }, (_, v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)),
+      grain = (x: number, z: number) => {
+        if (!image || !map) return 1;
+        const W = image.width,
+          H = image.height,
+          u = x * map.repeat.x * W - 0.5,
+          v = z * map.repeat.y * H - 0.5,
+          i = Math.floor(u),
+          j = Math.floor(v),
+          fu = u - i,
+          fv = v - j,
+          at = (a: number, b: number) => lut[image.data[((((b % H) + H) % H) * W + (((a % W) + W) % W)) * 4]];
+        return (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
+      },
+      tint = [0.93, 0.95, 0.9],
+      path = new T.Color(L.path),
+      pos: number[] = [],
+      nor: number[] = [],
+      col: number[] = [],
+      wash: number[] = [],
+      near = (x: number, z: number) => {
+        let d = Infinity;
+        for (const [lx, lz] of lamps) d = Math.min(d, (x - lx) ** 2 + (z - lz) ** 2);
+        return Math.sqrt(d);
+      },
+      /** A vertex's attributes, worked out once and laid down by every triangle that shares it. */
+      vertex = (x: number, z: number, lift: number, tone?: T.Color) => {
+        const n = lawnNormal(x, z),
+          d = near(x, z),
+          k = tone ? grain(x, z) : 1;
+        return {
+          d,
+          p: [x, plan.skyTop(x, z) + lift, z],
+          n: [n.x, n.y, n.z],
+          c: tone ? [tone.r * k * tint[0], tone.g * k * tint[1], tone.b * k * tint[2]] : [path.r, path.g, path.b],
+          w: [P.strength, 0, WASH_PEAK + (POOL_EDGE - WASH_PEAK) * Math.min(1, d / P.r), -1],
+        };
+      },
+      lay = (tris: { a: plan.XZ; b: plan.XZ; c: plan.XZ; tone?: T.Color }[], lift: number) => {
+        for (const { a, b, c, tone } of tris) {
+          // Only the triangles whose box comes within a pool's reach of a lamp.
+          const x0 = Math.min(a[0], b[0], c[0]),
+            x1 = Math.max(a[0], b[0], c[0]),
+            z0 = Math.min(a[1], b[1], c[1]),
+            z1 = Math.max(a[1], b[1], c[1]);
+          if (!lamps.some(([lx, lz]) => Math.hypot(Math.max(x0 - lx, 0, lx - x1), Math.max(z0 - lz, 0, lz - z1)) < reach)) continue;
+          const n = Math.max(1, Math.ceil(Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1]), Math.hypot(a[0] - c[0], a[1] - c[1])) / P.cell)),
+            grid = new Map<number, ReturnType<typeof vertex>>(),
+            at = (i: number, j: number) => {
+              const key = i * (n + 1) + j;
+              let v = grid.get(key);
+              if (!v) grid.set(key, (v = vertex(a[0] + ((b[0] - a[0]) * i + (c[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * i + (c[1] - a[1]) * j) / n, lift, tone)));
+              return v;
+            };
+          for (let i = 0; i < n; i++)
+            for (let j = 0; i + j < n; j++)
+              for (const t of i + j + 1 < n ? [[at(i, j), at(i + 1, j), at(i, j + 1)], [at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)]] : [[at(i, j), at(i + 1, j), at(i, j + 1)]]) {
+                if (Math.min(t[0].d, t[1].d, t[2].d) > P.r) continue;
+                for (const v of t) {
+                  pos.push(...v.p);
+                  nor.push(...v.n);
+                  col.push(...v.c);
+                  wash.push(...v.w);
+                }
+              }
+        }
+      };
+    lay(deck.lawn, P.lift);
+    lay(deck.gravel, plan.SKY_PATHS.lift + P.lift);
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    geometry.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+    geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    geometry.setAttribute('aWash', new T.Float32BufferAttribute(wash, 4));
+    solid(g, geometry, '#ffffff', 'bark', { shadow: false, ground: true, name: 'sky-lamp-pools' });
   }
   /**
    * The low outcrop on the south-west lawn (SKY_OUTCROP_SHAPE, at plan.SKY_OUTCROP), batched with the
@@ -461,6 +601,42 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     m.rotation.y = P.ry;
   }
   /**
+   * The rocks round each fall's notch (SKY_NOTCH.rocks), one mesh batched with the deck's stone: the
+   * airport armour's boulders (town-sky-garden's boulder) in the rock's own greys, lighter where they
+   * face the sky and each a shade of its own, their feet sunk in the coping and the lawn.
+   */
+  function notchRocks(g: T.Object3D) {
+    const parts: T.BufferGeometry[] = [],
+      stone = L.rock.map((c) => new T.Color(c)),
+      c = new T.Color(),
+      step = T.MathUtils.smoothstep;
+    plan.skyFalls.forEach((f, k) => {
+      const frame = new T.Matrix4().compose(new T.Vector3(f.x, f.y, f.z), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), f.ry), new T.Vector3(1, 1, 1));
+      for (const r of SKY_NOTCH.rocks) {
+        const seed = r.seed + 17 * k,
+          shape = boulder(seed, 0.6 + 0.2 * hash(seed * 1.7)),
+          turn = new T.Euler(0.2 * (hash(seed * 3.1) - 0.5), hash(seed * 5.7) * Math.PI * 2, 0.2 * (hash(seed * 7.9) - 0.5)),
+          plain = shape.applyMatrix4(frame.clone().multiply(new T.Matrix4().compose(new T.Vector3(...r.c), new T.Quaternion().setFromEuler(turn), new T.Vector3(...r.h)))).toNonIndexed(),
+          p = plain.getAttribute('position'),
+          n = plain.getAttribute('normal'),
+          tones = new Float32Array(p.count * 3),
+          tone = 0.94 + 0.12 * hash(seed * 2.3);
+        shape.dispose();
+        // (A shade darker low down, where it meets the stone and the turf: as low stones they take
+        // no contact shade of the deck's, which would bake them to its darkest.)
+        for (let i = 0; i < p.count; i++)
+          c.copy(stone[1])
+            .lerp(stone[0], step(n.getY(i), -0.1, 0.7))
+            .multiplyScalar(tone * T.MathUtils.lerp(0.8, 1, step(p.getY(i) - f.y - r.c[1], -r.h[1], 0.2 * r.h[1])))
+            .toArray(tones, i * 3);
+        plain.setAttribute('color', new T.BufferAttribute(tones, 3));
+        parts.push(plain);
+      }
+    });
+    solid(g, mergeGeometries(parts)!, '#ffffff', 'stone', { name: 'sky-notch-rocks', ground: true });
+    parts.forEach((p) => p.dispose());
+  }
+  /**
    * The garden (lane G's kit, `garden`, built once in town-build with the other factories), each
    * piece in its slot (skySlots, through standAt), everything in `land`: what stands on the deck is
    * batched with the lawn as its floor, and every part of a piece that hangs in the air (the falls'
@@ -488,6 +664,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     for (const u of s.urns) standAt(land, u, 'sky-urn').add(garden.urn({ planted: true }));
     outcrop(land);
     s.falls.forEach((f, k) => standAt(land, f, 'sky-fall').add(garden.fall({ rise: f.rise, seed: k + 1 })));
+    notchRocks(land);
     for (const c of s.clouds) standAt(land, c, 'sky-cloud').add(garden.cloud({ size: c.size, seed: c.seed }));
     for (const r of s.rocks) standAt(land, r, 'sky-float').add(garden.floatingRock({ size: r.size, seed: r.seed }));
   }
@@ -500,11 +677,14 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     g.add(frame);
     return frame;
   }
+  /** The ground skyGround laid, for the lamps' pools (laid over it in the 'sky rock' phase). */
+  let deckLand: T.Group | null = null;
   /** The island's ground, in its own group (the town's `sky.land`): the lawn, the paths and the garden. */
   function skyGround(land: T.Group, air: T.Group) {
     lawn(land);
     paths(land);
     skyGarden(land, air);
+    deckLand = land;
   }
 
   /* ---------------------------------------------------------------- */
@@ -545,6 +725,8 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
       // How far a stone sits in and down from the profile, each its own (never out past the nose's line).
       seat = (stone: number) => C.set * hash(stone * 5.71 + 1.3),
       path = plan.skyOutline(0, C.stones * C.stations).map((p) => ({ ...p, y: S.top })),
+      // How far each station sinks into a fall's notch (SKY_NOTCH): 1 at the notch's floor, 0 clear of it.
+      notch = path.map((p) => Math.max(0, ...plan.skyFalls.map((f) => 1 - T.MathUtils.smoothstep(Math.hypot(p.x - f.x, p.z - f.z), FALL.notch.half, FALL.notch.half + FALL.notch.ramp)))),
       swept = sweep(path, (k) => {
         const stone = Math.floor(k / C.stations),
           // A joint station takes the lower of the two stones it parts, drawn in by the joint.
@@ -553,7 +735,11 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
         // Only the top's outer edge, the nose and the underside take it: the inner face and its
         // arris run level all round the lawn (one clean edge, not a dotted one), and the
         // underside's end stays put inside the rock.
-        return C.profile.map(([o, y], j): [number, number] => (j < 3 || j === C.profile.length - 1 ? [o, y] : [o - sit, y - (j < 6 ? sit : 0)]));
+        return C.profile.map(([o, y], j): [number, number] => {
+          const [po, py] = j < 3 || j === C.profile.length - 1 ? [o, y] : [o - sit, y - (j < 6 ? sit : 0)],
+            [no, ny] = SKY_NOTCH.profile[j];
+          return [po + (no - po) * notch[k], py + (ny - py) * notch[k]];
+        });
       }),
       geometry = swept.toNonIndexed(),
       count = geometry.getAttribute('position').count,
@@ -567,11 +753,14 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
   }
   /**
    * The underside (SKY_ROCK): the earth tapering to a blunt point, its chunky shoulders hung under
-   * the rim and rock standing out of its flanks, sculpted as one smooth mass (its normals are the
-   * blended field's own, so nothing is faceted). Its colours are on its vertices: the earth in
-   * three beds, each change marked by a thin pale seam, wandering a little and darkening down the
-   * spike; the rock in warm greys where a rock lobe's own surface (or the tip's) shows, lighter where
-   * it faces up; a faint broad mottle over both.
+   * the rim, sculpted as one smooth mass (its normals the blended field's own, so nothing is
+   * faceted), and the rock: the spike at its point, and boulders standing out of its flanks, each a
+   * rounded block sculpted on its own and set into the earth, so where they meet the two surfaces
+   * part in one crisp line (a colour faded across the net's triangles there smeared like paint).
+   * Their colours are on their vertices: the earth in three beds, each change a soft gradient level
+   * all round under a faint paler seam, giving way to rock down the spike; the boulders in the
+   * armour's cool greys, lighter where they face the sky and a shade darker where they go into the
+   * earth; a faint broad mottle over both. Whatever faces down takes the sea's light thrown back up.
    */
   function rock(g: T.Object3D) {
     const R = SKY_ROCK,
@@ -579,8 +768,8 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
       // The tip's place in the deck's frame (plan.skyTip: it leans toward the file's camera).
       [tx, tz] = plan.skyLocal(plan.skyTip().x, plan.skyTip().z),
       mass = sculpt([-S.a - 0.6 - Math.abs(tx), -S.depth - 0.5, -S.b - 0.6 - Math.abs(tz)], [S.a + 0.6 + Math.abs(tx), -B.top + 2 * R.grid, S.b + 0.6 + Math.abs(tz)], R.grid),
-      shapes = R.lobes.map((l) => lobeShape(l, R.round)),
-      outcrops = shapes.filter((_, k) => R.lobes[k].rock);
+      shapes = R.lobes.map((l) => lobeShape(l, l.rock ? R.rockRound : R.round)),
+      boulders = shapes.filter((_, k) => R.lobes[k].rock);
     // (Blended, the body and the round cone swell the tip by `swell`: both stop that short of SKY.depth.)
     const tipAt = S.depth - R.tip.swell,
       // The spike's axis, from the body's middle at `from` down to the tip.
@@ -588,57 +777,83 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
       tip = roundCone([tx * kFrom * kFrom, -R.tip.from, tz * kFrom * kFrom], [tx, -tipAt + R.tip.r[1], tz], R.tip.r[0], R.tip.r[1]);
     mass.add(earthBody(S.a, S.b, B.top, B.cliff, tipAt, B.share, B.belly, tx, tz));
     mass.add(tip, R.tip.fillet);
-    for (const [k, shape] of shapes.entries()) mass.add(shape, R.lobes[k].rock ? R.rockFillet : R.fillet);
+    for (const [k, shape] of shapes.entries()) if (!R.lobes[k].rock) mass.add(shape, R.fillet);
     // A flat top under the turf, level with the body's, its edge rolled into the cliffs (never a crease
     // where the shoulders' blends meet it): the coping's underside ends inside it.
     mass.cut(roundBox([0, 4 - B.top, 0], [S.a + 2, 4, S.b + 2], 0), R.cut);
-    const geometry = mass.mesh(),
-      p = geometry.getAttribute('position'),
-      n = geometry.getAttribute('normal'),
-      tones = new Float32Array(p.count * 3),
-      earth = L.earth.map((c) => new T.Color(c)),
+    const earth = L.earth.map((c) => new T.Color(c)),
       seam = new T.Color(L.seam),
       stone = L.rock.map((c) => new T.Color(c)),
       c = new T.Color(),
       r = new T.Color(),
       step = T.MathUtils.smoothstep,
-      [b0, b1, b2] = R.beds;
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i),
-        y = p.getY(i),
-        z = p.getZ(i),
-        // The depth the beds are read at: the vertex's own, wandering softly round the island.
-        depth = -y + R.wander * (noise3(x * 0.33 + 3.1, y * 0.5, z * 0.33 + 7.7) - 0.5),
-        mottle = 1 + 0.07 * (noise3(x * 0.9 + 11.3, y * 1.4 + 5.2, z * 0.9 + 2.9) - 0.5),
-        // How near a seam it lies (1 on one), and how much of it is rock: down the spike, or on a
-        // rock lobe's own surface.
-        seamAt = Math.max(...[b0, b1].map((b) => 1 - step(Math.abs(depth - b), R.seam[0], R.seam[1]))),
-        rockAt = Math.max(step(depth, R.spike[0], R.spike[1]), 1 - step(Math.min(tip.d(x, y, z), ...outcrops.map((s) => s.d(x, y, z))), R.outcrop[0], R.outcrop[1]));
-      c.copy(earth[0])
-        .lerp(earth[1], step(depth, b0 - 0.2, b0 + 0.2))
-        .lerp(earth[2], step(depth, b1 - 0.3, b1 + 0.3))
-        .lerp(seam, seamAt * 0.85);
-      // Rock: its warm grey, lighter on faces turned to the sky, a little darker toward the tip.
-      r.copy(stone[1])
-        .lerp(stone[0], step(n.getY(i), -0.1, 0.7))
-        .lerp(stone[2], step(depth, b2, S.depth) * 0.6);
-      c.lerp(r, rockAt).multiplyScalar(mottle);
-      // The sea's light thrown back up under the island: whatever faces down is lifted (warm, against
-      // the hemisphere's olive ground light), so under the town's high sun the body reads as brown
-      // earth and grey rock, never as a hole.
-      const under = step(-n.getY(i), -0.1, 0.8);
-      c.setRGB(c.r * (1 + R.bounce[0] * under), c.g * (1 + R.bounce[1] * under), c.b * (1 + R.bounce[2] * under)).toArray(tones, i * 3);
+      [b0, b1, b2] = R.beds,
+      /** A vertex's paint: `stoneAt` how much of it is rock (the rest earth), `into` how near the earth a boulder's vertex is (0 at it). */
+      paint = (x: number, y: number, z: number, ny: number, stoneAt: number, into: number, out: Float32Array, i: number) => {
+        const depth = -y,
+          mottle = 1 + 0.07 * (noise3(x * 0.9 + 11.3, y * 1.4 + 5.2, z * 0.9 + 2.9) - 0.5),
+          seamAt = Math.max(...[b0, b1].map((b) => 1 - step(Math.abs(depth - b), R.seam[0], R.seam[1])));
+        c.copy(earth[0])
+          .lerp(earth[1], step(depth, b0 - R.change, b0 + R.change))
+          .lerp(earth[2], step(depth, b1 - R.change, b1 + R.change))
+          .lerp(seam, seamAt * R.seamTone);
+        // Rock: its cool grey, lighter on faces turned to the sky, a little darker toward the tip and
+        // where a boulder goes into the earth.
+        r.copy(stone[1])
+          .lerp(stone[0], step(ny, -0.1, 0.7))
+          .lerp(stone[2], step(depth, b2, S.depth) * 0.6)
+          .multiplyScalar(T.MathUtils.lerp(R.set, 1, step(into, 0, 0.35)));
+        c.lerp(r, stoneAt).multiplyScalar(mottle);
+        // The sea's light thrown back up under the island: whatever faces down is lifted (warm, against
+        // the hemisphere's olive ground light), so under the town's high sun the body reads as brown
+        // earth and grey rock, never as a hole.
+        const under = step(-ny, -0.1, 0.8);
+        c.setRGB(c.r * (1 + R.bounce[0] * under), c.g * (1 + R.bounce[1] * under), c.b * (1 + R.bounce[2] * under)).toArray(out, i * 3);
+      },
+      /** Paint a mesh's vertices, and keep only the triangles that are not all `hidden`. */
+      finish = (geometry: T.BufferGeometry, stoneAt: (x: number, y: number, z: number) => number, into: (x: number, y: number, z: number) => number, hidden: (i: number) => boolean) => {
+        const p = geometry.getAttribute('position'),
+          n = geometry.getAttribute('normal'),
+          tones = new Float32Array(p.count * 3);
+        for (let i = 0; i < p.count; i++) {
+          const x = p.getX(i),
+            y = p.getY(i),
+            z = p.getZ(i);
+          paint(x, y, z, n.getY(i), stoneAt(x, y, z), into(x, y, z), tones, i);
+        }
+        geometry.setAttribute('color', new T.BufferAttribute(tones, 3));
+        const index = geometry.getIndex()!,
+          kept: number[] = [];
+        for (let t = 0; t < index.count; t += 3) {
+          const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+          if (!corners.every(hidden)) kept.push(...corners);
+        }
+        geometry.setIndex(kept);
+        return geometry;
+      };
+    // The earth, rock down its spike; the flat top is never seen (the turf lies over it): only its rim
+    // is kept, under the coping; nor is what the boulders bury.
+    const ground = mass.mesh(),
+      gp = ground.getAttribute('position'),
+      inBoulder = (x: number, y: number, z: number) => Math.min(...boulders.map((s) => s.d(x, y, z)));
+    finish(
+      ground,
+      (_x, y) => step(-y, R.spike[0], R.spike[1]),
+      () => 1,
+      (i) => (gp.getY(i) > -B.top - 0.1 && Math.hypot(gp.getX(i) / S.a, gp.getZ(i) / S.b) < B.share - 0.1) || inBoulder(gp.getX(i), gp.getY(i), gp.getZ(i)) < -0.08,
+    );
+    // The boulders, each on a grid of its own over its box: what the earth buries is left out.
+    const parts = [ground];
+    for (const shape of boulders) {
+      const pad = 3 * R.grid,
+        s = sculpt([shape.min[0] - pad, shape.min[1] - pad, shape.min[2] - pad], [shape.max[0] + pad, shape.max[1] + pad, shape.max[2] + pad], R.grid);
+      s.add(shape);
+      const stoneMesh = s.mesh(),
+        sp = stoneMesh.getAttribute('position');
+      parts.push(finish(stoneMesh, () => 1, (x, y, z) => mass.exact(x, y, z), (i) => mass.exact(sp.getX(i), sp.getY(i), sp.getZ(i)) < -0.08));
     }
-    geometry.setAttribute('color', new T.BufferAttribute(tones, 3));
-    // The flat top is never seen (the turf lies over it): only its rim is kept, under the coping.
-    const index = geometry.getIndex()!,
-      kept: number[] = [],
-      buried = (i: number) => p.getY(i) > -B.top - 0.1 && Math.hypot(p.getX(i) / S.a, p.getZ(i) / S.b) < B.share - 0.1;
-    for (let t = 0; t < index.count; t += 3) {
-      const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
-      if (!corners.every(buried)) kept.push(...corners);
-    }
-    geometry.setIndex(kept);
+    const geometry = mergeGeometries(parts)!;
+    parts.forEach((p) => p.dispose());
     const m = solid(g, geometry, '#ffffff', 'stone', { name: 'sky-rock' });
     // In the deck's own frame: its long axis on x, its level at y 0.
     m.position.set(S.x, S.top, S.z);
@@ -678,12 +893,16 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
   /**
    * The island's underside, in its own group (the town's `sky.rock`, batched with no contact
    * shade: measured from the lawn, everything below it would bake to its darkest): the rock and
-   * the coping over it.
+   * the coping over it; and, on the deck skyGround laid, the lamps' pools.
    */
   function skyUnderside(g: T.Group) {
     rock(g);
     coping(g);
     dimAtNight(g);
+    // The lamps' pools go on the deck skyGround laid (the town's `sky.land`, batched with it), here
+    // rather than there: 'sky ground', with the villa and the garden in it, is the longer phase, and
+    // check-town holds each of the island's phases under a fifth of a second.
+    if (deckLand) lampPools(deckLand);
   }
 
   /* ---------------------------------------------------------------- */
