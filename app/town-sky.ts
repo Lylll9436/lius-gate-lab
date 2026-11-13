@@ -1216,7 +1216,8 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
    * Alison Heppenstall's figure (sky-figure's createAlison) on the island, in `root` (the island's
    * own root, outside every static batch: her root is a pivot of its own), going about her day:
    * plan.alisonDay says where she is and what she does, poseAlison poses her, and she stands on the
-   * lawn there (skyTop) or sits on her chair. She keeps a clock of her own, town time less however
+   * ground drawn there (plan.skyFloor: the lawn, or the paths' gravel where she is on it) or sits on
+   * her chair. She keeps a clock of her own, town time less however
    * long she has been held (or was coming back from it) while the town ran on, so nothing of her day
    * runs on under her while she is held. When the town is held (the frame's `held`: Pause) she
    * settles where she is into the still pose plan.alisonStill gives, over SKY_HOLD's seconds of the
@@ -1240,7 +1241,7 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
       pose = (day: plan.AlisonDay) => {
         // (alisonDay's answer carries poseAlison's options by their own names.)
         const { lift } = poseAlison(joints, held, day.pose, day.phase, day);
-        figure.position.set(day.x, plan.skyTop(day.x, day.z) + lift, day.z);
+        figure.position.set(day.x, plan.skyFloor(day.x, day.z) + lift, day.z);
         figure.rotation.y = day.heading;
       },
       hidden = (s: { front: number; tail: number }) => s.front <= 1e-6 || s.tail >= 1 - 1e-6;

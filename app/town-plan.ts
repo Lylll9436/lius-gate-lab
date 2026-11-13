@@ -843,6 +843,8 @@ export type SkyStation = { x: number; z: number; facing: number };
  * kit's telescope to them).
  */
 export const SKY_SEATS = { tea: 0.61, telescope: 0.6571, height: 0.44, eyepiece: 0.7058, tilt: 0.2601 };
+/** The gravel paths' lift over the lawn (SKY_PATHS.lift), known before the paths are laid: her stand at the telescope is on the walk's gravel. */
+const SKY_GRAVEL = 0.025;
 /** The point `d` along a bearing from (x, z). */
 const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Math.sin(bearing) * d, z + Math.cos(bearing) * d];
 /**
@@ -859,11 +861,13 @@ const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Mat
  * - `telescope`: the telescope on the east-south-east rim. It looks at the Town Hall (`look`, the
  *   bearing; `dip`, the true depression of that line from her eye to the hall's middle), and she
  *   stands at `stand`, stooped to its eyepiece. The lawn under her is a little higher than under
- *   the tripod's middle (the dome), so its eyepiece stands `eyepiece` over the tripod's foot: her
- *   own SKY_SEATS.eyepiece over the floor she stands on.
+ *   the tripod's middle (the dome), and she stands on the walk's gravel there, so its eyepiece
+ *   stands `eyepiece` over the tripod's foot: her own SKY_SEATS.eyepiece over the floor she stands
+ *   on.
  * - `bench`: the town's bench on the south-east lawn beside the paths' round landing, facing the
  *   town (the garden's; her day does not take her to it).
- * She stands on skyTop at each (a seat: SKY_SEATS.height over it).
+ * She stands on the ground drawn at each (skyFloor: the lawn, but the walk's gravel at the
+ * telescope; a seat: SKY_SEATS.height over the lawn).
  */
 export const SKY_STATIONS = (() => {
   const hall = sites['town-hall'],
@@ -880,7 +884,8 @@ export const SKY_STATIONS = (() => {
   const rim = skyRim(50 * rad, -1.0),
     look = Math.atan2(hall.x - rim.x, hall.z - rim.z),
     [sx, sz] = along(rim.x, rim.z, look, -SKY_SEATS.telescope),
-    eye = skyTop(sx, sz) + SKY_SEATS.eyepiece,
+    // (She stands on the walk's gravel there: its east end.)
+    eye = skyTop(sx, sz) + SKY_GRAVEL + SKY_SEATS.eyepiece,
     eyepiece = eye - skyTop(rim.x, rim.z),
     dip = Math.atan2(eye - hall.height / 2, Math.hypot(hall.x - sx, hall.z - sz));
   // The watering stretch, on the walk along the borders (its line is SKY_PATHS.walk's).
@@ -901,7 +906,9 @@ export const SKY_STATIONS = (() => {
  * along the borders at the terrace's foot (`walk`), from beside the tea table past the steps and
  * on, easing round to where she stands at the telescope (one smooth line through its points); and
  * the stem from the steps down the middle of the lawn to a round landing (`landing`), which the
- * bench stands beside.
+ * bench stands beside. She stands on them where she is on them (skyFloor), stepping up onto them
+ * over `ease` of the lawn outside their edge (one of her steps, half her stride: a step of `lift` at
+ * the edge would pop).
  */
 export const SKY_PATHS = (() => {
   const { watering, telescope, tea } = SKY_STATIONS,
@@ -909,12 +916,68 @@ export const SKY_PATHS = (() => {
     landing = { x: SKY.x, z: -18.65, r: 0.8 };
   return {
     width: 0.56,
-    lift: 0.025,
+    lift: SKY_GRAVEL,
+    ease: 0.18,
     walk: [[tea.x - 0.5, z], [SKY.x, z], [watering.to.x, z], [telescope.stand.x, telescope.stand.z]] as XZ[],
     stem: [[SKY.x, z], [landing.x, landing.z]] as XZ[],
     landing,
   };
 })();
+/**
+ * A point a share `t` of the way along a centripetal Catmull-Rom through `points` (three's open
+ * CatmullRomCurve3, 'centripetal': its ends' outer neighbours mirrored), as town-sky draws the walk.
+ */
+function centripetal(points: XZ[], t: number): XZ {
+  const l = points.length,
+    f = (l - 1) * t,
+    i = Math.min(l - 2, Math.floor(f)),
+    w = f - i,
+    at = (k: number): XZ => (k < 0 ? [2 * points[0][0] - points[1][0], 2 * points[0][1] - points[1][1]] : k >= l ? [2 * points[l - 1][0] - points[l - 2][0], 2 * points[l - 1][1] - points[l - 2][1]] : points[k]),
+    [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
+    span = (a: XZ, b: XZ) => ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.25;
+  let d0 = span(p0, p1),
+    d1 = span(p1, p2),
+    d2 = span(p2, p3);
+  if (d1 < 1e-4) d1 = 1;
+  if (d0 < 1e-4) d0 = d1;
+  if (d2 < 1e-4) d2 = d1;
+  const cubic = (x0: number, x1: number, x2: number, x3: number) => {
+    const t1 = ((x1 - x0) / d0 - (x2 - x0) / (d0 + d1) + (x2 - x1) / d1) * d1,
+      t2 = ((x2 - x1) / d1 - (x3 - x1) / (d1 + d2) + (x3 - x2) / d2) * d1;
+    return x1 + t1 * w + (-3 * x1 + 3 * x2 - 2 * t1 - t2) * w * w + (2 * x1 - 2 * x2 + t1 + t2) * w * w * w;
+  };
+  return [cubic(p0[0], p1[0], p2[0], p3[0]), cubic(p0[1], p1[1], p2[1], p3[1])];
+}
+/** The walk's middle line as a fine polyline (its curve to the telescope a few hundredths between points). */
+const SKY_WALK_LINE = Array.from({ length: 161 }, (_, k) => centripetal(SKY_PATHS.walk, k / 160));
+/** How far (x, z) is from a polyline. */
+function polylineDistance(line: XZ[], x: number, z: number) {
+  let best = Infinity;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [ax, az] = line[i],
+      dx = line[i + 1][0] - ax,
+      dz = line[i + 1][1] - az,
+      f = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+    best = Math.min(best, Math.hypot(x - ax - dx * f, z - az - dz * f));
+  }
+  return best;
+}
+/** How far (x, z) is inside the gravel paths (SKY_PATHS: the walk and the stem with their round ends, and the landing); outside, negative. */
+export function skyGravel(x: number, z: number) {
+  const P = SKY_PATHS,
+    half = P.width / 2;
+  return Math.max(half - polylineDistance(SKY_WALK_LINE, x, z), half - polylineDistance(P.stem, x, z), P.landing.r - Math.hypot(x - P.landing.x, z - P.landing.z));
+}
+/**
+ * The ground drawn at (x, z), what she stands on: the lawn (skyTop), or the gravel where she is on it
+ * (SKY_PATHS.lift over the lawn), the step between them eased over SKY_PATHS.ease of the lawn outside
+ * the gravel's edge, so she steps up onto it and down off it over one of her steps.
+ */
+export function skyFloor(x: number, z: number) {
+  const P = SKY_PATHS,
+    u = Math.min(1, Math.max(0, 1 + skyGravel(x, z) / P.ease));
+  return skyTop(x, z) + P.lift * u * u * (3 - 2 * u);
+}
 /**
  * The garden lamps (lane G's gardenLamps, one set): their feet, on the lawn either side of the
  * paths' round landing, between it and the south rim, where the stem from the steps ends; and either
@@ -1294,7 +1357,7 @@ export type AlisonDay = {
 function placesFor(out: AlisonDay) {
   const c = Math.cos(out.heading),
     s = Math.sin(out.heading),
-    floor = skyTop(out.x, out.z),
+    floor = skyFloor(out.x, out.z),
     frame = (p: { x: number; y: number; z: number; ry: number }): [number, number, number, number] => {
       const dx = p.x - out.x,
         dz = p.z - out.z;
@@ -1308,7 +1371,8 @@ function placesFor(out: AlisonDay) {
  * Alison on the sky island at time `time` of her day (pure: the same time always gives the same
  * answer; time 0 has her resting in her chair at tea, her cup on its saucer):
  * - `station`, where she is (SkyDayStation), and `pose` and `phase`, lane F's poseAlison arguments;
- * - (x, z), her root's place; she stands on skyTop there (her root at skyTop + poseAlison's lift);
+ * - (x, z), her root's place; she stands on the ground drawn there (skyFloor: the lawn, or the
+ *   paths' gravel where she is on it; her root at skyFloor + poseAlison's lift);
  * - `heading`, her root's rotation.y (she faces +z in her own frame);
  * - `amount`, a walk's gait (0 standing: lane F's walk at 0 is 'stand', so only walk and stand
  *   blend; every other pose comes and goes through poses of its own while she stands still);
@@ -1333,7 +1397,7 @@ export function alisonDay(time: number): AlisonDay {
     into = t - act.t0,
     out: AlisonDay = { station: act.station, pose: 'stand', phase: 0, x: 0, z: 0, heading: 0, amount: 0, seat: 0, step: 0, side: [0, 0], rest: [0, 0, 0, 0], can: [0, 0, 0, 0], carry: act.carry, lift: 0, pour: 0, front: 0, tail: 0, stoop: 0 },
     // Her chair's seat over the floor where she is (the table stands level on the dome).
-    seat = () => skyTop(SKY_STATIONS.tea.x, SKY_STATIONS.tea.z) + SKY_SEATS.height - skyTop(out.x, out.z);
+    seat = () => skyTop(SKY_STATIONS.tea.x, SKY_STATIONS.tea.z) + SKY_SEATS.height - skyFloor(out.x, out.z);
   switch (act.kind) {
     case 'seated':
       Object.assign(out, { pose: into < act.settle ? 'sit' : 'sip', phase: sipPhase(t), x: chair.x, z: chair.z, heading: chair.facing });

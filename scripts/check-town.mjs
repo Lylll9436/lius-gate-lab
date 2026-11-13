@@ -7900,8 +7900,8 @@ let skyReport = '';
       assert(Math.abs(hers.x + SEATS.tea) < 1e-9 && Math.abs(guests.x - SEATS.tea) < 1e-9 && hers.z === 0 && Math.abs(plan.angleDiff(slots.tea.ry + hers.heading, ST.tea.seats[0].facing)) < 1e-9, 'Her chair at tea is not the table\'s -x one.');
     }
     // The telescope, built along her gaze to her eye: SKY_SEATS.telescope is its stand at her tilt,
-    // and where she stands, behind it on the lawn, her eye is its eyepiece; its tube runs on from there
-    // along her gaze.
+    // and where she stands, behind it on the walk's gravel, her eye is its eyepiece; its tube runs on
+    // from there along her gaze.
     {
       const E = G.telescopeEyepiece(SEATS.tilt),
         scope = fresh().garden.telescope({ eyepiece: slots.telescope.eyepiece, tilt: SEATS.tilt }),
@@ -7910,7 +7910,7 @@ let skyReport = '';
         eyepiece = world(scope.userData.eyepiece),
         stand = world(scope.userData.stand),
         at = ST.telescope.stand,
-        eye = new T.Vector3(at.x + Math.sin(at.facing) * HER_EYE[1], plan.skyTop(at.x, at.z) + HER_EYE[0], at.z + Math.cos(at.facing) * HER_EYE[1]);
+        eye = new T.Vector3(at.x + Math.sin(at.facing) * HER_EYE[1], plan.skyFloor(at.x, at.z) + HER_EYE[0], at.z + Math.cos(at.facing) * HER_EYE[1]);
       assert(Math.abs(SEATS.telescope + scope.userData.stand[2]) < 1e-4, `SKY_SEATS.telescope (${SEATS.telescope}) is not the telescope's stand at her tilt (${(-scope.userData.stand[2]).toFixed(4)}).`);
       // (SKY_SEATS keeps lane F's eyepiece height to a tenth of a millimetre: the plan cannot load her module.)
       assert(Math.abs(SEATS.eyepiece - HER_EYE[0]) < 1e-4 && Math.abs(Math.sin(SEATS.tilt) + HER_GAZE[0]) < 2e-4 && Math.abs(E.height - HER_EYE[0]) < 5e-4 && Math.abs(E.standOff - HER_EYE[1]) < 5e-4, 'The telescope is not built to her eye and her gaze.');
@@ -8310,7 +8310,9 @@ let skyReport = '';
     // - she is always on the deck, a unit or more in from the rim, and walking, on the walk's gravel
     //   but for the step between it and her chair's side (within 0.35 of where she stands there);
     // - standing (still, walking, watering, mid-sidestep or at the telescope) her lower sole is on the
-    //   lawn; seated, her thighs are on her chair's seat; in a sidestep the planted foot stays put;
+    //   ground drawn under it, the lawn or the paths' gravel where she is on it, and where she steps up
+    //   onto the gravel over a step of the lawn outside its edge, between the lawn and the gravel's
+    //   top; seated, her thighs are on her chair's seat; in a sidestep the planted foot stays put;
     // - at tea her hands are on the cup and the saucer, the cup resting on it between sips, and nothing
     //   of her is in her chair's back (its posts and rail, behind her hair), its seat or the table's top;
     //   watering, her hand is on the can's handle, its rose over the bed while the water shows, and the
@@ -8360,11 +8362,26 @@ let skyReport = '';
         same = (a, b, eps = 1e-9) => a.length === b.length && a.every((n, i) => Math.abs(n - b[i]) < eps),
         hand = (k) => alisonHand(joints, k).applyMatrix4(her.matrixWorld),
         grip = (prop, p) => new T.Vector3(...p).applyMatrix4(prop.matrixWorld),
-        // The lowest of her soles over the lawn under it.
+        // The lowest of her soles over the ground drawn under it (the lawn, or the paths' gravel where
+        // it is, SKY_PATHS.lift over the lawn: the final review's missed finding, she stood on the lawn
+        // and her soles were 0.018 to 0.030 under the gravel she seemed to stand on); her lowest sole
+        // point's height over the lawn; and whether she is stepping up onto the gravel (her root on
+        // the lawn within SKY_PATHS.ease of it).
         soleGap = () => {
-          let gap = Infinity;
-          for (const k of joints.knees) visit(k, (p) => (gap = Math.min(gap, p.y - plan.skyTop(p.x, p.z))));
-          return gap;
+          let gap = Infinity,
+            low = Infinity,
+            up = 0;
+          for (const k of joints.knees)
+            visit(k, (p) => {
+              const lawnUp = p.y - plan.skyTop(p.x, p.z);
+              gap = Math.min(gap, lawnUp - (onGravel(p.x, p.z) ? plan.SKY_PATHS.lift : 0));
+              if (p.y < low) {
+                low = p.y;
+                up = lawnUp;
+              }
+            });
+          const depth = plan.skyGravel(her.position.x, her.position.z);
+          return { gap, up, edge: depth < 0 && depth > -plan.SKY_PATHS.ease };
         },
         seated = (s) => s.pose === 'sit' || s.pose === 'sip' || s.pose === 'set',
         beside = { x: D.beside[0], z: D.beside[1] },
@@ -8562,6 +8579,9 @@ let skyReport = '';
           .flatMap((dx) => [0.5, 1.94].map((dy) => fileFlat(new T.Vector3(site.x + dx, site.y + dy, door.at.z))))
           .reduce(([u0, w0, u1, w1], [u, w]) => [Math.min(u0, u), Math.min(w0, w), Math.max(u1, u), Math.max(w1, w)], [Infinity, Infinity, -Infinity, -Infinity]);
       let soleWorst = 0,
+        soleSunk = Infinity,
+        soleEdge = -Infinity,
+        edgeSeen = 0,
         chairGap = Infinity,
         seatSink = 0,
         tableGap = Infinity,
@@ -8575,7 +8595,16 @@ let skyReport = '';
       const seen = new Set(),
         canHome = new T.Vector3(D.can.x, D.can.y, D.can.z),
         // Her can's handle in her -x hand.
-        canInHand = () => hand(0).distanceTo(grip(held.can, ALISON_HOLDS.can)) < 2e-3;
+        canInHand = () => hand(0).distanceTo(grip(held.can, ALISON_HOLDS.can)) < 2e-3,
+        // Her lower sole: on the ground drawn under it; stepping up onto the gravel, her lowest sole
+        // between the lawn and the gravel's top.
+        sole = (r) => {
+          if (r.edge) {
+            soleSunk = Math.min(soleSunk, r.up);
+            soleEdge = Math.max(soleEdge, r.up);
+            edgeSeen++;
+          } else soleWorst = Math.max(soleWorst, Math.abs(r.gap));
+        };
       for (let t = 0; t < D.period; t += 0.5) {
         const s = at(t);
         seen.add(s.pose);
@@ -8603,7 +8632,7 @@ let skyReport = '';
             // Between sips the cup rests in the saucer's well (the cup's foot on its axis, 0.058 from its handle).
             if (s.phase === 0) cupWorst = Math.max(cupWorst, grip(held.cup, [0.058, -0.037, 0]).distanceTo(grip(held.saucer, [0, 0.036, 0])));
           }
-        } else if (s.pose !== 'rise') soleWorst = Math.max(soleWorst, Math.abs(soleGap()));
+        } else if (s.pose !== 'rise') sole(soleGap());
         if (s.pose === 'telescope' && s.stoop === 1) {
           const eye = new T.Vector3(0, 0.772, 0.137).applyMatrix4(joints.body.matrixWorld),
             toPiece = eyepiece.clone().sub(eye);
@@ -8643,7 +8672,7 @@ let skyReport = '';
           if (i === 0 || i === 10) planted[k] = shoe(k);
           slide = Math.max(slide, Math.hypot(shoe(k).x - planted[k].x, shoe(k).z - planted[k].z));
           if (i === 10) planted[0] = shoe(0);
-          soleWorst = Math.max(soleWorst, Math.abs(soleGap()));
+          sole(soleGap());
           visit(held.can, (p) => (canGap = Math.min(canGap, p.y - beds[0].height(p.x, p.z))));
         }
         assert(slide < 0.005, `In a sidestep her planted foot slides ${fmt3(slide)}.`);
@@ -8663,12 +8692,12 @@ let skyReport = '';
       assert(placeWorst < 1e-9, `Set down, her can strays ${placeWorst} from its place on the kerb.`);
       assert(['sip', 'sit', 'stand', 'walk', 'water', 'telescope', 'take'].every((p) => seen.has(p)), `Her day shows only ${[...seen].join(', ')}.`);
       assert(overDoor === 0, `From the island's file ${overDoor} points of her show over the villa's front door.`);
-      assert(soleWorst < 8e-3, `Standing, her lower sole is ${fmt3(soleWorst)} off the lawn.`);
+      assert(soleWorst < 8e-3 && soleSunk > -8e-3 && soleEdge < plan.SKY_PATHS.lift + 8e-3 && edgeSeen > 0, `Standing, her lower sole is ${fmt3(soleWorst)} off the ground drawn under it (the lawn, or the gravel where she is on it), or stepping up onto the gravel her lowest sole is ${fmt3(-soleSunk)} under the lawn or ${fmt3(soleEdge)} over it (${edgeSeen} moments).`);
       assert(handWorst < 2e-3 && cupWorst < 5e-3, `Her hands are ${fmt3(handWorst)} off the cup, the saucer or the can, or her cup ${fmt3(cupWorst)} off its saucer.`);
       assert(eyeWorst < 1e-3 && tubeWorst < 0.01, `At the telescope her eye is off its eyepiece (${eyeWorst}), or her hands ${fmt3(tubeWorst)} off its tube.`);
       assert(chairGap > 0.005 && seatSink > -3e-3 && tableGap > 0, `Seated, she is ${fmt3(chairGap)} from her chair's back, ${fmt3(-seatSink)} into its seat, ${fmt3(tableGap)} from the table's top.`);
       assert(canGap >= 0.013, `Watering, her can clears the border by only ${fmt3(canGap)}.`);
-      skyReport += `; Alison's day ${D.period} s (tea, the two borders, the telescope; ${(lawn * dt).toFixed(1)} s of it walking on the lawn by her chair), her hair ${fmt3(chairGap)} clear of her chair's back, her can ${fmt3(canGap)} over the borders`;
+      skyReport += `; Alison's day ${D.period} s (tea, the two borders, the telescope; ${(lawn * dt).toFixed(1)} s of it walking on the lawn by her chair), her soles within ${fmt3(soleWorst)} of the ground drawn under them (the gravel where she is on it; stepping up onto it at ${edgeSeen} moments, between the lawn and its top), her hair ${fmt3(chairGap)} clear of her chair's back, her can ${fmt3(canGap)} over the borders`;
 
       // What can hide her water: her can and the borders' beds; and how many of its tube's points
       // could be seen as it is posed now (rays from eight bearings at the file's pitch, the town's
@@ -8848,16 +8877,16 @@ let skyReport = '';
             if (places.every((d) => d < 0.004)) return 'rose';
             return corners().every(({ p }) => beds.some((bed) => p.y < bed.height(p.x, p.z))) ? 'bed' : null;
           },
-          // Each sole's gap over the lawn under it.
+          // Each sole's gap over the floor she stands on (the ground drawn under her root: plan.skyFloor).
           soles = () =>
             joints.knees.map((k) => {
               let gap = Infinity;
-              visit(k, (p) => (gap = Math.min(gap, p.y - plan.skyTop(p.x, p.z))));
+              visit(k, (p) => (gap = Math.min(gap, p.y - floor())));
               return gap;
             }),
           level = (prop) => new T.Vector3(0, 1, 0).applyQuaternion(prop.getWorldQuaternion(new T.Quaternion())).y > 1 - 1e-9,
           upright = () => new T.Vector3(0, 1, 0).applyQuaternion(joints.body.getWorldQuaternion(new T.Quaternion())).y > 1 - 1e-9,
-          floor = () => plan.skyTop(her.position.x, her.position.z),
+          floor = () => plan.skyFloor(her.position.x, her.position.z),
           // Her stance (how far her one sole is ahead of the other along her heading, and beside it), her
           // hips' height over the lawn, and her hands and her saucer in her own frame.
           stance = () => {
@@ -8912,7 +8941,7 @@ let skyReport = '';
               return 'seated, her saucer neither in her hand nor on the table';
             }
             const [a, b] = soles();
-            if (Math.max(Math.abs(a), Math.abs(b)) > 8e-3) return `a sole ${fmt3(Math.max(a, b))} off the lawn`;
+            if (Math.max(Math.abs(a), Math.abs(b)) > 8e-3) return `a sole ${fmt3(Math.max(a, b))} off her floor`;
             if (Math.abs(s.ahead - rest.ease.ahead) > 0.015 || Math.abs(s.beside - rest.ease.beside) > 0.01) return `in a stride, a sole ${fmt3(s.ahead - rest.ease.ahead)} ahead and ${fmt3(s.beside - rest.ease.beside)} out`;
             if (Math.abs(s.hips - rest.ease.hips) > 0.015) return `crouched, her hips ${fmt3(s.hips - rest.ease.hips)} off their standing height`;
             if (upright() && near(1, rest.ease, 0.01) && (canHeld ? hand(0).distanceTo(grip(held.can, ALISON_HOLDS.can)) < 2e-3 && near(0, rest.ease, 0.03) : near(0, rest.ease, 0.01))) return 'standing';
