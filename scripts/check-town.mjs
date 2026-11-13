@@ -5129,7 +5129,7 @@ let skyReport = '';
 {
   const { WATER } = await load('town-shared'),
     { SKY_LOOK, SKY_LAWN, SKY_COPING, SKY_ROCK, skySlots } = await load('town-sky'),
-    { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted } = await load('city-scene'),
+    { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted, TOWN_PITCH, SKY_PITCH } = await load('city-scene'),
     { SEA_SHADOW, createSeaShadow } = await load('city-water'),
     { palette } = await load('town-shared'),
     { sunOffsetFor } = await load('city-atmosphere'),
@@ -5150,9 +5150,10 @@ let skyReport = '';
     stops = [0, 1, 2, 3].map((k) => Math.PI / 4 + (k * Math.PI) / 2),
     file = plan.chapterBearings['sky-island'],
     drifts = [-0.16, -0.08, 0, 0.08, 0.16],
-    // A view's axes at a bearing (city-scene's viewOffset): the way back to the camera, screen right and up.
-    axes = (bearing) => {
-      const back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+    // A view's axes at a bearing (city-scene's viewOffset), at the town's pitch unless given one: the
+    // way back to the camera, screen right and up.
+    axes = (bearing, pitch = TOWN_PITCH) => {
+      const back = pitch === TOWN_PITCH ? new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize() : new T.Vector3(Math.sin(bearing) * Math.cos(pitch), Math.sin(pitch), Math.cos(bearing) * Math.cos(pitch)),
         right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
         up = new T.Vector3().crossVectors(back, right);
       return { back, right, up, flat: (p) => [p.x * right.x + p.z * right.z, p.x * up.x + p.y * up.y + p.z * up.z] };
@@ -5220,7 +5221,11 @@ let skyReport = '';
 
   /* ---------------- the spot, the deck's maths and the sea below ---------------- */
   assert(S.x === -52 && S.z === -24 && S.H === 10.5 && Math.abs(S.top - (WATER + S.H)) < 1e-9 && S.a === 7.5 && S.b === 6 && Math.abs(S.heading - Math.PI / 2) < 1e-12, 'The sky island is off its decided spot, height or outline.');
-  assert(Math.abs(S.top - S.depth - 2.352) < 1e-9, 'The rock\'s tip is no longer 2.4 above the sea.');
+  // The rock's tip: as deep as the sea allows and no deeper, 1.5 over it (lower, it reads as a stilt
+  // standing in the water), and leaning SKY.lean out toward the island's file's camera, so that from
+  // there it hangs clear below the body's near side.
+  const tipAt = plan.skyTip();
+  assert(Math.abs(tipAt.y - (S.top - S.depth)) < 1e-9 && Math.abs(tipAt.y - WATER - 1.5) < 1e-9 && S.lean >= 0.5 && S.lean <= 1.5 && Math.abs(Math.hypot(tipAt.x - S.x, tipAt.z - S.z) - S.lean) < 1e-9 && Math.abs(plan.angleDiff(Math.atan2(tipAt.x - S.x, tipAt.z - S.z), file)) < 1e-9, `The rock's tip is at ${[tipAt.x, tipAt.y, tipAt.z].map((n) => n.toFixed(2)).join(', ')}.`);
   // The villa: front due south (turned more than about 15 degrees toward the camera's right at the
   // opening bearing, it loses the key light there and in its file), its house block's middle 0.8
   // north of the island's, its foot on the deck. Its file is seen from the gate's bearing (no new
@@ -5400,7 +5405,7 @@ let skyReport = '';
     // The coping is everything above the rock's flat top: its top SKY's 0.14 under the deck's level,
     // 0.11 proud of the lawn beside it, its nose the deck's widest ring, on the rim's line and no further.
     const copingTop = Math.max(...SKY_COPING.profile.map(([, y]) => y)),
-      flat = S.top - SKY_ROCK.cone.top;
+      flat = S.top - SKY_ROCK.body.top;
     let top = -Infinity,
       widest = -Infinity,
       widestY = 0,
@@ -5433,7 +5438,7 @@ let skyReport = '';
     // overview is fitted to it.
     assert(flat < S.top - S.dome - 0.1 && S.top + SKY_COPING.profile.at(-1)[1] < flat - 0.05, 'The rock\'s flat top is not under the turf, or the coping\'s underside no longer ends inside it.');
     assert(proud > 0.1 && proud <= 0.4 && north <= 0, `The rock stands ${proud.toFixed(2)} proud of the rim (${north.toFixed(2)} at the north tip).`);
-    assert(Math.abs(tip.y - (S.top - S.depth)) < 0.1 && Math.hypot(tip.x - S.x, tip.z - S.z) < 0.4, `The rock's tip is at ${tip.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+    assert(Math.abs(tip.y - tipAt.y) < 0.1 && Math.hypot(tip.x - tipAt.x, tip.z - tipAt.z) < 0.4, `The rock's tip is at ${tip.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
     // Smooth, never faceted: wherever triangles meet at a point they share one normal there (a
     // faceted mesh has one a face), each a unit long and close to its faces' own. Sculpted on a grid
     // no finer than 0.2 (chunky: nothing under about half a unit survives it).
@@ -5473,39 +5478,57 @@ let skyReport = '';
     assert(corners / seen.size > 4, 'The rock\'s triangles share no corners.');
     assert(lean / corners > 0.97 && worst > 0.3, `The rock's normals lean ${(lean / corners).toFixed(3)} on average (${worst.toFixed(2)} at worst) from its faces.`);
     assert(rockTriangles >= 8000 && rockTriangles <= 16000 && SKY_ROCK.grid >= 0.2, `The rock costs ${rockTriangles} triangles.`);
-    // Chunky shoulders hung under the rim: on the east and west flanks (45 degrees from every Rotate
-    // stop) the earth stands proud of the rim and hangs 2 or more under the deck; at the deck's
-    // north and south ends, which stand furthest out toward the cameras, what hangs within half a
-    // unit of the rim is shallow, so the spike is the lowest thing on screen (checked below).
-    let flank = 0,
-      ends = 0;
+    // A chunk of land, not a plate: all round the rim the earth stands as cliffs (within half a unit
+    // of the rim's line) down to SKY_ROCK.body.cliff under the deck or deeper, its shoulders proud of
+    // them; and under each fall (within 12 degrees of its bearing) nothing stands out past the rim,
+    // so the water hangs clear of the rock.
+    const deepest = Array.from({ length: 36 }, () => 0),
+      underFalls = plan.skyFalls.map(() => -Infinity);
     each(sky.rock, (q) => {
       const bearing = Math.atan2(q.x - S.x, q.z - S.z),
         d = plan.skyDistance(q.x, q.z),
-        depth = S.top - q.y;
-      if (d > 0 && Math.abs(Math.abs(bearing) - Math.PI / 2) < 20 * deg) flank = Math.max(flank, depth);
-      if (d > -0.5 && (Math.abs(bearing) < 25 * deg || Math.abs(bearing) > 155 * deg)) ends = Math.max(ends, depth);
+        depth = S.top - q.y,
+        k = Math.round((((bearing / deg) % 360) + 360) / 10) % 36;
+      if (d > -0.5) deepest[k] = Math.max(deepest[k], depth);
+      plan.skyFalls.forEach((f, j) => {
+        if (depth > 0.6 && Math.abs(plan.angleDiff(bearing, f.bearing)) < 12 * deg) underFalls[j] = Math.max(underFalls[j], d);
+      });
     });
-    assert(flank >= 2 && ends <= 1.3, `The rock's shoulders hang ${flank.toFixed(2)} under the deck on its flanks and ${ends.toFixed(2)} at its ends.`);
+    assert(Math.min(...deepest) >= SKY_ROCK.body.cliff && SKY_ROCK.body.cliff >= 1.2, `The rock's cliffs stand only ${Math.min(...deepest).toFixed(2)} deep at a bearing of the rim.`);
+    assert(underFalls.every((d) => d <= 0), `The rock stands ${Math.max(...underFalls).toFixed(2)} past the rim under a fall.`);
     // The earth in beds, darker downward, each change a paler seam; down the spike the earth gives
-    // way to rock, far greyer than it.
+    // way to rock, far greyer than it. (Read through the sea's bounce, which the next check holds.)
+    // Whatever faces down is lifted by the bounce (SKY_ROCK.bounce: under the town's high sun the
+    // underside reads as brown earth and grey rock, never as a hole): faces turned straight down are
+    // that much brighter than the same beds' near-vertical ones.
     {
       const colour = undersides[0].geometry.attributes.color,
         bands = { top: [], mid: [], low: [], seam: [] },
         mean = (list) => list.reduce((s, c) => s.add(c), new T.Color(0, 0, 0)).multiplyScalar(1 / list.length),
-        grey = (c) => (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)) / Math.max(c.r, c.g, c.b);
+        grey = (c) => (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)) / Math.max(c.r, c.g, c.b),
+        under = (ny) => T.MathUtils.smoothstep(-ny, -0.1, 0.8),
+        B = SKY_ROCK.bounce,
+        down = [],
+        side = [];
+      assert(B.every((k) => k >= 0.8 && k <= 2.5) && SKY_ROCK.night >= 0.3 && SKY_ROCK.night < 1, 'The underside\'s bounce or its night dim is out of its range.');
       for (let i = 0; i < p.count; i += 3) {
         const depth = S.top - p.getY(i),
-          c = new T.Color().fromBufferAttribute(colour, i);
-        if (depth > 0.6 && depth < 1.2) bands.top.push(c);
-        else if (depth > 2.3 && depth < 3.1) bands.mid.push(c);
-        else if (depth > 4.6 && depth < 6) bands.low.push(c);
-        if (Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) bands.seam.push(c);
+          u = under(n.getY(i)),
+          c = new T.Color().fromBufferAttribute(colour, i),
+          base = new T.Color(c.r / (1 + B[0] * u), c.g / (1 + B[1] * u), c.b / (1 + B[2] * u));
+        if (depth > 0.6 && depth < 1.2) bands.top.push(base);
+        else if (depth > 2.3 && depth < 3.1) bands.mid.push(base);
+        else if (depth > SKY_ROCK.spike[1] + 0.2 && depth < S.depth - 0.4) bands.low.push(base);
+        if (Math.abs(depth - SKY_ROCK.beds[0]) < 0.06 || Math.abs(depth - SKY_ROCK.beds[1]) < 0.06) bands.seam.push(base);
+        // (The earth of the upper two beds only: the rock outcrops in them are grey.)
+        if (depth > 0.6 && depth < SKY_ROCK.beds[1] - 0.3 && grey(c) > 0.4) (n.getY(i) < -0.85 ? down : Math.abs(n.getY(i)) < 0.35 ? side : []).push(c);
       }
       const [top, mid, low, seam] = [bands.top, bands.mid, bands.low, bands.seam].map(mean),
         luma = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
       assert(luma(top) > luma(mid) && luma(seam) > (luma(top) + luma(mid)) / 2, 'The underside\'s beds do not read as strata.');
       assert(grey(top) > 0.25 && grey(mid) > 0.2 && grey(low) < grey(mid) / 2, 'The earth under the deck is not brown, or the spike is not rock.');
+      // (Its near-vertical faces take a little of it too: measured, about 1.6 times the light.)
+      assert(down.length > 20 && side.length > 20 && mean(down).r / mean(side).r > 1 + 0.35 * B[0] && luma(mean(down)) / luma(mean(side)) > 1 + 0.3 * B[1], 'The underside\'s down-turned faces are not lifted by the sea\'s bounce.');
     }
     skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles so far of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles})`;
   }
@@ -5692,7 +5715,7 @@ let skyReport = '';
     assert.equal(marks.length, 16 + 8 + 1 + 1 + 2 * 6);
     assert(marks.slice(0, 16).every((m) => Math.abs(plan.skyDistance(m.x, m.z)) < 1e-6 && Math.abs(m.y - (S.top - S.ring)) < 1e-9), 'The rim\'s marks are off its widest ring.');
     assert(marks.slice(16, 24).every((m) => Math.abs(m.y - (site.y + C.cans)) < 1e-6 && Math.abs(Math.abs(Math.abs(m.x - S.x) - C.x) - C.cope.hw) < 1e-9 && Math.abs(Math.abs(m.z - (site.z + C.z)) - C.cope.hd) < 1e-9), 'The chimneys\' marks are off the copes.');
-    assert(marks[24].distanceTo(new T.Vector3(-49.4, 15.002, -29)) < 1e-6 && marks[25].distanceTo(new T.Vector3(-52, 2.352, -24)) < 1e-6, 'The tree\'s or the tip\'s mark moved.');
+    assert(marks[24].distanceTo(new T.Vector3(-49.4, 15.002, -29)) < 1e-6 && marks[25].distanceTo(new T.Vector3(tipAt.x, tipAt.y, tipAt.z)) < 1e-6, 'The tree\'s or the tip\'s mark moved.');
     // They hold what is built: the overview is fitted to their box on screen, and from the four
     // Rotate stops and the file's bearing nothing of the island shows more than 0.3 outside it (the
     // rock's shoulders, a little proud of the rim). (The floats hang on the town's side, inside the
@@ -5706,22 +5729,57 @@ let skyReport = '';
       worst = Math.max(worst, marked[0] - island[0], marked[1] - island[1], island[2] - marked[2], island[3] - marked[3]);
     }
     assert(worst <= 0.3, `The sky island shows ${worst.toFixed(2)} outside the overview's marks.`);
-    // The underside tapers to a point for the eye: from each of those bearings its tip is the lowest
-    // thing of it on screen by half a unit or more (a deep shoulder toward the camera would hang as
-    // low as the tip and hide the point behind a flat, lumpy bottom).
-    let spike = Infinity;
-    const tip = new T.Vector3(S.x, S.top - S.depth, S.z);
-    for (const bearing of [...stops, file]) {
-      const { flat } = axes(bearing),
-        low = flat(tip)[1];
+    // The body reads as a floating rock, not a plate (the owner's reference 2: a grass top on an
+    // inverted cone of earth and rock tapering to a point). On screen, at a view's bearing and pitch:
+    // D, the deck's height (its widest ring, far rim to near rim); V, how far the underside's lowest
+    // point hangs below the near rim; and the silhouette's width under the near rim at three
+    // quarters and nine tenths of V, as shares of the deck's width.
+    const body = (bearing, pitch) => {
+      const { flat } = axes(bearing, pitch),
+        ring = plan.skyOutline(0, 256).map((q) => flat(new T.Vector3(q.x, S.top - S.ring, q.z))),
+        under = [];
+      each(sky.rock, (q) => under.push(flat(q)));
+      const D = Math.max(...ring.map(([, w]) => w)) - Math.min(...ring.map(([, w]) => w)),
+        wide = Math.max(...ring.map(([u]) => u)) - Math.min(...ring.map(([u]) => u)),
+        near = Math.min(...ring.map(([, w]) => w)),
+        low = Math.min(...under.map(([, w]) => w)),
+        V = near - low,
+        width = (f) => {
+          const at = near - f * V,
+            us = under.filter(([, w]) => Math.abs(w - at) < 0.05 * V).map(([u]) => u);
+          return (Math.max(...us) - Math.min(...us)) / wide;
+        },
+        [, tipW] = flat(new T.Vector3(tipAt.x, tipAt.y, tipAt.z));
+      return { ratio: V / D, narrow: [width(0.75), width(0.9)], tipLowest: Math.abs(tipW - low) < 0.15 };
+    };
+    // In its own file (the view a visitor opens it in, at its own lower pitch, city-scene's
+    // SKY_PITCH) the rock hangs below the deck by 0.6 or more of the deck's own height, and narrows
+    // to its tip: a fifth of the deck's width at three quarters of the way down, a tenth at nine
+    // tenths, the tip the lowest thing on screen. (At the town's pitch, from the file's bearing, it
+    // showed 0.11 of it: a plate with a knob under it.)
+    const own = body(file, SKY_PITCH);
+    let tipSpike = Infinity;
+    {
+      const { flat } = axes(file, SKY_PITCH),
+        low = flat(new T.Vector3(tipAt.x, tipAt.y, tipAt.z))[1];
       each(sky.rock, (p) => {
-        if (p.y > tip.y + 2.5) spike = Math.min(spike, flat(p)[1] - low);
+        if (p.y > tipAt.y + 2.5) tipSpike = Math.min(tipSpike, flat(p)[1] - low);
       });
     }
-    assert(spike >= 0.5, `A shoulder of the rock hangs within ${spike.toFixed(2)} of its tip on screen.`);
-    skyReport += `, its spike ${spike.toFixed(2)} below its shoulders on screen`;
+    assert(own.ratio >= 0.6 && own.narrow[0] <= 0.25 && own.narrow[1] <= 0.12 && own.tipLowest && tipSpike >= 0.5, `In its file the sky island's rock hangs ${own.ratio.toFixed(2)} of the deck's height below it, ${own.narrow.map((x) => x.toFixed(2)).join(' and ')} of its width at three quarters and nine tenths of the way down, its tip ${tipSpike.toFixed(2)} below the rest.`);
+    // From the Rotate stops and the file's bearing at the town's own pitch (the City overview and the
+    // reading frames that pass it) it reads as a chunk of land: the body hangs 0.18 or more of the
+    // deck's height under it (S1's showed 0.11 to 0.14) and narrows to a fifth of its width by nine
+    // tenths of the way down.
+    let leastAtTown = Infinity;
+    for (const bearing of [...stops, file]) {
+      const m = body(bearing, TOWN_PITCH);
+      leastAtTown = Math.min(leastAtTown, m.ratio);
+      assert(m.ratio >= 0.18 && m.narrow[1] <= 0.2, `At bearing ${bearing.toFixed(2)} the sky island's rock hangs only ${m.ratio.toFixed(2)} of the deck's height below it, ${m.narrow[1].toFixed(2)} of its width near its foot.`);
+    }
+    skyReport += `, its rock ${own.ratio.toFixed(2)} of the deck's height below it in its file (${leastAtTown.toFixed(2)} or more at the town's pitch), its tip ${tipSpike.toFixed(2)} below the rest there`;
     // Its own frame: the deck less its rounded ends, from 1.5 above the rock's tip to the pots.
-    assert(fit.min.distanceTo(new T.Vector3(-57.5, 3.852, -30)) < 1e-6 && fit.max.distanceTo(new T.Vector3(-46.5, 18.652, -18)) < 1e-6, 'The sky island\'s own frame moved.');
+    assert(fit.min.distanceTo(new T.Vector3(-57.5, tipAt.y + 1.5, -30)) < 1e-6 && fit.max.distanceTo(new T.Vector3(-46.5, 18.652, -18)) < 1e-6, 'The sky island\'s own frame moved.');
     assert(SKY_SHADOW.centre.distanceTo(fit.getCenter(new T.Vector3())) < 1e-9 && SKY_SHADOW.radius === 14, 'The sky island\'s shadow box is off its frame.');
     // That box holds the whole island and what hangs by it at any sun: nothing further than its
     // half-size from the middle.
@@ -5773,8 +5831,8 @@ let skyReport = '';
           assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
           seenAll += seen;
           // (b) The open sky beside it, over it and under it answers nothing of it: a unit clear of
-          // its volume's outline all round, and from a unit straight under the rock's tip (nearer,
-          // the pointer is within the slack the volume keeps round the tip, as round any building).
+          // its volume's outline all round, and from a unit under the rock's lowest point on screen
+          // (nearer, the pointer is within the slack the volume keeps round it, as round any building).
           const outline = hullOf(corners.map(flat)),
             mid = outline.reduce((sum, p) => [sum[0] + p[0] / outline.length, sum[1] + p[1] / outline.length], [0, 0]),
             centre = SKY_SHADOW.centre,
@@ -5785,9 +5843,12 @@ let skyReport = '';
             through(beside);
             assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the open sky beside the sky island answers as it.`);
           }
+          // (Under its lowest point on screen: the tip leans toward the file's camera, so from the far
+          // side its belly hangs lower on screen than the tip does.)
+          const lowest = built.reduce((a, b) => (flat(b)[1] < flat(a)[1] ? b : a));
           for (const below of [1, 1.6, 2.4]) {
-            through(new T.Vector3(S.x, S.top - S.depth - below, S.z));
-            assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the air ${below} under the rock's tip answers as the sky island.`);
+            through(lowest.clone().addScaledVector(up, -below));
+            assert.notEqual(pickTarget(ray, models, model.parkHit, pick), 'sky-island', `At bearing ${bearing.toFixed(2)} the air ${below} under the rock's lowest point on screen answers as the sky island.`);
           }
           // (c) It hugs the island: the volume's outline is about a third bigger than the island's own
         // at most (the villa's box over its terrace and the slab over the lawn are most of that).
@@ -5821,6 +5882,33 @@ let skyReport = '';
     // And without it (the checks' town, a scene with none) the pointer is as it was.
     assert.equal(pickTarget(ray, models, model.parkHit), null);
     skyReport += `, its rim ${coast.toFixed(1)} from the waterline, ${nearestLand.toFixed(2)} of sea kept from land on screen (its pointer volume ${Math.max(0, hitLand).toFixed(2)}) and the pointer on it at ${seenAll} points`;
+  }
+
+  /* ---------------- its night ---------------- */
+  {
+    // The underside dims at night as the balloon does (SKY_ROCK.night: a pale mass never hangs lit
+    // in the night sky), on its own copies of the batch materials, so nothing else of the town
+    // darkens; and it keeps a faint fill of its own (SKY_ROCK.fill: the night's high moon lights
+    // nothing that faces down, and it went black), a dark brown, far from a glow (under 0.02 in
+    // linear luminance, a twentieth of a lit window's). Its group is in the town's animated list,
+    // batched in its own phase ('batch sky'), never again by the animated loop.
+    const entry = model.animated.find((e) => e.object === sky.rock),
+      parts = sky.rock.children.filter((o) => o.isMesh),
+      others = new Set();
+    assert(entry && sky.rock.userData.prebatched, 'The underside does not dim at night, or the animated loop batches it again.');
+    entry.update(0, 1);
+    city.traverse((o) => {
+      if (o.isMesh && o.parent !== sky.rock) others.add(o.material);
+    });
+    const fill = new T.Color(SKY_ROCK.fill),
+      luminance = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    for (const o of parts) {
+      assert(!others.has(o.material), 'The underside dims a material the town shares.');
+      assert(Math.abs(o.material.color.r - (1 - SKY_ROCK.night)) < 1e-6 && o.material.emissive.equals(fill), 'The underside stays bright at night, or has no fill.');
+    }
+    assert(luminance(fill) > 0.005 && luminance(fill) < 0.02 && fill.r > fill.g && fill.g > fill.b, `The underside's night fill (${SKY_ROCK.fill}) is black, a glow or not a brown.`);
+    entry.update(0, 0);
+    assert(parts.every((o) => o.material.color.r === 1 && o.material.emissive.getHex() === 0), 'The underside stays dim, or keeps its fill, by day.');
   }
 
   /* ---------------- its shadows ---------------- */

@@ -52,98 +52,131 @@ export const SKY_COPING = {
 };
 /**
  * One lobe of the underside, placed by the world bearing it hangs on (0 south, 90 east, as
- * everywhere in the plan): `proud`, how far its outer face stands past the rim (negative: inside
- * it); `y`, its middle under SKY.top; `radial`, `tangential` and `vertical`, its half sizes (along
- * the bearing, across it and up); `tilt`, a small lean about the deck's long axis; `rock`, whether
- * it is rock standing out of the earth or the earth's own shoulder.
+ * everywhere in the plan): `proud`, how far its outer face stands past the earth body's surface at
+ * its height (negative: inside it); `y`, its middle under SKY.top; `radial`, `tangential` and
+ * `vertical`, its half sizes (along the bearing, across it and up); `tilt`, a small lean about the
+ * deck's long axis; `rock`, whether it is rock standing out of the earth or the earth's own shoulder.
  */
 type Lobe = { bearing: number; proud: number; y: number; radial: number; tangential: number; vertical: number; tilt: number; rock: boolean };
 const lobe = (bearing: number, proud: number, y: number, radial: number, tangential: number, vertical: number, tilt: number, rock = false): Lobe => ({ bearing, proud, y, radial, tangential, vertical, tilt, rock });
 /**
  * The underside, in the deck's own frame (x along its long axis, north; z east; y from SKY.top):
  * solids blended in a distance grid of spacing `grid` (town-sculpt), so it is one smooth mass with
- * no facet. The earth is a cone of the deck's own ellipse (`cone`): `share` of the rim where it
- * starts, `top` under SKY.top inside the coping (where the whole mass is cut flat, under the
- * turf), running down to the tip and narrowing fast at first (`power` over 1: a concave flank),
- * so that from the town's high camera the mass shows as shoulders over a spike, not as a bowl. A
- * round cone (`tip`: from this height, its two radii, its fillet, and how far the blend swells it)
- * blunts the point. The lobes (Lobe, each blended in with a fillet of `fillet`, its edges rounded
- * by `round` of its least half size) are the earth's chunky shoulders hung under the rim and the
- * rock that stands out of the flank lower down:
- * - The two deep shoulders hang on the east and west flanks, 45 degrees from every Rotate stop and
- *   55 from the file's bearing. The north and south ends of the deck stand furthest out toward
- *   those cameras, so what hangs there is shallow (and on the north, the plane's side, inside the
- *   rim): from every one of the five bearings the spike is the lowest thing on screen (check-town
- *   holds it at least half a unit clear).
- * - The rock outcrops sit on the east and west flanks too, and close in round the spike.
+ * no facet: the owner's reference 2, a grass top on an inverted cone of earth and rock tapering to
+ * a point, in the town's own style. The earth's body (`body`, earthBody): cut flat `top` under
+ * SKY.top inside the coping (under the turf), it stands straight down as cliffs at `share` of the
+ * rim to `cliff` (a chunk of land, not a plate, from every side), then tapers to the tip,
+ * SKY.depth down (as deep as the sea allows) and leaning toward the island's file's camera
+ * (plan.skyTip), its flank a little convex (`belly`: full under the rim, narrowing to the point at
+ * the last; any fuller and from the town's 42.6 degrees its foot would read as a bowl). A round cone
+ * (`tip`: from this depth, its two radii, its fillet, and how far the blend swells it) makes the
+ * point a spike of rock. The lobes (Lobe, each blended in with a fillet of `fillet`, the rock's of
+ * `rockFillet` so they stand out of the earth as boulders, their edges rounded by `round` of their
+ * least half size):
+ * - the earth's chunky shoulders in the cliffs under the rim, a little proud of it, fullest on the
+ *   south and south-east (the file's and the opening bearing's side) and where each view's outline
+ *   runs; none proud on the north tip (the plane's side, check-town) nor under the falls;
+ * - warm grey rock standing out of the flank lower down, each where a view's key light finds it
+ *   (the key light turns with the camera, from 84 degrees to its left).
+ * From the island's file (its own lower pitch, city-scene's SKY_PITCH) the body hangs 0.65 of the
+ * deck's height below it and narrows to its tip; from the Rotate stops at the town's pitch it shows
+ * as a thick body of earth (0.2 of the deck's height or more) narrowing under it.
  * The earth's beds change at `beds` (depths under SKY.top) by a wandering line (`wander`), each
  * change marked by a pale seam (`seam`: whole within its first number of the line, gone by its
  * second; at least two grid spacings across, so the vertices draw it as one soft band and never as
- * a row of dots). From `spike` down the earth gives way to rock, as at the reference's point (and
- * every face down there looks away from the light: in the earth's darkest brown it read as a
- * hole), which darkens a little from `beds[2]` to the tip. A vertex is also rock where it lies
- * within `outcrop[0]` of a rock lobe's own surface, fading to earth by `outcrop[1]`.
+ * a row of dots). From `spike` down the earth gives way to rock, as at the reference's point, which
+ * darkens a little from `beds[2]` to the tip. A vertex is also rock where it lies within
+ * `outcrop[0]` of a rock lobe's own surface, fading to earth by `outcrop[1]`. Whatever faces down
+ * takes the sea's light thrown back up (`bounce`, a lift a channel): under the town's high sun
+ * nothing lights it, and it read as a hole. At night it dims by `night`, as the balloon does, and
+ * keeps a faint fill of its own (`fill`): dark, never black (dimAtNight).
  */
 export const SKY_ROCK = {
   grid: 0.25,
-  cone: { top: 0.42, share: 0.953, power: 1.3 },
-  tip: { from: -7.3, r: [0.5, 0.25] as [number, number], fillet: 0.5, swell: 0.11 },
+  body: { top: 0.42, cliff: 1.5, share: 0.955, belly: 1.2 },
+  tip: { from: 6.2, r: [0.7, 0.24] as [number, number], fillet: 0.6, swell: 0.11 },
   lobes: [
-    // The earth's shoulders: deep on the east and west flanks, shallow at the ends and between.
-    // Every one's top stays under the flat cut beneath the turf (0.5 down), so no crease is cut.
-    lobe(90, 0.2, -1.375, 1.1, 1.7, 0.875, -0.06),
-    lobe(270, 0.2, -1.425, 1.15, 1.8, 0.925, 0.06),
-    lobe(-8, 0.05, -0.8, 0.75, 1.0, 0.3, 0.08),
-    lobe(180, -0.5, -0.9, 0.9, 1.2, 0.4, 0.05),
-    lobe(112, 0.1, -1.0, 0.75, 0.8, 0.5, 0.1),
-    lobe(252, 0.1, -1.05, 0.75, 0.85, 0.5, -0.1),
-    lobe(205, -0.3, -0.8, 0.6, 0.7, 0.3, 0.08),
-    lobe(158, -0.3, -0.8, 0.6, 0.7, 0.3, -0.08),
-    // Rock standing out of the flanks under the shoulders, and close in round the spike.
-    lobe(90, -1.6, -3.0, 0.85, 1.0, 0.8, 0.12, true),
-    lobe(270, -1.7, -3.2, 0.85, 0.95, 0.75, -0.1, true),
-    lobe(100, -3.6, -4.6, 0.5, 0.55, 0.5, 0.1, true),
-    lobe(260, -3.7, -4.9, 0.5, 0.5, 0.45, -0.1, true),
+    // The earth's chunky shoulders in the cliffs under the rim: fullest under the south and
+    // south-east rims (the file's and the opening bearing's side), and where each view's outline runs
+    // (east-north-east and west-south-west for the file, north-west and south-west for the Rotate
+    // stops); none proud of the rim on the north tip (the plane's side), none under the falls (105
+    // and 265 degrees).
+    lobe(15, 0.32, -1.6, 0.8, 1.6, 0.8, 0.05),
+    lobe(58, 0.32, -1.8, 0.8, 1.4, 0.85, -0.05),
+    lobe(132, 0.3, -1.5, 0.7, 1.2, 0.75, 0.06),
+    lobe(228, 0.28, -1.55, 0.7, 1.3, 0.8, -0.05),
+    lobe(312, 0.32, -1.7, 0.8, 1.4, 0.8, 0.05),
+    // Rock standing out of the flanks, each where a view's key light finds it: south-south-west (the
+    // file and the opening bearing), south-east lower down, east (q3), north-north-west (q5) and
+    // west-south-west (q7).
+    lobe(-25, 0.55, -3.0, 0.8, 1.1, 0.85, 0.12, true),
+    lobe(30, 0.5, -4.6, 0.65, 0.85, 0.7, -0.1, true),
+    lobe(80, 0.5, -2.8, 0.65, 0.9, 0.7, 0.08, true),
+    lobe(200, 0.5, -3.3, 0.7, 0.9, 0.75, -0.08, true),
+    lobe(292, 0.5, -3.6, 0.7, 0.9, 0.75, 0.1, true),
   ],
   round: 0.5,
   fillet: 0.6,
+  rockFillet: 0.3,
+  bounce: [1.7, 1.35, 1.6] as [number, number, number],
+  night: 0.5,
+  fill: '#2a1d16',
   cut: 0.2,
-  beds: [1.7, 3.7, 6.4],
-  seam: [0.1, 0.32] as [number, number],
-  spike: [4.1, 5.0] as [number, number],
+  beds: [1.9, 4.0, 6.4],
+  seam: [0.12, 0.4] as [number, number],
+  spike: [6.4, 7.4] as [number, number],
   wander: 0.5,
   outcrop: [0.12, 0.45],
 };
 
 /**
- * A cone of an ellipse (half-axes a and b, its axis the y axis), for town-sculpt: `share` of the
- * ellipse at y -top, down to a point at y -depth, its radius falling as the `power` of the way
- * left to go. A bound that is close to the true distance near its surface.
+ * The earth's body, for town-sculpt, in the deck's own frame: an ellipse of half-axes a and b at
+ * `share` of their size, standing straight down as cliffs from above `top` to `cliff` under it,
+ * then tapering to its tip, `depth` under it at (tx, tz): `k` of the way down the taper its
+ * section is the ellipse at share x (1 - k^belly) (over 1, a convex belly, full under the rim and
+ * narrowing to the point at the last), its middle moved toward the tip as k squared. A bound that is
+ * close to the true distance near its surface.
  */
-function ellipticCone(a: number, b: number, top: number, depth: number, share: number, power: number): Shape {
-  // The flank's lean at its flattest (on the long axis, where it leaves the rim), so the bound never overstates the distance.
-  const lean = Math.cos(Math.atan((share * power * Math.max(a, b)) / (depth - top)));
+function earthBody(a: number, b: number, top: number, cliff: number, depth: number, share: number, belly: number, tx: number, tz: number): Shape {
+  const run = depth - cliff,
+    // The flank's lean at its flattest (at the tip, on the long axis, the lean added), so the bound never overstates the distance.
+    lean = Math.cos(Math.atan((share * belly * Math.max(a, b) + 2 * Math.hypot(tx, tz)) / run));
   return {
     d(x, y, z) {
-      const left = 1 - (-y - top) / (depth - top),
-        out = Math.hypot(x / a, z / b);
-      if (left <= 0) return Math.hypot(out * Math.min(a, b), -y - depth);
-      return (out - share * Math.min(1, left) ** power) * Math.min(a, b) * lean;
+      const t = -y;
+      if (t >= depth) return Math.hypot(x - tx, z - tz, t - depth);
+      const k = Math.max(0, (t - cliff) / run),
+        out = Math.hypot((x - tx * k * k) / a, (z - tz * k * k) / b);
+      return (out - share * (1 - k ** belly)) * Math.min(a, b) * lean;
     },
-    min: [-a * share, -depth, -b * share],
-    max: [a * share, -top + 1, b * share],
+    min: [-a * share - Math.abs(tx), -depth, -b * share - Math.abs(tz)],
+    max: [a * share + Math.abs(tx), -top + 1, b * share + Math.abs(tz)],
   };
 }
-/** A lobe as a solid in the deck's own frame: its middle on its bearing, its radial half along it. */
+/**
+ * The earth body's section `depth` under SKY.top (earthBody's, from SKY_ROCK.body and the tip's
+ * place): its middle in the deck's frame and its size, a share of the rim's ellipse.
+ */
+function bodySection(depth: number) {
+  const S = plan.SKY,
+    B = SKY_ROCK.body,
+    [tx, tz] = plan.skyLocal(plan.skyTip().x, plan.skyTip().z),
+    k = Math.min(1, Math.max(0, (depth - B.cliff) / (S.depth - SKY_ROCK.tip.swell - B.cliff)));
+  return { x: tx * k * k, z: tz * k * k, share: B.share * (1 - k ** B.belly) };
+}
+/**
+ * A lobe as a solid in the deck's own frame: its middle on its bearing from the body's middle at
+ * its depth, its radial half along it, its outer face `proud` of the body's surface there.
+ */
 function lobeShape(l: Lobe, round: number): Shape {
   const S = plan.SKY,
     b = (l.bearing * Math.PI) / 180,
-    // The bearing's direction in the deck's frame (x north, z east), and the rim's radius along it.
+    // The bearing's direction in the deck's frame (x north, z east), and the body's reach along it.
     dx = -Math.cos(b),
     dz = Math.sin(b),
-    rim = 1 / Math.hypot(dx / S.a, dz / S.b),
-    r = rim + l.proud - l.radial;
-  return roundBox([r * dx, l.y, r * dz], [l.radial, l.vertical, l.tangential], round * Math.min(l.radial, l.vertical, l.tangential), [l.tilt, Math.atan2(-dz, dx), 0]);
+    body = bodySection(-l.y),
+    r = body.share / Math.hypot(dx / S.a, dz / S.b) + l.proud - l.radial;
+  return roundBox([body.x + r * dx, l.y, body.z + r * dz], [l.radial, l.vertical, l.tangential], round * Math.min(l.radial, l.vertical, l.tangential), [l.tilt, Math.atan2(-dz, dx), 0]);
 }
 /** One point of a swept band: where it is, its outward normal (in x, z) and its base height. */
 type Station = { x: number; z: number; nx: number; nz: number; y: number };
@@ -409,18 +442,23 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nat
    */
   function rock(g: T.Object3D) {
     const R = SKY_ROCK,
-      mass = sculpt([-S.a - 0.6, -S.depth - 0.5, -S.b - 0.6], [S.a + 0.6, -R.cone.top + 2 * R.grid, S.b + 0.6], R.grid),
+      B = R.body,
+      // The tip's place in the deck's frame (plan.skyTip: it leans toward the file's camera).
+      [tx, tz] = plan.skyLocal(plan.skyTip().x, plan.skyTip().z),
+      mass = sculpt([-S.a - 0.6 - Math.abs(tx), -S.depth - 0.5, -S.b - 0.6 - Math.abs(tz)], [S.a + 0.6 + Math.abs(tx), -B.top + 2 * R.grid, S.b + 0.6 + Math.abs(tz)], R.grid),
       shapes = R.lobes.map((l) => lobeShape(l, R.round)),
       outcrops = shapes.filter((_, k) => R.lobes[k].rock);
-    // (Blended, the cone and the round cone swell the tip by `swell`: both stop that short of SKY.depth.)
+    // (Blended, the body and the round cone swell the tip by `swell`: both stop that short of SKY.depth.)
     const tipAt = S.depth - R.tip.swell,
-      tip = roundCone([0, R.tip.from, 0], [0, -tipAt + R.tip.r[1], 0], R.tip.r[0], R.tip.r[1]);
-    mass.add(ellipticCone(S.a, S.b, R.cone.top, tipAt, R.cone.share, R.cone.power));
+      // The spike's axis, from the body's middle at `from` down to the tip.
+      kFrom = (R.tip.from - B.cliff) / (tipAt - B.cliff),
+      tip = roundCone([tx * kFrom * kFrom, -R.tip.from, tz * kFrom * kFrom], [tx, -tipAt + R.tip.r[1], tz], R.tip.r[0], R.tip.r[1]);
+    mass.add(earthBody(S.a, S.b, B.top, B.cliff, tipAt, B.share, B.belly, tx, tz));
     mass.add(tip, R.tip.fillet);
-    for (const shape of shapes) mass.add(shape, R.fillet);
-    // A flat top under the turf, level with the cone's, its edge rolled into the flank (never a crease
+    for (const [k, shape] of shapes.entries()) mass.add(shape, R.lobes[k].rock ? R.rockFillet : R.fillet);
+    // A flat top under the turf, level with the body's, its edge rolled into the cliffs (never a crease
     // where the shoulders' blends meet it): the coping's underside ends inside it.
-    mass.cut(roundBox([0, 4 - R.cone.top, 0], [S.a + 2, 4, S.b + 2], 0), R.cut);
+    mass.cut(roundBox([0, 4 - B.top, 0], [S.a + 2, 4, S.b + 2], 0), R.cut);
     const geometry = mass.mesh(),
       p = geometry.getAttribute('position'),
       n = geometry.getAttribute('normal'),
@@ -451,13 +489,18 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nat
       r.copy(stone[1])
         .lerp(stone[0], step(n.getY(i), -0.1, 0.7))
         .lerp(stone[2], step(depth, b2, S.depth) * 0.6);
-      c.lerp(r, rockAt).multiplyScalar(mottle).toArray(tones, i * 3);
+      c.lerp(r, rockAt).multiplyScalar(mottle);
+      // The sea's light thrown back up under the island: whatever faces down is lifted (warm, against
+      // the hemisphere's olive ground light), so under the town's high sun the body reads as brown
+      // earth and grey rock, never as a hole.
+      const under = step(-n.getY(i), -0.1, 0.8);
+      c.setRGB(c.r * (1 + R.bounce[0] * under), c.g * (1 + R.bounce[1] * under), c.b * (1 + R.bounce[2] * under)).toArray(tones, i * 3);
     }
     geometry.setAttribute('color', new T.BufferAttribute(tones, 3));
     // The flat top is never seen (the turf lies over it): only its rim is kept, under the coping.
     const index = geometry.getIndex()!,
       kept: number[] = [],
-      buried = (i: number) => p.getY(i) > -R.cone.top - 0.1 && Math.hypot(p.getX(i) / S.a, p.getZ(i) / S.b) < R.cone.share - 0.1;
+      buried = (i: number) => p.getY(i) > -B.top - 0.1 && Math.hypot(p.getX(i) / S.a, p.getZ(i) / S.b) < B.share - 0.1;
     for (let t = 0; t < index.count; t += 3) {
       const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
       if (!corners.every(buried)) kept.push(...corners);
@@ -469,6 +512,37 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nat
     m.rotation.y = S.heading;
   }
   /**
+   * The underside's night dim (SKY_ROCK.night, as the balloon's): its batched meshes take their own
+   * copies of the shared batch materials (the same shader program), whose colour follows the
+   * night, so a pale mass never hangs lit in the night sky and nothing else darkens. Under the
+   * night's high moon it would go quite black (nothing lights what faces down), so it keeps a
+   * faint fill of its own (SKY_ROCK.fill, the moonlit sea's light under it, a dark brown, far from
+   * a glow): dark, never black. Registered in ctx.animated (the town's frame loop calls it), after
+   * batching: the group is batched in its own phase ('batch sky'), never by the animated loop.
+   */
+  function dimAtNight(g: T.Group) {
+    const fill = new T.Color(SKY_ROCK.fill);
+    g.userData.prebatched = true;
+    ctx.animated.push({
+      object: g,
+      update(_time, night) {
+        for (const part of g.children) {
+          if (!(part instanceof T.Mesh) || !(part.material instanceof T.MeshStandardMaterial) || !part.material.vertexColors) continue;
+          if (!part.material.userData.skyOwn) {
+            const shared = part.material,
+              own = shared.clone();
+            own.onBeforeCompile = (shader, renderer) => shared.onBeforeCompile(shader, renderer);
+            own.customProgramCacheKey = () => shared.customProgramCacheKey();
+            own.userData.skyOwn = true;
+            part.material = own;
+          }
+          part.material.color.setScalar(1 - SKY_ROCK.night * night);
+          part.material.emissive.copy(fill).multiplyScalar(night);
+        }
+      },
+    });
+  }
+  /**
    * The island's underside, in its own group (the town's `sky.rock`, batched with no contact
    * shade: measured from the lawn, everything below it would bake to its darkest): the rock and
    * the coping over it.
@@ -476,6 +550,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, _props: Props, _nat
   function skyUnderside(g: T.Group) {
     rock(g);
     coping(g);
+    dimAtNight(g);
   }
 
   return { skyGround, skyUnderside, standAt, skySlots };

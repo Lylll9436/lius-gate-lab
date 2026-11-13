@@ -110,6 +110,29 @@ const shortestAngle = (from: number, to: number) => {
  */
 const YAW_RATE = 2.5,
   YAW_SPEED = Math.PI / 2;
+/**
+ * The camera's elevation: 35 up for every 38 out (TOWN_PITCH, 42.6 degrees) in every view of the
+ * town, but in the sky island's own file, where it comes down to SKY_PITCH: from the town's height
+ * the island's rock hangs barely under the deck's near rim, a fringe under a plate; from 30 degrees
+ * its body shows as the inverted cone of earth and rock under its lawn, as in the owner's
+ * reference. It eases there and back at the bearing's rate (YAW_RATE), the camera at the same
+ * distance from its target (CAMERA_REACH). Lower, the line of sight runs out further, so the file's
+ * target (on it, under the pan limit's lift) stands 7.4 beyond the island rather than 5: the idle
+ * drift's angle, turned about the target, keeps SKY_DRIFT of itself there, so the island swings
+ * across the frame about as far as before. And it is the island's close view only: zoomed out
+ * past SKY_CLOSE (from the second zoom down to the first) the camera rises back to the town's
+ * pitch, so the widest views from the file see the town as every other view does (its file frames
+ * it at 1.69 to 2.6).
+ */
+export const TOWN_PITCH = Math.atan2(35, 38),
+  SKY_PITCH = (30 * Math.PI) / 180,
+  CAMERA_REACH = Math.hypot(38, 35),
+  SKY_DRIFT = 0.6,
+  SKY_CLOSE = [1.2, 1.6];
+/** The camera's elevation `low` of the way from the town's pitch down to the sky island's file's. */
+function elevationAt(low: number) {
+  return TOWN_PITCH + (SKY_PITCH - TOWN_PITCH) * Math.min(1, low);
+}
 /** How close the camera may zoom: on the town, and on Inspect's lone building. */
 const CITY_MAX_ZOOM = 4,
   STUDY_MAX_ZOOM = 8;
@@ -256,23 +279,37 @@ export function addSkyHit(parent: T.Object3D, sky: Pick<SkyIsland, 'land' | 'roc
   slab.rotation.y = S.heading;
   slab.position.set(S.x, S.top + (H.above - H.below) / 2, S.z);
   hit.add(slab);
-  // The underside (the coping and the rock): each point's height, how far out it lies as a share
-  // of the way to the rim, and on which side of the island's middle (the angle in the deck's frame).
+  // The underside (the coping and the rock): each point's height and where it lies in the deck's
+  // frame, as shares of the rim's half-axes.
   const under: [number, number, number][] = [];
   each(sky.rock, (p) => {
     const [lx, lz] = plan.skyLocal(p.x, p.z);
-    under.push([p.y, Math.hypot(lx / S.a, lz / S.b), Math.atan2(lz / S.b, lx / S.a)]);
+    under.push([p.y, lx / S.a, lz / S.b]);
   });
   if (under.length) {
     const N = H.sectors,
       top = Math.max(...under.map(([y]) => y)),
       lowest = Math.min(...under.map(([y]) => y)),
       bands = Math.floor((top - lowest) / H.band) + 1,
-      reach = Array.from({ length: bands }, () => Array.from({ length: N }, () => 0));
-    for (const [y, share, angle] of under) {
-      const band = Math.min(bands - 1, Math.floor((top - y) / H.band)),
+      bandOf = (y: number) => Math.min(bands - 1, Math.floor((top - y) / H.band)),
+      reach = Array.from({ length: bands }, () => Array.from({ length: N }, () => 0)),
+      // Each band's middle: its points' box's middle, which follows the rock down to its tip (it
+      // leans toward the file's camera); each sector's reach is measured from it.
+      box = Array.from({ length: bands }, () => [Infinity, -Infinity, Infinity, -Infinity]);
+    for (const [y, u, w] of under) {
+      const b = box[bandOf(y)];
+      b[0] = Math.min(b[0], u);
+      b[1] = Math.max(b[1], u);
+      b[2] = Math.min(b[2], w);
+      b[3] = Math.max(b[3], w);
+    }
+    const centre = box.map(([u0, u1, w0, w1]) => (u0 <= u1 ? [(u0 + u1) / 2, (w0 + w1) / 2] : [0, 0]));
+    for (const [y, u, w] of under) {
+      const band = bandOf(y),
+        [cu, cw] = centre[band],
+        angle = Math.atan2(w - cw, u - cu),
         sector = Math.floor(((angle / (2 * Math.PI) + 1) % 1) * N) % N;
-      reach[band][sector] = Math.max(reach[band][sector], share);
+      reach[band][sector] = Math.max(reach[band][sector], Math.hypot(u - cu, w - cw));
     }
     // A sector no point fell in (round the tip, slimmer than the rock's own triangles) takes its nearest neighbours'.
     for (const ring of reach) {
@@ -280,18 +317,23 @@ export function addSkyHit(parent: T.Object3D, sky: Pick<SkyIsland, 'land' | 'roc
       for (let j = 0; j < N; j++)
         for (let d = 1; !ring[j] && d <= N / 2; d++) ring[j] = Math.max(own[(j + d) % N], own[(j - d + N) % N]);
     }
-    // Rings from the rock's top down, the last `slack` under its tip: each corner as far out as
-    // the rock reaches in the two bands and the two sectors it parts.
+    // Rings from the rock's top down, the last `slack` under its tip, each round the middle of the
+    // two bands it parts: each corner as far out as the rock reaches in those bands (from their own
+    // middles, and as far again as those lie from the ring's) and the two sectors it parts.
     const grow = H.slack / S.b,
       corners: number[] = [],
       faces: number[] = [];
-    for (let k = 0; k <= bands; k++)
+    for (let k = 0; k <= bands; k++) {
+      const parted = [k - 1, k].filter((band) => band >= 0 && band < bands),
+        cu = parted.reduce((sum, band) => sum + centre[band][0], 0) / parted.length,
+        cw = parted.reduce((sum, band) => sum + centre[band][1], 0) / parted.length;
       for (let j = 0; j < N; j++) {
         let r = 0;
-        for (const band of [k - 1, k]) if (band >= 0 && band < bands) r = Math.max(r, reach[band][j], reach[band][(j + N - 1) % N]);
+        for (const band of parted) r = Math.max(r, Math.max(reach[band][j], reach[band][(j + N - 1) % N]) + Math.hypot(centre[band][0] - cu, centre[band][1] - cw));
         const angle = (j / N) * 2 * Math.PI;
-        corners.push(Math.cos(angle) * (r + grow), k < bands ? top - k * H.band : lowest - H.slack, Math.sin(angle) * (r + grow));
+        corners.push(cu + Math.cos(angle) * (r + grow), k < bands ? top - k * H.band : lowest - H.slack, cw + Math.sin(angle) * (r + grow));
       }
+    }
     for (let k = 0; k < bands; k++)
       for (let j = 0; j < N; j++) {
         const a = k * N + j,
@@ -385,8 +427,9 @@ export function pickTarget(
  * What the City overview must show of the sky island (plan.SKY and its slots), as points of its
  * own silhouette rather than its box's corners (they overstate a round island two and a half
  * times; sky-placement.md section 2.1): sixteen round the rim's widest ring, the chimney copes'
- * corners (lane V's) at the cans' height, the tree's top, the rock's tip, and each fall's cloud
- * puff (four points round its middle, its top and its flat base: lane G's).
+ * corners (the villa's) at the cans' height, the tree's top, the rock's tip (plan.skyTip, leaning
+ * toward the file's camera), and each fall's cloud puff (four points round its middle, its top and
+ * its flat base: lane G's).
  */
 export function skyMarks() {
   const S = plan.SKY,
@@ -398,7 +441,8 @@ export function skyMarks() {
         const [x, z] = plan.skyVillaPoint(side * C.x + dx * C.cope.hw, C.z + dz * C.cope.hd);
         marks.push(new T.Vector3(x, plan.sites['sky-island'].y! + C.cans, z));
       }
-  marks.push(new T.Vector3(plan.SKY_TREE.x, S.top + plan.SKY_TREE.top, plan.SKY_TREE.z), new T.Vector3(S.x, S.top - S.depth, S.z));
+  const tip = plan.skyTip();
+  marks.push(new T.Vector3(plan.SKY_TREE.x, S.top + plan.SKY_TREE.top, plan.SKY_TREE.z), new T.Vector3(tip.x, tip.y, tip.z));
   for (const { puff } of plan.skyFalls)
     marks.push(
       ...[[1, 0], [0, 1], [-1, 0], [0, -1]].map(([dx, dz]) => new T.Vector3(puff.x + dx * puff.r, puff.y, puff.z + dz * puff.r)),
@@ -867,6 +911,14 @@ export async function createCity(
     panLine = new T.Line3(PAN.from, PAN.to),
     panOnLink = new T.Vector3(),
     panLink = new T.Line3(PAN.sky.from, PAN.sky.centre);
+  /**
+   * The sky island's pocket's reach on the ground: PAN.sky.reach at the town's pitch, and as much
+   * further out as the line of sight runs at a lower one (the file's ground point lies 12.2 beyond
+   * the island at the town's pitch, about 20 at SKY_PITCH): the same freedom on screen either way.
+   */
+  function skyReach() {
+    return pitch <= 0 ? PAN.sky.reach : (PAN.sky.reach * Math.tan(TOWN_PITCH)) / Math.tan(elevationAt(pitch));
+  }
   /** The pan region the subject point p is deepest in, or nearest to: the nearest point of its core and its reach. */
   function panRegion(p: T.Vector3) {
     panSubject.set(p.x, 0, p.z);
@@ -876,11 +928,12 @@ export async function createCity(
     const disc = Math.hypot(p.x, p.z) - PAN.disc,
       causeway = panSubject.distanceTo(panOnLine) - PAN.causeway,
       deck = panSubject.distanceTo(panOnDeck) - PAN.deck.reach,
-      pocket = panSubject.distanceTo(PAN.sky.centre) - PAN.sky.reach,
+      reach = skyReach(),
+      pocket = panSubject.distanceTo(PAN.sky.centre) - reach,
       link = panSubject.distanceTo(panOnLink) - PAN.sky.link,
       airport = Math.min(causeway, deck);
     if (disc <= airport && disc <= pocket && disc <= link) return { centre: panOrigin, radius: PAN.disc };
-    if (Math.min(pocket, link) < airport) return pocket <= link ? { centre: PAN.sky.centre, radius: PAN.sky.reach } : { centre: panOnLink, radius: PAN.sky.link };
+    if (Math.min(pocket, link) < airport) return pocket <= link ? { centre: PAN.sky.centre, radius: reach } : { centre: panOnLink, radius: PAN.sky.link };
     return deck <= causeway ? { centre: panOnDeck, radius: PAN.deck.reach } : { centre: panOnLine, radius: PAN.causeway };
   }
   /**
@@ -999,7 +1052,9 @@ export async function createCity(
     // the sun's shadow shows while its box changes hands (followSky).
     skyShown = true,
     skyCast = false,
-    shadowFade = 1;
+    shadowFade = 1,
+    // How far the camera's pitch has come down from the town's toward the sky island's file's: 0 to 1 (viewOffset).
+    pitch = 0;
   // The windows' night: the clock the panes are heading for (from the sky's hours) and the one
   // they show, which follows it one pane at a time and only in the dark (glasgow-sun's followWindows).
   // paneHours is the sky's hours at the last frame, when the panes last followed the clock.
@@ -1121,9 +1176,27 @@ export async function createCity(
     new T.Vector3(plan.AIRPORT.x - plan.AIRPORT.hw - plan.AIRPORT.armour, 0, plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour),
     new T.Vector3(plan.AIRPORT.x + plan.AIRPORT.hw + plan.AIRPORT.armour, 7, -35),
   );
-  /** The camera's offset from its target at a bearing: the same elevation from every side. */
-  function viewOffset(bearing: number, out: T.Vector3) {
-    return out.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
+  /**
+   * The camera's offset from its target at a bearing: the same elevation from every side, the
+   * town's (35 up for 38 out), or `low` of the way down to the sky island's file's (SKY_PITCH; by
+   * default as far as the camera has come now).
+   */
+  function viewOffset(bearing: number, out: T.Vector3, low = pitch) {
+    if (low <= 0) return out.set(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38);
+    const elevation = elevationAt(low),
+      flat = Math.cos(elevation) * CAMERA_REACH;
+    return out.set(Math.sin(bearing) * flat, Math.sin(elevation) * CAMERA_REACH, Math.cos(bearing) * flat);
+  }
+  /**
+   * The pitch the view heads for (viewOffset's `low`) at `zoom` (the zoom the view heads for, by
+   * default): in the sky island's own file (the island framed alone, or panned and zoomed about
+   * since) all the way down to SKY_PITCH close in, back up to the town's zoomed out past SKY_CLOSE;
+   * the town's everywhere else. The panel offset is measured at it, as it is at the bearing and the
+   * zoom it heads for; the camera itself follows it, at its own zoom, at the bearing's pace (the
+   * frame loop). (The island's file is framed at its own pitch: focusSky.)
+   */
+  function aim(zoom = targetZoom) {
+    return focusedIds.length === 1 && focusedIds[0] === 'sky-island' && !overviewFit && !inspect && !parkSelected ? T.MathUtils.smoothstep(zoom, SKY_CLOSE[0], SKY_CLOSE[1]) : 0;
   }
   /**
    * The panel offset: the view centre sits this far right of the subject (and above it, for
@@ -1135,7 +1208,7 @@ export async function createCity(
   function panelOffset(out: T.Vector3) {
     const zoom = Math.max(targetZoom, 0.1);
     screenRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
-    screenUp.crossVectors(viewOffset(yaw, screenUp).normalize(), screenRight);
+    screenUp.crossVectors(viewOffset(yaw, screenUp, aim()).normalize(), screenRight);
     return out
       .copy(screenRight)
       .multiplyScalar((frameShift * (camera.right - camera.left)) / zoom)
@@ -1174,7 +1247,7 @@ export async function createCity(
    * mode the sky island is part of it.
    */
   function fitOverview() {
-    const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
+    const back = viewOffset(targetYaw, new T.Vector3(), 0).normalize(),
       right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
       up = new T.Vector3().crossVectors(back, right);
     let minX = Infinity,
@@ -1265,8 +1338,8 @@ export async function createCity(
    * a scrollbar), where the shift's 0.21 assumes 52%, and at 1024 x 768 it covered the airport's
    * island's east end by 30 px.
    */
-  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4, edge = 1) {
-    const back = viewOffset(targetYaw, new T.Vector3()).normalize(),
+  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4, edge = 1, low = 0) {
+    const back = viewOffset(targetYaw, new T.Vector3(), low).normalize(),
       right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
       up = new T.Vector3().crossVectors(back, right),
       corner = new T.Vector3();
@@ -1317,17 +1390,17 @@ export async function createCity(
     tween = true;
   }
   /**
-   * The sky island's own frame: SKY_FIT fitted like a group between 0.95 and 2.6, which leaves the
-   * target on the ground some 12 beyond the island along the line of sight; then the target is
-   * raised SKY_LIFT up that line. Nothing on screen changes, but the idle drift now turns the view
-   * about a point 4 under the island's middle, not 10 (it swings the island less than half as
-   * far), and the target still stands under the pan limit's lift: a one-building framing, on the
-   * island's own middle 10.5 up, would stand over it, and the limit would slide the camera as the
-   * glide ended.
+   * The sky island's own frame, at its own pitch (SKY_PITCH: the camera comes down to it as the
+   * glide closes in): SKY_FIT fitted like a group between 0.95 and 2.6, which leaves the target on
+   * the ground some 19 beyond the island along the line of sight; then the target is raised SKY_LIFT
+   * up that line. Nothing on screen changes, but the idle drift now turns the view about a point 4
+   * under the island's middle, not 10 (it swings the island much less far), and the target still
+   * stands under the pan limit's lift: a one-building framing, on the island's own middle 10.5 up,
+   * would stand over it, and the limit would slide the camera as the glide ended.
    */
   function focusSky() {
-    fitGroup(SKY_FIT, 0.95, 2.6, panelEdge);
-    const back = viewOffset(targetYaw, new T.Vector3()).normalize();
+    fitGroup(SKY_FIT, 0.95, 2.6, panelEdge, 1);
+    const back = viewOffset(targetYaw, new T.Vector3(), 1).normalize();
     target.addScaledVector(back, SKY_LIFT / back.y);
   }
   /** A place's root in the town: a building's model, or the sky island's own. */
@@ -1695,6 +1768,16 @@ export async function createCity(
       shiftApplied.copy(shift);
       align();
     }
+    // The pitch eases toward the one the view heads for at the camera's own zoom, as the bearing does
+    // (a glide into the island's file comes down as it closes in; a zoom out of it rises again); a
+    // reduced-motion change is a cut.
+    {
+      const left = aim(camera.zoom) - pitch;
+      if (Math.abs(left) > 0.0001) {
+        pitch = reduced || Math.abs(left) < 0.0005 ? pitch + left : pitch + left * (1 - Math.exp(-dt * YAW_RATE));
+        align();
+      }
+    }
     // A wheel or pinch zoom (OrbitControls applies it in its own event handler) is the zoom
     // to keep, so a later re-fit cannot spring back. Zoomed at the view centre, the subject
     // beside the panel stays put; zoomed at the pointer (City mode), the point under the
@@ -1839,7 +1922,7 @@ export async function createCity(
     // It stops where it is: turning back to the bearing would keep the town moving after Pause
     // and turn it under a drag. Inspect (and the drift switched off) take it back to the bearing.
     const driftTarget = idle
-      ? Math.sin(time * 0.07) * 0.16
+      ? Math.sin(time * 0.07) * 0.16 * (1 + (SKY_DRIFT - 1) * Math.min(1, pitch))
       : reduced || !drift || inspect
         ? 0
         : driftAngle;
@@ -2222,7 +2305,7 @@ export async function createCity(
       model,
       api,
       frameCost: () => frameCost,
-      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock }, skyShown, skyCast, shadowFade }),
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock }, skyShown, skyCast, shadowFade, pitch }),
       /** Advance n frames of ~16.7 ms, updating and rendering regardless of visibility. */
       tick(frames = 1) {
         let t = last || performance.now();

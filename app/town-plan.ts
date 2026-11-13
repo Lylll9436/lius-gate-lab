@@ -252,9 +252,21 @@ export type Site = {
  * `a` and `b` turned by `heading` (rotation.y, the long axis on its local x): the long axis runs
  * north-south. The lawn falls by `dome` from the middle to the rim, where the coping's widest ring
  * lies `ring` under `top` (the placement's ring, 10.21); the rock under it tapers to its tip
- * `depth` below `top`, at the placement's 2.35, 2.4 over the sea.
+ * `depth` below `top`, 1.5 over the sea (as deep as it may go: lower, it reads as a stilt; the
+ * placement's 2.4 over it left a plate with a knob under it), the tip leaning `lean` toward the
+ * island's own file's camera (skyTip).
  */
-export const SKY = { x: -52, z: -24, H: 10.5, top: 10.472, heading: Math.PI / 2, a: 7.5, b: 6, dome: 0.3, ring: 0.26, depth: 8.12 };
+export const SKY = { x: -52, z: -24, H: 10.5, top: 10.472, heading: Math.PI / 2, a: 7.5, b: 6, dome: 0.3, ring: 0.26, depth: 9, lean: 1 };
+/** The bearing the sky island's own file sees it from (chapterBearings['sky-island']): the gate's. */
+const SKY_FILE = Math.PI / 4 - 0.18;
+/**
+ * The rock's tip: SKY.depth under the deck's level, `lean` out from under the island's middle
+ * toward the camera of its own file (SKY_FILE), so that from there the point hangs clear below
+ * the body's near side.
+ */
+export function skyTip() {
+  return { x: SKY.x + Math.sin(SKY_FILE) * SKY.lean, y: SKY.top - SKY.depth, z: SKY.z + Math.cos(SKY_FILE) * SKY.lean };
+}
 /**
  * The villa's site on the deck, in the villa's own frame (front +z, y 0 the deck's level, the
  * footprint's middle at the origin: the frame town-sky-villa's buildSkyVilla works in, and these
@@ -370,7 +382,7 @@ export const chapterBearings: Record<string, number> = {
   // The sky island's own file (City mode only: no reading chapter frames it). The gate's bearing
   // once more, so again no new bearing: the villa's south front is seen 35 degrees off, turned to
   // the camera's left, the side the key light is on.
-  'sky-island': Math.PI / 4 - 0.18,
+  'sky-island': SKY_FILE,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -929,8 +941,8 @@ export const SKY_FLOAT_LIMITS = { tuck: 0.5, clear: 0.4, top: SKY.top - SKY.dome
  * south-east rim, toward the town, and one smaller off the south-west, both under the deck's level.
  */
 export const SKY_CLOUDS: SkyFloat[] = [
-  { x: -44.9, y: 8.9, z: -19.2, ry: -0.75, size: 0.8, seed: 1 },
-  { x: -55.6, y: 8.2, z: -16.6, ry: 0.5, size: 0.7, seed: 2 },
+  { x: -44.7, y: 8.85, z: -19.0, ry: -0.75, size: 0.8, seed: 1 },
+  { x: -56.1, y: 8.05, z: -16.1, ry: 0.5, size: 0.7, seed: 2 },
 ];
 /**
  * The floating rocks (lane G's floatingRock(): its origin its middle, about 2.1 across, 0.8 over
