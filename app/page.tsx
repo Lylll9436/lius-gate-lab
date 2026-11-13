@@ -106,11 +106,12 @@ function frameCity(engine: CityAPI, content: ContentId) {
  * A side panel moves the subject left (a share of the stage width) to the middle of the
  * space left of the file, with a 16 px gutter. A bottom sheet (phones and tablets), or a
  * phone's own row of sky and camera bars, lifts it (a share of the stage height) to the
- * middle of the band between the masthead and the sheet or bars. `sheet` says the file is
- * a bottom sheet.
+ * middle of the band between the masthead and the sheet or bars. `foot` is where that band
+ * ends below, the sheet's or the bars' top (a share of the stage height from its top; 1 with
+ * neither), for the sun's shadow box. `sheet` says the file is a bottom sheet.
  */
 function fileFrame(stage: HTMLElement | null) {
-  const none = { shift: 0, drop: 0, sheet: false };
+  const none = { shift: 0, drop: 0, foot: 1, sheet: false };
   if (!stage) return none;
   const frame = stage.getBoundingClientRect();
   if (frame.width <= 0 || frame.height <= 0) return none;
@@ -139,6 +140,7 @@ function fileFrame(stage: HTMLElement | null) {
       0,
       Math.max(-0.35, (centre - (frame.top + frame.bottom) / 2) / frame.height),
     ),
+    foot: (bottom - frame.top) / frame.height,
   };
 }
 
@@ -555,7 +557,7 @@ export default function Home() {
     const place = () => {
       const at = fileFrame(mount.current);
       if ((at.sheet && sheetFull) || (directory && !wide)) return;
-      api.current?.setFrameShift(at.shift, at.drop);
+      api.current?.setFrameShift(at.shift, at.drop, 1, at.foot);
     };
     place();
     const file = document.querySelector<HTMLElement>('.dossier'),

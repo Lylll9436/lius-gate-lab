@@ -87,9 +87,12 @@ export type CityAPI = {
    * sit beside it, and `down` (fraction of the viewport height) below the middle, for a
    * frame whose top part is hidden. `edge` is where that panel really starts (a share of the
    * width from the left; 1, the default, for none): the airport's island, the widest subject
-   * framed beside the reading panel, is fitted into the space it leaves.
+   * framed beside the reading panel, is fitted into the space it leaves. `foot` is where the part of
+   * the frame left free ends below (a share of the height from the top: City mode's sheet's or bars'
+   * top); by default, where the drop's band would end, 1 + 2 * min(0, down) (the sun's shadow box
+   * reads it: skyShadowWanted).
    */
-  setFrameShift: (fraction: number, down?: number, edge?: number) => void;
+  setFrameShift: (fraction: number, down?: number, edge?: number, foot?: number) => void;
   /** Ring one place from the page (hovering a person card or a Directory row, for example). */
   setAccent: (id: HoverTarget) => void;
   /**
@@ -495,8 +498,8 @@ export function skyExtent(marks: T.Vector3[]) {
  * up to the first once it is) and how much of the free part of the frame the town's own island may
  * take (`shore`, likewise: a portrait phone's file shows a sliver of its north-west coast in the
  * corner above the sheet, its beach and the grass behind it, the corner of a roof at the idle
- * drift's extreme, 2.8% of the free part at rest and 3.9% through the drift at most); and how long
- * the shadows take to fade out before the box moves and to fade back in after.
+ * drift's extreme, 0.8% of the free part at rest and 1.2% through the drift at most, at 412 x 915);
+ * and how long the shadows take to fade out before the box moves and to fade back in after.
  */
 export const SKY_SHADOW = { centre: skyFit().getCenter(new T.Vector3()), radius: 14, zoom: [1.25, 1.4], low: [0.75, 0.9], land: [4, 2], shore: [0.05, 0.04], fade: 0.18 };
 /** The town's island out to its waterline (3.3 past its outline), as skyShadowWanted measures it. */
@@ -540,20 +543,23 @@ function bandShare(outline: T.Vector3[], camera: T.Camera, right: number, bottom
  * cost the whole town a fifth of its shadows' sharpness; so one box serves whichever the view is
  * on. It is the island's while the view is close in on it (SKY_SHADOW.zoom, or the camera come down
  * `low` of the way to the island's own pitch: city-scene's pitch), its middle in the frame, and the
- * town is next to absent from the part of the frame the file's panel (`shift`) or sheet (`drop`)
- * leaves free: no more than SKY_SHADOW.land of `land`'s marks (the lighthouse's rock and the
- * airport's island in the town's frames), and its own island (TOWN_WATERLINE) at most a sliver of
- * it (SKY_SHADOW.shore), whose beach and grass go without shadows meanwhile. That is the island's
- * own file, and a view panned or zoomed about it. `on` says it is the island's now, which it stays
- * a little longer either way.
+ * town is next to absent from the part of the frame the file's panel (`shift`) or sheet leaves free,
+ * from the frame's top (the scene shows between the masthead's pills) down to the sheet's or the
+ * bars' top (`foot`, a share of the height from the top: setFrameShift's): no more than
+ * SKY_SHADOW.land of `land`'s marks (the lighthouse's rock and the airport's island in the town's
+ * frames), and its own island (TOWN_WATERLINE) at most a sliver of it (SKY_SHADOW.shore), whose beach
+ * and grass go without shadows meanwhile. (Read off the frame drop, the middle of the band between
+ * the masthead and the sheet, the band's foot lay the masthead's height inside the frosted sheet, and
+ * counted town seen only blurred through it.) That is the island's own file, and a view panned or
+ * zoomed about it. `on` says it is the island's now, which it stays a little longer either way.
  */
-export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[], shift: number, drop: number, on: boolean, low = 0) {
+export function skyShadowWanted(camera: T.OrthographicCamera, land: T.Vector3[], shift: number, foot: number, on: boolean, low = 0) {
   const Z = SKY_SHADOW;
   if (camera.zoom < Z.zoom[on ? 0 : 1] && low < Z.low[on ? 0 : 1]) return false;
   const p = new T.Vector3().copy(Z.centre).project(camera);
   if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) return false;
   const right = 1 - 4 * Math.max(0, shift),
-    bottom = -1 - 4 * Math.min(0, drop);
+    bottom = 1 - 2 * foot;
   let seen = 0;
   for (const mark of land) {
     p.copy(mark).project(camera);
@@ -1112,6 +1118,8 @@ export async function createCity(
     driftAngle = 0,
     frameShift = 0,
     frameDrop = 0,
+    // Where the part of the frame left free ends below (setFrameShift's `foot`).
+    frameFoot = 1,
     panelEdge = 1,
     lastInteraction = -1e9,
     lastHover: HoverTarget = null,
@@ -1687,7 +1695,7 @@ export async function createCity(
     }
     camera.updateMatrixWorld();
     if (skyTurn && (!skyFile() || Math.abs(targetYaw - yaw) <= 0.0001)) skyTurn = false;
-    const wanted = skyShown && skyShadowWanted(skyTurn ? skyAhead() : camera, LAND_MARKS, frameShift, frameDrop, skyCast, skyTurn ? aim() : pitch);
+    const wanted = skyShown && skyShadowWanted(skyTurn ? skyAhead() : camera, LAND_MARKS, frameShift, frameFoot, skyCast, skyTurn ? aim() : pitch);
     if (wanted === skyCast) shadowFade = Math.min(1, shadowFade + dt / SKY_SHADOW.fade);
     else {
       shadowFade = reduced ? 0 : Math.max(0, shadowFade - dt / SKY_SHADOW.fade);
@@ -2453,10 +2461,11 @@ export async function createCity(
       if (overviewFit) fitOverview();
       else if (autoFocus && skyFile()) focusSky();
     },
-    setFrameShift(fraction, down = 0, edge = 1) {
+    setFrameShift(fraction, down = 0, edge = 1, foot?: number) {
       frameShift = T.MathUtils.clamp(fraction, -0.45, 0.45);
       frameDrop = T.MathUtils.clamp(down, -0.35, 0.35);
       panelEdge = T.MathUtils.clamp(edge, 0.3, 1);
+      frameFoot = T.MathUtils.clamp(foot ?? 1 + 2 * Math.min(0, frameDrop), 0.1, 1);
       // A framing the camera chose itself (the overview, a pick) is fitted again.
       if (autoFocus) fitFocused();
     },

@@ -7380,15 +7380,16 @@ let skyReport = '';
         camera.updateProjectionMatrix();
         camera.updateMatrixWorld(true);
       };
+    // (No panel and no sheet: the free part of the frame is all of it, its foot the frame's own, 1.)
     look(SKY_SHADOW.centre, 2);
-    assert(skyShadowWanted(camera, landMarks, 0, 0, false) && skyShadowWanted(camera, landMarks, 0, 0, true), 'Close in on the sky island, the sun\'s shadow is not its own.');
+    assert(skyShadowWanted(camera, landMarks, 0, 1, false) && skyShadowWanted(camera, landMarks, 0, 1, true), 'Close in on the sky island, the sun\'s shadow is not its own.');
     look(SKY_SHADOW.centre, 1.3);
-    assert(!skyShadowWanted(camera, landMarks, 0, 0, false), 'From zoom 1.3 the sun\'s shadow leaves the town for the sky island.');
+    assert(!skyShadowWanted(camera, landMarks, 0, 1, false), 'From zoom 1.3 the sun\'s shadow leaves the town for the sky island.');
     look(new T.Vector3(-40, 5, -22), 1.5);
     assert(Math.abs(SKY_SHADOW.centre.clone().project(camera).x) < 1 && Math.abs(SKY_SHADOW.centre.clone().project(camera).y) < 1, 'The check\'s view of the island and the headland together has lost the island.');
-    assert(!skyShadowWanted(camera, landMarks, 0, 0, false) && !skyShadowWanted(camera, landMarks, 0, 0, true), 'With the headland in view the sun\'s shadow stays on the sky island.');
+    assert(!skyShadowWanted(camera, landMarks, 0, 1, false) && !skyShadowWanted(camera, landMarks, 0, 1, true), 'With the headland in view the sun\'s shadow stays on the sky island.');
     look(new T.Vector3(0, 0, 0), 2.4);
-    assert(!skyShadowWanted(camera, landMarks, 0, 0, true), 'With the sky island out of view the sun\'s shadow stays on it.');
+    assert(!skyShadowWanted(camera, landMarks, 0, 1, true), 'With the sky island out of view the sun\'s shadow stays on it.');
     assert(SKY_SHADOW.zoom[0] < SKY_SHADOW.zoom[1] && SKY_SHADOW.zoom[1] > 1 && SKY_SHADOW.land[0] > SKY_SHADOW.land[1] && SKY_SHADOW.fade > 0.05 && SKY_SHADOW.fade < 0.4, 'The shadow box changes hands at the City overview\'s zoom, without slack, or abruptly.');
   }
 
