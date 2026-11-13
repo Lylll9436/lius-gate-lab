@@ -6709,6 +6709,59 @@ let skyReport = '';
     assert(corners / seen.size > 4, 'The rock\'s triangles share no corners.');
     assert(lean / corners > 0.97 && worst > 0.3, `The rock's normals lean ${(lean / corners).toFixed(3)} on average (${worst.toFixed(2)} at worst) from its faces.`);
     assert(rockTriangles >= 8000 && rockTriangles <= 16000 && SKY_ROCK.grid >= 0.2, `The rock costs ${rockTriangles} triangles.`);
+    let outcropReport = '';
+    // The rock's outcrops (the final art review: single rounded blocks read as grey cushions or paving
+    // slabs): stones of their own standing out of the earth (runs of joined faces apart from the earth's
+    // and the coping's), each by its middle's bearing round the island and depth under the deck one of
+    // the SKY_ROCK.outcrops (its nearest, within 2.2 of its place); each outcrop a cluster of three stones
+    // or more, the biggest at least four times the smallest's size (its box's volume), and not all lying
+    // one way (their long axes, by their spread, 15 degrees apart or more: tilted beds, a piece split off).
+    {
+      const key = (i) => [p.getX(i), p.getY(i), p.getZ(i)].map((q) => Math.round(q * 2000)).join(),
+        parent = new Map(),
+        find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+      for (let i = 0; i < p.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+      for (let t = 0; t < p.count; t += 3) for (const j of [1, 2]) parent.set(find(key(t + j)), find(key(t)));
+      const runs = new Map();
+      for (let i = 0; i < p.count; i++) {
+        const r = find(key(i));
+        if (!runs.has(r)) runs.set(r, []);
+        runs.get(r).push(new T.Vector3(p.getX(i), p.getY(i), p.getZ(i)));
+      }
+      const all = [...runs.values()].sort((a, b) => b.length - a.length),
+        // (The earth is the biggest run; the coping stands over the rock's flat top.)
+        stones = all.slice(1).filter((q) => Math.max(...q.map((v) => v.y)) < S.top - SKY_ROCK.body.top),
+        boxes = stones.map((q) => new T.Box3().setFromPoints(q)),
+        axisOf = (q) => {
+          const mid = q.reduce((s, v) => s.add(v), new T.Vector3()).multiplyScalar(1 / q.length),
+            m = new T.Matrix3().set(0, 0, 0, 0, 0, 0, 0, 0, 0).elements;
+          for (const v of q) {
+            const d = [v.x - mid.x, v.y - mid.y, v.z - mid.z];
+            for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) m[a * 3 + b] += d[a] * d[b];
+          }
+          // The long axis: power iteration on the spread.
+          let x = new T.Vector3(1, 0.3, 0.2);
+          for (let k = 0; k < 40; k++) x = new T.Vector3(m[0] * x.x + m[1] * x.y + m[2] * x.z, m[3] * x.x + m[4] * x.y + m[5] * x.z, m[6] * x.x + m[7] * x.y + m[8] * x.z).normalize();
+          return x;
+        },
+        // How far a point lies from an outcrop's place: round the island (at about the flank's reach) and down.
+        apart = (c, o) => Math.hypot(5 * plan.angleDiff(Math.atan2(c.x - S.x, c.z - S.z), o.bearing * deg), S.top - c.y + o.y),
+        groups = SKY_ROCK.outcrops.map(() => []);
+      boxes.forEach((b, k) => {
+        const c = b.getCenter(new T.Vector3()),
+          d = SKY_ROCK.outcrops.map((o) => apart(c, o)),
+          j = d.indexOf(Math.min(...d));
+        assert(d[j] < 2.2, `A stone of the rock at ${c.toArray().map((n) => n.toFixed(2)).join(', ')} is no outcrop's.`);
+        groups[j].push(k);
+      });
+      for (const g of groups) {
+        const sizes = g.map((k) => boxes[k].getSize(new T.Vector3())).map((s) => s.x * s.y * s.z),
+          axes = g.map((k) => axisOf(stones[k])),
+          spread = Math.max(...axes.flatMap((a, i) => axes.slice(i + 1).map((b) => Math.acos(Math.min(1, Math.abs(a.dot(b)))))));
+        assert(g.length >= 3 && Math.max(...sizes) >= 4 * Math.min(...sizes) && spread >= 15 * deg, `An outcrop of the rock is ${g.length} stones, ${(Math.max(...sizes) / Math.min(...sizes)).toFixed(1)} times apart in size, their long axes within ${(spread / deg).toFixed(0)} degrees of one another.`);
+      }
+      outcropReport = `, ${groups.length} outcrops of ${stones.length} stones`;
+    }
     // A chunk of land, not a plate: all round the rim the earth stands as cliffs (within half a unit
     // of the rim's line) down to SKY_ROCK.body.cliff under the deck or deeper, its shoulders proud of
     // them; and under each fall (within 12 degrees of its bearing) nothing stands out past the rim,
@@ -6763,7 +6816,7 @@ let skyReport = '';
       // (Its near-vertical faces take a little of it too: measured, about 1.6 times the light.)
       assert(down.length > 20 && side.length > 20 && mean(down).r / mean(side).r > 1 + 0.35 * B[0] && luma(mean(down)) / luma(mean(side)) > 1 + 0.3 * B[1], 'The underside\'s down-turned faces are not lifted by the sea\'s bounce.');
     }
-    skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles}, Alison ${herMeshes} and ${herTriangles})`;
+    skyReport = `${skyMeshes} meshes and ${skyTriangles} triangles of its ${SKY_CAP.meshes} and ${SKY_CAP.triangles.toLocaleString('en-GB')} (the rock ${rockTriangles}${outcropReport}, Alison ${herMeshes} and ${herTriangles})`;
   }
 
   /* ---------------- the villa in place ---------------- */

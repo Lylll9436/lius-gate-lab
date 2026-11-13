@@ -257,18 +257,20 @@ export const ROCK = {
   rock: 0.035,
   periods: [9, 10.5, 12],
 };
-/** The armour stones' shape (ROCK.detail): an icosahedron with its corners merged, so a corner moved moves every face round it. */
-let STONE: T.BufferGeometry | null = null;
+/** The armour stones' shapes, by detail: an icosahedron with its corners merged, so a corner moved moves every face round it. */
+const STONES = new Map<number, T.BufferGeometry>();
 /**
  * One of the airport armour's boulders (town-airport's boulder(), copied: its helpers stay its own)
- * at size 1, about 2 across: the icosahedron pushed part way toward a rounded block (`square`, 0.3
- * to 0.65 by its seed), each corner in or out by up to ROCK.jitter / 2, with the rounded block's own
- * analytic normals, so it shades as one smooth chunk and no facet shows. Squash and turn it as it is
- * placed (a matrix takes its normals through the squash).
+ * at size 1, about 2 across: the icosahedron (of `detail`, ROCK.detail unless a small stone needs
+ * fewer faces) pushed part way toward a rounded block (`square`, 0.3 to 0.65 by its seed), each
+ * corner in or out by up to ROCK.jitter / 2, with the rounded block's own analytic normals, so it
+ * shades as one smooth chunk and no facet shows. Squash and turn it as it is placed (a matrix takes
+ * its normals through the squash).
  */
-export function boulder(seed: number, square = 0.3 + 0.35 * hash(seed * 7.31 + 1.913)) {
-  STONE ??= mergeVertices(new T.IcosahedronGeometry(1, ROCK.detail).deleteAttribute('normal').deleteAttribute('uv'));
-  const geometry = STONE.clone(),
+export function boulder(seed: number, square = 0.3 + 0.35 * hash(seed * 7.31 + 1.913), detail = ROCK.detail) {
+  let stone = STONES.get(detail);
+  if (!stone) STONES.set(detail, (stone = mergeVertices(new T.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv'))));
+  const geometry = stone.clone(),
     p = geometry.getAttribute('position'),
     normals = new Float32Array(p.count * 3),
     n = new T.Vector3(),
