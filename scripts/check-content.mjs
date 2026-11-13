@@ -550,9 +550,27 @@ const records = await import(
 // The page's day, as its module read it when it loaded: the moment it loaded, on the real clock.
 const NOW = records.utcDay(records.pageDay);
 assert(Math.abs(Date.now() - records.pageDay.getTime()) < 60_000, 'pageDay is not the moment the page loaded.');
-const { LabContent, NewsPreview, PeopleCards, DeparturesBoard } = await import(
+const { LabContent, NewsPreview, PeopleCards, DeparturesBoard, glyphFor } = await import(
   pathToFileURL(path.join(output, 'lab-content.mjs')).href
 );
+/** Rendered markup as a visitor reads it: entities decoded. */
+const decoded = (html) =>
+  html.replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+/** The texts a visitor reads or hears in rendered markup: each element's own text, and its aria-labels. */
+const textsOf = (html) =>
+  [...html.split(/<[^>]*>/), ...[...html.matchAll(/\saria-label="([^"]*)"/g)].map((m) => m[1])]
+    .map((t) => decoded(t).trim())
+    .filter(Boolean);
+/**
+ * The links off the site in rendered markup that do not open a new tab with neither a way back to
+ * the page nor its address sent along: every https link and every target="_blank" must carry
+ * target="_blank" rel="noopener noreferrer" (the owner's rule for outbound links).
+ */
+const unsafeOutbound = (html) =>
+  [...html.matchAll(/<a\s[^>]*>/g)]
+    .map((m) => m[0])
+    .filter((a) => /\shref="https:\/\//.test(a) || /\starget=/.test(a))
+    .filter((a) => !/\starget="_blank"/.test(a) || !/\srel="noopener noreferrer"/.test(a));
 const { SiteFooter, chapterMeta, onReadingPage } = await import(
   pathToFileURL(path.join(output, 'site-chrome.mjs')).href
 );
@@ -836,6 +854,129 @@ async function siteOver(name, testCatalog) {
     await siteOver('neighbour-beside', { ...next, neighbours: [{ ...testNeighbour, visibility: 'draft', order: -1 }, ...next.neighbours] })
   ).records;
   assert.deepEqual([beside.neighbourRecords.map((n) => n.id), beside.neighbourFor('sky-island')?.id], [published, alison.id]);
+}
+// The sky island's City file (#city/sky-island). The island keeps its name; while her record is
+// published its category names her and her group, as a home's names its resident's role (the file's
+// eyebrow, the Directory, the hover label), and its file is hers, in this order: her role and
+// affiliation, her short profile, her group (its full name, what it does, the one tie, and the way out
+// to its website, its address on the button and read aloud), her staff page, her full profile folded
+// away, the villa, and the places next to it. No photo of her, nor a monogram in its place. It stands
+// in the Directory and the tour after the Visiting PhD Residence and before the airport.
+{
+  const island = buildings.find((b) => b.id === 'sky-island'),
+    at = (id) => buildings.findIndex((b) => b.id === id);
+  assert.deepEqual([island.name, island.short], [{ en: 'Sky Island', zh: '天空之岛' }, { en: 'Sky Island', zh: '天空之岛' }]);
+  assert.deepEqual(island.category, { en: 'ALISON HEPPENSTALL · UIA', zh: 'Alison Heppenstall · UIA' }, 'The island’s category names her and UIA.');
+  assert.deepEqual(island.style, { en: 'Red-brick villa', zh: '红砖别墅' });
+  assert.deepEqual(island.related, ['town-hall', 'pengyuan-liu'], 'The island’s file goes on to the Town Hall and Pengyuan Liu’s home.');
+  assert.deepEqual([at('sky-island'), nav.tourStops.indexOf('sky-island')], [at('visiting-phd') + 1, 6], 'The island is the 7th place in the Directory and the tour.');
+  assert.equal(at('airport'), at('sky-island') + 1);
+  assert.equal(glyphFor('sky-island'), 'sky', 'The island’s glyph is the cloud.');
+  for (const locale of ['en', 'zh']) {
+    assert.equal(nav.titleFor('sky-island', locale), island.name[locale]);
+    const html = renderToStaticMarkup(React.createElement(LabContent, { id: 'sky-island', locale, onOpen() {} })),
+      page = decoded(html),
+      group = alison.group,
+      site = locale === 'zh' ? 'UIA 官网 · urban-ai.uk' : 'UIA website · urban-ai.uk',
+      aria = locale === 'zh' ? 'UIA 官网：urban-ai.uk，在新标签页打开' : 'UIA website: urban-ai.uk, opens in a new tab';
+    const order = [
+      alison.role[locale],
+      alison.affiliation[locale],
+      alison.summary[locale],
+      group.name[locale] + ' · ' + group.fullName[locale],
+      group.summary[locale],
+      group.connection[locale],
+      site,
+      alison.links[0].label[locale],
+      locale === 'zh' ? '完整简介' : 'Full profile',
+      ...alison.sections.flatMap((s) => [s.heading[locale], s.body[locale]]),
+      locale === 'zh' ? '这栋建筑' : 'About this building',
+      island.style[locale],
+      island.architecture[locale],
+      locale === 'zh' ? '继续探索' : 'Continue exploring',
+      nav.titleFor('town-hall', locale),
+      nav.titleFor('pengyuan-liu', locale),
+    ];
+    let last = -1;
+    for (const text of order) {
+      const found = page.indexOf(text, last + 1);
+      assert(found > last, 'The sky island’s file (' + locale + ') does not show, in its place: ' + text);
+      last = found;
+    }
+    // The way out to UIA's website: the file's one primary button, opening a new tab.
+    const button = html.match(/<a class="button-primary site-link"[^>]*>/g) ?? [];
+    assert.equal(button.length, 1, 'The island’s file has one button to UIA’s website.');
+    for (const attribute of ['href="https://urban-ai.uk/"', 'target="_blank"', 'rel="noopener noreferrer"', 'aria-label="' + aria + '"'])
+      assert(decoded(button[0]).includes(attribute), 'UIA’s button lacks ' + attribute + ' (' + locale + ').');
+    assert(page.includes('href="' + alison.links[0].url + '" target="_blank" rel="noopener noreferrer"'), 'Her staff page does not open a new tab safely.');
+    assert.deepEqual(unsafeOutbound(html), [], 'A link off the island’s file is unsafe.');
+    // Her full profile is folded away, a disclosure as on a person's card (its state is the browser's).
+    assert(/<details class="neighbour-profile"><summary>[^<]*<svg/.test(html), 'Her full profile is not a closed disclosure.');
+    assert(!/<img|portrait|monogram/.test(html), 'The island’s file shows a photo of her, or a monogram for one.');
+  }
+  // Were her record not published, the island would be the island's own again: its category and
+  // summary, the villa and the places next to it, and nothing of hers or UIA's.
+  const none = await siteOver('neighbour-none', { ...next, neighbours: next.neighbours.map((n) => ({ ...n, visibility: 'draft' })) }),
+    bare = none.data.buildings.find((b) => b.id === 'sky-island');
+  assert.deepEqual([bare.category, bare.summary], [
+    { en: 'ABOVE THE TOWN', zh: '小城上空' },
+    { en: 'A small island that floats above the town, with a red-brick villa on its lawn.', zh: '漂浮在小城上空的一座小岛，草坪上立着一栋红砖别墅。' },
+  ]);
+  for (const locale of ['en', 'zh']) {
+    const html = decoded(renderToStaticMarkup(React.createElement(none.content.LabContent, { id: 'sky-island', locale, onOpen() {} })));
+    assert(html.includes('<p class="record-lead">' + bare.summary[locale] + '</p>') && html.includes(bare.architecture[locale]), 'The empty island’s file is not its own.');
+    assert(!/heppenstall|uia|urban-ai/i.test(html), 'The empty island’s file still shows her or UIA.');
+  }
+}
+// Her name is shown on the sky island's own surfaces only, never as a person. No other place's file,
+// no record's, no chapter of the page and not the footer names her, in either language or mode (in
+// what a visitor reads or hears: her staff page's address, in the island's file, has her name in it).
+{
+  const namesHer = (html) => /heppenstall/i.test(textsOf(html).join('\n'));
+  const ids = [
+    'overview',
+    'people',
+    'corner-park',
+    ...buildings.flatMap((b) => [b.id, 'place:' + b.id]),
+    'person:test-member',
+    'research:test-study',
+    'event:test-event',
+    'output:test-output',
+    'note:test-note',
+    ...records.peopleRecords.map(records.personContentId),
+  ];
+  for (const locale of ['en', 'zh']) {
+    for (const reading of [false, true])
+      for (const id of ids) {
+        const html = renderToStaticMarkup(React.createElement(LabContent, { id, locale, onOpen() {}, reading }));
+        if (!['sky-island', 'place:sky-island'].includes(id))
+          assert(!namesHer(html), id + '’s ' + (reading ? 'chapter' : 'file') + ' (' + locale + ') names a neighbour.');
+        assert.deepEqual(unsafeOutbound(html), [], 'A link off ' + id + ' (' + locale + ') is unsafe.');
+      }
+    const pageText = renderToStaticMarkup(React.createElement(Chapters, { locale, onOpen() {}, onVisit() {}, onHoverBuilding() {}, onExplore() {} })),
+      footer = renderToStaticMarkup(React.createElement(SiteFooter, { locale, onNavigate() {} }));
+    assert(!namesHer(pageText) && !namesHer(footer), 'The reading page (' + locale + ') names a neighbour.');
+    assert.deepEqual([...unsafeOutbound(pageText), ...unsafeOutbound(footer)], [], 'A link off the reading page or the footer is unsafe.');
+  }
+}
+// Every link that opens a new tab, in the site's code, opens it with neither a way back to the page nor
+// its address sent along: target="_blank" goes with rel="noopener noreferrer", always.
+for (const file of (await fs.readdir(path.join(root, 'app'))).filter((f) => f.endsWith('.tsx'))) {
+  const source = ts.createSourceFile(file, await fs.readFile(path.join(root, 'app', file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  (function visit(node) {
+    if (ts.isJsxAttributes(node)) {
+      const value = (name) => {
+        const a = node.properties.find((p) => ts.isJsxAttribute(p) && p.name.getText(source) === name);
+        return a?.initializer && ts.isStringLiteral(a.initializer) ? a.initializer.text : a ? '{…}' : null;
+      };
+      if (value('target') !== null)
+        assert(
+          value('target') === '_blank' && value('rel') === 'noopener noreferrer',
+          'app/' + file + ': a link opens a new tab without rel="noopener noreferrer" (line ' + (source.getLineAndCharacterOfPosition(node.pos).line + 1) + ').',
+        );
+    }
+    ts.forEachChild(node, visit);
+  })(source);
 }
 // TEST-ONLY visiting researchers (never in content/lab.json): two people whose buildingId is
 // 'visiting-phd' share the residence (a home takes one), and the site's own code, compiled again
@@ -2076,6 +2217,24 @@ assert(
   }
   assert(sentences(neighbourTexts).some(namesTheGate), 'The neighbours’ copy names Liu’s Gate (the connection line).');
   assert.deepEqual(wordingFaults(neighbourTexts), [], 'content/lab.json’s neighbours break a wording rule.');
+  // The site's own copy around her record is read by the same rules: the sky island's place (its
+  // name, category, summary and the villa's text) and every text a visitor reads or hears in its
+  // file, the record's and the page's alike, in both languages. A fault in what the file shows is
+  // caught there.
+  const island = buildings.find((b) => b.id === 'sky-island'),
+    shown = (lab, id, props = {}) =>
+      ['en', 'zh'].flatMap((locale) => textsOf(renderToStaticMarkup(React.createElement(lab, { id, locale, onOpen() {}, ...props })))),
+    siteCopy = [
+      ...[island.name, island.category, island.summary, island.style, island.architecture].flatMap((t) => [t.en, t.zh]),
+      ...shown(LabContent, 'sky-island'),
+    ];
+  assert(sentences(siteCopy).some(namesTheGate), 'The island’s file names Liu’s Gate (the connection line).');
+  assert.deepEqual(wordingFaults(siteCopy), [], 'The sky island’s place or file breaks a wording rule.');
+  const planted = await siteOver('neighbour-wording', {
+    ...next,
+    neighbours: next.neighbours.map((n) => ({ ...n, group: { ...n.group, connection: { en: 'Liu’s Gate is part of UIA.', zh: '刘家门隶属于 UIA。' } } })),
+  });
+  assert.equal(wordingFaults(shown(planted.content.LabContent, 'sky-island')).length, 2, 'The wording rules miss a fault the island’s file shows.');
 }
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');

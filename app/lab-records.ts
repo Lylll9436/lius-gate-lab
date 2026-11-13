@@ -95,14 +95,14 @@ export const noteRecords = catalog.notes
  * Gate, with their groups (Alison Heppenstall and UIA, whose place is the sky island). They are not
  * people: nothing that lists people, members, leavers, residents, homes, People cards, departures
  * or an event's People reads them, nor the supervisor's email, and no address opens one (getRecord
- * does not know them). Their place's file is to show them (neighbourFor), but nothing on the site
- * reads them yet: the sky island's file and the reading page's Neighbours card come later (P2).
+ * does not know them). Their place shows them (neighbourFor): the sky island's City file is hers,
+ * and its category names her and her group (city-data's buildingsOn).
  */
 export const neighbourRecords: NeighbourRecord[] = catalog.neighbours
   .filter((n) => n.visibility === 'published')
   .sort((a, b) => a.order - b.order);
 /**
- * The published neighbour a place's file is to show, or undefined: the sky island's is Alison
+ * The published neighbour a place's file shows, or undefined: the sky island's is Alison
  * Heppenstall. A place has at most one (content-schema checks it).
  */
 export function neighbourFor(placeId: BuildingId): NeighbourRecord | undefined {
@@ -171,7 +171,7 @@ export function personContentId(p: PersonRecord): string {
 }
 /**
  * The record an address names: a person, a research project, an event, an output or a note.
- * Neighbours have no address of their own (neighbourRecords): their place's file is to show them.
+ * Neighbours have no address of their own (neighbourRecords): their place's file shows them.
  */
 export function getRecord(
   id: string,

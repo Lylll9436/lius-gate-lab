@@ -108,6 +108,20 @@ assert.equal(nav.readingContent('sky-island', 'town-hall'), 'town-hall');
 assert.deepEqual(nav.sceneTarget('sky-island'), { building: 'sky-island' });
 assert.equal(nav.placeFor('sky-island'), 'sky-island');
 assert(!nav.readingChapters.includes('sky-island') && !nav.destinations.includes('sky-island'), 'The sky island has a reading chapter or a masthead chip of its own.');
+// A place picked on the model opens in the mode it was picked in, but the sky island, with no chapter
+// of its own, opens its City file from the reading page too (#city/sky-island), where its pick would
+// only have scrolled to About. The page sends every pick on the model through that rule.
+for (const b of buildings)
+  for (const id of [nav.contentForBuilding(b.id), 'place:' + b.id]) {
+    assert.equal(nav.modeForPick('city', id), 'city', 'A pick in the city leaves the city: ' + id);
+    assert.equal(nav.modeForPick('reading', id), b.id === 'sky-island' ? 'city' : 'reading', 'A reading-page pick of ' + id + ' opens the wrong mode.');
+  }
+assert(
+  /\(id\) => \{\s*const content = contentForBuilding\(id\);\s*navigateRef\.current\(modeForPick\(viewRef\.current\.mode, content\), content\);\s*\}/.test(
+    await fs.readFile(path.join(root, 'app/page.tsx'), 'utf8'),
+  ),
+  'A pick on the model no longer opens the sky island in the city from the reading page (page.tsx, modeForPick).',
+);
 // The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
 // and the overview's list of places names it there too.
 assert.deepEqual(nav.readingChapters, [

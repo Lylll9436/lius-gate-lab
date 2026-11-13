@@ -43,6 +43,13 @@ export const readingChapters = [
 const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall' };
 /** The chapter that hosts an address's place, if it is a hosted one. */
 const hostOf = (id: ContentId) => HOSTED[id.replace(/^place:/, '') as BuildingId];
+/**
+ * The mode a place picked on the model opens in: the mode it was picked in, but a hosted place (the
+ * sky island) opens its City file from the reading page too. It has no chapter of its own, so on
+ * the page the pick would only scroll to its host chapter.
+ */
+export const modeForPick = (mode: BrowseMode, id: ContentId): BrowseMode =>
+  mode === 'reading' && hostOf(id) ? 'city' : mode;
 const card = (p: PersonRecord) => ({
   ...p,
   id: personContentId(p),
