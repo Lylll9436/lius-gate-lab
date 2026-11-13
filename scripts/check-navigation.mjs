@@ -165,6 +165,28 @@ assert.deepEqual(nav.pickRoute('reading', 'sky-island'), ['city', 'sky-island'])
     ).length === 1;
   assert(routed, 'A pick on the model no longer goes through pickRoute (page.tsx, createCity’s pick callback): the sky island would not open in the city from the reading page.');
 }
+// The read-through ends on the whole island once the footer is more than a pixel into the window
+// (page.tsx: the argument of the setEnding that reads the footer, from its syntax tree, run against
+// footers about the window's foot). The last chapter is at least a screen tall, and opened at its
+// top a fraction of a pixel off (as the cards above it leave it) the footer sat 0.22 px inside a
+// 1440 x 900 window: About opened on the end shot, not the gate.
+{
+  const file = 'app/page.tsx',
+    tree = ts.createSourceFile(file, await fs.readFile(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+    tests = [];
+  (function find(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === 'setEnding' && node.arguments.length === 1 && /\bfooter\b/.test(node.arguments[0].getText(tree))) tests.push(node.arguments[0].getText(tree));
+    ts.forEachChild(node, find);
+  })(tree);
+  assert.equal(tests.length, 1, 'The end shot check must find the one setEnding that reads the footer.');
+  const test = ts.transpileModule(`(${tests[0]});`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText,
+    ending = (top, innerHeight) => runInNewContext(test, { footer: top === null ? null : { getBoundingClientRect: () => ({ top }) }, window: { innerHeight } });
+  assert(
+    [[899.78, 900], [900.19, 900], [1080.05, 1080], [899.5, 900], [null, 900]].every(([top, h]) => !ending(top, h)) &&
+      [[890, 900], [649.28, 900], [829.05, 1080]].every(([top, h]) => ending(top, h)),
+    'The reading page ends on the whole island with its footer under a pixel into the window, or not once the footer is well in view (page.tsx, setEnding).',
+  );
+}
 // The reading page's chapters: Departures (the airport's) comes right after People, as chapter 03,
 // and the overview's list of places names it there too.
 assert.deepEqual(nav.readingChapters, [
