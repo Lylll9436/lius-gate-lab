@@ -641,7 +641,7 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
     depths.push(foot);
     for (const d of depths) {
       const s = fallSection(F, d),
-        f = smooth(d, 0.1, foam) ** 1.25;
+        f = smooth(d, 0.1, foam);
       stations.push({ z: s.z, y: F.top.y - d, ny: F.lean / n, nz: 1 / n, a: s.a, b: d < 0.3 ? lerp(0.75 * F.b, F.b, smooth(d, 0, 0.3)) : s.b, recess: s.recess, e: FALL_OVAL, tone: (c) => blend(c, L.water, L.foam, f), streak: 1 - f });
     }
     const M = COLUMNS.length,
