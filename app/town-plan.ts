@@ -1042,7 +1042,7 @@ export const SKY_TEA = { sips: [[3.5, 8.5], [11.5, 16.5], [19.5, 24.5]] as [numb
  * the rose stays over the bed's mound, never over its rounded ends, and the last of the water goes
  * down into the mound rather than onto the kerb. Each stretch begins with the can coming up from her side to the hold
  * over `lift` seconds and tipping over `tilt`; the water comes out of the rose as it tips past half
- * way, bead behind bead, the whole stream out `reveal` seconds later (lane F's ALISON_STREAM). It ends,
+ * way, its front running down, the whole stream out `reveal` seconds later (lane F's ALISON_STREAM). It ends,
  * after the last sidestep's pause, with the can tipping back over `tilt`: the water stops at half
  * way, its top leaving the rose and falling on into the bed, all of it gone `leave` seconds later;
  * then the can comes back down to her side over `lift`.
@@ -1464,7 +1464,7 @@ export function alisonBlend(a: AlisonDay, b: AlisonDay, e: number): AlisonDay {
 /**
  * The water from her can `dt` seconds on, as it goes in real time while her day is held or let go
  * (alisonDay's front and tail, SKY_WATERING): it runs while the can is tipped half way or more
- * (`pour`), coming out of the rose bead by bead over `reveal` seconds; once it stops, what is out goes
+ * (`pour`), coming out of the rose over `reveal` seconds, front first; once it stops, what is out goes
  * on falling and its top leaves the rose, all of it gone down into the bed `leave` seconds later. A
  * stream still going down finishes before a new one comes; water never goes back up into the rose.
  */

@@ -4453,6 +4453,36 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     trunk = new T.Box3().setFromObject(dog.children.find((m) => m.isMesh && m.castShadow)).getSize(new T.Vector3());
   assert(trunk.z > 0.3 && trunk.z < 0.4 && size.z < 0.62 && box.max.y < 0.33 && Math.abs(box.min.y) < 0.004, `The dog is ${size.toArray().map((v) => v.toFixed(2)).join(' x ')}.`);
 }
+/**
+ * Alison's water (sky-figure's ALISON_STREAM: one tube through rings down its line), as posed now:
+ * each ring's place down the line (from the corners' moves off the whole stream, sky-figure's
+ * userData.rest, each ring moving as one), and each ring's middle and the tube's corners in the
+ * world. Asserts that every ring moves as one, along the line (streamAt).
+ */
+const herStream = await load('sky-figure');
+function alisonStream(water) {
+  const { ALISON_STREAM: S, streamAt } = herStream,
+    tube = water.children.find((m) => m.isMesh),
+    rest = water.userData.rest,
+    ring = water.userData.ring,
+    q = tube.geometry.attributes.position,
+    places = S.rings.map(() => null);
+  assert(rest && ring && rest.length === q.count * 3 && ring.length === q.count, 'Her water has no whole stream, or no ring for each of its corners, to move it from.');
+  for (let i = 0; i < q.count; i++) {
+    const k = ring[i],
+      own = S.rings[k],
+      place = own - (q.getY(i) - rest[i * 3 + 1]),
+      dz = q.getZ(i) - rest[i * 3 + 2];
+    if (places[k] === null) places[k] = place;
+    assert(Math.abs(places[k] - place) < 1e-6 && Math.abs(q.getX(i) - rest[i * 3]) < 1e-9 && Math.abs(dz - (streamAt(place)[2] - streamAt(own)[2])) < 1e-6, `A ring of her water does not move as one, along its line.`);
+  }
+  tube.updateMatrixWorld(true);
+  return {
+    places,
+    middles: places.map((d) => new T.Vector3(...streamAt(d)).applyMatrix4(tube.matrixWorld)),
+    corners: () => Array.from({ length: q.count }, (_, i) => ({ p: new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(tube.matrixWorld), k: ring[i] })),
+  };
+}
 // Alison Heppenstall's figure (sky-figure.ts), built on her own. She is the town's one named
 // person, so she has a builder and a block of her own, and the residents above stay generic.
 // - Build: a resident's pivots (so their walk drives her) and an elbow in each arm; at most 5,000
@@ -4812,10 +4842,13 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 //   joint or a prop more than 0.03 in a sixtieth of a second of its 0.8 to 0.9 (SKY_TEA's up and
 //   down);
 // - set down (`rest`), her cup and saucer show where `rest` says in every pose that does not hold them;
-// - the water shows in 'water' only (lane F's visibility sweep above): four beads from inside the can's
-//   rose (the first within its flare), each lower than the last and ahead of it, the lowest 0.15 or
-//   more under the rose; nothing of the can hangs under 0.45 (the town's flower bed mounds to 0.37), so
-//   the water shows between them;
+// - the water shows in 'water' only (lane F's visibility sweep above): one tube (the final review's
+//   third finding: at the town's closest four beads read as a chain of beads), 36 to 48 triangles on
+//   the 'paint' of her props, closed (each of its edges on two faces), every ring of it 0.07 or more
+//   across its flats, narrowing ring by ring from the rose down, bowing ahead (not a straight rod) and
+//   paler at its top; from inside the can's rose (its top ring's middle within the rose's flare), each
+//   ring lower than the last and ahead of it, the lowest 0.15 or more under the rose; nothing of the
+//   can hangs under 0.45 (the town's flower bed mounds to 0.37), so the water shows between them;
 // - her hair: what shows of it in front of the middle of her head is as it was (a fingerprint of its
 //   vertices and colours there: her face's framing is her likeness), and each of the four locks down her
 //   back winds across the mass as it falls (0.15 or more of travel from side to side beyond its own
@@ -4916,12 +4949,61 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(props.cup.visible && props.saucer.visible && Math.abs(foot.x - rest[0]) < 1e-9 && Math.abs(foot.y - rest[1]) < 1e-9 && Math.abs(foot.z - rest[2]) < 1e-9 && Math.abs(turn - rest[3]) < 1e-9, `In '${name}' her set-down cup and saucer are not where \`rest\` puts them.`);
     assert(grip(props.cup, [0.058, -0.037, 0]).distanceTo(grip(props.saucer, [0, 0.036, 0])) < 5e-3, `In '${name}' her set-down cup is off its saucer's well.`);
   }
-  // The water.
+  // The water: one closed tube, narrowing from the rose, bowed, paler at its top (as built: the
+  // whole stream, its rest).
+  {
+    const tube = props.water.children.find((m) => m.isMesh),
+      rest = props.water.userData.rest,
+      ring = props.water.userData.ring,
+      c = tube.geometry.attributes.color,
+      n = rest.length / 3,
+      at = (i) => new T.Vector3(rest[i * 3], rest[i * 3 + 1], rest[i * 3 + 2]),
+      key = (i) => [rest[i * 3], rest[i * 3 + 1], rest[i * 3 + 2]].map((x) => x.toFixed(5)).join(','),
+      edges = new Map();
+    assert(props.water.children.filter((m) => m.isMesh).length === 1 && tube.material.userData.surfaceKind === 'paint' && n / 3 >= 36 && n / 3 <= 48, `Her water is not one tube of 36 to 48 triangles on her props' paint (${n / 3}).`);
+    for (let i = 0; i < n; i += 3)
+      for (const [a, b] of [[i, i + 1], [i + 1, i + 2], [i + 2, i]]) {
+        const e = [key(a), key(b)].sort().join('|');
+        edges.set(e, (edges.get(e) ?? 0) + 1);
+      }
+    assert([...edges.values()].every((k) => k === 2), 'Her water is not a closed tube: an edge of it is on one face only, or on three.');
+    // Each ring's corners (off the line: the round ends' points lie on it), its middle on the line,
+    // its radius and its flats (twice the way from its middle to the middle of each of its sides).
+    const rings = ALISON_STREAM.rings.map((d, k) => {
+      const pts = new Map();
+      for (let i = 0; i < n; i++) if (ring[i] === k && Math.abs(rest[i * 3]) > 0.01) pts.set(key(i), at(i));
+      const mid = new T.Vector3(...herStream.streamAt(d)),
+        corners = [...pts.values()],
+        radius = corners.reduce((sum, p) => sum + p.distanceTo(mid), 0) / corners.length;
+      let flats = Infinity;
+      for (const a of corners) {
+        const b = corners.filter((p) => p !== a).sort((p, q) => p.distanceTo(a) - q.distanceTo(a))[0];
+        flats = Math.min(flats, 2 * a.clone().add(b).multiplyScalar(0.5).distanceTo(mid));
+      }
+      return { mid, corners, radius, flats };
+    });
+    const shade = (k) => {
+        let count = 0,
+          sum = 0;
+        for (let i = 0; i < n; i++)
+          if (ring[i] === k) {
+            sum += c.getX(i) + c.getY(i) + c.getZ(i);
+            count++;
+          }
+        return sum / count;
+      },
+      chord = rings.at(-1).mid.clone().sub(rings[0].mid).normalize(),
+      bowed = Math.max(...rings.slice(1, -1).map((r) => {
+        const o = r.mid.clone().sub(rings[0].mid);
+        return o.sub(chord.clone().multiplyScalar(o.dot(chord))).length();
+      }));
+    assert(rings.every((r) => r.corners.length === ALISON_STREAM.sides && r.flats >= 0.07 - 1e-4), `A ring of her water is under 0.07 across its flats (${rings.map((r) => r.flats.toFixed(4)).join(', ')}).`);
+    assert(rings.every((r, k) => !k || r.radius < rings[k - 1].radius - 1e-4), `Her water does not narrow from the rose down (${rings.map((r) => r.radius.toFixed(4)).join(', ')}).`);
+    assert(bowed >= 0.01, `Her water runs straight as a rod (it bows ${bowed.toFixed(4)} off the line from its top to its foot).`);
+    assert(shade(0) > shade(ALISON_STREAM.rings.length - 1) * 1.05, 'Her water is not paler at its top.');
+  }
   let canLow = Infinity,
     streamWorst = Infinity;
-  const beads = props.water.children[0],
-    count = beads.geometry.attributes.position.count / ALISON_STREAM.count;
-  assert(Number.isInteger(count), 'The water is not ALISON_STREAM.count beads alike.');
   for (let s = 0; s < 24; s++) {
     pose('water', s / 24);
     props.can.traverse((m) => {
@@ -4929,24 +5011,19 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       const q = m.geometry.attributes.position;
       for (let i = 0; i < q.count; i++) canLow = Math.min(canLow, v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld).y);
     });
-    const q = beads.geometry.attributes.position,
-      centres = Array.from({ length: ALISON_STREAM.count }, (_, k) => {
-        const c = new T.Vector3();
-        for (let i = k * count; i < (k + 1) * count; i++) c.add(v.fromBufferAttribute(q, i).applyMatrix4(beads.matrixWorld));
-        return c.divideScalar(count);
-      }),
+    const centres = alisonStream(props.water).middles,
       // The rose's middle (the can's far end) and the spout's way into it.
       rose = grip(props.can, [0, 0.004, 0.141 + 0.195]),
       spout = grip(props.can, [0, -0.012, 0.141 + 0.165]),
       axis = rose.clone().sub(spout).normalize(),
       first = centres[0].clone().sub(rose),
       ahead = (a, b) => (b.x - a.x) * axis.x + (b.z - a.z) * axis.z;
-    // The first inside the rose's flare (behind its mouth, within 0.03 of its axis), then each lower and further on.
+    // The top ring's middle inside the rose's flare (behind its mouth, within 0.03 of its axis), then each lower and further on.
     const along = first.dot(axis),
       off = first.clone().addScaledVector(axis, -along).length();
     let ok = along < 0 && along > -0.06 && off < 0.03;
     for (let k = 1; k < centres.length; k++) ok &&= centres[k].y < centres[k - 1].y - 0.05 && ahead(centres[k - 1], centres[k]) > 0;
-    assert(ok, `At phase ${(s / 24).toFixed(2)} the water does not fall from inside the can's rose, bead by bead.`);
+    assert(ok, `At phase ${(s / 24).toFixed(2)} the water does not fall from inside the can's rose, ring by ring.`);
     streamWorst = Math.min(streamWorst, rose.y - centres.at(-1).y);
   }
   assert(canLow >= 0.45 && streamWorst >= 0.15, `Watering, the can hangs down to ${canLow.toFixed(3)} and the water falls only ${streamWorst.toFixed(3)} under its rose.`);
@@ -5001,12 +5078,12 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 // - the can's tubes (its handle and its spout) face out the way their normals do (drawn one-sided,
 //   an inward tube shows its far wall and lets what is inside it show through);
 // - the water: shown only while some of it is out of the rose (`front` over 0) and not all of it
-//   down in the bed (`tail` under 1); its first bead never moves as the stream comes; coming, the
-//   beads go down the line in order, the lowest one with the front (gathering pace: its first step
-//   a tenth of an even one's) and none past its own place, all of them at their places at the front's
-//   full length; going, the beads keep their order, the
+//   down in the bed (`tail` under 1); its tube's rings each move as one, along its line; its top ring
+//   never moves as the stream comes; coming, the rings go down the line in order, the lowest one with
+//   the front (gathering pace: its first step a tenth of an even one's) and none past its own place,
+//   all of them at their places at the front's full length; going, the rings keep their order, the
 //   top one leaves first and none is above the tail, all of them at the end `sink` past the last
-//   bead's place; and a small change of either moves no bead more than in proportion.
+//   ring's place; and a small change of either moves no ring more than in proportion.
 {
   const { createAlison, poseAlison, alisonHand, ALISON_HOLDS, ALISON_STREAM, ALISON_KERB } = await load('sky-figure'),
     { createCityMaterials } = await load('city-materials'),
@@ -5087,18 +5164,10 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   }
   // The water, as its front comes down and its tail goes after it (in her frame, along its own line).
   const S = ALISON_STREAM,
-    last = (S.count - 1) * S.gap,
-    beadMesh = props.water.children.find((m) => m.isMesh),
-    per = beadMesh.geometry.attributes.position.count / S.count,
-    // Each bead's distance down the line from where the first sits when the stream is whole.
-    along = () => {
-      const q = beadMesh.geometry.attributes.position;
-      return Array.from({ length: S.count }, (_, k) => {
-        let y = 0;
-        for (let i = k * per; i < (k + 1) * per; i++) y += q.getY(i);
-        return -y / per;
-      });
-    };
+    last = S.rings.at(-1),
+    // Each ring's place down the line from where the top one sits when the stream is whole (each
+    // ring moving as one, along the line).
+    along = () => alisonStream(props.water).places;
   let moved = 0;
   for (const [front, tail] of [[0, 0], [1, 1], [0.6, 1]]) {
     pose('water', 0.2, { front, tail });
@@ -5109,24 +5178,24 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     const front = k / 40;
     pose('water', 0.2, { front, tail: 0 });
     const at = along();
-    assert(props.water.visible && Math.abs(at[0]) < 1e-6 && at.every((d, i) => d <= i * S.gap + 1e-6 && (!i || d >= at[i - 1] - 1e-6)) && at.at(-1) > (before ? before.at(-1) : 0), `Coming (front ${front}), the beads are at ${at.map((d) => d.toFixed(3)).join(', ')} down the line.`);
+    assert(props.water.visible && Math.abs(at[0]) < 1e-6 && at.every((d, i) => d <= S.rings[i] + 1e-6 && (!i || d >= at[i - 1] - 1e-6)) && at.at(-1) > (before ? before.at(-1) : 0), `Coming (front ${front}), the rings are at ${at.map((d) => d.toFixed(3)).join(', ')} down the line.`);
     if (before) moved = Math.max(moved, ...at.map((d, i) => Math.abs(d - before[i])));
     // Its first steps are short: the stream gathers pace, so its first frames stay in the rose.
     if (k === 1) assert(at.at(-1) < (last / 40) * 0.1, `The water's front comes ${at.at(-1).toFixed(4)} out at once.`);
     before = at;
   }
-  assert(before.every((d, i) => Math.abs(d - i * S.gap) < 1e-6), 'The whole stream is not each bead at its own place.');
+  assert(before.every((d, i) => Math.abs(d - S.rings[i]) < 1e-6), 'The whole stream is not each ring at its own place.');
   for (let k = 1; k < 40; k++) {
     const tail = k / 40;
     pose('water', 0.2, { front: 1, tail });
     const at = along(),
       top = tail * (last + S.sink);
-    assert(props.water.visible && at.every((d, i) => d >= top - 1e-6 && d >= i * S.gap - 1e-6 && (!i || d >= at[i - 1] - 1e-6)) && at[0] > 0 === tail > 0, `Going (tail ${tail}), the beads are at ${at.map((d) => d.toFixed(3)).join(', ')} down the line.`);
+    assert(props.water.visible && at.every((d, i) => d >= top - 1e-6 && d >= S.rings[i] - 1e-6 && (!i || d >= at[i - 1] - 1e-6)) && at[0] > 0 === tail > 0, `Going (tail ${tail}), the rings are at ${at.map((d) => d.toFixed(3)).join(', ')} down the line.`);
     moved = Math.max(moved, ...at.map((d, i) => Math.abs(d - before[i])));
     before = at;
   }
-  assert(before.every((d) => Math.abs(d - (39 / 40) * (last + S.sink)) < 1e-6), 'At its end the stream has not gone on down the line past its last bead.');
-  assert(moved <= ((last + S.sink) / 40) * 1.001 && moved >= (last / 40) * 1.5, `A step of a fortieth moves a bead ${moved.toFixed(4)} down the line.`);
+  assert(before.every((d) => Math.abs(d - (39 / 40) * (last + S.sink)) < 1e-6), 'At its end the stream has not gone on down the line past its last ring.');
+  assert(moved <= ((last + S.sink) / 40) * 1.001 && moved >= (last / 40) * 1.5, `A step of a fortieth moves a ring ${moved.toFixed(4)} down the line.`);
   pose('stand', 0);
 }
 // The Wellington statue as built (before batching, at its own origin): the bronze stands on its
@@ -8601,29 +8670,22 @@ let skyReport = '';
       assert(canGap >= 0.013, `Watering, her can clears the border by only ${fmt3(canGap)}.`);
       skyReport += `; Alison's day ${D.period} s (tea, the two borders, the telescope; ${(lawn * dt).toFixed(1)} s of it walking on the lawn by her chair), her hair ${fmt3(chairGap)} clear of her chair's back, her can ${fmt3(canGap)} over the borders`;
 
-      // What can hide her water: her can and the borders' beds; and how many of its beads' points
+      // What can hide her water: her can and the borders' beds; and how many of its tube's points
       // could be seen as it is posed now (rays from eight bearings at the file's pitch, the town's
-      // and a high one, at each bead's points: those that meet nothing of the can or the beds first).
+      // and a high one, at each of its corners: those that meet nothing of the can or the beds first).
       const hiders = [],
         looks = [],
         ray = new T.Raycaster();
       for (const g of [held.can, ...beds.map((b) => b.group)]) g.traverse((o) => o.isMesh && hiders.push(o));
       for (const pitch of [SKY_PITCH, Math.atan2(35, 38), 1.2]) for (let k = 0; k < 8; k++) looks.push(new T.Vector3(-Math.sin((k * Math.PI) / 4) * Math.cos(pitch), -Math.sin(pitch), -Math.cos((k * Math.PI) / 4) * Math.cos(pitch)));
       const waterSeen = () => {
-        const bead = held.water.children.find((m) => m.isMesh),
-          q = bead.geometry.attributes.position,
-          per = q.count / 4,
-          middle = new T.Vector3();
-        let count = 0;
         her.updateMatrixWorld(true);
-        for (let k = 0; k < 4; k++) {
-          middle.set(0, 0, 0);
-          for (let i = k * per; i < (k + 1) * per; i++) middle.add(v.fromBufferAttribute(q, i).applyMatrix4(bead.matrixWorld));
-          middle.divideScalar(per);
-          for (let i = k * per; i < (k + 1) * per; i += 3) {
-            const p = v.fromBufferAttribute(q, i).applyMatrix4(bead.matrixWorld).clone().lerp(middle, 0.03);
-            if (looks.some((d) => (ray.set(p.clone().addScaledVector(d, -4), d), (ray.far = 4 - 1e-4), !ray.intersectObjects(hiders, false).length))) count++;
-          }
+        const { middles, corners } = alisonStream(held.water);
+        let count = 0;
+        for (const { p, k } of corners()) {
+          // (A hair in from the surface, toward its ring's middle.)
+          const q = p.clone().lerp(middles[k], 0.03);
+          if (looks.some((d) => (ray.set(q.clone().addScaledVector(d, -4), d), (ray.far = 4 - 1e-4), !ray.intersectObjects(hiders, false).length))) count++;
         }
         return count;
       };
@@ -8634,11 +8696,11 @@ let skyReport = '';
       // on past its wrap,
       // - her root never moves more than 0.015 in a frame;
       // - her body, her legs, her arms and her props (each part's own points, where they show, the
-      //   water's beads among them) never jump more than 0.025 in a frame, anywhere in her day;
+      //   water's tube among them) never jump more than 0.025 in a frame, anywhere in her day;
       // - nothing of hers comes or goes where it could be seen: her can, her cup and her saucer always
       //   show, and the water's flag changes only while nothing of it can be seen from any side (at the
       //   frame it shows, rays from eight bearings at the file's pitch, the town's and a high one at
-      //   each of its beads' points meet the can or the border's bed first: it is inside the can's
+      //   each of its tube's corners meet the can or the border's bed first: it is inside the can's
       //   rose, or down in the bed);
       // - getting up (SKY_TEA.rise to the end of its 'rise') and sitting down she comes out of her
       //   chair and goes back into it in no less than 0.8 s, and her cup and saucer stand on the
@@ -8775,24 +8837,16 @@ let skyReport = '';
             a.pts.forEach((p, i) => p && b.pts[i] && (most = Math.max(most, p.distanceTo(b.pts[i]))));
             return { root: a.root.distanceTo(b.root), parts: most, shown: a.pts.every((p, i) => (i >= waterAt[0] && i < waterAt[1]) || !p === !b.pts[i]) };
           },
-          // Where her water is while it shows: 'rose' while all its beads are still within 0.004 of the
-          // first one's place inside the can's rose (rays from every side see nothing of them there:
-          // the can's rose hides them), 'bed' once each bead is down under the border's top, between,
-          // null. Its flag may change only with it in the rose or in the bed.
+          // Where her water is while it shows: 'rose' while all its rings are still within 0.004 of the
+          // top one's place inside the can's rose (rays from every side see nothing of it there: the
+          // can's rose hides it), 'bed' once every corner of it is down under the border's top,
+          // between, null. Its flag may change only with it in the rose or in the bed.
           waterTuck = () => {
             if (!held.water.visible) return 'hidden';
             her.updateMatrixWorld(true);
-            const bead = held.water.children.find((m) => m.isMesh),
-              q = bead.geometry.attributes.position,
-              per = q.count / 4,
-              middles = [0, 1, 2, 3].map((k) => {
-                const c = new T.Vector3();
-                for (let i = k * per; i < (k + 1) * per; i++) c.add(v.fromBufferAttribute(q, i));
-                return c.divideScalar(per);
-              });
-            if (middles.every((c) => c.length() < 0.004)) return 'rose';
-            const world = middles.map((c) => c.clone().applyMatrix4(bead.matrixWorld));
-            return world.every((c) => beds.some((bed) => c.y + 0.042 < bed.height(c.x, c.z))) ? 'bed' : null;
+            const { places, corners } = alisonStream(held.water);
+            if (places.every((d) => d < 0.004)) return 'rose';
+            return corners().every(({ p }) => beds.some((bed) => p.y < bed.height(p.x, p.z))) ? 'bed' : null;
           },
           // Each sole's gap over the lawn under it.
           soles = () =>
