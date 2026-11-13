@@ -94,9 +94,11 @@ export const SKY_GARDEN_FAMILY: Record<keyof typeof SKY_GARDEN_LOOK, string> = {
  * How much darker the clouds, the puffs and the falls go at full night, as the balloon does
  * (town-movers' BALLOON_NIGHT_DIM): they are lit like the town, but they are the pale, round things
  * that hang unshadowed over the dark sea, and under the moon they would read as bright as by day.
- * No glow.
+ * They keep 0.7 of their daylight: dimmed by half (the balloon's), they sank to the lawn's own
+ * darkness and read as storm clouds; at 0.7 they stay a little paler than the lawn, calm against
+ * the night sea. No glow.
  */
-export const SKY_NIGHT_DIM = 0.5;
+export const SKY_NIGHT_DIM = 0.3;
 
 /**
  * A fall, in its own frame: the origin is the rim point it leaves (the outer edge of the deck's

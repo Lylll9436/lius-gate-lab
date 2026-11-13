@@ -7003,6 +7003,9 @@ let skyReport = '';
       const pale = gardenMoving.filter((e) => /^sky-(fall|cloud)-/.test(e.object.name)).flatMap((e) => e.object.children.filter((c) => c.isMesh)),
         others = [];
       sky.root.traverse((o) => o.isMesh && !pale.includes(o) && !globes.includes(o) && o.parent !== sky.rock && others.push(o));
+      // (They keep 0.6 to 0.7 of their daylight: dimmed by half, the balloon's, they sank to the lawn's
+      // own darkness at night and read as storm clouds; undimmed, they would hang lit over the sea.)
+      assert(SKY_NIGHT_DIM >= 0.3 && SKY_NIGHT_DIM <= 0.4, `The falls, puffs and clouds keep ${1 - SKY_NIGHT_DIM} of their daylight at night.`);
       for (const e of gardenMoving) e.update(5, 1, 0);
       assert(new Set(pale.map((m) => m.material)).size === 1 && pale.length === 2 * 2 + plan.SKY_CLOUDS.length, 'The falls, puffs and clouds do not share one material of the garden kit\'s own.');
       for (const m of pale) assert(Math.abs(m.material.color.r - (1 - SKY_NIGHT_DIM)) < 1e-9 && m.material.color.r === m.material.color.b && m.material.emissive.getHex() === 0 && !others.some((o) => o.material === m.material), 'A fall, a puff or a cloud stays bright at night, glows, or shares its material.');
