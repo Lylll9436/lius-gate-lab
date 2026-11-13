@@ -5262,6 +5262,22 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(reach > 1.1 && reach < 1.45 && Math.abs(low + F.drop + FALL.puffSink) < 0.03 && Math.abs(top - puffTop) < 0.06, `The puff reaches ${reach.toFixed(2)} out, ${(-F.drop - low).toFixed(2)} down and ${(top + F.drop).toFixed(2)} up.`);
     const foot = G.fallSection(F, F.top.y + F.drop);
     assert(Math.hypot(foot.a, FALL.core.y + 0.15) < FALL.core.r && low > -F.drop - 1, 'The sheet\'s foot is not inside the puff\'s core, or water falls on toward the sea.');
+    // Falling water, not a glass strap with rivets (the final art review): the sheet's section rolls
+    // softly round to its edges (a superellipse of 3 or under); its lumps are long streaks (each at
+    // least twice as long down the fall as it is wide); and its paint is streaked down the sheet: on
+    // each of the upper rings its edges are paler than the middle of its faces, and its face columns
+    // part into paler and deeper streaks (the palest a tenth or more over the deepest).
+    {
+      assert(G.FALL_OVAL <= 3 && G.FALL_LUMPS.every((l) => l.r[1] >= 2 * l.r[0] * F.a), 'The fall is a crisp strap, or its lumps are round rivets, not long streaks.');
+      for (const ring of rings.slice(0, 3)) {
+        const half = Math.max(...ring.list.map((q) => Math.abs(q.p.x))),
+          lumOf = (q) => luminance(new T.Color().fromBufferAttribute(colour, q.i)),
+          edges = ring.list.filter((q) => Math.abs(q.p.x) > 0.9 * half).map(lumOf),
+          faces = ring.list.filter((q) => Math.abs(q.p.x) < 0.8 * half).map(lumOf),
+          mean = (list) => list.reduce((s, x) => s + x, 0) / list.length;
+        assert(mean(edges) > 1.05 * mean(faces) && Math.max(...faces) > 1.1 * Math.min(...faces), `The fall's water is not streaked at y ${ring.y.toFixed(2)} (its edges ${mean(edges).toFixed(3)}, its faces ${Math.min(...faces).toFixed(3)} to ${Math.max(...faces).toFixed(3)}).`);
+      }
+    }
     // The lumps: foam white, `count` clusters alike, a spacing apart down the lean.
     const lumpColour = lumps.geometry.getAttribute('color');
     for (let i = 0; i < lumpColour.count; i++) assert(Math.abs(luminance(new T.Color().fromBufferAttribute(lumpColour, i)) - luminance(new T.Color(LOOK.foam))) < 1e-3, 'A lump is not foam white.');

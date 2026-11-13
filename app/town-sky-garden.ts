@@ -134,8 +134,8 @@ export const FALL = {
   notch: { half: 0.42, ramp: 0.22, floor: -0.06 },
   lip: 0.16,
   recess: { depth: 0.052, flat: 0.45, edge: 0.75 },
-  hide: [0.9, 1.45] as [number, number],
-  pitch: 1.04,
+  hide: [1.15, 1.7] as [number, number],
+  pitch: 0.9,
   period: 2.2,
   phase: 0.35,
   puff: 1.3,
@@ -144,23 +144,32 @@ export const FALL = {
   core: { r: 0.8, y: 0.05 },
 };
 /**
- * A cluster of lumps: low swells of white water riding down the sheet's channel, broader than tall.
- * Each is an ellipsoid sunk in the channel's floor on a face of the sheet (`side` 1 the face to the
- * sea, -1 the one to the rock) until only its crown stands `proud`, so it meets the water at a
- * shallow angle (a pill stuck on the water reads as a rivet): its middle `x` across (in half-widths
- * of the sheet under the lip) and `y` over the cluster's own origin, its radii across (in those
- * half-widths), up and out. All of it lies within the channel's flat floor (`x` and its radius
- * within FALL.recess.flat), so it never reaches the sheet's edges. A big one and a small one a face,
- * set off from one another, so the fall reads from either side and no cluster is a ring.
+ * A cluster of lumps: long, low streaks of white water riding down the sheet's channel, about twice
+ * as long down the fall as they are wide (the art review: the round swells read as rivets on a glass
+ * strap at zoom 3 to 4), long enough that a cluster nearly reaches the next. Each is an ellipsoid sunk in the channel's floor on a face of the sheet
+ * (`side` 1 the face to the sea, -1 the one to the rock) until only its crown stands `proud`, so it
+ * meets the water at a shallow angle (a pill stuck on the water reads as a rivet): its middle `x`
+ * across (in half-widths of the sheet under the lip) and `y` over the cluster's own origin, its radii
+ * across (in those half-widths), up and out. All of it lies within the channel's flat floor (`x` and
+ * its radius within FALL.recess.flat), so it never reaches the sheet's edges. A big one and a small
+ * one a face, set off from one another to either side of the middle, so the fall reads from either
+ * side, no cluster is a ring and the streaks of one cluster are staggered.
  */
 export const FALL_LUMPS = [
-  { side: 1, x: -0.03, y: 0, r: [0.41, 0.15, 0.05], proud: 0.032 },
-  { side: 1, x: 0.2, y: -0.27, r: [0.24, 0.1, 0.045], proud: 0.026 },
-  { side: -1, x: 0.03, y: -0.04, r: [0.41, 0.15, 0.05], proud: 0.032 },
-  { side: -1, x: -0.2, y: -0.3, r: [0.24, 0.1, 0.045], proud: 0.026 },
+  { side: 1, x: -0.2, y: 0, r: [0.17, 0.3, 0.04], proud: 0.02 },
+  { side: 1, x: 0.22, y: -0.28, r: [0.14, 0.22, 0.035], proud: 0.016 },
+  { side: -1, x: 0.2, y: -0.05, r: [0.17, 0.3, 0.04], proud: 0.02 },
+  { side: -1, x: -0.22, y: -0.3, r: [0.14, 0.22, 0.035], proud: 0.016 },
 ] as const;
-/** The exponent of the sheet's section (a superellipse): flat faces, softly rounded edges. */
-export const FALL_OVAL = 4;
+/** The exponent of the sheet's section (a superellipse): broad faces rolling softly round to its edges (at 4 the edges were crisp, a strap's). */
+export const FALL_OVAL = 2.5;
+/**
+ * The sheet's streaks, down its columns (waterGeometry): white water at its two edges (`edge`, how
+ * far toward the foam), and on its faces about `share` of the columns in a paler streak (`pale`,
+ * from, to) or a deeper one (`deep`, from, to) by the fall's seed; all of them fade out down the
+ * fall into the foam at its foot. Static paint on the vertices: nothing scrolls, so nothing crawls.
+ */
+export const FALL_STREAKS = { edge: 0.55, share: 0.5, pale: [0.3, 0.55] as [number, number], deep: [0.12, 0.25] as [number, number] };
 /**
  * A fall's measures for a drop, a width and a `rise` (how much higher the lawn is over the stream's
  * head than at the rim): the sheet's half-width and half-depth under the lip; the stream's middle
@@ -610,7 +619,8 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
    * fallFace), swept along the stream's middle line under the lawn's edge, round the lip's short turn
    * and straight down the sheet's lean to its foot in the puff. Its paint is on its vertices: the
    * stream's muted turquoise paling to the water's edge at the lip, then down the fall from the water
-   * to foam white at the puff, with a few faint streaks of deeper water down it, so nothing scrolls
+   * to foam white at the puff, streaked down its columns (FALL_STREAKS: white water at its edges, paler
+   * and deeper streaks on its faces, fading into the foam at its foot), so nothing scrolls
    * and nothing can crawl.
    */
   function waterGeometry(F: FallLayout, seed: number) {
@@ -652,16 +662,27 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
       index: number[] = [],
       c = new T.Color(),
       deep = new T.Color(L.stream),
+      white = new T.Color(L.foam),
       channel = 0.22,
-      streaks = COLUMNS.map((_, i) => (hash(seed * 7.7 + i * 3.3) > 0.62 ? 0.18 + 0.14 * hash(seed * 1.9 + i * 5.1) : 0));
+      K = FALL_STREAKS,
+      // Each column's streak: white water at the edges; on the faces a paler streak (over 0) or a
+      // deeper one (under 0) for a share of the columns, by the fall's seed.
+      streaks = COLUMNS.map(([u], i) => {
+        if (Math.abs(u) >= 0.95) return K.edge;
+        const h = hash(seed * 7.7 + i * 3.3),
+          k = hash(seed * 1.9 + i * 5.1);
+        return h < K.share / 2 ? lerp(K.pale[0], K.pale[1], k) : h < K.share ? -lerp(K.deep[0], K.deep[1], k) : 0;
+      });
     for (const s of stations)
       COLUMNS.forEach(([u, side], i) => {
         // Across the face: the oval's own face (the stream's flat one) less the sheet's channel.
         const w = side * (s.e === FALL_OVAL ? fallFace(s, u) : s.b * (1 - Math.abs(u) ** s.e) ** (1 / s.e));
         pos.push(u * s.a, s.y + w * s.ny, s.z + w * s.nz);
         s.tone(c);
-        // Deeper water down the channel the lumps ride in, so their foam shows white against it.
-        c.lerp(deep, Math.max(streaks[i], channel * (s.recess / FALL.recess.depth) * (1 - T.MathUtils.smoothstep(Math.abs(u), FALL.recess.flat, FALL.recess.edge))) * s.streak);
+        // Deeper water down the channel the lumps ride in, so their foam shows white against it, and
+        // the column's own streak, paler or deeper, fading out into the foam down the fall.
+        c.lerp(deep, Math.max(-streaks[i], channel * (s.recess / FALL.recess.depth) * (1 - T.MathUtils.smoothstep(Math.abs(u), FALL.recess.flat, FALL.recess.edge))) * s.streak);
+        if (streaks[i] > 0) c.lerp(white, streaks[i] * s.streak);
         col.push(c.r, c.g, c.b);
       });
     // The ring runs from the flow's right over its top to its left, so these faces look out.
