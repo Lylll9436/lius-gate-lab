@@ -33,9 +33,11 @@ export const ALISON_LOOK = {
   eyes: '#2b2622',
   pendant: '#ece4d3',
   // The watering can: pale galvanised zinc, so it reads against her black top and the border's
-  // greens (a mid grey was lost against both); the water it pours, a pale blue.
+  // greens (a mid grey was lost against both); the water it pours, a pale blue, paler where it
+  // leaves the rose.
   zinc: '#c9ccc8',
   water: '#9fd3df',
+  waterTop: '#c6e6ec',
   china: '#efeae0',
   chinaBand: '#8ea2b4',
   tea: '#a07a58',
@@ -624,17 +626,33 @@ const ROSE: V3 = [0, 0.004, DRUM + 0.195];
 /** The spout's last stretch, into the rose, in the can's frame: from here to ROSE is the way the water leaves. */
 const SPOUT: V3 = [0, -0.012, DRUM + 0.165];
 /**
- * The water she pours: `count` pale beads of radius `r` (twenty-faced, so 0.0715 across their box
- * the narrowest way, never under the 0.07 a part needs), `gap` apart down a straight stream from
- * inside the rose (`inset` back along the spout from its middle, where the first bead sits in the
- * rose's flare, wholly inside it) to the bed, falling `lead` forward for each unit it drops, as
- * water leaving a spout does. It comes and goes along that line, never in a frame (poseAlison's
- * `front` and `tail`): starting, the beads come out of the rose one behind another, the front of the
- * stream carrying those still to come, until each is at its place; stopping, its top leaves the rose
- * and falls on down the line, gathering the beads below it, `sink` past the last bead's place, which
- * is down in the bed (the kerb and the mound under the rose), out of sight.
+ * The water she pours: one smooth tube (`sides` round) from inside the rose (`inset` back along the
+ * spout from its middle, where its top sits in the rose's flare, wholly inside it) down to the bed,
+ * through rings at `rings` (their places down its line, the last its length). The line falls `lead`
+ * forward for each unit it drops, as water leaving a spout does, and bows ahead near its top (`bow`
+ * at most, a third of the way down: it leaves the rose going forward before it falls; the bow comes
+ * in gently from the rose, so a ring leaving it never darts ahead). It is thicker at the rose (its radius
+ * `r`, the top ring's to the last's, six-sided: the last 0.071 across its flats, never under the 0.07
+ * a part needs) and a paler blue at its top (ALISON_LOOK's waterTop to water), and closed at both
+ * ends by a round end (`cap`: the top's, inside the rose while the stream runs, and the foot's). At
+ * the town's closest a chain of four beads read as beads, and a straight even tube would read as a
+ * blue rod. It comes and goes along its line, never in a frame (poseAlison's `front` and `tail`):
+ * starting, its rings come out of the rose one behind another, the front of the stream carrying
+ * those still to come, until each is at its place; stopping, its top leaves the rose and falls on
+ * down the line, gathering the rings below it, `sink` past the last ring's place, which is down in
+ * the bed (the kerb and the mound under the rose), out of sight. Gathered, the rings of either end
+ * fold into the rose or the bed.
  */
-export const ALISON_STREAM = { count: 4, r: 0.042, gap: 0.075, inset: 0.03, lead: 0.3, sink: 0.4 };
+export const ALISON_STREAM = { rings: [0, 0.075, 0.15, 0.225], r: [0.05, 0.041], sides: 6, cap: [0.04, 0.04], bow: 0.03, inset: 0.03, lead: 0.3, sink: 0.4 };
+/**
+ * The stream's line, in its own frame (its origin its top ring's middle, falling along its -y, its
+ * +z ahead): the point `d` down it, bowed ahead near the top (`bow` a third of the way down) and
+ * straight on down from its last ring.
+ */
+export function streamAt(d: number): V3 {
+  const u = d / ALISON_STREAM.rings[ALISON_STREAM.rings.length - 1];
+  return [0, -d, u > 0 && u < 1 ? 6.75 * ALISON_STREAM.bow * u * (1 - u) ** 2 : 0];
+}
 /** The can's foot (the middle of its drum's base, where it stands) in the can's own frame: its handle's grip is the can's origin. */
 export const CAN_FOOT: V3 = [0, -0.09, DRUM];
 /**
@@ -675,22 +693,79 @@ function createProps(material: Material): AlisonProps {
       p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? L.chinaBand : L.china,
     ),
   ], material, 'paint', 'saucer');
-  // The water, its origin the first bead's middle, falling along its -y: each bead a round icosahedron
-  // (its normals the sphere's own, so it shades smooth at twenty faces), opaque.
-  const S = ALISON_STREAM,
-    bead = (k: number) => {
-      const g = new T.IcosahedronGeometry(1, 0),
-        p = g.getAttribute('position'),
-        n = g.getAttribute('normal');
-      for (let i = 0; i < p.count; i++) n.setXYZ(i, p.getX(i), p.getY(i), p.getZ(i));
-      return g.scale(S.r, S.r, S.r).translate(0, -k * S.gap, 0);
-    };
-  const stream = part(water, [paint(mergeBeads(Array.from({ length: S.count }, (_, k) => bead(k))), L.water)], material, 'paint', 'water-stream');
-  // The beads where the stream is whole, for poseAlison to move them from (the batched mesh that
-  // takes this one's place keeps its corners in the same order).
+  // The water, its origin its top ring's middle, falling along its -y (ahead along its +z), opaque.
+  const tube = streamGeometry(),
+    stream = part(water, [tube], material, 'paint', 'water-stream');
+  // The tube where the stream is whole, and the ring each corner goes with, for poseAlison to move
+  // them from (the batched mesh that takes this one's place keeps its corners in the same order).
   water.userData.rest = Float32Array.from(stream.geometry.getAttribute('position').array);
+  water.userData.ring = tube.userData.ring;
   for (const g of [can, cup, saucer, water]) g.visible = false;
   return { can, cup, saucer, water };
+}
+/**
+ * The water's tube as the stream runs whole (ALISON_STREAM), in its own frame: each ring square to
+ * the line there, its corners on smooth normals; a round end over the top ring and under the last
+ * (a fan to a point on the line, its normal the line's); the top ring and its end the paler blue,
+ * shading to the water's own by a third of the way down. Un-indexed, every face turned out, with the
+ * ring each corner goes with (the ends go with their rings) in its userData.
+ */
+function streamGeometry() {
+  const S = ALISON_STREAM,
+    n = S.rings.length - 1,
+    last = S.rings[n],
+    at = (d: number) => new T.Vector3(...streamAt(d)),
+    side = new T.Vector3(1, 0, 0),
+    pale = new T.Color(ALISON_LOOK.waterTop),
+    blue = new T.Color(ALISON_LOOK.water),
+    pos: number[] = [],
+    nor: number[] = [],
+    col: number[] = [],
+    ring: number[] = [];
+  // Each ring: its middle, the way the line runs there, its radius and its colour.
+  const rings = S.rings.map((d, k) => {
+    const along = at(S.rings[Math.min(n, k + 1)]).sub(at(S.rings[Math.max(0, k - 1)])).normalize(),
+      across = new T.Vector3().crossVectors(side, along).normalize();
+    return { c: at(d), along, across, r: S.r[0] + ((S.r[1] - S.r[0]) * d) / last, colour: pale.clone().lerp(blue, T.MathUtils.smoothstep(d / last, 0, 1 / 3)) };
+  });
+  const corner = (k: number, j: number) => {
+    const R = rings[k],
+      a = (j / S.sides) * Math.PI * 2,
+      out = side.clone().multiplyScalar(Math.cos(a)).addScaledVector(R.across, Math.sin(a));
+    return { p: R.c.clone().addScaledVector(out, R.r), n: out, colour: R.colour, k };
+  };
+  type Corner = ReturnType<typeof corner>;
+  const face = (A: Corner, B: Corner, C: Corner) => {
+    // Turned out, as its normals face.
+    const turn = B.p.clone().sub(A.p).cross(C.p.clone().sub(A.p)).dot(A.n.clone().add(B.n).add(C.n));
+    for (const q of turn < 0 ? [A, C, B] : [A, B, C]) {
+      pos.push(q.p.x, q.p.y, q.p.z);
+      nor.push(q.n.x, q.n.y, q.n.z);
+      col.push(q.colour.r, q.colour.g, q.colour.b);
+      ring.push(q.k);
+    }
+  };
+  for (let k = 0; k < n; k++)
+    for (let j = 0; j < S.sides; j++) {
+      const a = corner(k, j),
+        b = corner(k, j + 1),
+        c = corner(k + 1, j + 1),
+        d = corner(k + 1, j);
+      face(a, b, c);
+      face(a, c, d);
+    }
+  // The two round ends: a point on the line `cap` past each end ring, its normal along the line.
+  for (const [k, sign] of [[0, -1], [n, 1]] as const) {
+    const R = rings[k],
+      tip = { p: R.c.clone().addScaledVector(R.along, sign * S.cap[k ? 1 : 0]), n: R.along.clone().multiplyScalar(sign), colour: R.colour, k };
+    for (let j = 0; j < S.sides; j++) face(tip, corner(k, j), corner(k, j + 1));
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+  g.userData.ring = Uint8Array.from(ring);
+  return g;
 }
 /**
  * A tube of city-people's taper with its faces turned the way its normals point: taper winds them
@@ -705,23 +780,6 @@ function outward(geometry: T.BufferGeometry) {
     index.setX(i + 2, b);
   }
   return geometry;
-}
-/** Beads as one geometry (positions and normals: paint() adds the colours). */
-function mergeBeads(beads: T.BufferGeometry[]) {
-  const pos: number[] = [],
-    nor: number[] = [];
-  for (const g of beads) {
-    const p = g.getAttribute('position'),
-      n = g.getAttribute('normal');
-    for (let i = 0; i < p.count; i++) {
-      pos.push(p.getX(i), p.getY(i), p.getZ(i));
-      nor.push(n.getX(i), n.getY(i), n.getZ(i));
-    }
-  }
-  const out = new T.BufferGeometry();
-  out.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-  out.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
-  return out;
 }
 
 /**
@@ -940,14 +998,17 @@ const RISE = { lean: 0.16 };
  */
 export const ALISON_CARRY = { out: 0.2, elbow: 0.16, yaw: -0.06 };
 /**
- * The 'take' pose, bending to the can where it stands (a border's kerb, 0.32 over her feet) and up
- * again with it: at the bottom she stoops `lean` from the hips, her shoulders reaching `reach`, her
- * thighs forward and her knees bent by `knee` (her shins upright, so her hips go back over her
- * feet and her soles stay flat); she goes down over the phase's first `down` and up over its last,
- * her hand on the can's handle between, and on the way never more than `arm` from her shoulder (so
- * her arm is never quite straight: a two-bone solve turns fast as it straightens).
+ * The 'take' pose, bending to the can where it stands beside her (a border's kerb, 0.3 over her
+ * feet, at her -x side, its handle toward her hand) and up again with it: at the bottom she crouches,
+ * her knees bent by `knee` (her thighs forward, her shins upright, so her hips go back over her feet
+ * and her soles stay flat) and her back leaning only `lean` from the hips, her shoulders reaching
+ * `reach` (at F's 0.7 stoop her front locks hung through the can's handle); she goes down over the
+ * phase's first `down` and up over its last, her hand on the can's handle between, and on the way
+ * never more than `arm` from her shoulder (so her arm is never quite straight: a two-bone solve turns
+ * fast as it straightens); between her side and the handle her hand swings out to her side, `out`
+ * at the most, half way, so the can comes up wide of her hair.
  */
-const TAKE = { lean: 0.7, reach: [0.012, 0, 0.04] as V3, knee: 0.5, down: 0.42, arm: 0.2 };
+const TAKE = { lean: 0.55, reach: [0.012, 0, 0.04] as V3, knee: 1.1, down: 0.42, arm: 0.2, out: 0.05 };
 /** Hand k's place in her lap seated, and the way its elbow bends there ('sit'). */
 const LAP = (k: 0 | 1): [V3, V3] => [
   [(k ? 1 : -1) * 0.1, 0.42, 0.075],
@@ -1037,11 +1098,13 @@ function gripOf(at: [number, number, number, number], lift: number): V3 {
 }
 /**
  * The water from the can's rose: its line from inside the rose down the way the spout points,
- * falling as it goes, and its beads along it (ALISON_STREAM): each at its own place, but none past
- * the stream's `front` (0 to 1: from inside the rose to the last bead's place, gathering pace as the
- * square of it) nor above its `tail` (0 to 1: from the rose to `sink` past the last bead's place).
- * Shown only while some of it is out of the rose and not yet down in the bed. The beads move on the
- * batched mesh itself, which keeps the corners in the order createProps made them.
+ * falling as it goes and bowing ahead (ALISON_STREAM, streamAt; its frame's +z ahead, level, so the
+ * bow leans the spout's way), and its tube's rings along it: each at its own place, but none past
+ * the stream's `front` (0 to 1: from inside the rose to the last ring's place, gathering pace as the
+ * square of it) nor above its `tail` (0 to 1: from the rose to `sink` past the last ring's place),
+ * the rings beyond either gathered there, so its ends fold into the rose or the bed. Shown only
+ * while some of it is out of the rose and not yet down in the bed. The rings move on the batched
+ * mesh itself, which keeps the corners in the order createProps made them.
  */
 function pourWater(props: AlisonProps, front: number, tail: number) {
   const W = ALISON_STREAM,
@@ -1050,32 +1113,41 @@ function pourWater(props: AlisonProps, front: number, tail: number) {
   if (!water.visible) return;
   const along = new T.Vector3(...ROSE).sub(new T.Vector3(...SPOUT)).normalize(),
     out = along.clone().applyQuaternion(can.quaternion),
-    fall = new T.Vector3(out.x, 0, out.z).normalize().multiplyScalar(W.lead).setY(-1).normalize();
+    ahead = new T.Vector3(out.x, 0, out.z).normalize(),
+    up = ahead.clone().multiplyScalar(-W.lead).setY(1).normalize(),
+    fore = ahead.addScaledVector(up, -ahead.dot(up)).normalize();
   water.position.set(...ROSE).addScaledVector(along, -W.inset).applyQuaternion(can.quaternion).add(can.position);
-  water.quaternion.setFromUnitVectors(new T.Vector3(0, -1, 0), fall);
+  water.quaternion.setFromRotationMatrix(basis.makeBasis(new T.Vector3().crossVectors(up, fore), up, fore));
   const mesh = water.children.find((c): c is T.Mesh => c instanceof T.Mesh),
     rest = water.userData.rest as Float32Array | undefined,
-    last = (W.count - 1) * W.gap,
+    ring = water.userData.ring as Uint8Array | undefined,
+    last = W.rings[W.rings.length - 1],
     // (The front gathers pace as it comes, as water leaving a spout does: its first frames stay in the rose.)
     f = front * front * last,
     g = tail * (last + W.sink);
-  if (!mesh || !rest) return;
+  if (!mesh || !rest || !ring) return;
   const at = mesh.geometry.getAttribute('position') as T.BufferAttribute,
     was = mesh.userData.stream as [number, number] | undefined;
-  if (at.count * 3 !== rest.length || (was && was[0] === f && was[1] === g)) return;
-  const per = at.count / W.count;
-  for (let k = 0; k < W.count; k++) {
-    // Its middle `place` down the line (the group's -y), so it moves up by its own place less that.
-    const own = k * W.gap,
-      place = Math.max(Math.min(own, f), g);
-    for (let i = k * per; i < (k + 1) * per; i++) at.setY(i, rest[i * 3 + 1] + own - place);
+  if (at.count * 3 !== rest.length || ring.length !== at.count || (was && was[0] === f && was[1] === g)) return;
+  // Each ring at its `place` down the line: its corners moved by where the line has that place less
+  // where it has the ring's own.
+  const moved = W.rings.map((own) => {
+    const place = Math.max(Math.min(own, f), g),
+      [, y0, z0] = streamAt(own),
+      [, y1, z1] = streamAt(place);
+    return [y1 - y0, z1 - z0];
+  });
+  for (let i = 0; i < at.count; i++) {
+    const [dy, dz] = moved[ring[i]];
+    at.setY(i, rest[i * 3 + 1] + dy);
+    at.setZ(i, rest[i * 3 + 2] + dz);
   }
   at.needsUpdate = true;
   mesh.geometry.computeBoundingSphere();
   mesh.userData.stream = [f, g];
 }
 /** Where the can stands for 'take' when no `can` is given: on a border's kerb in front of her, as at the west border. */
-export const ALISON_KERB: [number, number, number, number] = [0.01, 0.228, 0.315, 0.85];
+export const ALISON_KERB: [number, number, number, number] = [-0.259, 0.203, 0.181, -0.06];
 
 /**
  * Pose her for `name` at `phase` (0..1, looping), from nothing else: every joint and prop that any
@@ -1206,11 +1278,14 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       lift = -Math.min(soleOf(j.legs[0], j.knees[0]), soleOf(j.legs[1], j.knees[1]));
     }
   } else if (name === 'take') {
-    // Stooping to the can, her knees bending and her hips going back; at the bottom her -x hand is
-    // on its handle. Between her side and the handle her hand keeps low and out to her side (it
-    // comes out sideways first and rises last, so the can never swings up into her hair hanging in
-    // front of her as she leans), her arm reaching for it by a two-bone solve and settling at her
-    // side at the top.
+    // Crouching to the can beside her, her knees bending and her hips going back; at the bottom her
+    // -x hand is on its handle. Between her side and the handle her hand swings out a little to her
+    // side (TAKE.out) as it goes down and comes up, her arm reaching for it by a two-bone solve and
+    // settling at her side at the top, so the can comes up wide of the locks hanging in front of
+    // her shoulder (at F's deep stoop, the can in front of her, her front lock hung through its
+    // handle for 0.65 s each time). Standing where her day stands it, facing its own way less the
+    // carry's turn, the can comes up into her hand without turning; any other turn it has comes
+    // round to the carry's as she straightens.
     const at = opts.can ?? ALISON_KERB,
       bend = p <= 0.5 ? smooth(p, 0, TAKE.down) : 1 - smooth(p, 1 - TAKE.down, 1),
       crouch = (b: number) => {
@@ -1229,9 +1304,10 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       from = upright(side);
     lift = crouch(bend);
     const grip = gripOf(at, lift),
-      // How far from her side to the handle her hand has come: across first, then forward, then down;
-      // never further from her shoulder than her arm reaches with its elbow still soft.
-      to = new T.Vector3(mix(from[0], grip[0], smooth(bend, 0.5, 1)), mix(from[1], grip[1], smooth(bend, 0, 0.7)), mix(from[2], grip[2], smooth(bend, 0.15, 0.9))),
+      // How far from her side to the handle her hand has come: across first, then forward, then down,
+      // out to her side on the way; never further from her shoulder than her arm reaches with its
+      // elbow still soft.
+      to = new T.Vector3(mix(from[0], grip[0], smooth(bend, 0.5, 1)) - 4 * TAKE.out * bend * (1 - bend), mix(from[1], grip[1], smooth(bend, 0, 0.7)), mix(from[2], grip[2], smooth(bend, 0.15, 0.9))),
       shoulder = j.arms[0].position,
       off = to.clone().sub(shoulder);
     if (off.length() > TAKE.arm) to.copy(shoulder).addScaledVector(off, TAKE.arm / off.length());
@@ -1243,7 +1319,7 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       props.can.quaternion.copy(level(at[3]));
       props.can.position.set(...grip);
     } else {
-      // Coming up, it comes with her hand, turning level to her side.
+      // Coming up, it comes with her hand, level, turning to the carry's turn as she straightens.
       canInHand(j, props, level(at[3]).slerp(CAN_CARRIED, 1 - bend));
     }
   } else if (name === 'sit') {

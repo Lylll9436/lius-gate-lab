@@ -116,12 +116,30 @@ export const MASK_EXTENT = 44 + 48 * (88 / 256),
 
 /**
  * The frame the town's loop is drawing, for the moving parts that settle in real time: `held`, the
- * town is held (paused, or for a visitor who prefers reduced motion); `cut`, reduced motion (a
- * settle nearly a cut); `dt`, the frame's own seconds (they pass while town time stands still).
+ * town is held (Pause: a visitor who prefers reduced motion gets a town paused from the start, and
+ * Play brings the people back, Alison among them, as it does the walkers and the tram); `cut`,
+ * reduced motion (a settle nearly a cut); `dt`, the frame's own seconds (they pass while town time
+ * stands still); `moved`, raised by a part that moved in real time this frame while the town is held
+ * (Alison settling, or the water from her can running on), so that the loop draws the shadows again
+ * that frame (held, it otherwise draws them only every 30th frame, and her shadow kept the pose she
+ * had and then snapped to the new one).
  */
-export type AnimationFrame = { held: boolean; cut: boolean; dt: number };
-/** A moving part's update: at town `time`, the night's level, `rain` (0..1) and the frame (city-scene passes both). */
-export type AnimatedUpdate = (time: number, night: number, rain?: number, frame?: AnimationFrame) => void;
+export type AnimationFrame = { held: boolean; cut: boolean; dt: number; moved: boolean };
+/**
+ * The frame city-scene's loop passes to every moving part, from its own state (pure: the loop builds
+ * one a frame from `paused`, `reduced` and its `dt`, its `moved` down, and check-town holds the loop
+ * to it).
+ */
+export function animationFrame(paused: boolean, reduced: boolean, dt: number): AnimationFrame {
+  return { held: paused, cut: reduced, dt, moved: false };
+}
+/**
+ * A moving part's update: at town `time`, the night's level, `rain` (0..1, for those that answer the
+ * weather) and the frame. The loop passes all four; the frame is required, so a loop that drops it
+ * does not compile (without it Alison would be posed straight at town time, and Pause would freeze
+ * her mid-stride).
+ */
+export type AnimatedUpdate = (time: number, night: number, rain: number | undefined, frame: AnimationFrame) => void;
 
 export type TownContext = {
   library: ReturnType<typeof createCityMaterials>;

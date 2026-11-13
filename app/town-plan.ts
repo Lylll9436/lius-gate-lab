@@ -843,6 +843,8 @@ export type SkyStation = { x: number; z: number; facing: number };
  * kit's telescope to them).
  */
 export const SKY_SEATS = { tea: 0.61, telescope: 0.6571, height: 0.44, eyepiece: 0.7058, tilt: 0.2601 };
+/** The gravel paths' lift over the lawn (SKY_PATHS.lift), known before the paths are laid: her stand at the telescope is on the walk's gravel. */
+const SKY_GRAVEL = 0.025;
 /** The point `d` along a bearing from (x, z). */
 const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Math.sin(bearing) * d, z + Math.cos(bearing) * d];
 /**
@@ -859,11 +861,13 @@ const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Mat
  * - `telescope`: the telescope on the east-south-east rim. It looks at the Town Hall (`look`, the
  *   bearing; `dip`, the true depression of that line from her eye to the hall's middle), and she
  *   stands at `stand`, stooped to its eyepiece. The lawn under her is a little higher than under
- *   the tripod's middle (the dome), so its eyepiece stands `eyepiece` over the tripod's foot: her
- *   own SKY_SEATS.eyepiece over the floor she stands on.
+ *   the tripod's middle (the dome), and she stands on the walk's gravel there, so its eyepiece
+ *   stands `eyepiece` over the tripod's foot: her own SKY_SEATS.eyepiece over the floor she stands
+ *   on.
  * - `bench`: the town's bench on the south-east lawn beside the paths' round landing, facing the
  *   town (the garden's; her day does not take her to it).
- * She stands on skyTop at each (a seat: SKY_SEATS.height over it).
+ * She stands on the ground drawn at each (skyFloor: the lawn, but the walk's gravel at the
+ * telescope; a seat: SKY_SEATS.height over the lawn).
  */
 export const SKY_STATIONS = (() => {
   const hall = sites['town-hall'],
@@ -880,7 +884,8 @@ export const SKY_STATIONS = (() => {
   const rim = skyRim(50 * rad, -1.0),
     look = Math.atan2(hall.x - rim.x, hall.z - rim.z),
     [sx, sz] = along(rim.x, rim.z, look, -SKY_SEATS.telescope),
-    eye = skyTop(sx, sz) + SKY_SEATS.eyepiece,
+    // (She stands on the walk's gravel there: its east end.)
+    eye = skyTop(sx, sz) + SKY_GRAVEL + SKY_SEATS.eyepiece,
     eyepiece = eye - skyTop(rim.x, rim.z),
     dip = Math.atan2(eye - hall.height / 2, Math.hypot(hall.x - sx, hall.z - sz));
   // The watering stretch, on the walk along the borders (its line is SKY_PATHS.walk's).
@@ -901,7 +906,9 @@ export const SKY_STATIONS = (() => {
  * along the borders at the terrace's foot (`walk`), from beside the tea table past the steps and
  * on, easing round to where she stands at the telescope (one smooth line through its points); and
  * the stem from the steps down the middle of the lawn to a round landing (`landing`), which the
- * bench stands beside.
+ * bench stands beside. She stands on them where she is on them (skyFloor), stepping up onto them
+ * over `ease` of the lawn outside their edge (one of her steps, half her stride: a step of `lift` at
+ * the edge would pop).
  */
 export const SKY_PATHS = (() => {
   const { watering, telescope, tea } = SKY_STATIONS,
@@ -909,12 +916,68 @@ export const SKY_PATHS = (() => {
     landing = { x: SKY.x, z: -18.65, r: 0.8 };
   return {
     width: 0.56,
-    lift: 0.025,
+    lift: SKY_GRAVEL,
+    ease: 0.18,
     walk: [[tea.x - 0.5, z], [SKY.x, z], [watering.to.x, z], [telescope.stand.x, telescope.stand.z]] as XZ[],
     stem: [[SKY.x, z], [landing.x, landing.z]] as XZ[],
     landing,
   };
 })();
+/**
+ * A point a share `t` of the way along a centripetal Catmull-Rom through `points` (three's open
+ * CatmullRomCurve3, 'centripetal': its ends' outer neighbours mirrored), as town-sky draws the walk.
+ */
+function centripetal(points: XZ[], t: number): XZ {
+  const l = points.length,
+    f = (l - 1) * t,
+    i = Math.min(l - 2, Math.floor(f)),
+    w = f - i,
+    at = (k: number): XZ => (k < 0 ? [2 * points[0][0] - points[1][0], 2 * points[0][1] - points[1][1]] : k >= l ? [2 * points[l - 1][0] - points[l - 2][0], 2 * points[l - 1][1] - points[l - 2][1]] : points[k]),
+    [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
+    span = (a: XZ, b: XZ) => ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.25;
+  let d0 = span(p0, p1),
+    d1 = span(p1, p2),
+    d2 = span(p2, p3);
+  if (d1 < 1e-4) d1 = 1;
+  if (d0 < 1e-4) d0 = d1;
+  if (d2 < 1e-4) d2 = d1;
+  const cubic = (x0: number, x1: number, x2: number, x3: number) => {
+    const t1 = ((x1 - x0) / d0 - (x2 - x0) / (d0 + d1) + (x2 - x1) / d1) * d1,
+      t2 = ((x2 - x1) / d1 - (x3 - x1) / (d1 + d2) + (x3 - x2) / d2) * d1;
+    return x1 + t1 * w + (-3 * x1 + 3 * x2 - 2 * t1 - t2) * w * w + (2 * x1 - 2 * x2 + t1 + t2) * w * w * w;
+  };
+  return [cubic(p0[0], p1[0], p2[0], p3[0]), cubic(p0[1], p1[1], p2[1], p3[1])];
+}
+/** The walk's middle line as a fine polyline (its curve to the telescope a few hundredths between points). */
+const SKY_WALK_LINE = Array.from({ length: 161 }, (_, k) => centripetal(SKY_PATHS.walk, k / 160));
+/** How far (x, z) is from a polyline. */
+function polylineDistance(line: XZ[], x: number, z: number) {
+  let best = Infinity;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [ax, az] = line[i],
+      dx = line[i + 1][0] - ax,
+      dz = line[i + 1][1] - az,
+      f = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+    best = Math.min(best, Math.hypot(x - ax - dx * f, z - az - dz * f));
+  }
+  return best;
+}
+/** How far (x, z) is inside the gravel paths (SKY_PATHS: the walk and the stem with their round ends, and the landing); outside, negative. */
+export function skyGravel(x: number, z: number) {
+  const P = SKY_PATHS,
+    half = P.width / 2;
+  return Math.max(half - polylineDistance(SKY_WALK_LINE, x, z), half - polylineDistance(P.stem, x, z), P.landing.r - Math.hypot(x - P.landing.x, z - P.landing.z));
+}
+/**
+ * The ground drawn at (x, z), what she stands on: the lawn (skyTop), or the gravel where she is on it
+ * (SKY_PATHS.lift over the lawn), the step between them eased over SKY_PATHS.ease of the lawn outside
+ * the gravel's edge, so she steps up onto it and down off it over one of her steps.
+ */
+export function skyFloor(x: number, z: number) {
+  const P = SKY_PATHS,
+    u = Math.min(1, Math.max(0, 1 + skyGravel(x, z) / P.ease));
+  return skyTop(x, z) + P.lift * u * u * (3 - 2 * u);
+}
 /**
  * The garden lamps (lane G's gardenLamps, one set): their feet, on the lawn either side of the
  * paths' round landing, between it and the south rim, where the stem from the steps ends; and either
@@ -1052,26 +1115,30 @@ export const SKY_TEA = { sips: [[3.5, 8.5], [11.5, 16.5], [19.5, 24.5]] as [numb
  * the rose stays over the bed's mound, never over its rounded ends, and the last of the water goes
  * down into the mound rather than onto the kerb. Each stretch begins with the can coming up from her side to the hold
  * over `lift` seconds and tipping over `tilt`; the water comes out of the rose as it tips past half
- * way, bead behind bead, the whole stream out `reveal` seconds later (lane F's ALISON_STREAM). It ends,
+ * way, its front running down, the whole stream out `reveal` seconds later (lane F's ALISON_STREAM). It ends,
  * after the last sidestep's pause, with the can tipping back over `tilt`: the water stops at half
  * way, its top leaving the rose and falling on into the bed, all of it gone `leave` seconds later;
  * then the can comes back down to her side over `lift`.
  */
-export const SKY_WATERING = { step: 0.13, stepTime: 0.75, pause: 0.66, first: 0.6, sway: 3, turn: 0.85, shift: 0.47, in: 0.15, short: 0.2, late: 0.1, lift: 0.65, tilt: 0.45, reveal: 0.32, leave: 0.66 };
+export const SKY_WATERING = { step: 0.13, stepTime: 0.75, pause: 0.66, first: 0.6, sway: 3, turn: 0.85, shift: 0.47, in: 0.15, short: 0.2, late: 0.1, lift: 0.65, tilt: 0.45, reveal: 0.35, leave: 0.66 };
 /**
  * Her watering can's place, where it stands while she is not carrying it: on the west border's kerb
  * (the border she waters first; the town's flower bed's kerb, `kerb` over the lowest lawn under it)
- * at its south-west corner, in front of where she stands to start watering it, its spout along the
- * kerb's west side and its handle out over the gravel towards her. `at` is its foot (the middle of
- * its drum's base) from the border's own south-west corner, east and north; `turn` its rotation.y.
- * Leaving her chair she goes to it, bends and takes it up (lane F's 'take', over `take` seconds) and
- * carries it from there; it goes with her to the telescope, in her hand at her side as she looks
+ * at its south-west corner, by where she stands to start watering it, its spout along the kerb's
+ * west side and its handle out over the gravel towards her. `at` is its foot (the middle of its
+ * drum's base) from the border's own south-west corner, east and north; `turn` its rotation.y.
+ * Leaving her chair she goes to it, crouches and takes it up (lane F's 'take', over `take` seconds)
+ * and carries it from there; it goes with her to the telescope, in her hand at her side as she looks
  * (she looks with the other), and back along the walk to its place, where she sets it down again
- * before she goes back to her chair.
+ * before she goes back to her chair. She takes it up and sets it down facing the kerb, turned the
+ * can's own way less `face` (lane F's ALISON_CARRY yaw, the other way): so it stands at her side, its
+ * handle toward her hand, and comes up into her hand already turned as she carries it. (Facing the
+ * border as she waters it, the can stood in front of her: she stooped deep to it, her front lock hung
+ * through its handle, and its spout swung low over the bed as it turned to her side.)
  */
-export const SKY_CAN = { at: [0.205, 0.045] as XZ, turn: Math.PI + 0.08, kerb: 0.22, take: 1.45 };
+export const SKY_CAN = { at: [0.205, 0.045] as XZ, turn: Math.PI + 0.08, face: 0.06, kerb: 0.22, take: 1.45 };
 /** The telescope: she looks through it for `look` seconds, easing into her stoop over `ease` at the start and out of it at the end. */
-export const SKY_SCOPE = { look: 16.8, ease: 0.7 };
+export const SKY_SCOPE = { look: 16.6, ease: 0.7 };
 /** Where she is in her day (alisonDay's `station`): at one of her stations, or walking between them. */
 export type SkyDayStation = 'tea' | 'water-west' | 'water-east' | 'telescope' | 'walk';
 /** What she does at a moment of her day: lane F's pose names (sky-figure's AlisonPose). */
@@ -1150,7 +1217,8 @@ function borderFloor(b: (typeof SKY_BORDERS)['west']) {
  * Her day: SKY_DAY.acts, one after another, SKY_DAY.period seconds round, built from S3's numbers
  * (SKY_STATIONS, SKY_PATHS). Tea in her chair (the day's start); her cup and saucer set down, up out
  * of her chair to its side, and a step north to the walk, where her watering can stands on the west
- * border's kerb (SKY_CAN); she takes it up and waters the west border along to the steps; east along
+ * border's kerb (SKY_CAN); she turns to the kerb, takes it up, turns to the border and waters it
+ * along to the steps; east along
  * the walk past them; watering the east border; along the walk's curve to the telescope's stand,
  * and a long look at the town, the can at her side; then back west along the whole walk to the
  * can's place, where she sets it down, the step back to her chair's side, down into her chair, and
@@ -1242,7 +1310,7 @@ export const SKY_DAY = (() => {
       add(wateringTimes(steps).seconds, { kind: 'water', station, x: from, z: zw, step: (to - from) / steps, steps, heading });
     },
     take = (up: boolean) => {
-      turnTo(fetch[0], fetch[1], watering.facing - W.turn, 'water-west');
+      turnTo(fetch[0], fetch[1], SKY_CAN.turn + SKY_CAN.face, 'water-west');
       add(SKY_CAN.take, { kind: 'take', station: 'water-west', x: fetch[0], z: fetch[1], heading, up });
       carry = up;
     };
@@ -1272,7 +1340,7 @@ export const SKY_DAY = (() => {
   // round (and on until her first sip).
   const period = Math.ceil(t + 1);
   add(period - t, { kind: 'seated', station: 'tea', settle: 0 });
-  return { period, acts, beside, chair, walked, stretches, saucer, can, fetch };
+  return { period, acts, beside, chair, walked, stretches, saucer, can };
 })();
 /** Her cup's phase in 'sip' at `t` seconds into her day: resting (0) but while she drinks (SKY_TEA.sips). */
 function sipPhase(t: number) {
@@ -1304,7 +1372,7 @@ export type AlisonDay = {
 function placesFor(out: AlisonDay) {
   const c = Math.cos(out.heading),
     s = Math.sin(out.heading),
-    floor = skyTop(out.x, out.z),
+    floor = skyFloor(out.x, out.z),
     frame = (p: { x: number; y: number; z: number; ry: number }): [number, number, number, number] => {
       const dx = p.x - out.x,
         dz = p.z - out.z;
@@ -1318,7 +1386,8 @@ function placesFor(out: AlisonDay) {
  * Alison on the sky island at time `time` of her day (pure: the same time always gives the same
  * answer; time 0 has her resting in her chair at tea, her cup on its saucer):
  * - `station`, where she is (SkyDayStation), and `pose` and `phase`, lane F's poseAlison arguments;
- * - (x, z), her root's place; she stands on skyTop there (her root at skyTop + poseAlison's lift);
+ * - (x, z), her root's place; she stands on the ground drawn there (skyFloor: the lawn, or the
+ *   paths' gravel where she is on it; her root at skyFloor + poseAlison's lift);
  * - `heading`, her root's rotation.y (she faces +z in her own frame);
  * - `amount`, a walk's gait (0 standing: lane F's walk at 0 is 'stand', so only walk and stand
  *   blend; every other pose comes and goes through poses of its own while she stands still);
@@ -1343,7 +1412,7 @@ export function alisonDay(time: number): AlisonDay {
     into = t - act.t0,
     out: AlisonDay = { station: act.station, pose: 'stand', phase: 0, x: 0, z: 0, heading: 0, amount: 0, seat: 0, step: 0, side: [0, 0], rest: [0, 0, 0, 0], can: [0, 0, 0, 0], carry: act.carry, lift: 0, pour: 0, front: 0, tail: 0, stoop: 0 },
     // Her chair's seat over the floor where she is (the table stands level on the dome).
-    seat = () => skyTop(SKY_STATIONS.tea.x, SKY_STATIONS.tea.z) + SKY_SEATS.height - skyTop(out.x, out.z);
+    seat = () => skyTop(SKY_STATIONS.tea.x, SKY_STATIONS.tea.z) + SKY_SEATS.height - skyFloor(out.x, out.z);
   switch (act.kind) {
     case 'seated':
       Object.assign(out, { pose: into < act.settle ? 'sit' : 'sip', phase: sipPhase(t), x: chair.x, z: chair.z, heading: chair.facing });
@@ -1411,7 +1480,7 @@ export function alisonDay(time: number): AlisonDay {
   return placesFor(out);
 }
 /**
- * When the town is held (paused, or for a visitor who prefers reduced motion) Alison rests: she
+ * When the town is held (Pause; under reduced motion the town starts paused) Alison rests: she
  * settles where she is, over `settle` seconds of real time (`take` if she is bending to her can, a
  * bigger movement: straightening, or going down to it, at about its own pace; `reduced` under reduced
  * motion, nearly a cut), into a still pose, and comes back into her day as smoothly when it is let go
@@ -1474,7 +1543,7 @@ export function alisonBlend(a: AlisonDay, b: AlisonDay, e: number): AlisonDay {
 /**
  * The water from her can `dt` seconds on, as it goes in real time while her day is held or let go
  * (alisonDay's front and tail, SKY_WATERING): it runs while the can is tipped half way or more
- * (`pour`), coming out of the rose bead by bead over `reveal` seconds; once it stops, what is out goes
+ * (`pour`), coming out of the rose over `reveal` seconds, front first; once it stops, what is out goes
  * on falling and its top leaves the rose, all of it gone down into the bed `leave` seconds later. A
  * stream still going down finishes before a new one comes; water never goes back up into the rose.
  */
