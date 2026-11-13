@@ -467,6 +467,25 @@ export function skyFit() {
   return new T.Box3(new T.Vector3(S.x - hx, S.top - S.depth + 1.5, S.z - hz), new T.Vector3(S.x + hx, S.top + plan.SKY_VILLA.height, S.z + hz));
 }
 /**
+ * Points round everything of the sky island that can show on screen, for how much of it a frame
+ * shows (city-scene's skyOnScreen): its silhouette's marks (`marks`, skyMarks: the rim, the chimneys,
+ * the tree, the rock's tip and the falls' puffs), the corners of the box round its rim's widest
+ * ring in the deck's own frame (the marks keep only sixteen points of the ring), and the corners of
+ * a box round each cloud's and floating rock's slot, three times its size out to the sides and twice
+ * up and down, which holds the piece through its drift and bob.
+ */
+export function skyExtent(marks: T.Vector3[]) {
+  const S = plan.SKY,
+    points = [...marks];
+  for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const [px, pz] = plan.skyPoint(x * S.a, z * S.b);
+    points.push(new T.Vector3(px, S.top - S.ring, pz));
+  }
+  for (const f of [...plan.SKY_CLOUDS, ...plan.SKY_ROCKS])
+    for (const dx of [-3, 3]) for (const dy of [-2, 2]) for (const dz of [-3, 3]) points.push(new T.Vector3(f.x + dx * f.size, f.y + dy * f.size, f.z + dz * f.size));
+  return points;
+}
+/**
  * The sun's shadow when the view is close in on the sky island (skyShadowWanted): its box, round
  * the island's own frame (`centre`, `radius`), in which the island casts on itself; the zoom from
  * which the view counts as close in (the second, and down to the first once it is), or how far the
@@ -1104,9 +1123,10 @@ export async function createCity(
     frameIndex = 0,
     skyHours = 20,
     paneHours = 20,
-    // The sky island: in view (see skyHidden), casting (the sun's shadow frames it) and how much of
-    // the sun's shadow shows while its box changes hands (followSky).
-    skyShown = true,
+    // The sky island: in view (see skyHidden; from the first frame on, as the frame allows: a frame
+    // that hides it never shows it), casting (the sun's shadow frames it) and how much of the sun's
+    // shadow shows while its box changes hands (followSky).
+    skyShown = false,
     skyCast = false,
     shadowFade = 1,
     // How far the camera's pitch has come down from the town's toward the sky island's file's: 0 to 1 (viewOffset).
@@ -1224,6 +1244,16 @@ export async function createCity(
   const LAND_MARKS = [new T.Vector3(rockX, 0, rockZ), ...plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z))];
   /** The reading frames that would show a cut slice of the sky island: the People chapter's places. */
   const SKY_HIDES = new Set<BuildingId>(plan.chapterSubjects.people);
+  /**
+   * What of the sky island can show on screen (skyExtent), and of its pool on the sea: the square on
+   * the water its disc is drawn in (city-water's createSeaShadow, in the pool's own frame). And how
+   * much of it a frame that hides it takes away at once (followSky): only once nothing of it or of its
+   * pool reaches more than `edge` px into the frame, or, with the camera at rest in that frame, once
+   * no more than a cut slice of it is left there (`slice` of the screen box round it).
+   */
+  const SKY_EXTENT = skyExtent(SKY_MARKS),
+    POOL_SQUARE = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => new T.Vector3(x, 0, z)),
+    SKY_LEAVE = { edge: 1, slice: 0.5 };
   /**
    * The airport's frame: its island to the armour's toe and the causeway's far half, up to the
    * tower's mast. Fitted like a group (fitGroup) between 0.95 and 2.6: the one-building rule's 1.3
@@ -1533,29 +1563,77 @@ export async function createCity(
   /** A place's root in the town: a building's model, or the sky island's own. */
   const rootOf = (id: BuildingId) => (id === 'sky-island' ? island.root : models.get(id)?.root);
   /**
-   * Whether the sky island is hidden. Three of the reading page's frames would show a cut slice of
-   * it under the masthead and the panel: the People chapter's (its row, and each home or the
-   * residence picked from it), the last shot, the whole town once the footer arrives, and the
-   * opening view (reset(): nothing framed, no park), whose tall frame on a phone shows a sliver of
-   * its rock, puffs and a floating rock along the very top edge and its shadow on the sea below
-   * (on wider screens it is out of that frame, so hiding it there changes nothing). It is out of
-   * every other reading frame, so the reading page stays as it was. City mode always shows it.
+   * Whether the sky island is to be hidden. Three of the reading page's frames would show a cut slice
+   * of it under the masthead and the panel: the People chapter's (its row, and each home or the
+   * residence picked from it), the last shot, the whole town once the footer arrives, and the opening
+   * view, whose tall frame on a phone shows a sliver of its rock, puffs and a floating rock along the
+   * very top edge and its shadow on the sea below. The last shot and the opening view hide it only
+   * while the camera holds them as it framed them (overviewFit; reset(): nothing framed, no park, and
+   * autoFocus): a drag, a wheel or pinch zoom (cancel()) or the +/- buttons hand the view to the
+   * visitor, and it shows wherever it is in view (the opening framing leaves it out of a desktop's
+   * frame, but a pan or a zoom out brings it in). It is out of every other reading frame, so the
+   * reading page stays as it was. City mode always shows it. (When it goes and comes: followSky.)
    */
   function skyHidden() {
-    return !cityMode && !inspect && (overviewFit || (focusedIds.length === 0 && !parkSelected) || (focusedIds.length > 0 && focusedIds.every((id) => SKY_HIDES.has(id))));
+    return !cityMode && !inspect && (overviewFit || (autoFocus && focusedIds.length === 0 && !parkSelected) || (focusedIds.length > 0 && focusedIds.every((id) => SKY_HIDES.has(id))));
+  }
+  const onScreen = new T.Vector3();
+  /**
+   * How much of `points` (world points, or points in the frame of `matrix`) the frame shows as the
+   * camera stands: how far the screen box round them reaches into it (px, the lesser of the box's
+   * width and height inside it: 0 if it misses it), and what share of that box lies inside it.
+   */
+  function skyOnScreen(points: T.Vector3[], matrix?: T.Matrix4) {
+    let x0 = Infinity,
+      x1 = -Infinity,
+      y0 = Infinity,
+      y1 = -Infinity;
+    for (const point of points) {
+      onScreen.copy(point);
+      if (matrix) onScreen.applyMatrix4(matrix);
+      onScreen.project(camera);
+      x0 = Math.min(x0, onScreen.x);
+      x1 = Math.max(x1, onScreen.x);
+      y0 = Math.min(y0, onScreen.y);
+      y1 = Math.max(y1, onScreen.y);
+    }
+    const across = Math.max(0, Math.min(x1, 1) - Math.max(x0, -1)),
+      down = Math.max(0, Math.min(y1, 1) - Math.max(y0, -1));
+    return { reach: Math.min((across * width) / 2, (down * height) / 2), share: (across * down) / ((x1 - x0) * (y1 - y0)) };
   }
   /**
-   * The sky island through the frame. It goes as the glide into a frame that hides it starts and
-   * comes back once the glide out has ended (the frames either side leave it out of view, so it
-   * is never seen to go or come; City mode, a change of the whole page, brings it back at once).
+   * The sky island through the frame, never seen to go or come where it stands in view: its group is
+   * opaque, so it cannot fade. A frame that hides it (skyHidden) takes it, and its pool on the sea
+   * with it (the frame loop lays the pool with skyShown), only once nothing of either reaches more
+   * than a pixel into the frame (SKY_LEAVE.edge), or once the camera has come to rest in the framing
+   * it chose there (its glide, turn and pitch done: autoFocus, not a view the visitor has taken over)
+   * with no more than a cut slice of it left in the frame (SKY_LEAVE.slice of the screen box round
+   * it: the phone's opening view leaves 35% of it at most through the idle drift, the People chapter
+   * 29% at 1024 x 768). Glided into from a view that shows it (its own file left by the wordmark,
+   * Recentre in a chapter panned to it), it glides out of the frame whole, or its slice goes as the
+   * camera comes to rest; from anywhere else it is already out of view and goes at once; a frame that
+   * holds more of it (a portrait tablet's opening view, the last shot, where it stands whole) keeps it
+   * until it leaves. It comes back as the frame stops hiding it once the glide out has ended (the
+   * frames either side leave it out of view), or at once where nothing of it is in view yet, or where
+   * the view is the visitor's own (a framing neither the camera's nor the park's: the opening view or
+   * the last shot panned or zoomed, which moves under their hand, as before the opening view hid it);
+   * City mode, a change of the whole page, brings it back at once.
    * And the sun's shadow box changes hands (skyShadowWanted): while it frames the island, the
    * island casts on itself; everywhere else it casts nothing, so every Rotate stop shows it alike.
    * The shadows fade out before the box moves and back in after (a cut under reduced motion), so
    * neither the island's nor the town's ever pop.
    */
   function followSky(dt: number) {
-    if (skyHidden()) skyShown = false;
-    else if (!tween || cityMode) skyShown = true;
+    const hiding = skyHidden();
+    if (hiding === skyShown) {
+      camera.updateMatrixWorld();
+      seaShadow.mesh.updateMatrixWorld();
+      const seen = skyOnScreen(SKY_EXTENT),
+        gone = Math.max(seen.reach, skyOnScreen(POOL_SQUARE, seaShadow.mesh.matrixWorld).reach) <= SKY_LEAVE.edge;
+      skyShown = hiding
+        ? !gone && !(seen.share <= SKY_LEAVE.slice && autoFocus && !tween && Math.abs(targetYaw - yaw) <= 0.0001 && Math.abs(aim(camera.zoom) - pitch) <= 0.0001)
+        : gone || !tween || cityMode || !(autoFocus || parkSelected);
+    }
     island.root.visible = skyShown;
     const cast = (on: boolean) => {
       skyCast = on;
@@ -1675,11 +1753,17 @@ export async function createCity(
     fitFocused();
     tween = true;
   }
+  /**
+   * The opening view: the island's centre at zoom 1 from the opening bearing. It is the camera's own
+   * framing (autoFocus) until the visitor pans or zooms it, which is all the sky island's hiding asks
+   * of it (skyHidden); fitted again (a resize, a new frame shift), it frames nothing (fitFocused), and
+   * its panel offset follows by itself (followPanel).
+   */
   function reset() {
     exitInspection();
     focusedIds = [];
     parkSelected = false;
-    autoFocus = false;
+    autoFocus = true;
     overviewFit = false;
     target.set(0, 0, 0);
     targetZoom = 1;
