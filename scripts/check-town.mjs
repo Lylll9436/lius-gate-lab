@@ -8709,8 +8709,9 @@ let skyReport = '';
 
       // Pause and reduced motion (the 3D review's third finding: Pause pressed in her day, or reduced
       // motion switched on, froze her mid-stride or mid-sidestep wherever town time stopped). Her
-      // entry told the town is held, as the frame loop tells it (a sixtieth of a second of the frame's
-      // own time at a time, town time standing still), at a moment every 0.61 s of her day:
+      // entry given the frames the town's loop gives it (town-shared's animationFrame, which the loop
+      // is held to at the end of this block), held (a sixtieth of a second of the frame's own time at
+      // a time, town time standing still), at a moment every 0.61 s of her day:
       // - she comes to rest within a second (within a quarter under reduced motion, which is tried at
       //   every other moment) and then does not move at all for 120 frames (30 under reduced motion);
       // - settling, and let go again (town time going on from where it stood), she moves no more in
@@ -8728,9 +8729,19 @@ let skyReport = '';
       //   her side), or watering held (so, but her can held out level over the bed and her free hand
       //   where it is as she waters), or stooped to the telescope (so, her eye at its eyepiece, her
       //   hand on its tube). Neither a stride nor a sidestep, a crouch nor a reach rests in any;
-      // - held from time 0 (reduced motion at load), she is the frozen frame, and never moves.
+      // - held from time 0 (reduced motion at load, which pauses the town), she is the frozen frame,
+      //   and never moves;
+      // - under reduced motion with Play (lane F2: she follows the people, not the parked plane) she
+      //   goes about her day as town time runs, exactly as her day has her;
+      // - the frame (the final review's first finding: with the frame dropped from the loop's call,
+      //   or `held` set wrong, every check passed and Pause froze her mid-stride again): the loop's
+      //   frame is held on Pause only and cut under reduced motion, a new one each frame; and
+      //   city-scene's step(), found through its syntax tree (a formatter may wrap the call), builds
+      //   it as animationFrame(paused, reduced, dt) and passes it as the fourth argument of the one
+      //   update call in its loop over the animated parts.
       {
-        const frame = 1 / 60,
+        const { animationFrame } = await load('town-shared'),
+          frame = 1 / 60,
           parts = [];
         her.traverse((o) => o.isMesh && parts.push(o));
         const sample = () => {
@@ -8860,9 +8871,10 @@ let skyReport = '';
             return 'neither seated, standing at ease, watering held nor at the telescope';
           },
           hold = (t0, cut, frames = 180, release = 120) => {
-            // Her day played up to the moment, then held there.
-            entry[0].update(t0 - 3, 0, 0, { held: false, cut: false, dt: frame });
-            for (let k = 30; k >= 0; k--) entry[0].update(t0 - k * frame, 0, 0, { held: false, cut: false, dt: frame });
+            // Her day played up to the moment (Play, as the visitor's motion preference has it), then
+            // paused there.
+            entry[0].update(t0 - 3, 0, 0, animationFrame(false, cut, frame));
+            for (let k = 30; k >= 0; k--) entry[0].update(t0 - k * frame, 0, 0, animationFrame(false, cut, frame));
             let prev = sample(),
               far = 0,
               tuck = waterTuck();
@@ -8875,7 +8887,7 @@ let skyReport = '';
                 return is;
               };
             for (let k = 1; k <= frames; k++) {
-              entry[0].update(t0, 0, 0, { held: true, cut, dt: frame });
+              entry[0].update(t0, 0, 0, animationFrame(true, cut, frame));
               const now = sample(),
                 m = moved(now, prev);
               tuck = flip(t0, tuck);
@@ -8889,7 +8901,7 @@ let skyReport = '';
             out.pose = still();
             // Let go: town time goes on from where it stood.
             for (let k = 1; k <= release; k++) {
-              entry[0].update(t0 + k * frame, 0, 0, { held: false, cut: false, dt: frame });
+              entry[0].update(t0 + k * frame, 0, 0, animationFrame(false, cut, frame));
               const now = sample(),
                 m = moved(now, prev);
               tuck = flip(t0 + k * frame, tuck);
@@ -8916,15 +8928,75 @@ let skyReport = '';
           assert(r.rested <= 15 && r.pose === h.pose && r.far <= 0.25 + 1e-9, `Under reduced motion, held at ${t0.toFixed(2)} s, she rests after ${r.rested} frames, ${r.pose}, ${fmt3(r.far)} from where she was.`);
         }
         assert(['seated', 'standing', 'watering held', 'at the telescope'].every((k) => kinds.has(k)), `Held through her day, she rests only ${[...kinds.keys()].join(', ')}.`);
-        // Held from the first frame at time 0 (reduced motion at load): the frozen frame, still.
+        // Held from the first frame at time 0 (reduced motion at load: the page starts the town paused):
+        // the frozen frame, still.
         entry[0].update(0, 0, 0);
         const frozen = snapshot(her);
         for (let k = 0; k < 120; k++) {
-          entry[0].update(0, 0, 0, { held: true, cut: true, dt: frame });
+          entry[0].update(0, 0, 0, animationFrame(true, true, frame));
           assert(same(frozen, snapshot(her)), 'Held at time 0, she moves from the frozen frame.');
         }
+        // Under reduced motion with Play, she goes about her day with the people: mid-walk, on the
+        // watering stretch and at tea, three seconds of town time, her root where her day has it.
+        for (const t0 of [53.2, 40.31, 3.1]) {
+          entry[0].update(t0, 0, 0);
+          let moved = 0,
+            off = 0,
+            was = her.position.clone();
+          for (let k = 1; k <= 180; k++) {
+            entry[0].update(t0 + k * frame, 0, 0, animationFrame(false, true, frame));
+            her.updateMatrixWorld(true);
+            const day = plan.alisonDay(t0 + k * frame);
+            off = Math.max(off, Math.hypot(her.position.x - day.x, her.position.z - day.z), Math.abs(plan.angleDiff(her.rotation.y, day.heading)));
+            moved += her.position.distanceTo(was);
+            was = her.position.clone();
+          }
+          assert(off < 1e-9 && (t0 > 30 ? moved > 0.1 : true), `Under reduced motion with Play at ${t0} s she strays ${off} from her day, or moves only ${fmt3(moved)} in 3 s.`);
+        }
+        // The loop's frame: held on Pause only, cut under reduced motion, its own seconds; a new one
+        // each frame.
+        for (const paused of [false, true])
+          for (const reduced of [false, true])
+            for (const dt of [0, frame, 0.05]) {
+              const a = animationFrame(paused, reduced, dt),
+                b = animationFrame(paused, reduced, dt);
+              assert(a.held === paused && a.cut === reduced && a.dt === dt && a !== b, `The loop's frame (paused ${paused}, reduced ${reduced}) is ${JSON.stringify(a)}.`);
+            }
+        // And city-scene's step() builds it so and passes it to every animated part: its one loop over
+        // `animated` calls each entry's update with (time, night, rain, the frame), the frame a const
+        // of step's own made by animationFrame(paused, reduced, dt).
+        {
+          const sceneSource = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8'),
+            scene = ts.createSourceFile('city-scene.ts', sceneSource, ts.ScriptTarget.Latest, true),
+            text = (n) => n.getText(scene).replace(/\s+/g, '');
+          let step = null;
+          (function find(n) {
+            if (ts.isFunctionDeclaration(n) && n.name?.text === 'step') step = n.body;
+            ts.forEachChild(n, find);
+          })(scene);
+          assert(step, "The frame check must find city-scene's step().");
+          const made = new Map(),
+            loops = [];
+          (function walk(n) {
+            if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.isCallExpression(n.initializer) && text(n.initializer.expression) === 'animationFrame' && ts.isVariableDeclarationList(n.parent) && n.parent.flags & ts.NodeFlags.Const)
+              made.set(n.name.text, n.initializer.arguments.map(text).join(','));
+            if (ts.isForOfStatement(n) && text(n.expression) === 'animated') loops.push(n);
+            ts.forEachChild(n, walk);
+          })(step);
+          const calls = [];
+          for (const loop of loops) {
+            const entryName = ts.isVariableDeclarationList(loop.initializer) ? loop.initializer.declarations[0].name.getText(scene) : '';
+            (function walk(n) {
+              if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'update' && text(n.expression.expression) === entryName) calls.push(n.arguments.map(text));
+              ts.forEachChild(n, walk);
+            })(loop.statement);
+          }
+          assert(loops.length === 1 && calls.length === 1, `step() has ${loops.length} loops over its animated parts and ${calls.length} update calls in them, not one.`);
+          const [args] = calls;
+          assert(args.length === 4 && args.slice(0, 3).join(',') === 'time,night,rain' && made.get(args[3]) === 'paused,reduced,dt', `step()'s loop calls each animated part's update with (${args.join(', ')}), not (time, night, rain, animationFrame(paused, reduced, dt)).`);
+        }
         at(0);
-        skyReport += `; held at ${[...kinds.values()].reduce((n, c) => n + c, 0)} moments of her day (${[...kinds].map(([k, n]) => `${k} ${n}`).join(', ')}) she settles within ${(worst.rested / 60).toFixed(2)} s and then never moves, by ${fmt3(worst.settle.root)} and ${fmt3(worst.settle.parts)} a frame at most, and comes back by ${fmt3(worst.release.root)} and ${fmt3(worst.release.parts)}`;
+        skyReport += `; held at ${[...kinds.values()].reduce((n, c) => n + c, 0)} moments of her day (${[...kinds].map(([k, n]) => `${k} ${n}`).join(', ')}) she settles within ${(worst.rested / 60).toFixed(2)} s and then never moves, by ${fmt3(worst.settle.root)} and ${fmt3(worst.settle.parts)} a frame at most, and comes back by ${fmt3(worst.release.root)} and ${fmt3(worst.release.parts)}; under reduced motion with Play she goes about her day; the loop gives her animationFrame(paused, reduced, dt)`;
       }
 
       // The garden lamps never stand in front of her or behind her on screen (the art review's third

@@ -1218,14 +1218,16 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
    * plan.alisonDay says where she is and what she does, poseAlison poses her, and she stands on the
    * lawn there (skyTop) or sits on her chair. She keeps a clock of her own, town time less however
    * long she has been held (or was coming back from it) while the town ran on, so nothing of her day
-   * runs on under her while she is held. When the town is held (the frame's `held`: Pause, or reduced
-   * motion) she settles where she is into the still pose plan.alisonStill gives, over SKY_HOLD's
-   * seconds of the frame's own time (its `cut`, reduced motion, nearly at once), the water from her
-   * can stopping and going down into the bed as water does (plan.alisonStream, in real time); let go,
-   * she comes back the same way into her day as it was when she was held, and only then does it go on.
-   * Asked without a frame (the build's own first pose, a check sampling her day), she is simply her
-   * day at that time. Reduced motion at load holds her at time 0, in her chair at tea, her cup
-   * resting on its saucer: already still. Night and rain change nothing, as for the town's walkers.
+   * runs on under her while she is held. When the town is held (the frame's `held`: Pause) she
+   * settles where she is into the still pose plan.alisonStill gives, over SKY_HOLD's seconds of the
+   * frame's own time (its `cut`, reduced motion, nearly at once), the water from her can stopping and
+   * going down into the bed as water does (plan.alisonStream, in real time); let go, she comes back
+   * the same way into her day as it was when she was held, and only then does it go on. Asked
+   * without a frame (the build's own first pose, a check sampling her day), she is simply her day at
+   * that time. A visitor who prefers reduced motion gets the town paused at load, which holds her at
+   * time 0, in her chair at tea, her cup resting on its saucer: already still; Play then brings her
+   * back with the people and the tram (only the plane stays parked). Night and rain change nothing,
+   * as for the town's walkers.
    * Returns her root, which the town batches part by part as it does its figures (it is
    * `prebatched`: never by the animated loop).
    */

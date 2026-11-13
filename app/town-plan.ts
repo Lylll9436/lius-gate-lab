@@ -1401,7 +1401,7 @@ export function alisonDay(time: number): AlisonDay {
   return placesFor(out);
 }
 /**
- * When the town is held (paused, or for a visitor who prefers reduced motion) Alison rests: she
+ * When the town is held (Pause; under reduced motion the town starts paused) Alison rests: she
  * settles where she is, over `settle` seconds of real time (`take` if she is bending to her can, a
  * bigger movement: straightening, or going down to it, at about its own pace; `reduced` under reduced
  * motion, nearly a cut), into a still pose, and comes back into her day as smoothly when it is let go
