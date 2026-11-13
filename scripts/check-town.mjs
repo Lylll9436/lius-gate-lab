@@ -8201,12 +8201,13 @@ let skyReport = '';
           seen = spans(hers(seated), flats[0]);
         assert(seated.pose === 'sip' && lampAt.every((sil) => !meet(sil[0], seen)), 'From the island\'s file a garden lamp stands on the line of sight to her seat.');
         at(0);
-        // Their own room: clear of the falls' heads and pools, the outcrop's stones, the paths and her stations.
+        // Their own room: clear of the falls' heads (each from its rim point to 1.1 inland, where a
+        // spout's pool or a stream's spring lies), the outcrop's stones, the paths and her stations.
         const O = plan.SKY_OUTCROP;
         for (const [x, z] of plan.SKY_LAMPS) {
           const falls = Math.min(...plan.skyFalls.map((f) => {
-              const pool = plan.skyRim(f.bearing, -plan.SKY_FALLS.pool);
-              return plan.distanceToSegment([x, z], [f.x, f.z], [pool.x, pool.z]);
+              const inland = plan.skyRim(f.bearing, -1.1);
+              return plan.distanceToSegment([x, z], [f.x, f.z], [inland.x, inland.z]);
             })),
             outcrop = Math.hypot(x - O.x, z - O.z);
           assert(falls >= 0.6 && outcrop >= 1.45, `The garden lamp at ${x}, ${z} is ${falls.toFixed(2)} from a fall's head or pool, or ${outcrop.toFixed(2)} from the outcrop's middle.`);

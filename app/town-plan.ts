@@ -927,8 +927,9 @@ export const SKY_PATHS = (() => {
  * a lamp's pier and globe meet her on screen within about 1.5 in front of her or behind her along the
  * line of sight, and her stations and the walk she keeps to are all in reach of the old spots; these
  * lie out of it at every moment of her day (check-town holds it). The west one stands 1.4 or more from
- * the west fall's head and its pool and clear of the outcrop. The set itself stands at the island's
- * middle, south of AIRPORT_ROAD.beach, so check-town's count of the airport's own lamps stays theirs.
+ * the west fall's head (its rim point and the lawn inland of it) and clear of the outcrop. The set
+ * itself stands at the island's middle, south of AIRPORT_ROAD.beach, so check-town's count of the
+ * airport's own lamps stays theirs.
  */
 export const SKY_LAMPS: XZ[] = [
   [SKY.x - 0.65, -17.75],
