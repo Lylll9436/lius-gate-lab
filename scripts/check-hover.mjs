@@ -438,6 +438,67 @@ assert(
   );
   stopGlass();
 }
+// The ring a hover or a selection draws (app/city-ink.ts) is a one-pixel line round a mask of the
+// building: its pixels where the beauty pass's depth says it is in front. That depth is a
+// multisampled buffer's resolve, one sample's depth taken off the pixel centre, and the mask's
+// fragments sit on the centre. With a fixed tolerance every face nearer at that sample than at the
+// centre dropped out of the mask, and a part standing proud of another (a balcony, the coping)
+// lost the pixels where it covers the sample but not the centre; the ring then drew gold squiggles
+// across the building's own faces (the sky island's rock and villa, worst on phones, and the Town
+// Hall). A pixel test needs a browser, so this holds the shaders to the fix instead: the tolerance
+// grows with the depth's slope across the pixel (k·fwidth; the sample is at most half a pixel off,
+// so k is at least 0.5, and at most 4 so a lamp or a tree still stands in front), the test is drawn
+// with the beauty pass's samples, and a single-sample pass keeps the mask to the pixels whose
+// centre the building covers, so the ring outside the silhouette stays where it was.
+{
+  const pass = await import('three/addons/postprocessing/Pass.js');
+  const ink = {};
+  runInNewContext(compile(await fs.readFile(path.join(root, 'app/city-ink.ts'), 'utf8')), {
+    exports: ink,
+    require: (id) => ({ three: T, 'three/addons/postprocessing/Pass.js': pass })[id],
+  });
+  const calls = [];
+  let current = null;
+  const renderer = {
+    capabilities: { maxSamples: 4 },
+    shadowMap: { autoUpdate: false },
+    getPixelRatio: () => 2,
+    getRenderTarget: () => current,
+    setRenderTarget: (t) => (current = t),
+    getClearColor: (out) => out.set(0, 0, 0),
+    getClearAlpha: () => 0,
+    setClearColor() {},
+    clear() {},
+    compileAsync: () => Promise.resolve(),
+    render: (s) => calls.push({ target: current, override: s.overrideMaterial ?? null, material: s.material ?? null }),
+  };
+  const scene = new T.Scene(),
+    building = new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial());
+  scene.add(building);
+  const ring = ink.createCityInk(renderer, scene, new T.OrthographicCamera(), 4);
+  ring.resize(390, 844);
+  ring.setSelection([building]);
+  ring.render();
+  assert.equal(calls.length, 4, 'A ringed building draws the beauty pass, the depth test, its pixel centres and the composite.');
+  const [beauty, test, keep, composite] = calls;
+  for (const [name, call] of [['depth test', test], ['centre pass', keep]]) {
+    const shader = call.override?.fragmentShader ?? '';
+    const k = shader.match(/0\.000015\s*\+\s*([\d.]+)\s*\*\s*fwidth\(\s*gl_FragCoord\.z\s*\)/);
+    assert(
+      k && /gl_FragCoord\.z\s*<=\s*texture2D\(\s*sceneDepth/.test(shader),
+      `The selection mask's ${name} must compare against the beauty pass's depth with a tolerance that grows with the depth's slope (0.000015 + k·fwidth(gl_FragCoord.z)), or the ring draws squiggles across the building's own faces.`,
+    );
+    assert(+k[1] >= 0.5 && +k[1] <= 4, `The selection mask's slope factor is ${k[1]}: at least 0.5 (half a pixel to the resolved sample), at most 4 (occluders still count).`);
+  }
+  assert(beauty.target.samples > 1, 'The beauty pass is multisampled.');
+  assert.equal(test.target.samples, beauty.target.samples, 'The selection mask’s depth test is drawn with the beauty pass’s samples.');
+  assert.equal(keep.target.samples, 0, 'The mask is kept to pixel centres in a single-sample pass.');
+  assert.equal(keep.override.uniforms.tested.value, test.target.texture, 'The centre pass reads the depth test’s samples.');
+  assert.equal(composite.material?.uniforms?.selection?.value, keep.target.texture, 'The composite rings the kept mask.');
+  ring.dispose();
+  building.geometry.dispose();
+  building.material.dispose();
+}
 console.log(
-  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, and glass rims let go with the chips that leave the page.',
+  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose mask tests depth with a slope-scaled tolerance at the beauty pass’s samples.',
 );
