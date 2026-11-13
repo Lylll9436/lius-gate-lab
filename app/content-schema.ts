@@ -1,3 +1,6 @@
+// Type-only, so it is erased and adds no import cycle at run time (city-data imports lab-records,
+// which imports this module), nor anything for the maintenance command to load.
+import type { BuildingId } from './city-data';
 export type Localized = { en: string; zh: string };
 export type Collection =
   | 'people'
@@ -65,18 +68,6 @@ export type NoteRecord = RecordBase & {
   researchId: string | null;
   buildingId: string | null;
 };
-/**
- * The place a neighbour belongs to, whose City file is to show them: the sky island.
- *
- * TODO(P2), tighten to BuildingId: 'sky-island' is not a BuildingId yet. Lane S1 adds it to
- * city-data's BuildingId and to buildingIds below, and then `pnpm typecheck` fails on purpose at
- * P2Tighten in lab-records.ts. Type NeighbourRecord.buildingId as BuildingId
- * (`import type { BuildingId } from './city-data'`), and neighbourFor's placeId in lab-records.ts
- * with it, and delete Place and P2Tighten there. neighbourPlaces stays the list of the places that
- * may hold a neighbour (never a member's home or the residence).
- */
-export type NeighbourPlace = 'sky-island';
-const neighbourPlaces: NeighbourPlace[] = ['sky-island'];
 /** A link off the site: a label in en and zh, and an HTTPS address. */
 export type OutboundLink = { label: Localized; url: string };
 /**
@@ -107,7 +98,8 @@ export type NeighbourRecord = Omit<RecordBase, 'properties'> & {
   affiliation: Localized;
   /** An image under /people/ or /media/, or null. Alison Heppenstall's is null: the site shows no photo of her. */
   photo: string | null;
-  buildingId: NeighbourPlace;
+  /** The place whose City file shows them: one of neighbourPlaces (the sky island). */
+  buildingId: BuildingId;
   group: NeighbourGroup;
 };
 export type LabCatalog = {
@@ -138,7 +130,11 @@ const gateCollections: Exclude<Collection, 'neighbours'>[] = [
 ];
 /** Every collection the maintenance command edits: the Gate's own, then its neighbours. */
 export const collections: Collection[] = [...gateCollections, 'neighbours'];
-const buildingIds = [
+/**
+ * The places in the town, every one of city-data's BuildingId (check-content compares the two
+ * lists). A research project, an output or a note may be filed at any of them but a neighbour's.
+ */
+export const buildingIds: readonly string[] = [
   'lius-gate',
   'town-hall',
   'pengyuan-liu',
@@ -149,7 +145,37 @@ const buildingIds = [
   'airport',
   'research-studio',
   'city-archive',
-];
+] satisfies BuildingId[];
+/**
+ * The places that may hold a neighbour, whose City file shows them: the sky island. Never a
+ * member's home or the residence. Each is one of buildingIds (check-content checks it), and none of
+ * the Gate's own work is filed there: the island's file is the neighbour's.
+ */
+export const neighbourPlaces: readonly string[] = [
+  'sky-island',
+] satisfies BuildingId[];
+/**
+ * What is wrong with the place a project, an output or a note is filed at: it is none (null) or one
+ * of the town's places, never a neighbour's, so the Gate's work never reads as UIA's. `unknownError`
+ * is the collection's own message for a place the town does not have.
+ */
+function workPlaceErrors(
+  at: string,
+  place: unknown,
+  unknownError: string,
+): string[] {
+  if (place === null) return [];
+  if (typeof place !== 'string' || !buildingIds.includes(place))
+    return [unknownError];
+  if (neighbourPlaces.includes(place))
+    return [
+      at +
+        '.buildingId: ' +
+        place +
+        ' is a neighbour’s place; file the Gate’s work at one of its own.',
+    ];
+  return [];
+}
 /** A person lives in one of the members' homes (one each) or in the residence (shared). */
 const homeIds = ['pengyuan-liu', 'yunlong-liu', 'qin-li'];
 export const RESIDENCE_ID = 'visiting-phd';
@@ -351,7 +377,7 @@ function neighbourErrors(value: Record<string, unknown>): string[] {
         at + '.photo must be null or an image under /people/ or /media/.',
       );
     const place = row.buildingId;
-    if (typeof place !== 'string' || !neighbourPlaces.some((p) => p === place))
+    if (typeof place !== 'string' || !neighbourPlaces.includes(place))
       errors.push(
         at +
           '.buildingId must be the place whose file shows them: ' +
@@ -522,12 +548,13 @@ export function validateCatalog(value: unknown): string[] {
             !['active', 'completed'].includes(row.status)
           )
             errors.push(at + '.status is invalid.');
-          if (
-            row.buildingId !== null &&
-            (typeof row.buildingId !== 'string' ||
-              !buildingIds.includes(row.buildingId))
-          )
-            errors.push(at + '.buildingId is unknown.');
+          errors.push(
+            ...workPlaceErrors(
+              at,
+              row.buildingId,
+              at + '.buildingId is unknown.',
+            ),
+          );
         } else {
           if (!realDate(row.date))
             errors.push(at + '.date must be a real YYYY-MM-DD date.');
@@ -548,12 +575,13 @@ export function validateCatalog(value: unknown): string[] {
               )
             )
               errors.push(at + ': invalid output type.');
-            if (
-              row.buildingId !== null &&
-              (typeof row.buildingId !== 'string' ||
-                !buildingIds.includes(row.buildingId))
-            )
-              errors.push(at + ': unknown buildingId.');
+            errors.push(
+              ...workPlaceErrors(
+                at,
+                row.buildingId,
+                at + ': unknown buildingId.',
+              ),
+            );
             if (row.researchId !== null) {
               const project = Array.isArray(value.research)
                 ? value.research.find(

@@ -12,6 +12,8 @@ import {
   removeRecord,
   validateCatalog,
   migrateCatalog,
+  buildingIds,
+  neighbourPlaces,
 } from '../app/content-schema.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work/content-check');
@@ -471,6 +473,18 @@ for (const { collection, row } of [
     new RegExp(collection + '/' + row.id + ': missing or unpublished person alison-heppenstall'),
     'A ' + collection + ' record cannot name a neighbour among its people.',
   );
+// Nor is the Gate's work filed at her place: the sky island's file and camera are hers, so a project,
+// an output or a note there would read as UIA's. Every other place takes them, as before.
+for (const [collection, row] of Object.entries({ research, outputs: outputRecord, notes: noteRecord })) {
+  const at = collection + '[' + next[collection].findIndex((r) => r.id === row.id) + ']',
+    filedAt = (place) => ({ ...next, [collection]: next[collection].map((r) => (r.id === row.id ? { ...r, buildingId: place } : r)) });
+  assert.deepEqual(
+    validateCatalog(filedAt('sky-island')),
+    [at + '.buildingId: sky-island is a neighbour’s place; file the Gate’s work at one of its own.'],
+    'A ' + collection + ' record can be filed at a neighbour’s place.',
+  );
+  assert.deepEqual(validateCatalog(filedAt('research-studio')), [], 'A ' + collection + ' record cannot be filed at the studio.');
+}
 // A place's file shows one published neighbour. A draft may wait beside her; two of the same id may not.
 const testNeighbour = {
   ...structuredClone(alison),
@@ -549,6 +563,11 @@ const data = await import(
   pathToFileURL(path.join(output, 'city-data.mjs')).href
 );
 const { buildings } = data;
+// The catalogue's list of places is the town's (city-data's BuildingId), and a neighbour's place is
+// one of them: the sky island, whose file shows her.
+assert.deepEqual([...buildingIds].sort(), buildings.map((b) => b.id).sort(), 'content-schema’s buildingIds are not the town’s places.');
+assert(neighbourPlaces.length && neighbourPlaces.every((p) => buildingIds.includes(p)), 'A neighbour’s place is not one of buildingIds.');
+assert.deepEqual([...neighbourPlaces], ['sky-island']);
 // The People chapter lists the members: on DAY everyone published, and the test member. The
 // page's own list is the visitor's day's.
 assert.deepEqual(
