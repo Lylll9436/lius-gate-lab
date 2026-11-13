@@ -805,7 +805,8 @@ const laneD3 = {};
 // centre on the reading page): in the Town Hall's file and the sky island's, beside the panel at
 // 1440 x 900 and above the sheet at 768 x 1024, after + and after - each of four notches keeps its
 // zoom and the view stays where the wheel left it (no glide at all), and so does a pair of notches
-// in one frame.
+// in one frame; and after + a pinch (one 'start' for the gesture) keeps the zoom the fingers leave
+// at every move, nothing moving once they lift.
 {
   const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'aim', 'elevationAt', 'cancel', 'align', 'groupFrame', 'fitGroup', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'skyMarks', 'skyFit'],
     vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_FIT', 'YAW_RATE', 'CITY_MAX_ZOOM'],
@@ -943,8 +944,36 @@ const laneD3 = {};
             worst = Math.max(worst, slide);
             assert(spring < 1e-9 && slide < 0.01 && !glides, `${burst > 1 ? 'Two wheel notches in one frame' : `A wheel notch after ${press > 1 ? '+' : '-'}`} ${at} spring${spring ? 's' : ''} back from ${kept.toFixed(4)} to ${camera.zoom.toFixed(4)} over ${glides} glide frames, the view sliding ${slide.toFixed(1)} px.`);
           }
+          // And a pinch (on a tablet, which has the buttons too): one 'start' for the whole gesture,
+          // then a dolly about the fingers' middle at each move, as OrbitControls' touch dolly does it.
+          // Every frame keeps the zoom the fingers left, and once they lift nothing moves.
+          if (press !== 1.25) continue;
+          controls.dispatchEvent({ type: 'start' });
+          let lagged = 0,
+            moves = 0;
+          for (let move = 0; move < 12; move++) {
+            controls._dollyOut(move < 6 ? 1.03 : 1 / 1.05);
+            controls._updateZoomParameters(0.6 * w, 0.4 * h);
+            controls.update();
+            const fingers = camera.zoom;
+            run.frame();
+            moves++;
+            lagged = Math.max(lagged, Math.abs(camera.zoom - fingers));
+          }
+          controls.dispatchEvent({ type: 'end' });
+          const lifted = camera.zoom,
+            view = controls.target.clone();
+          let drift = 0,
+            glides = 0;
+          for (let f = 0; f < 120; f++) {
+            run.frame();
+            glides += s.tween ? 1 : 0;
+            drift = Math.max(drift, Math.abs(camera.zoom - lifted), controls.target.distanceTo(view) * r.perUnit());
+          }
+          notches += moves;
+          assert(lagged < 1e-9 && drift < 0.01 && !glides, `A pinch after + ${at} lags the fingers by ${lagged.toFixed(4)} or moves on by ${drift.toFixed(2)} after they lift, over ${glides} glide frames.`);
         }
-  laneD3.wheel = `${notches} wheel notches kept after +, - and in same-frame pairs (the view ${worst.toFixed(2)} px from where the wheel left it at most)`;
+  laneD3.wheel = `${notches} wheel notches and pinch moves kept after +, - and in same-frame pairs (the view ${worst.toFixed(2)} px from where the wheel left it at most)`;
 }
 {
   const pieces = [];
