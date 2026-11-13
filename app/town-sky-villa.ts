@@ -13,7 +13,10 @@ import type { Props } from './town-props';
  * The sky villa's colours, each no more saturated than its palette family (VILLA_FAMILY): red
  * brick (palette.brick, which is the brick kind by itself); white stone for the bands, the cornice,
  * the dressings, the quoins and the balustrade (the residence's dressing, the calmest pale stone in
- * the town); white paintwork for the frames, the doors, the dormers' fronts and the gutter; the
+ * the town); white paintwork for the frames, the windows' level rails (meeting rails and transoms),
+ * the doors, the dormers' fronts and the gutter; the windows' upright bars (glazing bars, mullions
+ * and stiles) a pale grey-blue between the paint and the glass, so the sashes stay white-framed and
+ * white-railed while the slim uprights over the glass stop twinkling as the view drifts; the
  * kerb's buff stone for the plinth, the terrace's walls and its steps' risers, and the residence's
  * forecourt flags on the terrace; a darker, warmer slate than the town's (the reference's roof, in
  * the slate family: less blue and no more saturated) on the slopes and the cap over the flat; the
@@ -30,6 +33,7 @@ export const VILLA_LOOK = {
   brick: palette.brick,
   stone: RESIDENCE_LOOK.dressing,
   paint: palette.white,
+  bar: '#b2cbd2',
   base: palette.kerb,
   paving: RESIDENCE_LOOK.paving,
   slate: '#5e6471',
@@ -50,6 +54,7 @@ export const VILLA_FAMILY: Record<keyof typeof VILLA_LOOK, string> = {
   brick: palette.brick,
   stone: palette.render,
   paint: palette.white,
+  bar: palette.glass,
   base: palette.kerb,
   paving: palette.pavement,
   slate: palette.slate,
@@ -502,7 +507,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
    *   quoins, long and short by turns; two string courses with a drip under their weathered nose;
    *   under the eaves a deep white cornice (a bed, a modillion course and a corona 0.25 proud, which
    *   breaks forward over the bay and whose eave shades the frieze).
-   * - The windows: white sashes, two lights over two (a meeting rail and a glazing bar 0.07 or more),
+   * - The windows: white sashes, two lights over two (a white meeting rail and a glazing bar 0.07 or
+   *   more, the bar in VILLA_LOOK.bar: the uprights over the glass a pale grey-blue),
    *   in white stone architrave jambs under a flat arch of five voussoirs splayed outward with a
    *   proud keystone; on the ground floor a sill on two corbels, above a projecting sill on the band;
    *   the first floor's carry painted window boxes planted for the season (WINDOW_BOX, as the homes').
@@ -557,7 +563,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
       base: Part[] = [], // the plinth's and the terrace's buff stone dressings
       flags: Part[] = [], // the terrace's flags
       paint: Part[] = [], // white paintwork that casts (the dormers' fronts, the doors' panels)
-      bars: Part[] = [], // slim white members: meeting rails, glazing bars, mullions, transoms (cast nothing)
+      rails: Part[] = [], // the windows' slim level white members: meeting rails, transoms (cast nothing)
+      bars: Part[] = [], // their slim uprights: glazing bars, mullions, stiles, in the bars' grey-blue (cast nothing)
       iron: Part[] = [], // the balconies (cast nothing)
       housings: Part[] = [], // the lamps' housings, in dark bronze (cast nothing)
       rain: Part[] = [], // the downpipes and their hoppers (cast nothing)
@@ -764,7 +771,7 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
     /**
      * A tall sash window on a face (local +z out of the wall), its opening w x h about (x, y) on
      * storey s: a white frame 0.07 wide and 0.09 proud, two panes (one light at night, `group`), a
-     * meeting rail and a glazing bar 0.07 or more; white stone jambs 0.1 wide and 0.12 proud beside
+     * white meeting rail and a grey-blue glazing bar 0.07 or more; white stone jambs 0.1 wide and 0.12 proud beside
      * it, a flat arch over it; under it a sill on two corbels (the ground floor), or a projecting
      * sill on the band (the floors above), carrying a window box on the first floor when `box` (its seed).
      */
@@ -778,7 +785,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
       frameRing(g, x, y, 0, w, h, 0.07, 0.09, L.paint, 'paint');
       const ph = (h - 0.07) / 2 + 0.01;
       for (const k of [-1, 1]) pane(g, x, y + (k * (h + 0.07)) / 4, 0.03, w + 0.02, ph, group, true);
-      bars.push(block(x - w / 2, x + w / 2, y - 0.035, y + 0.035, 0, 0.08, g), block(x - 0.035, x + 0.035, y - h / 2, y + h / 2, 0, 0.075, g));
+      rails.push(block(x - w / 2, x + w / 2, y - 0.035, y + 0.035, 0, 0.08, g));
+      bars.push(block(x - 0.035, x + 0.035, y - h / 2, y + h / 2, 0, 0.075, g));
       for (const k of [-1, 1]) stone.push(block(k < 0 ? x - jx - 0.1 : x + jx, k < 0 ? x - jx : x + jx + 0.1, foot, head, -0.02, 0.12, g));
       flatArch(g, x, head, wide, ARCH[s]);
       if (s === 0) {
@@ -806,11 +814,12 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
     /**
      * White-framed French doors on the bay's front, w wide from the sill y0: four lights to `leaves`
      * (two opening leaves between two fixed side lights) on white kick panels, parted by mullions
-     * 0.07 and a meeting stile 0.09, under a transom and a transom light to y1 that the mullions part
-     * into four, in a white frame 0.08 wide, all one light at night; a white stone architrave (jambs
-     * and a head, open at the foot) and a keystone rising into the band over it. The panes are tagged
-     * `frenchDoor`. The ground floor's are the front door: its light is the hall's ('entrance', on
-     * all night), and a brass knob sits on its meeting stile (on the white stile, not over the glass).
+     * 0.07 and a meeting stile 0.09 (uprights, in the bars' grey-blue), under a white transom and a
+     * transom light to y1 that the mullions part into four, in a white frame 0.08 wide, all one light
+     * at night; a white stone architrave (jambs and a head, open at the foot) and a keystone rising
+     * into the band over it. The panes are tagged `frenchDoor`. The ground floor's are the front door:
+     * its light is the hall's ('entrance', on all night), and a brass knob sits on its meeting stile
+     * (on the stile, not over the glass).
      */
     function frenchDoors(s: number, w: number, y0: number, leaves: number, y1: number) {
       const g = bayFace,
@@ -834,7 +843,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
         if (s === 0) p.userData.window = VILLA_ENTRANCE;
       }
       const mx = st / 2 + light + m / 2;
-      bars.push(block(-st / 2, st / 2, y0, y1, 0, 0.09, g), block(-w / 2, w / 2, leaves, leaves + 0.08, 0, 0.09, g));
+      bars.push(block(-st / 2, st / 2, y0, y1, 0, 0.09, g));
+      rails.push(block(-w / 2, w / 2, leaves, leaves + 0.08, 0, 0.09, g));
       for (const k of [-1, 1]) bars.push(block(k * mx - m / 2, k * mx + m / 2, y0, y1, 0, 0.085, g));
       if (s === 0) brass.push({ geometry: new T.IcosahedronGeometry(0.045, 1), matrix: on(g, placed(0, y0 + 0.78, 0.105)) });
       // The architrave: jambs 0.12 wide and 0.1 proud from the sill, a head over the frame, a keystone.
@@ -943,7 +953,7 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
       enamel.push(block(-0.04, 0.04, sill + 0.14, leaf - 0.12, 0.04, 0.11, g));
       brass.push({ geometry: new T.IcosahedronGeometry(0.045, 1), matrix: on(g, placed(w / 2 - 0.18, sill + 0.66, 0.15)) });
       // The transom and the fanlight (the back hall's light), parted by two glazing bars.
-      bars.push(block(-w / 2, w / 2, leaf, leaf + 0.07, 0, 0.09, g));
+      rails.push(block(-w / 2, w / 2, leaf, leaf + 0.07, 0, 0.09, g));
       pane(g, 0, (leaf + 0.07 + fan) / 2, 0.03, w + 0.02, fan - leaf - 0.07 + 0.01, group);
       for (const k of [-1, 1]) bars.push(block(k * w / 6 - 0.035, k * w / 6 + 0.035, leaf + 0.07, fan, 0, 0.075, g));
       // The stone: jambs from the base, a hood 0.25 proud (the footprint's edge) on two consoles under
@@ -972,7 +982,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
       glass.userData.window = VILLA_WINDOWS;
       g.add(glass);
       // A glazing bar up its middle, a meeting rail and a bar at the springing.
-      bars.push(block(-0.035, 0.035, sill, spring + r, 0, 0.08, g), block(-r, r, cy - 0.035, cy + 0.035, 0, 0.08, g), block(-r, r, spring - 0.035, spring + 0.035, 0, 0.08, g));
+      bars.push(block(-0.035, 0.035, sill, spring + r, 0, 0.08, g));
+      rails.push(block(-r, r, cy - 0.035, cy + 0.035, 0, 0.08, g), block(-r, r, spring - 0.035, spring + 0.035, 0, 0.08, g));
       // The stone: jambs to the springing, six voussoirs and a keystone round the head, a sill on corbels.
       for (const k of [-1, 1]) stone.push(block(k < 0 ? -r - f - 0.11 : r + f, k < 0 ? -r - f : r + f + 0.11, sill - f, spring, -0.02, 0.12, g));
       for (const v of voussoirs(r + f, r + f + 0.15, 0.14, -0.02)) stone.push({ geometry: v, matrix: on(g, placed(0, spring, 0)) });
@@ -1063,7 +1074,7 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
       const sashAt = (cx: number, bar: boolean) => {
         frameRing(g, cx, sy, 0, sw, sh, 0.07, 0.09, L.paint, 'paint');
         for (const s of [-1, 1]) pane(g, cx, sy + (s * (sh + 0.07)) / 4, 0.03, sw + 0.02, (sh - 0.07) / 2 + 0.01, group, true);
-        bars.push(block(cx - sw / 2, cx + sw / 2, sy - 0.035, sy + 0.035, 0, 0.08, g));
+        rails.push(block(cx - sw / 2, cx + sw / 2, sy - 0.035, sy + 0.035, 0, 0.08, g));
         if (bar) bars.push(block(cx - 0.035, cx + 0.035, sy - sh / 2, sy + sh / 2, 0, 0.075, g));
       };
       if (pediment) for (const s of [-1, 1]) sashAt(s * (sw / 2 + 0.06), false);
@@ -1260,7 +1271,8 @@ export function createSkyVilla(ctx: TownContext, kit: Kit, _props: Props, _natur
     parts(shell, base, L.base, 'stone', { tone: 0.05 });
     parts(shell, flags, L.paving, 'stone', { tone: 0.035, name: 'sky-villa-flags' });
     parts(shell, paint, L.paint, 'paint');
-    parts(shell, bars, L.paint, 'paint', { shadow: false });
+    parts(shell, rails, L.paint, 'paint', { shadow: false });
+    parts(shell, bars, L.bar, 'paint', { shadow: false });
     parts(shell, iron, L.iron, 'iron', { shadow: false });
     parts(shell, housings, L.housing, 'iron', { shadow: false });
     parts(shell, rain, L.rain, 'iron', { shadow: false });

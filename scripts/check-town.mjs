@@ -8838,6 +8838,12 @@ let skyReport = '';
       assert(lum(VILLA_LOOK.lens) < 0.05 && VILLA_FAMILY.housing === palette.bronze && lum(VILLA_LOOK.housing) > 0.4 * lum(VILLA_LOOK.brick) && lum(VILLA_LOOK.housing) < 0.9 * lum(VILLA_LOOK.brick) && lensPieces.length === 16 && housings.length === 8, `The wall lamps are ${lensPieces.length} lenses and ${housings.length} housings, not 16 dark lenses in 8 bronze housings near the brick's shade.`);
       assert(!dressings.some((p) => p.colour === hex(VILLA_LOOK.paint) && lensPieces.some((l) => l.b.intersectsBox(p.b))), 'A wall lamp still shows white paint.');
       assert(R.roll[0] >= 0.07 && R.roll[1] > 0 && R.roll[1] < R.roll[0] && hsv(VILLA_LOOK.roll).s <= hsv(palette.slate).s + 1e-3, 'The roof\'s rolls are not low half-rounds in the slate family.');
+      // The windows' slim uprights over the glass (glazing bars, mullions, stiles: the final art
+      // review's verifier found the white grid of them on the glass twinkling under the idle drift) are
+      // the bars' pale grey-blue, between the paint and the glass in value, each standing upright; the
+      // frames and the level rails stay the paint's white (ref-3's white-framed sashes).
+      const uprights = dressings.filter((p) => p.colour === hex(VILLA_LOOK.bar));
+      assert(uprights.length >= 30 && uprights.every((p) => p.s.y >= 2.5 * Math.max(p.s.x, p.s.z)) && lum(VILLA_LOOK.bar) < lum(VILLA_LOOK.paint) - 0.1 && lum(VILLA_LOOK.bar) > lum(VILLA_LOOK.glass) + 0.1, `The villa's ${uprights.length} window uprights are not the bars' grey-blue standing upright, between the paint and the glass.`);
       // No ball at a roll's foot: every roll piece near the eaves is a run along a hip, never a lump.
       for (const p of rolls) if (p.b.min.y < VILLA.cornice.corona[1] + R.fascia + 0.3) assert(Math.max(p.s.x, p.s.z) > 0.5, `A ball sits at a roll's foot over the gutter at ${p.c.x.toFixed(2)}, ${p.c.z.toFixed(2)}.`);
       const cap = parts.find((m) => m.name === 'sky-villa-roof-cap');
