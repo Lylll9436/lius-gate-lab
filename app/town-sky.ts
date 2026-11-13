@@ -431,36 +431,164 @@ export function skySlots() {
 }
 
 /**
- * The flower borders' planting (skyBorder): each is the town's flower bed (its kerb the border's own
- * outline, drawn in at its outer end by `trim`, so the walk's turn up to the telescope clears it;
- * its mound inside), its blooms not where the bed scatters them but in one row along its back, `back`
- * in from the terrace wall, `spacing` apart, their colours the town's bloom colours in `order`
- * (mirrored on the west border, so the pair flanks the steps alike). Her watering can (lane F's
- * ALISON: its rose 0.53 ahead of her and 0.444 up, nothing of it hanging lower than 0.38, reaching
- * 0.589 at the most) passes over the mound in front of them as she walks the watering stretch:
- * blooms under it would stand in its way.
+ * The flower borders' planting (skyBorder): each is the town's flower bed's kerb (the border's own
+ * outline, drawn in at its outer end by `trim`, so the walk's turn up to the telescope clears it), and
+ * inside it, in place of the bed's smooth green bar (the art review: its row of five like blobs on the
+ * bar read as beads or sweets), a bed of flowering plants: a low leafy planting (`leaves`) and the
+ * town's own blooms over it in two staggered rows along the back (`rows`).
+ * - The leaves: one mound over the bar's footprint (reaching back over the kerb to `wall` from the
+ *   terrace wall), its edge `base` over the floor, tucked into the kerb, over a level (`level`: at the back, against the terrace wall, and at the front) rising to
+ *   two rows of clumps (`clumps`: each row's line in from the terrace wall, its clumps' reach and
+ *   height (from, to) and how many; the front row set off from the back's), so its outline is a row
+ *   of soft clumps, taller at the back; a heightfield of `cells` (along, across) with its own
+ *   normals, painted in the hedge's green with lighter crowns and darker hollows.
+ * - The blooms: `count` a row; each row `back` in from the terrace wall, its blooms sized a share
+ *   (`size`, from, to) of the town's bloom (0.6 at least: the bloom, squashed, then stands 0.07 tall,
+ *   the thinnest part the town allows), each nestled in the leaves under it (its middle `sit` over
+ *   them); the back row on the tall clumps' crowns and larger, the front one between them. Each
+ *   bloom's colour is one of the border's own (`palette`, the town's bloom colours, by its seed: its
+ *   pink, red and purple, near the leaves' own value, so the many small blooms never twinkle as the
+ *   view moves, where white ones on the dark leaves did), and
+ *   its size and place a little its own, so no two neighbours match; the west border mirrors the
+ *   east, so the pair flanks the steps alike.
+ * Her watering can (sky-figure's ALISON: reaching 0.60 at the most, hanging no lower than 0.48 over
+ * her feet) passes over the low front of the planting as she walks the watering stretch: the blooms
+ * stand at the back, out of its way, and the leaves under its reach stay as low as the bar was.
  */
-export const SKY_BEDS = { trim: 0.15, back: 0.15, spacing: 0.34, order: [2, 3, 0, 3, 4], seeds: [53, 59] };
+export const SKY_BEDS = {
+  trim: 0.15,
+  leaves: {
+    base: 0.2,
+    wall: 0.03,
+    level: [0.31, 0.25] as [number, number],
+    clumps: [
+      { back: 0.14, r: 0.1, h: [0.1, 0.13] as [number, number], count: 7 },
+      { back: 0.35, r: 0.09, h: [0.06, 0.09] as [number, number], count: 7 },
+    ],
+    cells: [16, 5] as [number, number],
+  },
+  rows: [
+    { back: 0.115, size: [0.7, 0.85] as [number, number] },
+    { back: 0.172, size: [0.6, 0.68] as [number, number] },
+  ],
+  count: 7,
+  sit: 0.008,
+  palette: [2, 0, 2, 4, 2, 0],
+  seeds: [53, 59],
+};
 /** The tree's seed (town-nature's tree index): its turn and its crown's clumps. */
 export const SKY_TREE_SEED = 3;
 /** A border's slot (skySlots' `borders`). */
 type BorderSlot = ReturnType<typeof skySlots>['borders'][number];
 /**
  * One flower border (SKY_BEDS; `k` 0 is the east one, 1 the west), in a group of its own in g: the
- * town's flower bed standing on the lowest lawn under its kerb, with its blooms in a row at the back.
+ * town's flower bed's kerb standing on the lowest lawn under it, its leafy planting and its blooms.
  */
 export function skyBorder(nature: Nature, g: T.Object3D, b: BorderSlot, k: number) {
   const bed = new T.Group(),
     side = k ? -1 : 1,
     B = SKY_BEDS,
     // Its middle, drawn in toward the steps with its outer end.
-    x = b.x - (side * B.trim) / 2;
+    x = b.x - (side * B.trim) / 2,
+    // The bed inside the kerb (flowerBed's kerb stands 0.08 proud of the bed it is given all round),
+    // and the bar's footprint in it (0.02 in), where the leaves grow.
+    w = b.w - B.trim - 0.16,
+    d = b.d - 0.16,
+    hw = w / 2 - 0.02,
+    hd = d / 2 - 0.02,
+    back = b.z - b.d / 2,
+    seed = B.seeds[0];
   bed.name = 'sky-border';
   g.add(bed);
-  // (flowerBed's kerb stands 0.08 proud of the bed it is given all round.)
-  nature.flowerBed(bed, x, b.floor, b.z, b.w - B.trim - 0.16, b.d - 0.16, B.seeds[k]);
-  for (const bloom of bed.children.filter((o) => o.userData.noShadow)) bloom.removeFromParent();
-  B.order.forEach((c, i) => nature.bloom(bed, x + side * (i - (B.order.length - 1) / 2) * B.spacing, b.floor + 0.4, b.z - b.d / 2 + B.back, BLOOMS[c]));
+  nature.flowerBed(bed, x, b.floor, b.z, w, d, B.seeds[k]);
+  // The bed's own bar and blooms make way for the planting (the leaves take the bar's material: the
+  // foliage's, white, their colours on their vertices).
+  const planted = bed.children.filter((o): o is T.Mesh => o instanceof T.Mesh && o.material instanceof T.Material && o.material.userData.surfaceKind === 'foliage'),
+    bar = planted.find((o) => !o.userData.noShadow)!;
+  for (const o of planted) o.removeFromParent();
+  // The leaves: a heightfield over the bar's footprint (u along the bed, from the steps' end when
+  // mirrored; z across it, from the terrace wall), the clumps' crowns summed over a level that falls
+  // from the back to the front and rolls down into the kerb all round.
+  const L = B.leaves,
+    [nu, nv] = L.cells,
+    // (At the back the leaves grow over the kerb to the terrace wall; at the front and ends they stop
+    // where the bar did, so her can and the kerb's top stay as they were.)
+    z0 = L.wall,
+    z1 = 0.1 + 2 * hd,
+    // A place along the bed, a share `f` of the way, kept 6% in from either end.
+    along = (f: number) => -hw + 2 * hw * (0.06 + 0.88 * f),
+    clumps = L.clumps.flatMap((row, r) =>
+      Array.from({ length: row.count }, (_, i) => ({
+        u: along((i + (r ? 0.75 : 0.25)) / row.count) + (hash(seed + r * 13.1 + i * 3.7) - 0.5) * 0.06,
+        z: row.back,
+        r: row.r,
+        h: T.MathUtils.lerp(row.h[0], row.h[1], hash(seed + r * 7.9 + i * 5.3 + 1.7)),
+      })),
+    ),
+    crown = (u: number, z: number) => clumps.reduce((sum, q) => sum + q.h * Math.exp(-((u - q.u) ** 2 + (z - q.z) ** 2) / (q.r * q.r)), 0),
+    height = (u: number, z: number) => {
+      const edge = T.MathUtils.smoothstep(Math.min(hw - Math.abs(u), z - z0, z1 - z), 0, 0.07),
+        level = T.MathUtils.lerp(L.level[0], L.level[1], (z - z0) / (z1 - z0));
+      return L.base + (level - L.base + crown(u, z)) * edge;
+    },
+    pos: number[] = [],
+    nor: number[] = [],
+    col: number[] = [],
+    index: number[] = [],
+    hedge = new T.Color(palette.hedge),
+    top = new T.Color(palette.hedgeTop),
+    c = new T.Color(),
+    n = new T.Vector3(),
+    e = 0.01,
+    most = Math.max(...clumps.map((q) => q.h)),
+    highest = L.level[0] + most;
+  for (let j = 0; j <= nv; j++)
+    for (let i = 0; i <= nu; i++) {
+      const u = -hw + (i / nu) * 2 * hw,
+        z = z0 + (j / nv) * (z1 - z0),
+        h = height(u, z),
+        bump = crown(u, z) / most;
+      pos.push(x + side * u, b.floor + h, back + z);
+      n.set(-(height(u + e, z) - height(u - e, z)) * side, 2 * e, -(height(u, z + e) - height(u, z - e))).normalize();
+      nor.push(n.x, n.y, n.z);
+      // The hedge's green, lighter up the planting and on the crowns that face the sky, darker in the hollows between them.
+      c.copy(hedge)
+        .lerp(top, 0.55 * T.MathUtils.smoothstep(n.y, 0.4, 0.95) * T.MathUtils.smoothstep(bump, 0.3, 0.9))
+        .multiplyScalar(T.MathUtils.lerp(0.9, 1.06, (h - L.base) / (highest - L.base)) * T.MathUtils.lerp(0.86, 1, T.MathUtils.smoothstep(bump, 0.1, 0.6)));
+      col.push(c.r, c.g, c.b);
+    }
+  for (let j = 0; j < nv; j++)
+    for (let i = 0; i < nu; i++) {
+      const a = j * (nu + 1) + i,
+        q = a + nu + 1;
+      // Wound to face up whichever way the border is mirrored.
+      if (side > 0) index.push(a, q, a + 1, a + 1, q, q + 1);
+      else index.push(a, a + 1, q, a + 1, q + 1, q);
+    }
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+  geometry.setIndex(index);
+  const leaves = new T.Mesh(geometry, bar.material);
+  leaves.name = 'sky-border-leaves';
+  leaves.castShadow = leaves.receiveShadow = true;
+  bed.add(leaves);
+  // The blooms: two staggered rows along the back (the back one on the tall clumps' crowns, the front
+  // one between them), each nestled in the leaves under it, its colour, size and place by its seed.
+  B.rows.forEach((row, r) => {
+    let last = -1;
+    for (let i = 0; i < B.count; i++) {
+      const h = (k: number) => hash(seed + r * 31.7 + i * 7.3 + k),
+        u = along((i + (r ? 0.75 : 0.25)) / B.count) + (h(1) - 0.5) * 0.04;
+      let pick = Math.floor(h(2) * B.palette.length) % B.palette.length;
+      if (B.palette[pick] === last) pick = (pick + 1) % B.palette.length;
+      last = B.palette[pick];
+      const size = T.MathUtils.lerp(row.size[0], row.size[1], h(3)),
+        bloom = nature.bloom(bed, x + side * u, b.floor + height(u, row.back) + B.sit, back + row.back, BLOOMS[last]);
+      bloom.scale.multiplyScalar(size);
+    }
+  });
   return bed;
 }
 /**

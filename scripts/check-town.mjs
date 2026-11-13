@@ -7714,13 +7714,20 @@ let skyReport = '';
       }
     }
 
-    // The borders: the town's flower bed, its kerb the border's outline, on the lowest lawn under it,
-    // its blooms in a row along its back in the town's colours (mirrored either side of the steps);
-    // the town's own blooms are these. As she walks the watering stretch (the east border), facing it,
-    // her can passes over the bed and meets no bloom.
+    // The borders: the town's flower bed's kerb, the border's outline, on the lowest lawn under it, and
+    // in it a bed of flowering plants (the final art review: a row of five like blobs on the bed's
+    // smooth green bar read as beads or sweets): a leafy planting that casts, its outline a row of
+    // soft clumps (along the bed its top rises and falls by 0.03 or more, five crowns or more), and the
+    // town's own blooms over it, a dozen or more, in two rows along the back (each level along the
+    // bed), staggered (along the bed the two rows take turns), of three sizes or more (the back row's
+    // the larger), each in one of the town's bloom colours, three colours or more a border and no two
+    // neighbours in a row alike; the west border mirrors the east about the steps. The town's own
+    // blooms are these. As she walks the watering stretch (the east border), facing it, her can passes
+    // over the bed and meets no bloom.
     {
       const { nature } = fresh(),
-        rows = [];
+        rows = [],
+        planted = [];
       slots.borders.forEach((b, k) => {
         const g = new T.Group(),
           bed = skyBorder(nature, g, b, k);
@@ -7729,17 +7736,36 @@ let skyReport = '';
           kerb = bed.children.find((o) => o.material.userData.surfaceKind === 'stone'),
           box = new T.Box3().setFromObject(kerb),
           rest = bed.children.filter((o) => !blooms.includes(o)),
-          side = k ? -1 : 1,
           // Its outline, drawn in at its outer end (the east border's east, the west's west).
-          [x0, x1] = k ? [b.x - b.w / 2 + SKY_BEDS.trim, b.x + b.w / 2] : [b.x - b.w / 2, b.x + b.w / 2 - SKY_BEDS.trim];
-        assert(SKY_BEDS.trim >= 0 && SKY_BEDS.trim <= 0.2 && Math.abs(box.min.x - x0) < 1e-6 && Math.abs(box.max.x - x1) < 1e-6 && Math.abs(box.min.z - (b.z - b.d / 2)) < 1e-6 && Math.abs(box.max.z - (b.z + b.d / 2)) < 1e-6 && Math.abs(box.min.y - b.floor) < 1e-6, `The ${k ? 'west' : 'east'} border's kerb is not its outline, on the lowest lawn under it.`);
+          [x0, x1] = k ? [b.x - b.w / 2 + SKY_BEDS.trim, b.x + b.w / 2] : [b.x - b.w / 2, b.x + b.w / 2 - SKY_BEDS.trim],
+          what = k ? 'west' : 'east';
+        assert(SKY_BEDS.trim >= 0 && SKY_BEDS.trim <= 0.2 && Math.abs(box.min.x - x0) < 1e-6 && Math.abs(box.max.x - x1) < 1e-6 && Math.abs(box.min.z - (b.z - b.d / 2)) < 1e-6 && Math.abs(box.max.z - (b.z + b.d / 2)) < 1e-6 && Math.abs(box.min.y - b.floor) < 1e-6, `The ${what} border's kerb is not its outline, on the lowest lawn under it.`);
         for (const [x, z] of [[box.min.x, box.min.z], [box.max.x, box.min.z], [box.min.x, box.max.z], [box.max.x, box.max.z], [b.x, box.min.z], [b.x, box.max.z]]) assert(plan.skyTop(x, z) >= b.floor - 1e-9, 'A border\'s kerb floats over the lawn.');
-        assert.equal(blooms.length, SKY_BEDS.order.length, 'A border has not its row of blooms.');
-        blooms.forEach((m, i) => {
-          const x = (x0 + x1) / 2 + side * (i - (SKY_BEDS.order.length - 1) / 2) * SKY_BEDS.spacing;
-          assert(Math.abs(m.position.x - x) < 1e-9 && Math.abs(m.position.z - (b.z - b.d / 2 + SKY_BEDS.back)) < 1e-9 && Math.abs(m.position.y - b.floor - 0.4) < 1e-9 && m.material.color.equals(new T.Color(BLOOMS[SKY_BEDS.order[i]])), `A bloom of the ${k ? 'west' : 'east'} border is out of its row.`);
-          rows.push(m.position.clone());
+        // The leaves: one casting foliage mesh inside the kerb, its outline a row of clumps.
+        const leaves = rest.filter((o) => o.material.userData.surfaceKind === 'foliage');
+        assert(leaves.length === 1 && leaves[0].castShadow && rest.length === 2, `The ${what} border is not its kerb and one leafy planting.`);
+        const slices = Array.from({ length: 40 }, () => -Infinity);
+        each(leaves[0], (p) => {
+          assert(p.x > box.min.x && p.x < box.max.x && p.z > box.min.z && p.z < box.max.z, `The ${what} border's leaves reach past its kerb at ${fmt(p)}.`);
+          const s = Math.min(39, Math.floor(((p.x - box.min.x) / (box.max.x - box.min.x)) * 40));
+          slices[s] = Math.max(slices[s], p.y);
         });
+        const tops = slices.slice(4, 36),
+          crowns = tops.filter((y, i) => i > 0 && i < tops.length - 1 && y > tops[i - 1] && y >= tops[i + 1]).length;
+        assert(Math.max(...tops) - Math.min(...tops) >= 0.03 && crowns >= 5, `The ${what} border's leaves are a smooth bar (their top within ${(Math.max(...tops) - Math.min(...tops)).toFixed(3)}, ${crowns} crowns).`);
+        // The blooms: two rows, staggered, of several sizes and colours.
+        const byRow = new Map();
+        for (const m of blooms) (byRow.get(m.position.z.toFixed(4)) ?? byRow.set(m.position.z.toFixed(4), []).get(m.position.z.toFixed(4))).push(m);
+        const [backRow, frontRow] = [...byRow.entries()].sort((a, c) => +a[0] - +c[0]).map(([, list]) => list.sort((a, c) => a.position.x - c.position.x)),
+          scale = (m) => m.scale.x,
+          mean = (list) => list.reduce((s, m) => s + scale(m), 0) / list.length,
+          merged = blooms.slice().sort((a, c) => a.position.x - c.position.x),
+          turns = merged.filter((m, i) => i && backRow.includes(m) !== backRow.includes(merged[i - 1])).length,
+          colours = new Set(blooms.map((m) => m.material.color.getHex()));
+        assert(blooms.length >= 12 && byRow.size === 2 && turns >= blooms.length - 3 && new Set(blooms.map((m) => scale(m).toFixed(2))).size >= 3 && mean(backRow) > mean(frontRow), `The ${what} border's ${blooms.length} blooms are not two staggered rows of several sizes (${byRow.size} rows, ${turns} turns).`);
+        assert(colours.size >= 3 && blooms.every((m) => BLOOMS.some((c) => m.material.color.equals(new T.Color(c)))) && [backRow, frontRow].every((list) => list.every((m, i) => !i || !m.material.color.equals(list[i - 1].material.color))), `The ${what} border's blooms are not the town's colours, three or more, no two neighbours alike.`);
+        for (const m of blooms) rows.push(m.position.clone());
+        planted.push(blooms.map((m) => ({ x: m.position.x, y: m.position.y, z: m.position.z, s: scale(m), c: m.material.color.getHex() })));
         if (k) return;
         // Her can, along the stretch she waters (facing the border, north).
         const W = ST.watering;
@@ -7749,6 +7775,8 @@ let skyReport = '';
           for (const m of rest) each(m, (p) => assert(Math.hypot(p.x - x, p.z - W.from.z) > HER_CAN.reach || p.y <= floor + HER_CAN.low - 0.005, `The east border stands in her can's way at ${fmt(p)}.`));
         }
       });
+      // The west border mirrors the east about the steps (the island's middle line).
+      assert(planted[0].length === planted[1].length && planted[0].every((e) => planted[1].some((w) => Math.abs(w.x - (2 * S.x - e.x)) < 1e-6 && Math.abs(w.y - e.y) < 1e-6 && Math.abs(w.z - e.z) < 1e-6 && Math.abs(w.s - e.s) < 1e-6 && w.c === e.c)), 'The west border does not mirror the east.');
       // The town's own blooms (the deck's batch that casts nothing and is foliage) stand where these do.
       const batched = standingMeshes.filter((m) => m.material.userData.surfaceKind === 'foliage' && !m.castShadow).flatMap(pieces).map((b) => b.getCenter(new T.Vector3()));
       assert(batched.length === rows.length && rows.every((r) => batched.some((c) => Math.hypot(c.x - r.x, c.z - r.z) < 1e-3)), 'The town\'s borders are not planted as skyBorder plants them.');
