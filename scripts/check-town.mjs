@@ -5115,6 +5115,230 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(new Set([...onJib].map((m) => `${m.material.userData.surfaceKind}|${m.castShadow && !m.userData.noShadow && m.material.userData.surfaceKind !== 'glass'}`)).size <= 5, 'The slewing part batches into more than five meshes.');
   }
 }
+// The sky villa (town-sky-villa's buildSkyVilla; nothing in the town calls it yet), built on its own
+// with the check's own context on a test shell standing on a deck 12.4 up and turned, then batched as
+// the island will batch it (its contact shade from the deck's top):
+// - its size: a house about 6.4 by 4.4 and 7 to its roof's flat, a terrace 1.6 to 2 deep and 0.4 to
+//   0.6 high, chimneys about 1 over the roof;
+// - every part has a surface kind; nothing is two-sided, transparent or cut out; its colours are
+//   VILLA_LOOK's, none more saturated than its palette family (VILLA_FAMILY);
+// - it stays inside its footprint box (VILLA.hx, hz, top: at most 6.9 wide, 6.8 deep and, at the
+//   chimney cans, 8.2 over the deck, the placement's cap on the island's roofline), and nothing
+//   goes below the deck's top but the plinth's, the terrace's and the steps' foot (to VILLA.foot);
+// - every joined piece (each run of faces sharing corners) that is not a pane is 0.07 across or
+//   more every way (thinner ones twinkle as the view moves);
+// - its French doors are glass on the bay's front, facing +z, three panes a floor on three floors;
+// - after batching it costs at most 12 meshes and 30,000 triangles, its solids share the one bake
+//   program (which carries the wall wash), nothing of it cuts holes, and every varying read is
+//   declared;
+// - its night: one light a window, in roles of its own (outside the town's room shares and its
+//   night lamps): the front door's is the 'entrance', warm and never out; the rest are 'villa'
+//   rooms, all lit and warm at 20:00 and still at 23:00, then about half go out, no two together,
+//   and the rest stay lit through the deep night;
+// - the wash: eight lamps, on the front faces of the corner and bay piers of the two lower floors,
+//   their brick and lenses the only washed parts, each scallop faded out before the bands over and
+//   under its pier and at the pier's sides; a lens is brighter than the brick's wash and under 1 in
+//   luminance (nothing spills off it); the wash's level is the night's.
+{
+  const { createSkyVilla, VILLA, VILLA_LOOK, VILLA_FAMILY, VILLA_LAMPS, VILLA_WINDOWS, VILLA_ENTRANCE } = await load('town-sky-villa'),
+    { palette } = await load('town-shared'),
+    { createProps } = await load('town-props'),
+    { createNature } = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createBatch } = await load('town-batch'),
+    { createCityMaterials, wallWash, washLight, WASH_PEAK } = await load('city-materials'),
+    library = createCityMaterials(),
+    ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    kit = createKit(ctx),
+    { batch, windows: villaWindows } = createBatch(ctx),
+    deck = 12.4,
+    root = new T.Group(),
+    shell = new T.Group(),
+    begin = performance.now();
+  root.position.set(31, deck, -24);
+  root.rotation.y = 0.7;
+  root.add(shell);
+  createSkyVilla(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSkyVilla(shell, { id: 'sky-island' });
+  root.updateMatrixWorld(true);
+  const toShell = shell.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    hex = (c) => '#' + new T.Color(c).getHexString(),
+    looks = new Map(Object.entries(VILLA_LOOK).map(([k, c]) => [hex(c), k])),
+    feet = new Set(['sky-villa-plinth', 'sky-villa-terrace', 'sky-villa-steps']),
+    meshesOf = (g) => {
+      const out = [];
+      g.traverse((o) => o.isMesh && out.push(o));
+      return out;
+    };
+  /** Each run of joined faces in a mesh (faces sharing a corner), as its box in the shell's frame. */
+  const pieces = (m) => {
+    const q = m.geometry.attributes.position,
+      index = m.geometry.index,
+      key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k))),
+      corner = (t, j) => (index ? index.getX(t * 3 + j) : t * 3 + j),
+      m4 = toShell.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let t = 0; t < (index ? index.count : q.count) / 3; t++) for (const j of [1, 2]) parent.set(find(key(corner(t, j))), find(key(corner(t, 0))));
+    const boxes = new Map();
+    for (let i = 0; i < q.count; i++) {
+      const r = find(key(i));
+      if (!boxes.has(r)) boxes.set(r, new T.Box3());
+      boxes.get(r).expandByPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4));
+    }
+    return [...boxes.values()];
+  };
+  const parts = meshesOf(shell);
+  assert(parts.length > 50, `The villa is only ${parts.length} parts.`);
+  // Its size against the town's (the homes are 2.6 x 4.2, the Town Hall 7.4 x 4.6 and 9.5 tall):
+  // a house about 6.4 by 4.4 whose three storeys and roof reach about 7, its chimney cans
+  // about 1 higher and under the placement's cap on the island's roofline (the deck's top + 8.2); a
+  // terrace about the house's width, 1.6 to 2 deep and 0.4 to 0.6 high; at most 6.8 deep in all.
+  {
+    const flat = VILLA.cornice.corona[1] + VILLA.roof.fascia + VILLA.roof.rise,
+      wide = 2 * VILLA.wall.hw,
+      deep = VILLA.wall.front - VILLA.wall.back,
+      terrace = VILLA.terrace,
+      reach = new T.Box3();
+    for (const m of parts) reach.union(new T.Box3().setFromObject(m).applyMatrix4(toShell));
+    assert(Math.abs(wide - 6.4) <= 0.2 && Math.abs(deep - 4.4) <= 0.2 && Math.abs(flat - 7) <= 0.2, `The villa's house is ${wide} x ${deep.toFixed(2)} and ${flat.toFixed(2)} to its flat.`);
+    assert(Math.abs(terrace.hw - VILLA.wall.hw) <= 0.2 && terrace.depth >= 1.6 && terrace.depth <= 2 && terrace.top >= 0.4 && terrace.top <= 0.6, `The villa's terrace is ${2 * terrace.hw} x ${terrace.depth}, ${terrace.top} high.`);
+    assert(2 * VILLA.hx <= 7 && 2 * VILLA.hz <= 6.8 + 1e-9 && VILLA.top <= 8.2, `The villa's box is ${2 * VILLA.hx} x ${2 * VILLA.hz} x ${VILLA.top}.`);
+    assert(reach.max.y - flat >= 0.9 && reach.max.y - flat <= 1.3, `The villa's chimneys end ${(reach.max.y - flat).toFixed(2)} over its roof.`);
+  }
+  for (const m of parts) {
+    const kind = m.material.userData.surfaceKind,
+      colour = hex(m.material.color),
+      what = `The villa's ${m.name || kind + ' ' + colour}`;
+    assert(kind, `${what} has no surface kind.`);
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest, `${what} is two-sided, transparent or cut out.`);
+    const look = looks.get(colour);
+    assert(look, `${what} is not one of VILLA_LOOK's colours.`);
+    assert(hsv(colour).s <= hsv(hex(VILLA_FAMILY[look])).s + 1e-3, `${what} is louder than its family (${look}: ${hex(VILLA_FAMILY[look])}).`);
+    const p = m.geometry.attributes.position,
+      m4 = toShell.clone().multiply(m.matrixWorld),
+      floor = feet.has(m.name) ? VILLA.foot : 0;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m4);
+      assert(Math.abs(v.x) <= VILLA.hx + 1e-6 && Math.abs(v.z) <= VILLA.hz + 1e-6 && v.y <= VILLA.top + 1e-6, `${what} leaves the villa's footprint box at ${v.toArray().map((n) => n.toFixed(3)).join(", ")}.`);
+      assert(v.y >= floor - 1e-6, `${what} goes below ${floor === 0 ? "the deck's top" : 'its foot'} at ${v.toArray().map((n) => n.toFixed(3)).join(", ")}.`);
+    }
+    if (kind === 'glass') continue;
+    for (const b of pieces(m)) {
+      const size = b.getSize(new T.Vector3());
+      assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `${what} has a piece ${size.toArray().map((n) => n.toFixed(3)).join(' x ')} at ${b.getCenter(new T.Vector3()).toArray().map((n) => n.toFixed(2)).join(", ")}.`);
+    }
+  }
+  // Its French doors: glass on the bay's front, facing +z.
+  const doors = parts.filter((m) => m.userData.frenchDoor),
+    bayFront = VILLA.wall.front + VILLA.bay.out;
+  assert.equal(doors.length, 9, 'The villa lacks its French doors: two leaves and a fanlight on each of three floors.');
+  for (const d of doors) {
+    const at = d.getWorldPosition(new T.Vector3()).applyMatrix4(toShell),
+      facing = new T.Vector3(0, 0, 1).transformDirection(d.matrixWorld).transformDirection(toShell);
+    assert(d.material.userData.surfaceKind === 'glass' && facing.z > 0.999 && at.z > bayFront && at.z < bayFront + 0.1 && Math.abs(at.x) < VILLA.bay.hw, `A French door's pane is off the bay's front at ${at.toArray().map((n) => n.toFixed(2)).join(", ")}.`);
+  }
+  // The wash: eight lamps (each pier's brick, and its two lenses glowing with it), on the front faces
+  // of the lower two floors' corner and bay piers; each scallop gone before the bands and the
+  // pier's sides.
+  const washed = parts.filter((m) => m.userData.wash),
+    lamps = washed.filter((m) => !m.userData.wash.glow),
+    lenses = washed.filter((m) => m.userData.wash.glow);
+  assert(lamps.length === 8 && lenses.length === 16, `The villa has ${lamps.length} washed piers and ${lenses.length} lenses, not 8 and 16.`);
+  for (const m of lamps) {
+    const w = m.userData.wash,
+      b = new T.Box3(),
+      p = m.geometry.attributes.position,
+      m4 = toShell.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < p.count; i++) b.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m4));
+    assert(m.material.userData.surfaceKind === 'brick' && w.nz === 1 && w.nx === 0 && Math.abs(w.z - b.max.z) < 1e-6, 'A lamp is not on the front face of a brick pier.');
+    assert(VILLA.storeys.slice(0, 2).some(([y0, y1]) => w.y > y0 && w.y < y1), 'A lamp is not on the ground or first floor.');
+    for (const u of [b.max.y - 0.04 - w.y, b.min.y - w.y]) assert(wallWash(0, u, w.half) < 0.02, `A lamp's wash reaches its pier's end (${u.toFixed(2)} from it).`);
+    assert(Math.abs(w.x - (b.min.x + b.max.x) / 2) < 1e-6 && w.half <= (b.max.x - b.min.x) / 2 + 1e-6 && wallWash(w.half, 0.3, w.half) === 0, `A lamp's wash spills past its pier's sides (lamp ${w.x.toFixed(3)}, half ${w.half}; pier ${b.min.x.toFixed(3)} to ${b.max.x.toFixed(3)}).`);
+  }
+  // Batched as the island will batch it.
+  batch(shell, { place: 'sky-island', floor: () => deck });
+  const built = performance.now() - begin,
+    batched = meshesOf(shell);
+  let tris = 0;
+  for (const m of batched) tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
+  assert(batched.length <= 12 && tris <= 30000, `The villa costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
+  assert(built < 600, `The villa takes ${Math.round(built)} ms to build and batch.`);
+  const solid = batched.filter((m) => !['glass', 'paving'].includes(m.material.userData.surfaceKind));
+  assert(new Set(solid.map((m) => m.material.customProgramCacheKey())).size === 1 && solid[0].material.customProgramCacheKey() === 'lius-bake-solid', 'The villa\'s solids do not share the bake program.');
+  for (const m of batched) {
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent, `The villa's ${m.material.name} batch is two-sided or transparent.`);
+    const s = patchedShader(m.material),
+      fv = varyings(s.fragmentShader);
+    assert(!s.fragmentShader.includes('discard'), `The villa's ${m.material.name} batch cuts holes.`);
+    for (const name of varyings(s.vertexShader)) assert(!new RegExp('\\b' + name + '\\b').test(s.fragmentShader) || fv.has(name), `${m.material.name}: ${name} read but not declared`);
+  }
+  {
+    const s = patchedShader(solid[0].material);
+    assert(s.vertexShader.includes('attribute vec4 aWash') && s.vertexShader.includes('vWash = aWash') && s.fragmentShader.includes('totalEmissiveRadiance+=washLevel*vWash.x'), 'The bake program does not carry the wall wash.');
+    // Only a negative w lets the wash in: a mesh without aWash reads WebGL's generic value (w 1).
+    assert(s.fragmentShader.includes('if(vWash.w<0.&&washLevel>0.)'), 'The wall wash is not gated on a negative w.');
+    assert(s.uniforms.washLevel === library.washLevel, 'The bake program does not read the shared wash level.');
+  }
+  const washes = batched.filter((m) => m.geometry.getAttribute('aWash'));
+  assert(washes.length >= 1 && washes.every((m) => ['stone', 'paint'].includes(m.material.userData.surfaceKind)), `The wash is on the villa's ${washes.map((m) => m.material.name).join(', ')}.`);
+  {
+    let strongest = 0,
+      lit = 0;
+    for (const m of washes) {
+      const a = m.geometry.getAttribute('aWash');
+      for (let i = 0; i < a.count; i++) {
+        strongest = Math.max(strongest, a.getX(i));
+        if (a.getX(i) > 0) lit++;
+        // A washed vertex carries its half width negated; the rest of its batch carries zeros.
+        assert(a.getX(i) > 0 ? a.getW(i) < 0 : a.getW(i) <= 0, `A villa vertex's wash has strength ${a.getX(i)} and w ${a.getW(i)}.`);
+      }
+    }
+    assert(lit > 0 && Math.abs(strongest - Math.max(VILLA_LAMPS.lens, VILLA_LAMPS.strength)) < 1e-6, `The villa's wash is ${lit} lit vertices at most ${strongest}.`);
+  }
+  // A lens (white paint, lit at the wash's peak) against the brick under the same lamp: brighter
+  // than the brick's wash, and under 1 in luminance (linear), as a window's glow is. Brighter than
+  // that, a lens 0.14 across spills over its edges when the multisampled frame resolves.
+  {
+    const Y = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b,
+      lit = (albedo, strength) => Y(washLight().multiply(new T.Color(albedo))) * strength * wallWash(0, WASH_PEAK, VILLA_LAMPS.half.bay),
+      lens = lit(VILLA_LOOK.paint, VILLA_LAMPS.lens),
+      brick = lit(VILLA_LOOK.brick, VILLA_LAMPS.strength);
+    assert(lens <= 1 && lens > 2 * brick && brick > 0.15, `A lens glows at ${lens.toFixed(2)} and the brick under its lamp at ${brick.toFixed(2)}.`);
+    // Its colour (sRGB, at full value) is no louder than the lanterns' glass.
+    const light = washLight();
+    assert(hsv('#' + light.multiplyScalar(1 / Math.max(light.r, light.g, light.b)).getHexString()).s <= hsv(palette.lantern).s + 1e-3, 'The wash is a louder colour than the lanterns.');
+  }
+  // The lamps are on from dusk to dawn: the wash's level is the night's.
+  for (const night of [0, 0.4, 1]) {
+    library.setNight(night);
+    assert.equal(library.washLevel.value, night, `The wash is at ${library.washLevel.value} at night ${night}.`);
+  }
+  // Its night lights: one a window. The front door's is the hall's (the fixed 'entrance' role: warm,
+  // never out); the rest are 'villa' rooms, all lit and warm in the evening, of which about half go
+  // out, late and no two together, and the rest stay lit till morning.
+  const own = villaWindows.filter((p) => p.place === 'sky-island'),
+    groups = new Set(parts.filter((m) => m.material.userData.surfaceKind === 'glass').map((m) => m.userData.windowGroup));
+  assert(own.length === groups.size && own.length === 33 && !groups.has(undefined), `The villa has ${own.length} lights for ${groups.size} windows.`);
+  const level = (p, h) => windowLevel(p.light, windowClock(h)),
+    entrance = own.filter((p) => p.role === VILLA_ENTRANCE),
+    rooms = own.filter((p) => p.role === VILLA_WINDOWS);
+  assert(VILLA_WINDOWS === 'villa' && VILLA_ENTRANCE === 'entrance' && entrance.length === 1 && rooms.length === 32, `The villa has ${entrance.length} entrance lights and ${rooms.length} rooms.`);
+  {
+    const at = entrance[0].at.clone().applyMatrix4(toShell);
+    assert(Math.abs(at.x) < VILLA.bay.hw && at.z > bayFront && at.y > VILLA.terrace.top && at.y < VILLA.storeys[0][1], `The entrance's light is not the front door's (${at.toArray().map((n) => n.toFixed(2)).join(', ')}).`);
+    for (const h of [20, 23, 2.5, 4, 5.4]) assert(level(entrance[0], h) > 0.5, `The front door is dark at ${h}.`);
+  }
+  // (Tint 0 is the warm white, 128 exactly today's glow; only above it does a pane turn cool.)
+  assert(own.every((p) => level(p, 20) > 0.1 && Math.round(p.light[1] * 255) <= 128), 'A villa window is dark or cool at 20:00.');
+  assert(rooms.every((p) => level(p, 23) > 0.1), 'A villa room is out before 23:00.');
+  const late = rooms.filter((p) => level(p, 2.5) > 0.1),
+    offs = rooms.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255);
+  assert(late.length >= 0.3 * rooms.length && late.length <= 0.7 * rooms.length, `${late.length} of the villa's ${rooms.length} rooms are lit at 02:30.`);
+  assert(late.every((p) => level(p, 4) > 0.1 && level(p, 5.4) > 0.1), 'A villa room lit at 02:30 goes out before morning.');
+  assert(offs.length === rooms.length - late.length && new Set(offs).size === offs.length, 'Two villa rooms go out together.');
+}
 console.log(
   `Town checks passed: 9 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
