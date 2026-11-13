@@ -5,6 +5,7 @@ import {
   COURSE_HEIGHT,
   GROUND_KINDS,
   SURFACE_UV_KINDS,
+  WASH_PEAK,
   projectMaterialUV,
   surfacePattern,
   type SurfaceKind,
@@ -65,7 +66,7 @@ function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
  * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
  * reads them against the window clock (city-materials' setWindows).
  */
-type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'cockpit' | 'unlit' | 'clear';
+export type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'villa' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'cockpit' | 'entrance' | 'unlit' | 'clear';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
@@ -80,6 +81,12 @@ const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
   residence: { lit: 0.6, dim: 0.3, cool: 0, goes: 0.5, span: [0.03, 0.97], risers: 0.25 }, // 22:08-02:22
   civic: { lit: 0.65, dim: 0.25, cool: 0.1, goes: 0.75, span: [0.02, 0.45], risers: 0 }, // cleaners, 22:05-00:02
   studio: { lit: 0.85, dim: 0, cool: 0.1, goes: 0.5, span: [0.6, 0.98], risers: 0 }, // 00:42-02:25
+  // The sky villa (town-sky-villa): as the reference's dusk, every window lit in the evening, warm
+  // (a fifth of them dim, none cool); then half go out one by one, late, and the rest stay on till
+  // morning, as half the homes' lit rooms do, so the island is never a dark shape in the deep night
+  // (09:30 in Beijing). Not one of the town's rooms: check-town's shares and its count of night
+  // lamps leave it out.
+  villa: { lit: 1, dim: 0.2, cool: 0, goes: 0.5, span: [0.3, 0.9], risers: 0.25 }, // 23:20-02:02
 };
 /** [level, tint, off, wake] for panes that never change (1 = never). */
 const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
@@ -94,6 +101,8 @@ const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
   // The parked plane's cockpit: a dim warm glow all night, its instruments' and no more. Lit as its
   // cabin is, the windscreen's wrap round the nose read as a headlight, the brightest thing near it.
   cockpit: [0.3, 0.25, 1, 1],
+  // The sky villa's front door: the hall behind it, warm and left on all night.
+  entrance: [0.85, 0.25, 1, 1],
   unlit: [0, 0, 1, 1],
   // Glass that is no window (the residence's balustrades): never lit.
   clear: [0, 0, 1, 1],
@@ -144,6 +153,39 @@ function windowLight(o: T.Object3D, role: WindowRole, at: T.Vector3, claimed: Cl
     hi = forced ? Math.min(0.98, Math.max(m.span[1], lo + 0.2)) : m.span[1];
   const off = lit && u3 < m.goes ? claim(claimed.off, byte(lo), byte(hi), u3 / m.goes) : 255;
   return [byte(level), byte(tint), off, u4 < m.risers && (!lit || off < 255) ? claim(claimed.wake, 10, 245, u4 / m.risers) : 255];
+}
+
+/**
+ * Light from a lamp washed onto a wall (city-materials' WASH_FRAGMENT), asked for by a solid's
+ * `userData.wash`: the lamp (x, y, z) and the wall's outward normal (nx, nz), both in the mesh's
+ * parent's frame, its strength, and the half width across the wall it fades out by. `glow` lights
+ * the whole mesh evenly at the wash's peak instead (a lamp's lens).
+ */
+export type Wash = { x: number; y: number; z: number; nx: number; nz: number; strength: number; half: number; glow?: boolean };
+/**
+ * A washed mesh's aWash in g's space (geometry already there; toG takes its parent's frame to g's),
+ * per vertex: x the lamp's strength, faded out on faces turned from the wall (a pier's returns stay
+ * dark, its bevels take a little), y the distance across the wall from the lamp, z the height over
+ * it, w the half width negated (the shader's gate: see city-materials' wash). Linear in position,
+ * so they interpolate exactly across a face.
+ */
+function washAttribute(wash: Wash, toG: T.Matrix4, geometry: T.BufferGeometry) {
+  const p = geometry.getAttribute('position'),
+    n = geometry.getAttribute('normal'),
+    lamp = new T.Vector3(wash.x, wash.y, wash.z).applyMatrix4(toG),
+    out = new T.Vector3(wash.nx, 0, wash.nz).transformDirection(toG),
+    values = new Float32Array(p.count * 4);
+  for (let i = 0; i < p.count; i++) {
+    if (wash.glow) {
+      values.set([wash.strength, 0, WASH_PEAK, -wash.half], i * 4);
+      continue;
+    }
+    const dx = p.getX(i) - lamp.x,
+      dz = p.getZ(i) - lamp.z,
+      facing = n.getX(i) * out.x + n.getY(i) * out.y + n.getZ(i) * out.z;
+    values.set([wash.strength * T.MathUtils.smoothstep(facing, 0.3, 0.9), dx * out.z - dz * out.x, p.getY(i) - lamp.y, -wash.half], i * 4);
+  }
+  return new T.BufferAttribute(values, 4);
 }
 
 /*
@@ -488,6 +530,8 @@ export function createBatch(ctx: TownContext) {
       }
       geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
       geometry.setAttribute('aBake', new T.BufferAttribute(bake, 4, true));
+      // The night wash, where a solid asks for it (the rest of its batch gets zeros below).
+      if (o.userData.wash && solid && k !== 'glass') geometry.setAttribute('aWash', washAttribute(o.userData.wash, inv.clone().multiply(o.parent!.matrixWorld), geometry));
       if (solid && k !== 'glass') {
         toned.push({ colors, heights, object });
         const r = reach.get(object) ?? { low: Infinity, high: -Infinity };
@@ -543,10 +587,14 @@ export function createBatch(ctx: TownContext) {
     }
     old.forEach((o) => o.removeFromParent());
     for (const { mat, cast, list: geometries } of groups.values()) {
+      // A batch with a washed piece in it gives the rest of it a wash of 0 (merging wants every
+      // piece to carry the same attributes); one without carries none, so it is as it was.
+      if (geometries.some((geo) => geo.getAttribute('aWash')))
+        for (const geo of geometries) if (!geo.getAttribute('aWash')) geo.setAttribute('aWash', new T.BufferAttribute(new Float32Array(geo.getAttribute('position').count * 4), 4));
       const normalized = geometries.map((geo) => {
         const plain = geo.index ? geo.toNonIndexed() : geo;
         for (const name of Object.keys(plain.attributes))
-          if (!['position', 'normal', 'color', 'uv', 'aBake', 'aWindow'].includes(name)) plain.deleteAttribute(name);
+          if (!['position', 'normal', 'color', 'uv', 'aBake', 'aWash', 'aWindow'].includes(name)) plain.deleteAttribute(name);
         if (!plain.getAttribute('normal')) plain.computeVertexNormals();
         return plain;
       });

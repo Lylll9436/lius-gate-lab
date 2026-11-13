@@ -190,10 +190,12 @@ type WindowUniform = { value: T.Vector2 };
 const SURFACE_PARS = `
 uniform float surfaceGain[${PATTERNS}];
 uniform float surfacePx;
+uniform float washLevel;
 varying vec4 vBake;
 varying vec3 vSurfP;
 varying vec3 vSurfN;
 varying vec2 vSurfUV;
+varying vec4 vWash;
 float sh2(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float sh3(vec3 q){q=fract(q*.1031);q+=dot(q,q.zyx+31.32);return fract((q.x+q.y)*q.z);}
 float sn3(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
@@ -281,6 +283,58 @@ if(dot(dh,dh)>0.&&abs(det)>0.)normal=normalize(abs(det)*normal-sign(det)*(dh.x*r
 type GainUniform = { value: number[] };
 type PxUniform = { value: number };
 
+/*
+ * Light from a lamp washed onto a wall (the sky villa's up-and-down wall lamps), painted in the
+ * solids' one bake program: no light in the scene (a phone pays for every light on every pixel,
+ * and the quality governor cannot shed them) and no mesh of its own.
+ * batch() writes aWash only on the solids that ask for it (and zeros on the rest of their batch):
+ * x the lamp's strength, y the distance across the wall from it, z the height over it, w the half
+ * width it fades out by, negated. Only a negative w lets the wash in: a mesh with no aWash reads
+ * WebGL's generic attribute value instead, whose w is always 1 (the default (0, 0, 0, 1), or any
+ * colour or uv default three.js sets at that location for a ShaderMaterial), and the zeros have w
+ * 0, so every other mesh takes no wash and draws exactly as it did. It costs the program one
+ * varying: ten rows in all with a shadowed spotlight, of the fifteen every WebGL2 device offers.
+ * The light is painted on the surface, never a glow: up from the lamp a scallop opens and fades by
+ * 0.85, down from it a smaller one by 0.45, each fading out by the half width at its sides (so the
+ * light fans out over a pier's whole face from about halfway up), in a warm white times the
+ * surface's own colour (so the brick's coursing shows in it), scaled by washLevel: the night, as
+ * the street lamps' glass is, so the lamps are on from dusk to dawn. Distances interpolate exactly
+ * across a face, so the scallops are as crisp at any zoom and hold still as the camera moves.
+ */
+/** The wash's warm white, no more saturated than palette.lantern (its own linear colour times WASH_GAIN). */
+const WASH_COLOUR = '#ffcf94',
+  WASH_GAIN = 2.8;
+/**
+ * The scallops' shape, shared by the shader and its JS twin: each one's spread (a + b x distance
+ * from the lamp), where it fades out (from, to) and the down one's share of the up one's light.
+ */
+const WASH_SHAPE = { up: [0.045, 0.4], upFade: [0.2, 0.85], down: [0.04, 0.38], downFade: [0.06, 0.45], downShare: 0.55, side: 0.8 };
+/** The height over the lamp where the up scallop peaks: a lens (batch()'s `glow`) is lit at it. */
+export const WASH_PEAK = 0.08;
+/** The wash's light on a white surface at full strength where wallWash() is 1 (linear), for the checks. */
+export const washLight = () => new T.Color(WASH_COLOUR).multiplyScalar(WASH_GAIN);
+const washColour = () => `vec3(${washLight().toArray().map((v) => v.toFixed(3)).join(',')})`;
+const WASH_FRAGMENT = () => {
+  const S = WASH_SHAPE,
+    n = (v: number) => v.toFixed(3);
+  return `if(vWash.w<0.&&washLevel>0.){float a=abs(vWash.y),u=vWash.z,wh=-vWash.w,su=${n(S.up[0])}+${n(S.up[1])}*max(u,0.),sd=${n(S.down[0])}+${n(S.down[1])}*max(-u,0.);
+float up=smoothstep(-.01,.07,u)*(1.-smoothstep(${n(S.upFade[0])},${n(S.upFade[1])},u))*exp(-a*a/(su*su))*(.5+.5/(1.+3.*max(u,0.)));
+float dn=${n(S.downShare)}*smoothstep(-.01,.06,-u)*(1.-smoothstep(${n(S.downFade[0])},${n(S.downFade[1])},-u))*exp(-a*a/(sd*sd));
+totalEmissiveRadiance+=washLevel*vWash.x*(up+dn)*(1.-smoothstep(${n(S.side)}*wh,wh,a))*${washColour()}*diffuseColor.rgb;}`;
+};
+/** The JS twin of WASH_FRAGMENT's shape (before strength and washLevel), for the checks: a, u as aWash's y, z, and w the half width (aWash's -w). */
+export function wallWash(a: number, u: number, w: number) {
+  const S = WASH_SHAPE,
+    ss = (e0: number, e1: number, x: number) => T.MathUtils.smoothstep(x, e0, e1),
+    d = Math.abs(a),
+    su = S.up[0] + S.up[1] * Math.max(u, 0),
+    sd = S.down[0] + S.down[1] * Math.max(-u, 0),
+    up = ss(-0.01, 0.07, u) * (1 - ss(S.upFade[0], S.upFade[1], u)) * Math.exp((-d * d) / (su * su)) * (0.5 + 0.5 / (1 + 3 * Math.max(u, 0))),
+    dn = S.downShare * ss(-0.01, 0.06, -u) * (1 - ss(S.downFade[0], S.downFade[1], -u)) * Math.exp((-d * d) / (sd * sd));
+  return (up + dn) * (1 - ss(S.side * w, w, d));
+}
+type WashUniform = { value: number };
+
 /**
  * Contact and eave darkening, shaped per fragment from the linear distances batch() bakes into
  * aBake (x height above the ground, y depth below an overhang, both 0..1 over 4 units; z the
@@ -290,20 +344,21 @@ type PxUniform = { value: number };
  * kind, so all standard solids share one program (and the clear-coated ones one more, glass one
  * more).
  */
-function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, gainU: GainUniform, pxU: PxUniform, glass = false, windowClock?: WindowUniform) {
+function bakeShader(m: T.MeshStandardMaterial, specU: SpecUniform, gainU: GainUniform, pxU: PxUniform, glass = false, windowClock?: WindowUniform, washU?: WashUniform) {
   m.onBeforeCompile = (shader) => {
     shader.uniforms.specBoost = specU;
     if (!glass) {
       shader.uniforms.surfaceGain = gainU;
       shader.uniforms.surfacePx = pxU;
+      shader.uniforms.washLevel = washU ?? { value: 0 };
     }
     if (glass && windowClock) shader.uniforms.windowClock = windowClock;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 aBake;\nvarying vec4 vBake;' + (glass ? '\nvarying vec2 vPane;\nattribute vec4 aWindow;\nuniform vec2 windowClock;\nvarying vec3 vWindow;' : '\nvarying vec3 vSurfP;\nvarying vec3 vSurfN;\nvarying vec2 vSurfUV;'))
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * vec4(4., 4., 1., 1.);' + (glass ? '\nvPane = uv;\n' + WINDOW_VERTEX : '\nvSurfP = position;\nvSurfN = objectNormal;\nvSurfUV = uv;'));
+      .replace('#include <common>', '#include <common>\nattribute vec4 aBake;\nvarying vec4 vBake;' + (glass ? '\nvarying vec2 vPane;\nattribute vec4 aWindow;\nuniform vec2 windowClock;\nvarying vec3 vWindow;' : '\nvarying vec3 vSurfP;\nvarying vec3 vSurfN;\nvarying vec2 vSurfUV;\nattribute vec4 aWash;\nvarying vec4 vWash;'))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = aBake * vec4(4., 4., 1., 1.);' + (glass ? '\nvPane = uv;\n' + WINDOW_VERTEX : '\nvSurfP = position;\nvSurfN = objectNormal;\nvSurfUV = uv;\nvWash = aWash;'));
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', SPEC_UNIFORM + (glass ? '\nvarying vec4 vBake;\nvarying vec2 vPane;\nvarying vec3 vWindow;' : SURFACE_PARS))
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + (glass ? '\ntotalEmissiveRadiance *= vWindow;' : ''))
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + (glass ? '\ntotalEmissiveRadiance *= vWindow;' : '\n' + WASH_FRAGMENT()))
       .replace('#include <color_fragment>', `#include <color_fragment>
    float contact = mix(.55, 1., smoothstep(0., .7, vBake.x)) * mix(.82, 1., smoothstep(0., .08, vBake.x)); // guide's 0.45 foot band
    diffuseColor.rgb *= contact * mix(.7, 1., smoothstep(0., .45, vBake.y))${glass ? ';' : ` * mix(.8, 1., smoothstep(0., .35, vBake.z));\n${SURFACE_PATTERN}`}`)
@@ -582,6 +637,8 @@ export function createCityMaterials() {
   let night = 0;
   /** The window clock every glass batch material reads (one shared object): x `out`, y `wake`. */
   const windowClock: WindowUniform = { value: new T.Vector2() };
+  /** The wall wash's level every solid batch material reads (one shared object): the night. */
+  const washLevel: WashUniform = { value: 0 };
   /** Device pixels per CSS pixel (at least 1), shared by every solid's surface pattern. */
   const surfacePx: PxUniform = { value: 1 };
   const cache = new Map<string, T.MeshStandardMaterial>();
@@ -716,7 +773,7 @@ export function createCityMaterials() {
         m.name = `city-${kind}`;
       }
       if (MASKED_GROUND.has(kind)) groundShader(m, kind, bakeUniforms);
-      else if (!GROUND_KINDS.has(kind)) bakeShader(m, specFor(kind), surfaceGain, surfacePx, kind === 'glass', windowClock);
+      else if (!GROUND_KINDS.has(kind)) bakeShader(m, specFor(kind), surfaceGain, surfacePx, kind === 'glass', windowClock, washLevel);
       batches.set(key, m);
     }
     return batches.get(key)!;
@@ -737,6 +794,7 @@ export function createCityMaterials() {
     for (const m of [...cache.values(), ...batches.values()])
       if (m.userData.surfaceKind === 'glass')
         m.emissiveIntensity = night * 0.72;
+    washLevel.value = night;
   }
   /** The renderer's pixel ratio, so the surface patterns fade by CSS pixels (see SURFACE_PARS). */
   function setPixelRatio(ratio: number) {
@@ -746,7 +804,7 @@ export function createCityMaterials() {
   function setWindows(out: number, wake: number) {
     windowClock.value.set(out, wake);
   }
-  return { material, batchMaterial, dispose, setNight, setWindows, setSpec, setLook, setPixelRatio, bakeUniforms };
+  return { material, batchMaterial, dispose, setNight, setWindows, setSpec, setLook, setPixelRatio, bakeUniforms, washLevel };
 }
 
 /*
