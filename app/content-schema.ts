@@ -84,7 +84,7 @@ export type NeighbourGroup = {
    * one of its leaders: a sentence that stands on its own, ending in a full stop.
    */
   intro: Localized;
-  /** What it does, paraphrased from its own site. */
+  /** What it does, in its own site's terms: its own line quoted, the rest a short summary. */
   summary: Localized;
   /** Its tie to Liu’s Gate as the sources state it, and nothing stronger. */
   connection: Localized;

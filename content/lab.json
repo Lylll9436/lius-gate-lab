@@ -342,8 +342,8 @@
         "zh": "Alison Heppenstall"
       },
       "summary": {
-        "en": "Professor of Geocomputation at the University of Glasgow and a group leader of UIA (Urban Intelligence & Analytics). She describes herself as a methodologist: she adapts and develops AI and machine-learning approaches for problems in different domains.",
-        "zh": "格拉斯哥大学地理计算教授，UIA（Urban Intelligence & Analytics）的团队负责人之一。她把自己看作方法研究者：为不同领域的问题改造并发展人工智能与机器学习方法。"
+        "en": "Professor of Geocomputation at the University of Glasgow and a Group Leader of UIA (Urban Intelligence & Analytics). She describes herself as a methodologist: she adapts and develops AI/ML approaches to solve problems in different domains.",
+        "zh": "格拉斯哥大学地理计算教授，UIA（Urban Intelligence & Analytics）的团队负责人（Group Leader）之一。她称自己是一名方法论学者（methodologist）：改造并发展 AI/ML 方法，用来解决不同领域的问题。"
       },
       "visibility": "published",
       "order": 0,
@@ -367,12 +367,12 @@
           "zh": "Urban Intelligence & Analytics"
         },
         "intro": {
-          "en": "UIA is a group that studies how cities work and how they change, using data, computer models and artificial intelligence.",
-          "zh": "UIA 是一个研究团队，用数据、计算机模型和人工智能来理解城市如何运行、如何变化。"
+          "en": "UIA describes its work as “Understanding cities to build better futures”: it studies how cities work and how they change over time, using data, computer models and artificial intelligence.",
+          "zh": "UIA 用“Understanding cities to build better futures”（理解城市，建设更好的未来）来概括自己的工作：用数据、计算机模型和人工智能，研究城市如何运行、如何随时间变化。"
         },
         "summary": {
-          "en": "UIA is a group that studies how cities work and how they change, using data, computer models and artificial intelligence. It builds simulations of cities and the people who live in them, much of it with agent-based models, microsimulation and synthetic populations, so that decision-makers can try out what a policy might do before they commit to it. Its projects range across housing, transport, energy, health and the environment.",
-          "zh": "UIA 是一个研究团队，用数据、计算机模型和人工智能来理解城市如何运行、如何变化。团队为城市及其居民建立仿真模型，多采用智能体模型、微观模拟与合成人口等方法，让决策者在定下政策之前，先看看它可能带来什么。项目涉及住房、交通、能源、健康与环境。"
+          "en": "UIA describes its work as “Understanding cities to build better futures”: it studies how cities work and how they change over time, using data, computer models and artificial intelligence. It builds computer simulations of cities and their populations, much of it with agent-based models, microsimulation and synthetic population generation, so that decision-makers can explore what a policy might do before they commit to it. Its projects range across housing, transport, energy, health and the environment, among them AI4CI, HealthMod, SIPHER, OPTIMA and ExAMPLER.",
+          "zh": "UIA 用“Understanding cities to build better futures”（理解城市，建设更好的未来）来概括自己的工作：用数据、计算机模型和人工智能，研究城市如何运行、如何随时间变化。团队为城市及其人口建立计算机仿真，多采用智能体模型、微观模拟与合成人口生成等方法，让决策者在定下政策之前，先探索它可能带来什么。项目涉及住房、交通、能源、健康与环境，包括 AI4CI、HealthMod、SIPHER、OPTIMA 和 ExAMPLER。"
         },
         "connection": {
           "en": "Pengyuan Liu, the supervisor of Liu’s Gate, is listed among UIA’s Associates.",
@@ -393,8 +393,8 @@
             "zh": "经历"
           },
           "body": {
-            "en": "She took her first degree in Archaeology at Grey College, University of Durham, and met programming and geocomputation during her Master’s at the University of Leeds. Her PhD built agent-based models for empirical applications. She went on to hold EPSRC and ESRC Fellowships on machine-learning and AI approaches, and the inaugural ESRC-Turing Fellowship. At Leeds she was involved in the Leeds Institute for Data Analytics, the Consumer Data Research Centre and the Alan Turing Institute’s Urban Analytics Programme. In 2022 she received a prize for outstanding contribution to computational social simulation. She is a member of the Royal Geographical Society and a current Alan Turing Fellow.",
-            "zh": "她本科就读于杜伦大学格雷学院（Grey College），学的是考古学；在利兹大学读硕士期间开始接触编程与地理计算，博士阶段为实证应用构建智能体模型。此后她先后获得 EPSRC 与 ESRC 的 Fellowship，研究机器学习与人工智能方法，并获得首届 ESRC-Turing Fellowship。在利兹期间，她参与了利兹数据分析研究所（Leeds Institute for Data Analytics）、消费者数据研究中心（Consumer Data Research Centre）和艾伦·图灵研究所的城市分析项目（Urban Analytics Programme）。2022 年，她因在计算社会模拟方面的突出贡献获奖。她是皇家地理学会会员，现为 Alan Turing Fellow。"
+            "en": "She took her first degree in Archaeology at Grey College, University of Durham, and encountered programming and Geocomputation during her Master’s at the University of Leeds. Her PhD built agent-based models for empirical applications. She went on to hold EPSRC and ESRC Fellowships focused on Machine Learning/Artificial Intelligence approaches, and the inaugural ESRC-Turing Fellowship. At Leeds she was involved in the Leeds Institute for Data Analytics, the Consumer Data Research Centre and the Urban Analytics Programme at the Alan Turing Institute. In 2022 she was awarded the International Society of Computational Economics prize for outstanding contribution in computational social simulation, from the Italian Research Council. She is a member of the DSAB at the Joint BioSecurity Council and of the Royal Geographical Society, and a current Alan Turing Fellow.",
+            "zh": "她本科就读于杜伦大学格雷学院（Grey College），学的是考古学；在利兹大学读硕士期间接触到编程与地理计算（Geocomputation），博士阶段为实证应用构建智能体模型。此后她先后获得 EPSRC 与 ESRC 的 Fellowship，专注于机器学习/人工智能方法，并获得首届 ESRC-Turing Fellowship。在利兹期间，她参与了利兹数据分析研究所（Leeds Institute for Data Analytics）、消费者数据研究中心（Consumer Data Research Centre）和艾伦·图灵研究所的城市分析项目（Urban Analytics Programme）。2022 年，她获得意大利研究委员会（Italian Research Council）颁发的国际计算经济学会奖（International Society of Computational Economics prize），表彰她在计算社会模拟方面的杰出贡献。她是 Joint BioSecurity Council 下设 DSAB 的成员、皇家地理学会会员，现为 Alan Turing Fellow。"
           }
         },
         {
@@ -403,8 +403,8 @@
             "zh": "研究"
           },
           "body": {
-            "en": "Her interests include spatial agent-based models, microsimulation, evolutionary approaches, uncertainty quantification, reinforcement learning, data assimilation, exascale computation for the social sciences and urban digital twins. Her grants include AI for Collective Intelligence (AI4CI), whose Smart Cities theme she leads with CASA at UCL, ExAMPLER and HealthMod. At Glasgow she is listed in two research groups, Urban Analytics and Just Cities & Societies.",
-            "zh": "研究兴趣包括空间智能体模型、微观模拟、演化方法、不确定性量化、强化学习、数据同化、面向社会科学的 exascale（百亿亿次）计算，以及城市数字孪生。她的科研项目包括 AI for Collective Intelligence（AI4CI，她与伦敦大学学院的 CASA 一起负责其中的 Smart Cities 主题）、ExAMPLER 和 HealthMod。在格拉斯哥大学，她所在的研究组有 Urban Analytics 和 Just Cities & Societies。"
+            "en": "She has extensive experience with spatial agent-based models, microsimulation and evolutionary approaches, and strong interests in uncertainty quantification, reinforcement learning and data assimilation. She is also interested in exascale computation for the social sciences, which ties into her work on urban digital twins at local and national level. Her grants include AI for Collective Intelligence (AI4CI), an EPSRC-funded AI Hub led from the University of Bristol, whose Smart Cities theme she leads with CASA at UCL; Exascale agent-based modelling for policy evaluation in real-time (ExAMPLER); the HealthMod Cluster; and Systems Science in Public Health and Health Economics Research (SIPHER). At Glasgow she is listed in two research groups, Urban Analytics and Just Cities & Societies.",
+            "zh": "她在空间智能体模型、微观模拟和演化方法方面经验丰富，对不确定性量化、强化学习和数据同化有浓厚兴趣，也关注面向社会科学的 exascale（百亿亿次）计算，这与她在地方和国家层面参与的城市数字孪生工作相关。她的科研项目包括 AI for Collective Intelligence（AI4CI：由 EPSRC 资助、布里斯托大学牵头的人工智能中心，她与伦敦大学学院的 CASA 一起负责其中的 Smart Cities 主题）、Exascale agent-based modelling for policy evaluation in real-time（ExAMPLER）、HealthMod Cluster，以及 Systems Science in Public Health and Health Economics Research（SIPHER）。在格拉斯哥大学，她所在的研究组有 Urban Analytics 和 Just Cities & Societies。"
           }
         }
       ],
