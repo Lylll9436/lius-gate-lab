@@ -5129,7 +5129,9 @@ let skyReport = '';
   const { WATER } = await load('town-shared'),
     { SKY_LOOK, SKY_LAWN, SKY_COPING, SKY_ROCK, skySlots } = await load('town-sky'),
     { addSkyHit, skyMarks, skyFit, SKY_HIT, SKY_SHADOW, skyShadowWanted } = await load('city-scene'),
+    { SEA_SHADOW, createSeaShadow } = await load('city-water'),
     { palette } = await load('town-shared'),
+    { sunOffsetFor } = await load('city-atmosphere'),
     S = plan.SKY,
     V = plan.SKY_VILLA,
     site = plan.sites['sky-island'],
@@ -5797,6 +5799,31 @@ let skyReport = '';
 
   /* ---------------- its shadows ---------------- */
   {
+    // On the sea (which takes no shadow): a pool multiplied onto it, the town's and never the
+    // island's own, drawn after the sea with no depth write. By day it lies 5.4 from under the
+    // island, at golden hour 10.1, opposite the key light; it goes with the night and thins in the rain.
+    const shadow = createSeaShadow(WATER),
+      m = shadow.mesh.material,
+      water = city.getObjectByName('island-sea');
+    assert(shadow.mesh.parent === null && m.transparent && !m.depthWrite && m.blending === T.CustomBlending && m.blendSrc === T.ZeroFactor && m.blendDst === T.SrcColorFactor && m.fog && shadow.mesh.renderOrder > water.renderOrder && !shadow.mesh.castShadow, 'The sea shadow is not a pool multiplied onto the sea after it.');
+    assert(Math.abs(shadow.mesh.scale.x - (S.a + SEA_SHADOW.grow)) < 1e-9 && Math.abs(shadow.mesh.scale.z - (S.b + SEA_SHADOW.grow)) < 1e-9 && shadow.mesh.rotation.y === S.heading && SEA_SHADOW.depth >= 0.66 && SEA_SHADOW.depth <= 0.75 && SEA_SHADOW.height === 8.5, 'The sea shadow is not the deck\'s size and a little more, faint.');
+    for (const [name, key, far] of [
+      ['day', sunOffsetFor(0.6, Math.PI), 5.4],
+      ['golden hour', sunOffsetFor(0.02, Math.PI * 1.45), 10.1],
+    ]) {
+      shadow.update(key, 0, 0);
+      const dx = shadow.mesh.position.x - S.x,
+        dz = shadow.mesh.position.z - S.z;
+      assert(shadow.mesh.visible && m.uniforms.strength.value === 1 && Math.abs(Math.hypot(dx, dz) - far) < 0.15 && dx * key.x + dz * key.z < 0 && Math.abs(shadow.mesh.position.y - (WATER + SEA_SHADOW.lift)) < 1e-9, `By ${name} the sea shadow lies ${Math.hypot(dx, dz).toFixed(1)} from under the island.`);
+    }
+    shadow.update(sunOffsetFor(0.6, Math.PI), 1, 0);
+    assert(!shadow.mesh.visible, 'The sea shadow stays at night.');
+    shadow.update(sunOffsetFor(0.6, Math.PI), 0, 1);
+    assert(shadow.mesh.visible && Math.abs(m.uniforms.strength.value - 0.35) < 1e-9, 'The sea shadow does not thin in the rain as the town\'s shadows do.');
+    shadow.update(sunOffsetFor(0.6, Math.PI), 0, 0, false);
+    assert(!shadow.mesh.visible, 'The sea shadow shows while the island is hidden.');
+    assert(m.fragmentShader.includes('groundMasks') && !m.fragmentShader.includes('discard'), 'The sea shadow no longer fades over the shallows.');
+    shadow.dispose();
     // The sun's box is the island's only while the view is close in on it with the town out of the
     // frame (check-navigation tries the real framings): never from afar, never with land in view.
     const camera = new T.OrthographicCamera(-44, 44, 27.5, -27.5, -200, 180),

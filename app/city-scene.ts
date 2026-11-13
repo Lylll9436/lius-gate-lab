@@ -11,7 +11,7 @@ import {
 } from './town-build';
 import * as plan from './town-plan';
 import { createCityInk } from './city-ink';
-import { createIslandWater, MOON_POSITION } from './city-water';
+import { createIslandWater, createSeaShadow, MOON_POSITION } from './city-water';
 import { createStreetLighting } from './city-lighting';
 import {
   createRain,
@@ -687,6 +687,9 @@ export async function createCity(
   scene.fog = fog;
   const water = createIslandWater(model.waterLevel, -0.5, model.groundMasks);
   city.add(water.bottom, water.mesh);
+  // The sky island's shadow on the sea (which takes none): the town's, never the island's own.
+  const seaShadow = createSeaShadow(model.waterLevel, model.groundMasks);
+  city.add(seaShadow.mesh);
   // Only the lanterns around the plaza carry real spotlights (after dusk); the rest glow.
   const litLanterns = lamps
     .filter((l) => l.getWorldPosition(new T.Vector3()).length() < 9.5)
@@ -1888,6 +1891,7 @@ export async function createCity(
     gulls.object.visible = gullsOut > 0.001;
     gulls.update(time, gullsOut);
     water.update(time, night, camera, { rain, sun: keyOffset, moon: moonAt });
+    seaShadow.update(keyOffset, night, rain, skyShown);
     // Shadows refresh every other frame: moving things still get moving shadows,
     // and the costliest pass runs half as often. A turned key light refreshes at once.
     frameIndex++;
@@ -2195,6 +2199,7 @@ export async function createCity(
       mats.forEach((m) => m.dispose());
       lighting.dispose();
       water.dispose();
+      seaShadow.dispose();
       weather.dispose();
       gulls.dispose();
       ink.dispose();
