@@ -6815,13 +6815,25 @@ let skyReport = '';
         // behind them.)
         if (!drift) {
           let seen = 0;
-          // (About two thousand of its still points a bearing: a ray against the island costs some milliseconds.)
-          for (let k = 0; k < still.length; k += Math.ceil(still.length / 2000)) {
-            through(still[k]);
-            if ((ray.intersectObjects(roots, true)[0]?.point.distanceTo(still[k]) ?? 1) > 0.01) continue;
+          // One still point of it in each 0.6 square of the screen, the one nearest the camera (about
+          // four hundred a bearing: a ray against the island costs some milliseconds).
+          const front = new Map();
+          for (const p of still) {
+            const [u, w] = flat(p),
+              cell = Math.floor(u / 0.6) + ' ' + Math.floor(w / 0.6),
+              near = p.dot(back);
+            if (!(front.get(cell)?.near >= near)) front.set(cell, { p, near });
+          }
+          for (const { p } of front.values()) {
+            through(p);
+            const hits = ray.intersectObjects(roots, true);
+            if ((hits[0]?.point.distanceTo(p) ?? 1) > 0.01) continue;
             seen++;
-            const picked = pickTarget(ray, models, model.parkHit, pick);
-            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${still[k].toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
+            // pickTarget casts this same ray at the island's root again: it is handed the island's own
+            // hits from the cast above, as that cast gives them (the same ray, the same meshes).
+            const own = hits.filter((h) => under(h.object, sky.root)),
+              picked = pickTarget(Object.create(ray, { intersectObject: { value: (o, ...rest) => (o === sky.root ? own : ray.intersectObject(o, ...rest)) } }), models, model.parkHit, pick);
+            assert.equal(picked, 'sky-island', `At bearing ${bearing.toFixed(2)} the pointer on the sky island at ${p.toArray().map((n) => n.toFixed(2)).join(', ')} picks ${picked}.`);
           }
           assert(seen > 150, `Bearing ${bearing.toFixed(2)} sees only ${seen} points of the sky island.`);
           seenAll += seen;
