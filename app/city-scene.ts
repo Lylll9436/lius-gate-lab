@@ -1153,18 +1153,23 @@ export async function createCity(
     panBack = new T.Vector3(),
     panLine = new T.Line3(PAN.from, PAN.to),
     panOnLink = new T.Vector3(),
-    panLink = new T.Line3(PAN.sky.from, PAN.sky.centre);
+    panLink = new T.Line3(PAN.sky.from, PAN.sky.centre),
+    panHeld = new T.Vector3(),
+    panAlong = new T.Vector3(),
+    // The target as the last frame's limit left it (the frame loop's, right after OrbitControls' update).
+    panLast = new T.Vector3();
   /**
    * The sky island's pocket's reach on the ground: PAN.sky.reach at the town's pitch, and as much
    * further out as the line of sight runs at a lower one (the file's ground point lies 11.7 beyond
    * the island at the town's pitch, 42.6 degrees, and 18.7 at SKY_PITCH, 30, where the pocket's reach
-   * is 25.5): the same freedom on screen either way.
+   * is 25.5): the same freedom on screen either way. At `low` of the way down (the camera's pitch now,
+   * by default).
    */
-  function skyReach() {
-    return pitch <= 0 ? PAN.sky.reach : (PAN.sky.reach * Math.tan(TOWN_PITCH)) / Math.tan(elevationAt(pitch));
+  function skyReach(low = pitch) {
+    return low <= 0 ? PAN.sky.reach : (PAN.sky.reach * Math.tan(TOWN_PITCH)) / Math.tan(elevationAt(low));
   }
-  /** The pan region the subject point p is deepest in, or nearest to: the nearest point of its core and its reach. */
-  function panRegion(p: T.Vector3) {
+  /** The pan region the subject point p is deepest in, or nearest to, at `low` of the way down to the sky island's pitch: the nearest point of its core and its reach. */
+  function panRegion(p: T.Vector3, low = pitch) {
     panSubject.set(p.x, 0, p.z);
     panLine.closestPointToPoint(panSubject, true, panOnLine);
     panOnDeck.set(T.MathUtils.clamp(p.x, PAN.deck.x0, PAN.deck.x1), 0, T.MathUtils.clamp(p.z, PAN.deck.z0, PAN.deck.z1));
@@ -1172,7 +1177,7 @@ export async function createCity(
     const disc = Math.hypot(p.x, p.z) - PAN.disc,
       causeway = panSubject.distanceTo(panOnLine) - PAN.causeway,
       deck = panSubject.distanceTo(panOnDeck) - PAN.deck.reach,
-      reach = skyReach(),
+      reach = skyReach(low),
       pocket = panSubject.distanceTo(PAN.sky.centre) - reach,
       link = panSubject.distanceTo(panOnLink) - PAN.sky.link,
       airport = Math.min(causeway, deck);
@@ -1198,11 +1203,15 @@ export async function createCity(
    * back in. Pulled in at once, the view jumped as the touch landed. And while the camera's pitch
    * changes (the sky island's file zoomed out past its close view, or back in), the regions move
    * under a view that stands still: the island's pocket shrinks as the pitch rises (skyReach), and
-   * the line of sight swings the ground point along itself. The slack then grows to take up whatever
-   * that puts the view out by (`panPitch`, the pitch at the last hold), so the clamp never pulls it:
-   * zoomed out from the pocket's edge, OrbitControls drew the view 58 px back toward the island over
-   * the two seconds of the pitch's ease at 1440 x 900, with no hand on it. A drag meanwhile is still
-   * held by the last frame's limit, and once the pitch has settled the slack only shrinks again.
+   * the line of sight swings the ground point along itself. The slack then grows by what that change
+   * of pitch alone does to the view as the last frame's limit left it (`panLast`; `panPitch`, the pitch
+   * at the last hold), signed, so the clamp never pulls it: zoomed out from the pocket's edge,
+   * OrbitControls drew the view 58 px back toward the island over the two seconds of the pitch's ease
+   * at 1440 x 900, with no hand on it. Whatever else moved the view since is held as anywhere: a drag,
+   * and OrbitControls' zoom at the pointer, which moves the target after its own clamp (taken up into
+   * the slack while the pitch eased, wheel or pinch zooms out at one point and in at another walked the
+   * view off the island's pocket and out over open sea). Once the pitch has settled the slack only
+   * shrinks again.
    */
   function holdPan() {
     const back = panBack.copy(camera.position).sub(controls.target).normalize(),
@@ -1214,12 +1223,27 @@ export async function createCity(
     }
     const lift = (ground.y - excess) / back.y;
     ground.addScaledVector(back, -ground.y / back.y);
-    const region = panRegion(ground),
+    // (Before the frame's own region: excessAt shares panRegion's scratch points.)
+    const bearing = Math.atan2(back.x, back.z),
+      eased = !tween && pitch !== panPitch && panSlack < Infinity ? excessAt(panLast, pitch, bearing) - excessAt(panLast, panPitch, bearing) : 0,
+      region = panRegion(ground),
       out = Math.max(0, ground.distanceTo(region.centre) - region.radius);
-    panSlack = tween ? Infinity : pitch !== panPitch && panSlack < Infinity ? Math.max(panSlack, out) : Math.min(panSlack, out);
+    panSlack = tween ? Infinity : pitch !== panPitch && panSlack < Infinity ? Math.max(0, panSlack + eased) : Math.min(panSlack, out);
     panPitch = pitch;
     controls.cursor.copy(shiftApplied).add(region.centre).addScaledVector(back, lift);
     controls.maxTargetRadius = tween ? Infinity : region.radius + panSlack;
+  }
+  /**
+   * How far out of the pan regions the view stands with its target at `point`, seen from `bearing` at
+   * `low` of the way down to the sky island's pitch (holdPan): its subject's ground point against the
+   * region it is deepest in at that pitch.
+   */
+  function excessAt(point: T.Vector3, low: number, bearing: number) {
+    const back = viewOffset(bearing, panAlong, low).normalize(),
+      ground = panHeld.copy(point).sub(shiftApplied);
+    ground.addScaledVector(back, -ground.y / back.y);
+    const region = panRegion(ground, low);
+    return Math.max(0, ground.distanceTo(region.centre) - region.radius);
   }
   controls.maxTargetRadius = PAN.disc;
   controls.screenSpacePanning = true;
@@ -2351,6 +2375,8 @@ export async function createCity(
     if (!inspect)
       controls.maxZoom = Math.max(CITY_MAX_ZOOM, Math.min(controls.maxZoom, camera.zoom));
     controls.update();
+    // Where the limit has left the target: the next hold's slack grows only by what the pitch does to it.
+    panLast.copy(controls.target);
     // Whatever the visitor panned to is where the next panel offset starts from.
     if (!tween) target.copy(controls.target);
     shownZoom = camera.zoom;

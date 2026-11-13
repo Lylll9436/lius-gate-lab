@@ -795,14 +795,14 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
 {
   const pieces = [];
   const collect = (node) => {
-    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
+    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
     if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 25, 'The pan and fit check must find every piece it runs.');
+  assert.equal(pieces.length, 26, 'The pan and fit check must find every piece it runs.');
   assert(/controls\.minZoom = 0\.45;/.test(source), 'The town\'s widest zoom is no longer 0.45.');
   const view = {
     T,
@@ -829,7 +829,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // The camera's pitch as it stands (0, the town's: viewOffset), unless a check brings it down.
     pitch: 0,
   };
-  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH });`,
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH, panLast });`,
     scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
@@ -958,6 +958,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         }
         pan.holdPan();
         controls.update();
+        pan.panLast.copy(controls.target);
         camera.updateMatrixWorld();
         const d = controls.target.clone().sub(was),
           g = ground();
@@ -1840,6 +1841,218 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       skyNav.pocket = `a view zoomed out from the sky island's pocket's edge left where it stands through ${eases} pitch eases (${still.toFixed(2)} px at most, ${absorbed.toFixed(1)} of slack taken up at most)`;
     }
 
+    // (c2c) Zoomed at the pointer in the file (the final review's first camera finding, C2a's own pull
+    // fix's side effect): while the pitch eased, the slack grew to whatever the view stood out by, which
+    // took up OrbitControls' zoom at the pointer too (City mode's zoomToCursor moves the target after
+    // OrbitControls' own clamp), so wheel or pinch zooms out with the pointer at one point and in at
+    // another walked the view off the island's pocket and out over open sea, which the pan limit never
+    // brought back: at 1440 x 900, six notches out at (150, 450) and six in at (940, 450) took the ground
+    // point 18.7, 22.3, 32.2, 44.0 and 56.5 from the island (its pocket 25.5). Now the slack grows only by
+    // what the change of pitch itself does to the view as the last frame's limit left it. Through three's
+    // real OrbitControls (zoom at the pointer, its wheel and its two-finger pinch handlers, the scene's
+    // cancel() on its 'start') and the frame loop's own panel offset, turn, pitch step, wheel-zoom sync,
+    // glide, pan limit and update, from the file at rest: five cycles of zooming out with the pointer (or
+    // the pinch's middle) near the frame's left edge and back in near its right; on desktops by the
+    // wheel, on phones held either way by pinches, on the tablet by both. On every frame the limit holds
+    // the view (its ground point no further out of its region at the pitch it stands at than the slack,
+    // half a unit more at most); and as each cycle settles back at the file's own pitch, the ground point
+    // stands out of the pan regions by no more than the pitch's own swing of the line of sight through a
+    // target at the limit's lift (PAN.lift times the difference of the two pitches' cotangents, 5.15: the
+    // slack the C2a fix holds the view still with): the gestures pan the view as zooms at a pointer do,
+    // into the town's disc or along the link, but never ratchet it out to sea (C2a's rule: 7.2 out after
+    // the second cycle at 1440 x 900, then on out). The review's own two gestures, on the desktop and on
+    // the phone held sideways, keep it in the island's pocket.
+    {
+      const want = ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
+        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE'],
+        code = [];
+      let pitchSource, wheelSource;
+      (function collect(node) {
+        if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
+        if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
+        if (ts.isIfStatement(node) && node.expression.getText(syntax) === '!tween && camera.zoom !== shownZoom') wheelSource = `function wheelStep() { ${node.getText(syntax)} }`;
+        ts.forEachChild(node, collect);
+      })(syntax);
+      const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
+      assert(code.length === want.length + vars.length && turning && glideSource && pitchSource && wheelSource, 'The zoom-at-the-pointer check must find every piece it runs.');
+      // The frame loop keeps the target as the limit left it, right after OrbitControls' update (holdPan's panLast).
+      {
+        const loop = stepSource.split(';').map((s) => unformatted(s)),
+          at = loop.indexOf('controls.update()');
+        assert(at >= 0 && loop[at + 1].endsWith('panLast.copy(controls.target)'), 'The frame loop no longer keeps the target as the pan limit left it, right after OrbitControls\' update.');
+      }
+      const script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, wheelSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ holdPan, panRegion, focusSky, followPanel, turnStep, glideStep, pitchStep, wheelStep, cancel, align, aim, skyReach, panLast })`,
+        pocket = (16 * Math.tan(scene.TOWN_PITCH)) / Math.tan(filePitch),
+        worst = { out: 0, end: 0, cycles: 0 };
+      for (const [w, h, shift, drop, how, from, to, own] of [
+        [1440, 900, 492 / 2880, 0, 'wheel', [150, 450], [940, 450], true],
+        [1280, 720, 492 / 2560, 0, 'wheel', [120, 380], [800, 380]],
+        [768, 1024, 0, -0.2629, 'wheel', [90, 230], [680, 300]],
+        [768, 1024, 0, -0.2629, 'pinch', [90, 230], [680, 300]],
+        [390, 844, 0, -100.95 / 844, 'pinch', [60, 220], [330, 420]],
+        [390, 844, 0, -100.95 / 844, 'pinch', [330, 220], [60, 420]],
+        [...landscapeFiles[3].slice(0, 4), 'pinch', [60, 150], [470, 200], true],
+        [...landscapeFiles[0].slice(0, 4), 'pinch', [50, 140], [360, 190]],
+      ]) {
+        const aspect = w / h,
+          vertical = Math.max(53, 76 / aspect),
+          camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
+          controls = new OrbitControls(camera, null);
+        controls.domElement = { clientWidth: w, clientHeight: h, getBoundingClientRect: () => ({ left: 0, top: 0, width: w, height: h }) };
+        Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, zoomToCursor: true, zoomSpeed: how === 'wheel' ? 1.5 : 1, minZoom: 0.45, maxZoom: 4 });
+        const zoom = {
+            T,
+            Math,
+            plan,
+            camera,
+            controls,
+            target: new T.Vector3(),
+            shiftApplied: new T.Vector3(),
+            screenRight: new T.Vector3(),
+            screenUp: new T.Vector3(),
+            offset: new T.Vector3(),
+            frameShift: shift,
+            frameDrop: drop,
+            panelEdge: 1,
+            width: w,
+            height: h,
+            yaw: fileBearing,
+            targetYaw: fileBearing,
+            targetZoom: 1,
+            shownZoom: 1,
+            pitch: 1,
+            driftAngle: 0,
+            panSlack: Infinity,
+            panPitch: 1,
+            tween: false,
+            reduced: false,
+            dt: 1 / 60,
+            blend: 1 - Math.exp(-5.5 / 60),
+            focusedIds: ['sky-island'],
+            overviewFit: false,
+            inspect: null,
+            parkSelected: false,
+            autoFocus: true,
+            inspectionAutoFit: true,
+            cityMode: true,
+            lastInteraction: 0,
+            performance: { now: () => 0 },
+            models: new Map(),
+            city: { updateMatrixWorld() {} },
+            placeSun() {},
+            clearHover() {},
+            fitOverview() {},
+          },
+          run = runInNewContext(script, zoom),
+          // One frame of step(), in its order.
+          frame = () => {
+            run.followPanel();
+            run.turnStep();
+            run.pitchStep();
+            run.wheelStep();
+            run.glideStep();
+            run.holdPan();
+            controls.update();
+            run.panLast.copy(controls.target);
+            camera.updateMatrixWorld();
+            if (!zoom.tween) zoom.target.copy(controls.target);
+            zoom.shownZoom = camera.zoom;
+          },
+          // How far the view's ground point stands from the island.
+          away = () => {
+            const back = camera.position.clone().sub(controls.target).normalize(),
+              g = controls.target.clone().sub(zoom.shiftApplied);
+            g.addScaledVector(back, -g.y / back.y);
+            return Math.hypot(g.x - S.x, g.z - S.z);
+          },
+          at = `${how === 'wheel' ? 'Wheel' : 'Pinch'} zooms at the pointer in the sky island's file at ${Number(w)} x ${Number(h)}`,
+          // The limit holds the view: its ground point out of its region at the pitch it stands at by no more than the slack.
+          watch = (k) => {
+            const back = camera.position.clone().sub(controls.target).normalize(),
+              g = controls.target.clone().sub(zoom.shiftApplied);
+            g.addScaledVector(back, -g.y / back.y);
+            const r = run.panRegion(g),
+              past = g.distanceTo(r.centre) - r.radius - zoom.panSlack;
+            assert(past <= 0.5, `${at}: in cycle ${k} the view's ground point stands ${past.toFixed(2)} past its region and its slack.`);
+          },
+          // Settled back at the file's own pitch: no further out of the pan regions than after the first cycle (the review's own gestures: in the island's pocket).
+          settled = [],
+          swing = scene.PAN.lift * (1 / Math.tan(filePitch) - 1 / Math.tan(scene.TOWN_PITCH)),
+          settle = (k) => {
+            for (let f = 0; f < 600 && (Math.abs(run.aim(camera.zoom) - zoom.pitch) > 1e-4 || f < 60); f++) {
+              frame();
+              watch(k);
+            }
+            const back = camera.position.clone().sub(controls.target).normalize(),
+              g = controls.target.clone().sub(zoom.shiftApplied);
+            g.addScaledVector(back, -g.y / back.y);
+            const r = run.panRegion(g),
+              out = Math.max(0, g.distanceTo(r.centre) - r.radius);
+            settled.push(out);
+            worst.out = Math.max(worst.out, out);
+            assert(out <= swing + 0.5, `${at}: after cycle ${k} the view's ground point stands ${out.toFixed(1)} out of the pan regions, ${away().toFixed(1)} from the island (${settled.map((v) => v.toFixed(1)).join(', ')} after each cycle): it walks out to sea.`);
+            if (own) assert(away() <= pocket + 0.5, `${at}: after cycle ${k} the view's ground point stands ${away().toFixed(1)} from the island, out of its pocket of ${pocket.toFixed(1)}.`);
+          };
+        controls.addEventListener('start', run.cancel);
+        // The file, framed and at rest.
+        run.focusSky();
+        controls.target.copy(zoom.target);
+        camera.zoom = zoom.targetZoom;
+        zoom.pitch = zoom.panPitch = run.aim(zoom.targetZoom);
+        camera.updateProjectionMatrix();
+        run.align();
+        controls.update();
+        zoom.shownZoom = camera.zoom;
+        for (let f = 0; f < 60; f++) frame();
+        // A wheel notch (OrbitControls' 'start', then its own wheel handling at the pointer), or a pinch:
+        // two fingers down, the second moved in eight steps to `scale` times their spread, and lifted.
+        const notch = ([x, y], deltaY) => {
+            controls.dispatchEvent({ type: 'start' });
+            controls._handleMouseWheel({ clientX: x, clientY: y, deltaY, deltaMode: 0 });
+            for (let f = 0; f < 3; f++) frame();
+          },
+          pinch = ([x, y], scale) => {
+            const spread = 120;
+            controls._addPointer({ pointerId: 1 });
+            controls._onTouchStart({ pointerId: 1, pageX: x - spread / 2, pageY: y });
+            controls._addPointer({ pointerId: 2 });
+            controls._onTouchStart({ pointerId: 2, pageX: x + spread / 2, pageY: y });
+            // Both fingers move, each its own event, about the pinch's middle.
+            for (let k = 1; k <= 8; k++) {
+              const now = spread * scale ** (k / 8);
+              controls._onTouchMove({ pointerId: 1, pageX: x - now / 2, pageY: y });
+              controls._onTouchMove({ pointerId: 2, pageX: x + now / 2, pageY: y });
+              frame();
+              frame();
+            }
+            controls._removePointer({ pointerId: 2 });
+            controls._removePointer({ pointerId: 1 });
+            controls.state = -1;
+          };
+        for (let k = 1; k <= 5; k++) {
+          for (let n = 0; n < (how === 'wheel' ? 6 : 2); n++) {
+            if (how === 'wheel') notch(from, 100);
+            else pinch(from, 0.6);
+            watch(k);
+          }
+          for (let f = 0; f < 9; f++) {
+            frame();
+            watch(k);
+          }
+          for (let n = 0; n < (how === 'wheel' ? 6 : 2); n++) {
+            if (how === 'wheel') notch(to, -100);
+            else pinch(to, 1 / 0.6);
+            watch(k);
+          }
+          settle(k);
+          worst.cycles++;
+        }
+        if (own) worst.end = Math.max(worst.end, away());
+      }
+      skyNav.zoomWalk = `${worst.cycles} cycles of wheel and pinch zooms at the pointer out and back in the sky island's file that never ratchet it out to sea (its ground point ${worst.out.toFixed(2)} out of the pan regions at most as a cycle settles; the review's own two gestures end ${worst.end.toFixed(1)} from the island at most, in its pocket of ${pocket.toFixed(1)})`;
+    }
+
     // (c3) Rotate in its own file turns the island where it stands (the art review's first finding:
     // the file's target stands on the line of sight 7.4 beyond the island, SKY_LIFT, and each quarter
     // turn about that point swung the island into a corner, its roof under the masthead or its side
@@ -2032,7 +2245,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
     // - the turn ends on a still view (under half a pixel over the next second) at the visitor's zoom, its
     //   ground point well inside the island's pocket.
     {
-      const want = ['panRegion', 'holdPan', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
+      const want = ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
         vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE'],
         code = [];
       let pitchSource;
@@ -2044,7 +2257,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
       })(syntax);
       const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
       assert(code.length === want.length + vars.length && turning && glideSource && pitchSource && rotateSource && zoomSource, 'The Rotate-after-a-pan check must find every piece it runs.');
-      const script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, rotateSource, zoomSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ holdPan, panRegion, focusSky, followPanel, turnStep, glideStep, pitchStep, rotate, zoomBy, cancel, align, aim, middle: SKY_FIT.getCenter(new T.Vector3()) })`,
+      const script = `${ts.transpileModule([...code, turning, glideSource, pitchSource, rotateSource, zoomSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ holdPan, panRegion, focusSky, followPanel, turnStep, glideStep, pitchStep, rotate, zoomBy, cancel, align, aim, panLast, middle: SKY_FIT.getCenter(new T.Vector3()) })`,
         worst = { pull: 0, end: 0, out: -Infinity, turns: 0 };
       for (const [w, h, shift, drop, phone] of [[1440, 900, 492 / 2880, 0], [1280, 720, 492 / 2560, 0], [390, 844, 0, -100.95 / 844, true]])
         for (const { label, drag, plus } of [
@@ -2124,6 +2337,7 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
                 at = onScreen(was);
               run.holdPan();
               controls.update();
+              run.panLast.copy(controls.target);
               camera.updateMatrixWorld();
               const now = onScreen(was);
               if (!turn.tween) turn.target.copy(controls.target);
@@ -3721,5 +3935,5 @@ ink.dispose();
 visibleMesh.geometry.dispose();
 visibleMesh.material.dispose();
 console.log(
-  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.shadow}, ${skyNav.turns}, ${skyNav.wide}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
+  `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.zoomWalk}, ${skyNav.shadow}, ${skyNav.turns}, ${skyNav.wide}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
