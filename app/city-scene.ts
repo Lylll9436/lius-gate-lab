@@ -1471,15 +1471,19 @@ export async function createCity(
   }
   /**
    * The sky island's own frame, at its own pitch (SKY_PITCH: the camera comes down to it as the
-   * glide closes in): SKY_FIT fitted like a group between 0.95 and 2.6, which leaves the target on
+   * glide closes in): SKY_FIT fitted like a group between 0.7 and 2.6, which leaves the target on
    * the ground some 19 beyond the island along the line of sight; then the target is raised SKY_LIFT
    * up that line. Nothing on screen changes, but the idle drift now turns the view about a point 4
    * under the island's middle, not 10 (it swings the island much less far), and the target still
    * stands under the pan limit's lift: a one-building framing, on the island's own middle 10.5 up,
-   * would stand over it, and the limit would slide the camera as the glide ended.
+   * would stand over it, and the limit would slide the camera as the glide ended. The floor of 0.7
+   * (the airport's is 0.95) is for short windows under 961 px wide, whose peeking sheet leaves the
+   * island a band of about 137 px (960 x 540 fits it at 0.7, 800 x 600 at 0.74): at 0.95 its chimneys
+   * rose into the masthead and its rock sank under the sheet. Every listed screen fits it at 1.19 or
+   * more (a phone on its side), so their framings are as they were.
    */
   function focusSky() {
-    fitGroup(SKY_FIT, 0.95, 2.6, panelEdge, 1);
+    fitGroup(SKY_FIT, 0.7, 2.6, panelEdge, 1);
     const back = viewOffset(targetYaw, new T.Vector3(), 1).normalize();
     target.addScaledVector(back, SKY_LIFT / back.y);
     // A turn still to come (Rotate, or the file opened from another bearing) turns the view about the
@@ -1495,7 +1499,7 @@ export async function createCity(
   }
   /** The zoom the sky island's own file frames it at (focusSky's fit), for the frame as it is and the bearing the view heads for. */
   function skyFitZoom() {
-    return groupFrame(SKY_FIT, 0.95, 2.6, panelEdge, 1).zoom;
+    return groupFrame(SKY_FIT, 0.7, 2.6, panelEdge, 1).zoom;
   }
   /** Whether the view is the sky island's own file: the island framed alone, or panned and zoomed about since (as aim() has it). */
   function skyFile() {

@@ -1663,7 +1663,7 @@ const laneD3 = {};
     // (c) Its own file, at its own lower pitch (city-scene's SKY_PITCH, 30 degrees; from the town's
     // 42.6 its rock showed as a fringe under the deck): framed as the camera will stand once it has
     // come down (aim() 1 for the island alone, the pitch at 1), SKY_FIT fitted like a group between
-    // 0.95 and 2.6 (2.035 at 1440 x 900; 2.019 at the town's pitch), its target then raised SKY_LIFT
+    // 0.7 and 2.6 (2.035 at 1440 x 900; 2.019 at the town's pitch), its target then raised SKY_LIFT
     // up the line of sight: under the pan limit's lift (a glide's end never slides the camera) with
     // its ground point, about 19.5 beyond the island at that pitch, in the island's own pocket
     // (skyReach: as much further out as the line of sight runs at that pitch), unclamped. The
@@ -1796,6 +1796,101 @@ const laneD3 = {};
         assert(back.steady && back.most < 0.045 && Math.abs(step.pitch - low) < 0.005, `Zoomed back into the sky island's file at ${w} x ${h}, the camera's pitch ends at ${step.pitch.toFixed(3)} for ${low.toFixed(3)}.`);
         Object.assign(view, { frameDrop: 0, focusedIds: [] });
       }
+    }
+
+    // (c1b) Short windows (the camera review's fifth finding). Under 961 px wide the file is a peeking
+    // sheet, and on a short window the band it leaves (from the masthead's foot at 58 to the sheet's
+    // top, measured on the page: 195.2 at 960 x 540, 224 at 800 x 600) held the island only below the
+    // old floor of 0.95: its chimneys rose into the masthead and its rock and puffs sank under the
+    // frosted sheet (12 and 14.5 px at 960 x 540). Fitted down to 0.7 (focusSky, skyFitZoom), it
+    // settles at its own pitch whole in that band, 6 px clear of the masthead and the sheet at least
+    // and 12 of the sides, at every Rotate stop, at rest and through the idle drift; from that fit
+    // down to seven tenths of it, at every bearing and with its ground point anywhere on its pocket's
+    // edge, the sea fills the frame and its corners lie no deeper in the fog than in that window's own
+    // widest view of the town. And every listed screen fits the island above the old floor, so the
+    // new one moves none of their framings.
+    {
+      const { SEA_SIZE } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
+        [fogNear, fogFar] = /new T\.Fog\('#[0-9a-f]+', (\d+), (\d+)\)/.exec(source).slice(1).map(Number),
+        // A frame at `zoom` and `low` of the way down to the file's pitch, from bearing `b`, its view
+        // centre the panel offset (`shift`, `drop`) from `ground`: how far out its corners see the sea
+        // short of the fog and the near plane, and how deep into the fog the farthest lies with the
+        // target lifted as far as the pan limit lets it.
+        corners = (w, h, shift, drop, zoom, low, b, ground) => {
+          const aspect = w / h,
+            vertical = Math.max(53, 76 / aspect),
+            halfW = (vertical * aspect) / 2 / zoom,
+            halfH = vertical / 2 / zoom,
+            back = scene.viewOffset(b, new T.Vector3(), low),
+            right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
+            up = new T.Vector3().crossVectors(back.clone().normalize(), right),
+            forward = back.clone().normalize().negate(),
+            eye = ground.clone().addScaledVector(right, shift * 2 * halfW).addScaledVector(up, drop * 2 * halfH).add(back);
+          let fog = 0,
+            reach = 0;
+          for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+            const from = eye.clone().addScaledVector(right, u * halfW).addScaledVector(up, v * halfH),
+              t = (0.07 - from.y) / forward.y;
+            fog = Math.max(fog, (t + scene.PAN.lift / -forward.y - fogNear) / (fogFar - fogNear));
+            if (t > -200 && t < fogFar) reach = Math.max(reach, Math.abs(from.x + forward.x * t), Math.abs(from.z + forward.z * t));
+          }
+          return { fog, reach };
+        },
+        found = { zoom: Infinity, clear: Infinity, fog: 0, widest: 0, reach: 0 };
+      for (const [w, h, sheet] of [[960, 540, 195.2], [800, 600, 224]]) {
+        const drop = ((58 + sheet) / 2 - h / 2) / h;
+        for (let stop = 0; stop < 4; stop++) {
+          const bearing = fileBearing + (stop * Math.PI) / 2,
+            { zoom, centre, low } = settles(w, h, 0, drop, bearing),
+            elevation = scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low,
+            at = `${w} x ${h}${stop ? ` at Rotate stop ${stop}` : ''}`;
+          found.zoom = Math.min(found.zoom, zoom);
+          assert(zoom >= 0.7 - 1e-9 && low > 0.999, `The sky island's file on a ${at} window fits at ${zoom.toFixed(3)}, ${low.toFixed(3)} of the way down to its pitch.`);
+          for (const d of [0, ...fileDrifts]) {
+            const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p, elevation))),
+              clear = Math.min(y0 - 58, sheet - y1);
+            found.clear = Math.min(found.clear, clear);
+            assert(clear >= 6 && x0 >= 12 && x1 <= w - 12, `Drifted ${d.toFixed(2)}, the sky island's file on a ${at} window spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px, against the masthead's foot at 58 and the sheet's top at ${sheet}.`);
+          }
+        }
+        // From the fit down to seven tenths of it: the sea, and the fog against the window's widest view of the town.
+        frame(w, h, 0, fileBearing);
+        Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
+        scene.focusSky();
+        const fit = view.targetZoom,
+          widest = corners(w, h, 0, 0, 0.45, 0, fileBearing, new T.Vector3(S.x, 0, S.z)).fog;
+        found.widest = Math.max(found.widest, widest);
+        for (const k of [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7]) {
+          const zoom = fit * k,
+            low = scene.aim(zoom),
+            out = 16 * (low ? Math.tan(scene.TOWN_PITCH) / Math.tan(scene.TOWN_PITCH + (filePitch - scene.TOWN_PITCH) * low) : 1) + 0.5;
+          for (let b = 0; b < 2 * Math.PI; b += Math.PI / 48)
+            for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) {
+              const { fog, reach } = corners(w, h, 0, drop, zoom, low, b, new T.Vector3(S.x + Math.cos(a) * out, 0, S.z + Math.sin(a) * out));
+              found.fog = Math.max(found.fog, fog);
+              found.reach = Math.max(found.reach, reach);
+              assert(fog < widest && reach < SEA_SIZE / 2 - 10, `On a ${w} x ${h} window, the sky island's file zoomed to ${zoom.toFixed(3)} (${low.toFixed(2)} of the way down) at bearing ${b.toFixed(2)} sees the sea ${reach.toFixed(0)} out (of ${SEA_SIZE / 2}) and a corner ${(fog * 100).toFixed(0)}% into the fog, ${(widest * 100).toFixed(0)}% in its widest view of the town.`);
+            }
+        }
+        Object.assign(view, { frameDrop: 0, focusedIds: [], pitch: 0 });
+      }
+      // Every listed screen's file, at every Rotate stop, fits the island above the old floor.
+      let lowest = Infinity;
+      for (const [w, h, shift, drop] of [
+        ...[...desktops, [1366, 657]].map(([w, h]) => [w, h, 492 / (2 * w), 0]),
+        [768, 1024, 0, -0.2629],
+        [820, 1180, 0, -0.2625],
+        ...[[360, 640], [360, 740], [375, 667], [375, 812], [390, 844], [393, 852], [412, 915], [414, 896], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]),
+        ...landscapeFiles,
+      ])
+        for (let stop = 0; stop < 4; stop++) {
+          frame(w, h, shift, fileBearing + (stop * Math.PI) / 2);
+          Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'] });
+          lowest = Math.min(lowest, scene.skyFitZoom());
+          Object.assign(view, { frameDrop: 0, focusedIds: [] });
+        }
+      assert(lowest > 0.95, `A listed screen fits the sky island's file at ${lowest.toFixed(3)}, under the old floor: lowering it moved that screen's framing.`);
+      laneD3.short = `the sky island's file on 960 x 540 and 800 x 600 windows fitted down to ${found.zoom.toFixed(3)}, ${found.clear.toFixed(1)} px clear of the masthead and the sheet at least, its corners ${(found.fog * 100).toFixed(0)}% into the fog at most (${(found.widest * 100).toFixed(0)}% in their widest view of the town), every listed screen at ${lowest.toFixed(3)} or more`;
     }
 
     // (c2) From the file, at its pitch (the pocket as far out as skyReach has it there): a drag out to
