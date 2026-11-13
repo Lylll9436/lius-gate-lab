@@ -4456,8 +4456,8 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 // Alison Heppenstall's figure (sky-figure.ts), built on her own. She is the town's one named
 // person, so she has a builder and a block of her own, and the residents above stay generic.
 // - Build: a resident's pivots (so their walk drives her) and an elbow in each arm; at most 5,000
-//   triangles in 16 meshes as built (11 of her and her five hand props: the can, the cup, the
-//   saucer, the book and the water she pours), 15 once batched part by part; every mesh in a surface kind, one-sided, opaque and cutting no holes, its colours on its
+//   triangles in 15 meshes as built (11 of her and her four hand props: the can, the cup, the
+//   saucer and the water she pours), 14 once batched part by part; every mesh in a surface kind, one-sided, opaque and cutting no holes, its colours on its
 //   vertices. She stands as tall as a resident (from the shortest walker to the helmeted rider),
 //   her soles on y 0, inside the walkers' 0.27.
 // - Colour: everything on her stays at or under the figures' 0.55 (HSV, sRGB) BUT HER HAIR, the
@@ -4484,7 +4484,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 //   telescope her lower sole is on her floor; seated, her thighs rest on the seat (the park
 //   bench's, which ALISON.seat must be, and any other she is given) and her shins hang clear of
 //   its front edge; her hands are on what the pose holds (the can's handle; the cup's lug and the
-//   saucer's rim; the book's corners; the telescope's grips) and only that pose's props show; a
+//   saucer's rim; the telescope's grips) and only that pose's props show; a
 //   pose depends on nothing but its arguments; a walk of amount 0 is 'stand', and one phase of it
 //   is one of the residents' strides. The can's rose stays about ALISON.rose, ahead of her toes,
 //   and at the telescope her eye is behind the eyepiece ALISON places, looking down its tube.
@@ -4504,8 +4504,8 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     label = (m) => `${m.parent.name || 'part'}${m.name ? '/' + m.name : ''}`;
   root.traverse((o) => o.isMesh && meshes.push(o));
   assert.equal(root.name, 'alison');
-  assert.equal(meshes.length, 16, `Alison is ${meshes.length} meshes as built.`);
-  assert.equal(meshes.filter(held).length, 5, 'Each of her five props is one mesh.');
+  assert.equal(meshes.length, 15, `Alison is ${meshes.length} meshes as built.`);
+  assert.equal(meshes.filter(held).length, 4, 'Each of her four props is one mesh.');
   const triangles = meshes.reduce((n, m) => n + tri(m), 0);
   assert(triangles <= 5000, `Alison costs ${triangles} triangles.`);
   // Her pivots are the residents', found by name as animateResident finds them.
@@ -4517,7 +4517,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert.equal(joints.arms[k].getObjectByName('elbow'), joints.elbows[k]);
   }
   // Batched as town-build batches its figures (each group's own meshes, one batch a kind and a
-  // shadow flag, a mesh casting when its longest side is 0.3 or more): 15.
+  // shadow flag, a mesh casting when its longest side is 0.3 or more): 14.
   let batched = 0;
   for (const g of [joints.body, ...joints.legs, ...joints.knees, ...joints.arms, ...joints.elbows, ...hand]) {
     const own = g.children.filter((c) => c.isMesh);
@@ -4528,7 +4528,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       return `${m.material.userData.surfaceKind}|${Math.max(s.x, s.y, s.z) >= 0.3}`;
     })).size;
   }
-  assert.equal(batched, 15, `Alison batches into ${batched} meshes.`);
+  assert.equal(batched, 14, `Alison batches into ${batched} meshes.`);
   const saturation = (c) => {
       const max = Math.max(c.r, c.g, c.b);
       return max ? (max - Math.min(c.r, c.g, c.b)) / max : 0;
@@ -4696,18 +4696,18 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     same = (a, b) => a.every((n, i) => Math.abs(n - b[i]) < 1e-12),
     grip = (prop, at) => v.set(...at).applyMatrix4(prop.matrixWorld).clone(),
     palm = [new T.Vector3(), new T.Vector3()],
-    shows = { water: ['can', 'water'], sip: ['cup', 'saucer'], read: ['book'], set: ['cup', 'saucer'] },
+    shows = { water: ['can', 'water'], sip: ['cup', 'saucer'], set: ['cup', 'saucer'] },
     phases = [...Array.from({ length: 25 }, (_, s) => s / 24), -0.25, 7.6];
-  assert.deepEqual([...ALISON_POSES], ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'read', 'rise', 'set']);
+  assert.deepEqual([...ALISON_POSES], ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'rise', 'set']);
   for (const name of ALISON_POSES)
-    for (const seat of name === 'sit' || name === 'sip' || name === 'read' || name === 'set' || name === 'rise' ? [undefined, 0.38] : [undefined])
+    for (const seat of name === 'sit' || name === 'sip' || name === 'set' || name === 'rise' ? [undefined, 0.38] : [undefined])
       for (const phase of phases) {
         const at = `'${name}' at ${phase}`,
           opts = seat ? { seat } : {},
           lift = pose(name, phase, opts),
           first = snapshot();
         for (const [prop, g] of Object.entries(props)) assert.equal(g.visible, (shows[name] ?? []).includes(prop), `${at}: her ${prop} ${g.visible ? 'shows' : 'is hidden'}.`);
-        if (name === 'sit' || name === 'sip' || name === 'read' || name === 'set') {
+        if (name === 'sit' || name === 'sip' || name === 'set') {
           const top = seat ?? ALISON.seat;
           assert(Math.abs(lowest(thighs) - top) < 2e-3, `${at}: her thighs rest ${lowest(thighs).toFixed(3)} up, the seat is ${top}.`);
           // Her shins and shoes hang in front of the seat's front edge, ALISON.setback ahead of her root.
@@ -4727,7 +4727,6 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
         const holds =
           name === 'water' ? [grip(props.can, ALISON_HOLDS.can), null]
           : name === 'sip' ? [grip(props.cup, ALISON_HOLDS.cup), grip(props.saucer, ALISON_HOLDS.saucer)]
-          : name === 'read' ? ALISON_HOLDS.book.map((c) => grip(props.book, c))
           : name === 'telescope' ? ALISON_TELESCOPE.grips.map((c) => new T.Vector3(...c).applyMatrix4(root.matrixWorld))
           : [null, null];
         holds.forEach((h, k) => h && assert(palm[k].distanceTo(h) < 2e-3, `${at}: her hand ${k} is ${palm[k].distanceTo(h).toFixed(3)} off what it holds.`));
@@ -6510,7 +6509,7 @@ let skyReport = '';
   /* ---------------- its groups, phases, materials and budget ---------------- */
   assert(sky.root.name === 'sky-island' && sky.root.userData.buildingId === 'sky-island' && sky.root.parent === city, 'The sky island has no root of its own in the town.');
   assert(her && her.userData.keepSeparate && her.userData.prebatched, 'Alison is not on the sky island\'s root, a pivot of her own outside its batches.');
-  assert.deepEqual(sky.root.children, [sky.land, sky.rock, sky.air, sky.shell, her], 'The sky island\'s root holds something else than its ground, its rock, its air, its villa and Alison.');
+  assert.deepEqual(sky.root.children, [sky.land, sky.rock, sky.shell, her], 'The sky island\'s root holds something else than its ground, its rock, its villa and Alison.');
   assert(sky.shell.position.equals(new T.Vector3(site.x, site.y, site.z)) && sky.shell.rotation.y === site.rotation && sky.land.position.lengthSq() === 0 && sky.rock.position.lengthSq() === 0, 'The villa\'s shell is not in its own frame on the deck.');
   // Built and batched in phases of its own (never in 'batch land', the longest), each held to its own limit (timed builds, above).
   assert.equal(phaseNames[phaseNames.indexOf('airport ground') + 1], 'sky ground', 'The sky island\'s ground is not built after the airport\'s.');
@@ -6542,10 +6541,10 @@ let skyReport = '';
   // Its ground is grass and gravel (and the terrace's flags, paving): never sand, asphalt or water.
   for (const kind of skyKinds) assert(!['sand', 'asphalt', 'water', 'soil'].includes(kind), `The sky island has a ${kind} surface.`);
   // The finished island's caps: the villa (lane V's detail pass, up to 16 meshes and 45,000
-  // triangles), the garden (below) and her figure (lane F's Alison: 15 meshes, batched part by part,
+  // triangles), the garden (below) and her figure (lane F's Alison: 14 meshes, batched part by part,
   // the water she pours among them, and 5,000 triangles at the most) all within them.
   const SKY_CAP = { meshes: 50, triangles: 90000 },
-    HER = { meshes: 15, triangles: 5000 };
+    HER = { meshes: 14, triangles: 5000 };
   let herMeshes = 0,
     herTriangles = 0;
   her.traverse((o) => {
@@ -6831,7 +6830,7 @@ let skyReport = '';
           line = (points) => plan.distanceToPolyline([p.x, p.z], points, false) - P.width / 2;
         return Math.min(line(P.walk), line(P.stem), Math.hypot(p.x - P.landing.x, p.z - P.landing.z) - P.landing.r);
       },
-      stations = { 'her chair': tea.seats[0], 'the guest\'s chair': tea.seats[1], 'the watering stretch\'s start': watering.from, 'the watering stretch\'s end': watering.to, 'the telescope\'s stand': telescope.stand, 'the bench\'s seat': bench.seat };
+      stations = { 'her chair': tea.seats[0], 'the guest\'s chair': tea.seats[1], 'the watering stretch\'s start': watering.from, 'the watering stretch\'s end': watering.to, 'the telescope\'s stand': telescope.stand };
     const [, terraceZ] = plan.skyVillaPoint(0, V.terrace.front);
     // Each a unit or more in from the rim, on the lawn south of the villa (south of its terrace's
     // front, 0.3 clear of the terrace and its steps), and never where she would hide the facade:
@@ -6877,10 +6876,8 @@ let skyReport = '';
       const foot = ahead(telescope, telescope.look + (k * 2 * Math.PI) / 3, 0.27);
       assert(plan.onSky(foot.x, foot.z, -0.6), `The telescope's foot ${k} is ${(-plan.skyDistance(foot.x, foot.z)).toFixed(2)} from the rim.`);
     }
-    // The bench: on the south-east lawn beside the landing, facing the town; she sits SKY_SEATS.bench
-    // in front of its middle; it keeps off the paths.
+    // The bench: on the south-east lawn beside the landing, facing the town; it keeps off the paths.
     assert(bench.x > S.x && bench.z > terraceZ + 1 && Math.abs(plan.angleDiff(bench.ry, towards(bench, hall))) < 25 * deg && Math.hypot(bench.x - plan.SKY_PATHS.landing.x, bench.z - plan.SKY_PATHS.landing.z) < plan.SKY_PATHS.landing.r + 1.2, 'The bench is off the south-east lawn by the landing, or turned from the town.');
-    assert(near(ahead(bench, bench.ry, SEATS.bench), bench.seat) && Math.abs(plan.angleDiff(bench.seat.facing, bench.ry)) < 1e-9, 'Her seat on the bench is off it.');
     for (const [x, z] of [[-0.62, -0.25], [0.62, -0.25], [0.62, 0.25], [-0.62, 0.25]]) {
       const q = corner(bench, x, z);
       assert(plan.onSky(q.x, q.z, -0.8) && offPath(q) > 0.05, `The bench's corner at ${q.x.toFixed(2)}, ${q.z.toFixed(2)} crowds the rim or a path.`);

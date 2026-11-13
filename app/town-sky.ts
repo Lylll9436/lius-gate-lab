@@ -4,7 +4,6 @@ import { WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, hash, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
-import type { Kit } from './town-kit';
 import { BLOOMS, type Nature } from './town-nature';
 import type { Props } from './town-props';
 import { FALL, boulder, type SkyGarden } from './town-sky-garden';
@@ -340,7 +339,7 @@ const POOL_EDGE = 0.85;
  * town's own bench, tree, flower beds and clipped box, and an outcrop of its own rock), and the rock
  * under it and its coping (its villa is town-sky-villa's).
  */
-export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, nature: Nature, garden: SkyGarden) {
+export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, garden: SkyGarden) {
   const { material } = ctx;
   const S = plan.SKY,
     L = SKY_LOOK;
@@ -641,8 +640,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
    * piece in its slot (skySlots, through standAt), everything in `land`: what stands on the deck is
    * batched with the lawn as its floor, and every part of a piece that hangs in the air (the falls'
    * water and puffs, the clouds, the floating rocks) sits on a pivot of its own in ctx.animated,
-   * which the town batches on its own with no contact shade. `air` is for anything static that
-   * hangs off the deck or beside it (batched with no contact shade); the garden has none.
+   * which the town batches on its own with no contact shade.
    * - Tea on the lawn before the terrace: her chair is the table's -x one, the second cup faces the
    *   other. The telescope on the rim, looking at the Town Hall, its tube along her own gaze.
    * - The town's bench, facing the town; the island's one tree, a round one that shows the season.
@@ -651,7 +649,7 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
    *   outcrop of the rock's own grey through the turf of the south-west lawn.
    * - The two short falls, the clouds and the floating rocks.
    */
-  function skyGarden(land: T.Group, _air: T.Group) {
+  function skyGarden(land: T.Group) {
     const s = skySlots();
     standAt(land, s.tea, 'sky-tea').add(garden.teaTable());
     standAt(land, s.telescope, 'sky-telescope').add(garden.telescope({ eyepiece: s.telescope.eyepiece, tilt: s.telescope.tilt }));
@@ -680,10 +678,10 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
   /** The ground skyGround laid, for the lamps' pools (laid over it in the 'sky rock' phase). */
   let deckLand: T.Group | null = null;
   /** The island's ground, in its own group (the town's `sky.land`): the lawn, the paths and the garden. */
-  function skyGround(land: T.Group, air: T.Group) {
+  function skyGround(land: T.Group) {
     lawn(land);
     paths(land);
-    skyGarden(land, air);
+    skyGarden(land);
     deckLand = land;
   }
 

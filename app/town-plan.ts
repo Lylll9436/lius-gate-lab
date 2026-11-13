@@ -833,17 +833,16 @@ export const SKY_BORDERS = (() => {
 /** A place on the lawn where her figure stops, or a seat: where her root goes, and the bearing she faces. */
 export type SkyStation = { x: number; z: number; facing: number };
 /**
- * Where a figure's root goes at the garden kit's furniture (lane G's town-sky-garden and the
- * town's bench), from the piece's own origin: `tea`, either chair of the tea table, along the
- * table's local x (its TEA.radius + TEA.gap + TEA.setback); `bench`, the park bench's seat, along
- * its local +z, the way it faces (its front edge 0.215 out, less F1a's setback 0.09); `telescope`,
- * behind the tripod's middle along its line of sight, stooped to the eyepiece (the garden kit's
- * telescope({ tilt }).userData.stand, at her own `tilt`). Seats are 0.44 up, the park bench's.
- * At the telescope her eye meets its eyepiece: `eyepiece` over the floor she stands on, her gaze
- * `tilt` below level (15 degrees), straight down its tube (lane F's ALISON_TELESCOPE: its eyepiece
- * 0.7058 up and its gaze; check-town holds the kit's telescope to them).
+ * Where a figure's root goes at the garden kit's furniture (lane G's town-sky-garden), from the
+ * piece's own origin: `tea`, either chair of the tea table, along the table's local x (its
+ * TEA.radius + TEA.gap + TEA.setback); `telescope`, behind the tripod's middle along its line of
+ * sight, stooped to the eyepiece (the garden kit's telescope({ tilt }).userData.stand, at her own
+ * `tilt`). Seats are 0.44 up, the park bench's. At the telescope her eye meets its eyepiece:
+ * `eyepiece` over the floor she stands on, her gaze `tilt` below level (15 degrees), straight down
+ * its tube (lane F's ALISON_TELESCOPE: its eyepiece 0.7058 up and its gaze; check-town holds the
+ * kit's telescope to them).
  */
-export const SKY_SEATS = { tea: 0.61, bench: 0.125, telescope: 0.6571, height: 0.44, eyepiece: 0.7058, tilt: 0.2601 };
+export const SKY_SEATS = { tea: 0.61, telescope: 0.6571, height: 0.44, eyepiece: 0.7058, tilt: 0.2601 };
 /** The point `d` along a bearing from (x, z). */
 const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Math.sin(bearing) * d, z + Math.cos(bearing) * d];
 /**
@@ -862,8 +861,8 @@ const along = (x: number, z: number, bearing: number, d: number): XZ => [x + Mat
  *   stands at `stand`, stooped to its eyepiece. The lawn under her is a little higher than under
  *   the tripod's middle (the dome), so its eyepiece stands `eyepiece` over the tripod's foot: her
  *   own SKY_SEATS.eyepiece over the floor she stands on.
- * - `bench`: the bench on the south-east lawn beside the paths' round landing, facing the town;
- *   `seat` is where she sits to read.
+ * - `bench`: the town's bench on the south-east lawn beside the paths' round landing, facing the
+ *   town (the garden's; her day does not take her to it).
  * She stands on skyTop at each (a seat: SKY_SEATS.height over it).
  */
 export const SKY_STATIONS = (() => {
@@ -889,13 +888,12 @@ export const SKY_STATIONS = (() => {
     line = border.z1 + 0.32;
   // The bench, facing the town.
   const bench = { x: -50.45, z: -18.6 },
-    towards = 60 * rad,
-    [bx, bz] = along(bench.x, bench.z, towards, SKY_SEATS.bench);
+    towards = 60 * rad;
   return {
     tea: { x: table.x, z: table.z, ry: facing - Math.PI / 2, seats: [seat(-1), seat(1)] as [SkyStation, SkyStation] },
     watering: { from: { x: border.x0 + 0.15, z: line }, to: { x: border.x1 - 0.2, z: line }, facing: Math.PI },
     telescope: { x: rim.x, z: rim.z, ry: look, look, dip, eyepiece, stand: { x: sx, z: sz, facing: look } as SkyStation },
-    bench: { x: bench.x, z: bench.z, ry: towards, seat: { x: bx, z: bz, facing: towards } as SkyStation },
+    bench: { x: bench.x, z: bench.z, ry: towards },
   };
 })();
 /**

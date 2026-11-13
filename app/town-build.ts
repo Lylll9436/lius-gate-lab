@@ -89,11 +89,12 @@ export type Walker = { root: T.Group; loop: XZ[]; distance: number; speed: numbe
  * The sky island: a place of its own, not one of the town's models (it floats 10.5 up, so the
  * models' rules, framing and Inspect do not fit it). Everything of it hangs under `root`, which the
  * scene picks, rings, shades and hides as one: `land` its deck (the lawn, the paths and what stands
- * on them), `rock` its underside (the rock and the coping), `air` what hangs off the deck or beside
- * it, and `shell` its villa, in the villa's own frame (front +z, y 0 the deck's level); and, after
- * them, Alison's figure (her root, 'alison', town-sky's alison()), which goes about the garden.
+ * on them; what of the garden hangs in the air rides on pivots of its own in the animated list),
+ * `rock` its underside (the rock and the coping), and `shell` its villa, in the villa's own frame
+ * (front +z, y 0 the deck's level); and, after them, Alison's figure (her root, 'alison', town-sky's
+ * alison()), which goes about the garden.
  */
-export type SkyIsland = { root: T.Group; land: T.Group; rock: T.Group; air: T.Group; shell: T.Group };
+export type SkyIsland = { root: T.Group; land: T.Group; rock: T.Group; shell: T.Group };
 
 type TownOptions = {
   library?: ReturnType<typeof createCityMaterials>;
@@ -125,7 +126,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     // The airport's ground: its own group, built and batched in its own phases, never in the land's.
     airportLand = new T.Group(),
     // The sky island, likewise: its groups under one root.
-    sky: SkyIsland = { root: new T.Group(), land: new T.Group(), rock: new T.Group(), air: new T.Group(), shell: new T.Group() };
+    sky: SkyIsland = { root: new T.Group(), land: new T.Group(), rock: new T.Group(), shell: new T.Group() };
   city.name = 'town';
   land.name = 'land';
   airportLand.name = 'airport-land';
@@ -133,9 +134,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   sky.root.userData.buildingId = 'sky-island';
   sky.land.name = 'sky-land';
   sky.rock.name = 'sky-rock';
-  sky.air.name = 'sky-air';
   sky.shell.name = 'sky-villa';
-  sky.root.add(sky.land, sky.rock, sky.air, sky.shell);
+  sky.root.add(sky.land, sky.rock, sky.shell);
   city.add(land, airportLand, sky.root);
   const lamps: T.Mesh[] = [],
     clocks: { hour: T.Object3D; minute: T.Object3D }[] = [],
@@ -149,7 +149,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const { buildResidence } = createResidence(ctx, kit, nature, props);
   const { airportGround, buildAirport } = createAirport(ctx, kit, props, nature);
   const skyGarden = createSkyGarden(ctx, kit, props, nature);
-  const skyIsland = createSkyIsland(ctx, kit, props, nature, skyGarden);
+  const skyIsland = createSkyIsland(ctx, props, nature, skyGarden);
   const { buildSkyVilla } = createSkyVilla(ctx, kit, props, nature);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
@@ -275,7 +275,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   yield 'airport ground';
   // The sky island: its deck, and its villa in the shell's own frame on it, and Alison in her chair
   // at tea; then the rock under it, sculpted from a distance grid (tens of ms), in a phase of its own.
-  skyIsland.skyGround(sky.land, sky.air);
+  skyIsland.skyGround(sky.land);
   {
     const site = plan.sites['sky-island'];
     sky.shell.position.set(site.x, site.y ?? 0, site.z);
@@ -435,11 +435,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   batch(airportLand, { floor: plan.deckHeight });
   yield 'batch airport';
   // The sky island: contact shade from its own lawn for what stands on it; none for its underside,
-  // where every height is below the lawn (it would all bake to the darkest foot), nor for what
-  // hangs in the air beside it.
+  // where every height is below the lawn (it would all bake to the darkest foot).
   batch(sky.land, { floor: plan.skyTop });
   batch(sky.rock, { contact: 'none' });
-  batch(sky.air, { contact: 'none' });
   // Alison, part by part as the town's figures are, so her joints still bend and her props still come and go.
   batchFigure(alison);
   yield 'batch sky';
