@@ -421,7 +421,10 @@ type Lock = { p: V3[]; r: number[]; curl: V3; flat?: number; wave?: number; phas
  *   down the sides and back, past her shoulders and behind her arms, to mid-back. The locks meet
  *   one another and the crown in crisp creases: at the town's scale that is what reads as curls,
  *   where a blended mass reads as a hood and a cluster of small balls as bubbles.
- * From in front the hair is widest at her cheeks, about 1.4 times her head, and narrows below.
+ * From in front the hair is widest at her cheeks, about 1.57 times her head (F1b's 1.37 read narrow
+ * and rope-like beside the portrait's big curly volume): the face's two locks are broader, and the
+ * locks over her ears and down her sides stand out from her temples, fuller and rounder, and lie
+ * out over the backs of her shoulders, every lock ending in a fuller curl; no band below is wider.
  * Whatever another part of the hair, the head or the torso hides is left out. Returns the pieces
  * (the crown, then each lock) and `covers`: whether a point lies under the hair.
  */
@@ -486,14 +489,14 @@ const LOCKS: Lock[] = [
   // down past her cheek and in over the collarbone onto her chest; on the parting's other side, a
   // lock falls down her right temple and cheek and in onto her right collarbone. Below the jaw
   // both turn their flat side forward.
-  { p: [[-0.045, 0.88, 0.03], [0.01, 0.893, 0.035], [0.078, 0.872, 0.05], [0.13, 0.815, 0.072], [0.148, 0.735, 0.07], [0.128, 0.66, 0.088], [0.1, 0.6, 0.106], [0.085, 0.55, 0.118]], r: [0.04, 0.048, 0.054, 0.058, 0.055, 0.05, 0.046, 0.042], curl: [1, 0.3, 0.2], phase: 0.1, wave: 0.022, turns: 1.25, face: [0.25, 0, 1] },
-  { p: [[-0.09, 0.86, 0.01], [-0.135, 0.815, 0.045], [-0.15, 0.748, 0.066], [-0.135, 0.675, 0.082], [-0.108, 0.615, 0.1], [-0.092, 0.57, 0.112]], r: [0.04, 0.05, 0.055, 0.052, 0.047, 0.043], curl: [-1, 0.3, 0.2], phase: 0.6, wave: 0.022, turns: 1.25, face: [-0.25, 0, 1] },
+  { p: [[-0.045, 0.88, 0.03], [0.01, 0.893, 0.035], [0.078, 0.872, 0.05], [0.135, 0.815, 0.07], [0.162, 0.735, 0.066], [0.145, 0.66, 0.084], [0.115, 0.6, 0.104], [0.098, 0.55, 0.116]], r: [0.04, 0.048, 0.056, 0.064, 0.066, 0.06, 0.054, 0.05], curl: [1, 0.3, 0.2], phase: 0.1, wave: 0.022, turns: 1.25, face: [0.25, 0, 1], bend: 0.036 },
+  { p: [[-0.09, 0.86, 0.01], [-0.14, 0.815, 0.043], [-0.165, 0.748, 0.062], [-0.15, 0.675, 0.078], [-0.12, 0.615, 0.098], [-0.102, 0.57, 0.11]], r: [0.04, 0.052, 0.064, 0.062, 0.054, 0.05], curl: [-1, 0.3, 0.2], phase: 0.6, wave: 0.022, turns: 1.25, face: [-0.25, 0, 1], bend: 0.036 },
   // Over each ear, behind the face's lock and further out, falling onto the back of the shoulder.
-  { p: [[0.112, 0.835, 0.005], [0.152, 0.785, 0.02], [0.16, 0.72, 0.012], [0.153, 0.648, -0.035], [0.142, 0.594, -0.082]], r: [0.045, 0.056, 0.06, 0.056, 0.052], curl: [0.2, 0.3, -1], phase: 0.35, wave: 0.02 },
-  { p: [[-0.112, 0.835, 0.003], [-0.151, 0.785, 0.018], [-0.158, 0.722, 0.01], [-0.152, 0.652, -0.037], [-0.14, 0.602, -0.082]], r: [0.044, 0.054, 0.058, 0.054, 0.05], curl: [-0.2, 0.3, -1], phase: 0.85, wave: 0.02 },
+  { p: [[0.112, 0.835, 0.005], [0.162, 0.785, 0.018], [0.182, 0.72, 0.008], [0.178, 0.648, -0.035], [0.165, 0.594, -0.08]], r: [0.045, 0.06, 0.066, 0.064, 0.06], curl: [0.2, 0.3, -1], phase: 0.35, wave: 0.02, flat: 0.72, bend: 0.036, radial: 9 },
+  { p: [[-0.112, 0.835, 0.003], [-0.161, 0.785, 0.016], [-0.18, 0.722, 0.006], [-0.177, 0.652, -0.037], [-0.163, 0.602, -0.08]], r: [0.044, 0.058, 0.064, 0.062, 0.058], curl: [-0.2, 0.3, -1], phase: 0.85, wave: 0.02, flat: 0.72, bend: 0.036, radial: 9 },
   // Down each side, from above the ear on behind the shoulder.
-  { p: [[0.105, 0.83, -0.04], [0.154, 0.785, -0.058], [0.158, 0.71, -0.08], [0.146, 0.63, -0.115], [0.127, 0.55, -0.15], [0.115, 0.49, -0.168]], r: [0.045, 0.056, 0.06, 0.058, 0.054, 0.05], curl: [-0.6, 0.3, -1], phase: 0.7 },
-  { p: [[-0.105, 0.83, -0.04], [-0.154, 0.785, -0.058], [-0.158, 0.712, -0.08], [-0.146, 0.634, -0.115], [-0.127, 0.556, -0.15], [-0.116, 0.498, -0.168]], r: [0.044, 0.055, 0.059, 0.057, 0.053, 0.049], curl: [0.6, 0.3, -1], phase: 0.2 },
+  { p: [[0.105, 0.83, -0.04], [0.162, 0.785, -0.058], [0.18, 0.71, -0.08], [0.17, 0.63, -0.11], [0.148, 0.55, -0.145], [0.13, 0.49, -0.162]], r: [0.045, 0.06, 0.066, 0.064, 0.06, 0.056], curl: [-0.6, 0.3, -1], phase: 0.7, bend: 0.036, radial: 9 },
+  { p: [[-0.105, 0.83, -0.04], [-0.162, 0.785, -0.058], [-0.18, 0.712, -0.08], [-0.17, 0.634, -0.11], [-0.148, 0.556, -0.145], [-0.131, 0.498, -0.162]], r: [0.044, 0.059, 0.065, 0.063, 0.059, 0.055], curl: [0.6, 0.3, -1], phase: 0.2, bend: 0.036, radial: 9 },
   // Down her back: four, out of step with one another, to a ragged hem at mid-back, curling to the side.
   { p: [[0.065, 0.83, -0.085], [0.102, 0.79, -0.135], [0.108, 0.715, -0.156], [0.1, 0.635, -0.163], [0.09, 0.555, -0.174], [0.085, 0.495, -0.178]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [1, 0.4, 0.3], phase: 0.45, radial: 9 },
   { p: [[0.022, 0.83, -0.09], [0.034, 0.79, -0.148], [0.036, 0.715, -0.168], [0.034, 0.635, -0.172], [0.03, 0.555, -0.178], [0.028, 0.48, -0.182]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [-1, 0.4, 0.3], phase: 0.95, radial: 9 },

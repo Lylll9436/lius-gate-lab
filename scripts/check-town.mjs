@@ -4413,8 +4413,9 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
 // - Hair: long, loose locks falling past her shoulders, never again a cluster of small balls (F1a's
 //   34 lobes, none over 0.16 long) or a hood. Standing: its pieces (runs of joined faces) of 12
 //   triangles or more number 8 to 20, and four fifths of its triangles lie in pieces 0.25 or more
-//   long; from in front it is at most 1.5 times her head's width at her cheeks, at least 1.2 times
-//   (so it still frames her face), and no wider below them; behind her it reaches below 0.5, well
+//   long; from in front it is 1.3 to 1.65 times her head's width at her cheeks (F1b-loop's volume
+//   pass widened it on purpose from 1.37, beside the portrait's big curly volume: under 1.3 it reads
+//   narrow and rope-like, over 1.65 a wig), and no wider below them; behind her it reaches below 0.5, well
 //   under her shoulders (0.6), and stops above 0.36 (about mid-back); and from the town camera's
 //   height, from in front to 40 degrees either side, a ray at each of her eyes meets her glasses
 //   band at the eye, not her hair.
@@ -4588,7 +4589,7 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
       },
       head = 2 * HEAD.r[0],
       cheeks = width(0.68, 0.74);
-    assert(cheeks <= 1.5 * head && cheeks >= 1.2 * head, `At her cheeks her hair is ${(cheeks / head).toFixed(2)} times her head's width, not 1.2 to 1.5.`);
+    assert(cheeks <= 1.65 * head && cheeks >= 1.3 * head, `At her cheeks her hair is ${(cheeks / head).toFixed(2)} times her head's width, not 1.3 to 1.65.`);
     for (const [lo, hi] of [[0.6, 0.68], [0.5, 0.6], [0.4, 0.5]]) assert(width(lo, hi) <= cheeks + 0.005, `Her hair is wider from ${lo} to ${hi} (${width(lo, hi).toFixed(3)}) than at her cheeks (${cheeks.toFixed(3)}).`);
     let back = Infinity;
     for (let i = 0; i < q.count; i++) if (v.fromBufferAttribute(q, i).applyMatrix4(hair.matrixWorld).z < -0.06) back = Math.min(back, v.y);
