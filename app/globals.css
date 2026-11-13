@@ -1664,6 +1664,56 @@ body:has(.mode-explore),
 .neighbour-profile-body > :last-child {
   margin-bottom: 0;
 }
+/* The reading page's Neighbours card, at the end of About after its own sections (lab-content's
+   NeighboursCard): the same flat tint as the island's file's group, its heading in the style of the
+   chapter's place line, the group's name in the display face, and its two ways on in a row. Its
+   heading's line is the second ink, not the third: the tint darkens the glass by day. */
+.neighbours {
+  margin: 4px 0 18px;
+  padding: 16px 18px 18px;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--ink) 5%, transparent);
+  scroll-margin-top: calc(var(--masthead) + 16px);
+}
+.neighbours h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.neighbours h3:focus {
+  outline: none;
+}
+.neighbours .neighbours-group {
+  margin: 10px 0 6px;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.neighbours p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.neighbours .neighbour-tie {
+  margin-top: 8px;
+  font-weight: 500;
+}
+.neighbours-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  margin-top: 14px;
+}
 
 /* Departures: the airport's board, in its chapter and its City file. A split-flap list on a flat
    ink tint: no border, no frost of its own, no glow, halo or shadow on the text. Latin text sits on

@@ -96,7 +96,8 @@ export const noteRecords = catalog.notes
  * people: nothing that lists people, members, leavers, residents, homes, People cards, departures
  * or an event's People reads them, nor the supervisor's email, and no address opens one (getRecord
  * does not know them). Their place shows them (neighbourFor): the sky island's City file is hers,
- * and its category names her and her group (city-data's buildingsOn).
+ * and its category names her and her group (city-data's buildingsOn). On the reading page, the
+ * chapter that hosts her place (About) ends with her Neighbours card (lab-content's NeighboursCard).
  */
 export const neighbourRecords: NeighbourRecord[] = catalog.neighbours
   .filter((n) => n.visibility === 'published')

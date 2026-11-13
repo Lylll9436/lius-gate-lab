@@ -59,8 +59,8 @@ const places: Building[] = [
       {
         heading: t('Layout', '布局'),
         body: t(
-          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
-          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
+          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. A sky island with a red-brick villa floats above the town. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
+          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。小城上空还漂浮着一座带红砖别墅的天空之岛。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
         ),
       },
       {

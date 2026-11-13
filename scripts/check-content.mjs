@@ -926,13 +926,105 @@ async function siteOver(name, testCatalog) {
     const html = decoded(renderToStaticMarkup(React.createElement(none.content.LabContent, { id: 'sky-island', locale, onOpen() {} })));
     assert(html.includes('<p class="record-lead">' + bare.summary[locale] + '</p>') && html.includes(bare.architecture[locale]), 'The empty island’s file is not its own.');
     assert(!/heppenstall|uia|urban-ai/i.test(html), 'The empty island’s file still shows her or UIA.');
+    // Nor would About end with a Neighbours card.
+    const about = renderToStaticMarkup(React.createElement(none.content.LabContent, { id: 'town-hall', locale, onOpen() {}, reading: true }));
+    assert(!about.includes('class="neighbours"') && !/heppenstall/i.test(about), 'About keeps a Neighbours card with no neighbour published.');
   }
 }
-// Her name is shown on the sky island's own surfaces only, never as a person. No other place's file,
-// no record's, no chapter of the page and not the footer names her, in either language or mode (in
-// what a visitor reads or hears: her staff page's address, in the island's file, has her name in it).
+// The reading page's one way to her: a compact Neighbours card at the end of About (the Town Hall's
+// chapter), after its own sections and before the building's note. It holds UIA in one line (the first
+// sentence of its summary), her as one of its group leaders, the one tie, and two ways on: UIA's
+// website (read aloud with its address and the new tab) and the island in the city. It is the island's
+// reading address, so its file's "Read on the page" lands there, its heading taking the focus. The
+// Town Hall's City file has no card. The Gate's chapter (About this site) names the island in its
+// Layout, before the causeway's closing sentence.
 {
-  const namesHer = (html) => /heppenstall/i.test(textsOf(html).join('\n'));
+  const hall = buildings.find((b) => b.id === 'town-hall'),
+    island = buildings.find((b) => b.id === 'sky-island'),
+    group = alison.group,
+    firstOf = (text) => text.match(/^[\s\S]*?(?:[.!?](?=\s|$)|[。！？])/)[0];
+  /** An element tree's elements that match, function components named in `open` called to see theirs (none of them use hooks). */
+  const find = (node, match, open = [], out = []) => {
+    if (Array.isArray(node)) for (const n of node) find(n, match, open, out);
+    else if (node && typeof node === 'object' && 'props' in node) {
+      if (match(node)) out.push(node);
+      if (typeof node.type === 'function' && open.includes(node.type.name)) find(node.type(node.props), match, open, out);
+      find(node.props.children, match, open, out);
+    }
+    return out;
+  };
+  for (const locale of ['en', 'zh']) {
+    const zh = locale === 'zh',
+      chapter = renderToStaticMarkup(React.createElement(LabContent, { id: 'town-hall', locale, onOpen() {}, reading: true, onExplore() {} })),
+      card = chapter.match(/<section class="neighbours"[\s\S]*?<\/section>/)?.[0] ?? '',
+      page = decoded(chapter),
+      intro = firstOf(group.summary[locale]);
+    assert(card, 'About (' + locale + ') has no Neighbours card.');
+    assert(intro.length < group.summary[locale].length && /[.。]$/.test(intro), 'UIA’s one-line introduction is not the first sentence of its summary.');
+    let last = -1;
+    for (const text of [
+      ...hall.sections.flatMap((s) => [s.heading[locale], s.body[locale]]),
+      zh ? '近邻 · 小城上空' : 'Neighbours · Above the town',
+      group.name[locale] + ' · ' + group.fullName[locale],
+      intro,
+      zh ? alison.title.zh + ' 是 UIA 的团队负责人之一。' : alison.title.en + ' is one of its group leaders.',
+      group.connection[locale],
+      zh ? 'UIA 官网' : 'UIA website',
+      zh ? '在小城里打开' : 'Open in the city',
+      zh ? '这栋建筑' : 'About this building',
+      zh ? '继续探索' : 'Continue exploring',
+    ]) {
+      const found = page.indexOf(text, last + 1);
+      assert(found > last, 'About (' + locale + ') does not show, in its place: ' + text);
+      last = found;
+    }
+    // Compact: UIA's one line, not its whole summary; and the island's own reading address.
+    assert(!decoded(card).includes(group.summary[locale].slice(intro.length).trim()), 'The Neighbours card holds UIA’s whole summary.');
+    assert(
+      card.startsWith('<section class="neighbours" id="read-sky-island"><h3 tabindex="-1">') && (chapter.match(/id="read-sky-island"/g) ?? []).length === 1,
+      'The card is not the island’s reading address, or its heading cannot take the focus.',
+    );
+    const site = decoded(card).match(/<a class="button-primary site-link"[^>]*>/g) ?? [];
+    assert.equal(site.length, 1);
+    for (const attribute of [
+      'href="https://urban-ai.uk/"',
+      'target="_blank"',
+      'rel="noopener noreferrer"',
+      'aria-label="' + (zh ? 'UIA 官网：urban-ai.uk，在新标签页打开' : 'UIA website: urban-ai.uk, opens in a new tab') + '"',
+    ])
+      assert(site[0].includes(attribute), 'The card’s UIA website button lacks ' + attribute + ' (' + locale + ').');
+    assert(
+      decoded(card).includes('<button class="link-action" aria-label="' + (zh ? '在小城里打开：天空之岛 · 红砖别墅' : 'Open in the city: Sky Island · Red-brick villa') + '">'),
+      'The card’s Open in the city does not say what it opens.',
+    );
+    // It opens the island in the city, from the chapter the page renders.
+    const opened = [],
+      tree = LabContent({ id: 'town-hall', locale, onOpen() {}, reading: true, onExplore: (id) => opened.push(id) });
+    for (const button of find(tree, (e) => e.type === 'button' && e.props.className === 'link-action', ['NeighboursCard'])) button.props.onClick();
+    assert.deepEqual(opened, ['sky-island'], 'The card’s Open in the city does not open the island in the city.');
+    const explore = () => {},
+      pageTree = Chapters.type({ locale, onOpen() {}, onVisit() {}, onHoverBuilding() {}, onExplore: explore });
+    assert(
+      find(pageTree, (e) => e.type === LabContent && e.props.id === 'town-hall').every((e) => e.props.onExplore === explore),
+      'The reading page does not hand About the way to open a place in the city.',
+    );
+    // The Town Hall's City file has no card, and the Gate's Layout names the island.
+    assert(!renderToStaticMarkup(React.createElement(LabContent, { id: 'town-hall', locale, onOpen() {} })).includes('class="neighbours"'), 'The Town Hall’s City file has the Neighbours card.');
+    const layout = buildings.find((b) => b.id === 'lius-gate').sections.find((s) => s.heading.en === 'Layout').body[locale];
+    assert(
+      layout.includes(zh ? '小城上空还漂浮着一座带红砖别墅的天空之岛。' : 'A sky island with a red-brick villa floats above the town.'),
+      'The Gate’s Layout does not name the sky island.',
+    );
+  }
+  assert.equal(island.name.en, 'Sky Island');
+}
+// Her name is shown on the sky island's own surfaces and in About's Neighbours card only, never as a
+// person. No other place's file, no record's, no other part of the page and not the footer names her,
+// in either language or mode (in what a visitor reads or hears: her staff page's address, in the
+// island's file, has her name in it).
+{
+  const namesHer = (html) => /heppenstall/i.test(textsOf(html).join('\n')),
+    withoutCard = (html) => html.replace(/<section class="neighbours"[\s\S]*?<\/section>/, '');
   const ids = [
     'overview',
     'people',
@@ -949,13 +1041,14 @@ async function siteOver(name, testCatalog) {
     for (const reading of [false, true])
       for (const id of ids) {
         const html = renderToStaticMarkup(React.createElement(LabContent, { id, locale, onOpen() {}, reading }));
+        if (id === 'town-hall' && reading) assert(namesHer(html), 'About (' + locale + ') does not name her in its Neighbours card.');
         if (!['sky-island', 'place:sky-island'].includes(id))
-          assert(!namesHer(html), id + '’s ' + (reading ? 'chapter' : 'file') + ' (' + locale + ') names a neighbour.');
+          assert(!namesHer(withoutCard(html)), id + '’s ' + (reading ? 'chapter' : 'file') + ' (' + locale + ') names a neighbour.');
         assert.deepEqual(unsafeOutbound(html), [], 'A link off ' + id + ' (' + locale + ') is unsafe.');
       }
     const pageText = renderToStaticMarkup(React.createElement(Chapters, { locale, onOpen() {}, onVisit() {}, onHoverBuilding() {}, onExplore() {} })),
       footer = renderToStaticMarkup(React.createElement(SiteFooter, { locale, onNavigate() {} }));
-    assert(!namesHer(pageText) && !namesHer(footer), 'The reading page (' + locale + ') names a neighbour.');
+    assert(namesHer(pageText) && !namesHer(withoutCard(pageText)) && !namesHer(footer), 'The reading page (' + locale + ') names a neighbour outside About’s card.');
     assert.deepEqual([...unsafeOutbound(pageText), ...unsafeOutbound(footer)], [], 'A link off the reading page or the footer is unsafe.');
   }
 }
@@ -1545,6 +1638,9 @@ assert.equal(chapterMeta[1].id, 'people', 'Departures comes right after People.'
     'The chips’ trim and the rule that hides the nav at 960 px leave a gap between them.',
   );
   assert(chapterMeta.length <= 7, 'The masthead was measured with seven chapter chips: measure it again in a browser at 961-1040 px.');
+  // Still seven: the sky island has a City file and a card in About, but no chapter or chip.
+  assert.equal(chapterMeta.length, 7);
+  assert(!chapterMeta.some((c) => c.id === 'sky-island'), 'The sky island has a masthead chip.');
 }
 // Up to 960 px the reading page scrolls under the masthead, and its text ran into the bare
 // wordmark: there the wordmark sits on the buttons' glass, a pill of their height. The glass is a
@@ -2218,23 +2314,33 @@ assert(
   assert(sentences(neighbourTexts).some(namesTheGate), 'The neighbours’ copy names Liu’s Gate (the connection line).');
   assert.deepEqual(wordingFaults(neighbourTexts), [], 'content/lab.json’s neighbours break a wording rule.');
   // The site's own copy around her record is read by the same rules: the sky island's place (its
-  // name, category, summary and the villa's text) and every text a visitor reads or hears in its
-  // file, the record's and the page's alike, in both languages. A fault in what the file shows is
-  // caught there.
+  // name, category, summary and the villa's text), the Gate's Layout sentence on it, and every text a
+  // visitor reads or hears in its file and in About's Neighbours card (the copy that sits beside the
+  // Gate's own and names it), the record's and the page's alike, in both languages. A fault in what
+  // the file or the card shows is caught there.
   const island = buildings.find((b) => b.id === 'sky-island'),
-    shown = (lab, id, props = {}) =>
-      ['en', 'zh'].flatMap((locale) => textsOf(renderToStaticMarkup(React.createElement(lab, { id, locale, onOpen() {}, ...props })))),
+    shown = (lab) =>
+      ['en', 'zh'].flatMap((locale) => [
+        ...textsOf(renderToStaticMarkup(React.createElement(lab, { id: 'sky-island', locale, onOpen() {} }))),
+        ...textsOf(
+          renderToStaticMarkup(React.createElement(lab, { id: 'town-hall', locale, onOpen() {}, reading: true })).match(
+            /<section class="neighbours"[\s\S]*?<\/section>/,
+          )?.[0] ?? '',
+        ),
+      ]),
     siteCopy = [
       ...[island.name, island.category, island.summary, island.style, island.architecture].flatMap((t) => [t.en, t.zh]),
-      ...shown(LabContent, 'sky-island'),
+      'A sky island with a red-brick villa floats above the town.',
+      '小城上空还漂浮着一座带红砖别墅的天空之岛。',
+      ...shown(LabContent),
     ];
-  assert(sentences(siteCopy).some(namesTheGate), 'The island’s file names Liu’s Gate (the connection line).');
-  assert.deepEqual(wordingFaults(siteCopy), [], 'The sky island’s place or file breaks a wording rule.');
+  assert(sentences(siteCopy).filter(namesTheGate).length >= 4, 'The island’s file and the card name Liu’s Gate (the connection line).');
+  assert.deepEqual(wordingFaults(siteCopy), [], 'The sky island’s place, its file or the Neighbours card breaks a wording rule.');
   const planted = await siteOver('neighbour-wording', {
     ...next,
     neighbours: next.neighbours.map((n) => ({ ...n, group: { ...n.group, connection: { en: 'Liu’s Gate is part of UIA.', zh: '刘家门隶属于 UIA。' } } })),
   });
-  assert.equal(wordingFaults(shown(planted.content.LabContent, 'sky-island')).length, 2, 'The wording rules miss a fault the island’s file shows.');
+  assert.equal(wordingFaults(shown(planted.content.LabContent)).length, 4, 'The wording rules miss a fault the island’s file or the card shows.');
 }
 // Exercise the same maintenance CLI in an isolated copy of its directory structure.
 const sandbox = path.join(output, 'cli');
@@ -2323,5 +2429,5 @@ assert.equal(
   assert.doesNotMatch(result.stdout, /Catalog valid/);
 }
 console.log(
-  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
+  'Content checks passed: persistent CRUD with backups, references, invalid dates/links, member/research/event/output/note rendering, visitor-facing empty chapters, role labels, the Visiting PhD Residence empty and shared by two test visitors, departures on fixed UTC days (a member who left, a visitor gone home as Returned, a 2099 leaver, a home that empties and fills again, malformed blocks refused), those who have left filed at the airport (chapter, camera, place and file) while the home a founding member left is still faced from People, the Departures chapter as chapter 03 and its board (newest first, rows that fold out on the page or open a file in the city, read aloud as sentences, the empty board’s row to be announced and its note), nobody at the Gate on ' + DAY + ' gone by then so the live site unchanged, checks that hold whatever real departures are entered, the About this site chapter, readable dates, Gate’s News order, 12-month window and rendering, Join us subject lines, full profiles and email addresses on the reading-view person cards, v1 migration and v2 files from before the neighbours, a misspelt or stray collection refused by name, no Chinese characters or punctuation in English text, properties, bilingual routes and scene targets, the neighbours (Alison Heppenstall and UIA on the sky island: a collection of their own with strict fields, each fault in its own message, HTTPS links only, Chinese text translated save the names, never a person, member, resident or address anywhere on the site, a draft kept back, edited by the command), the wording rules in every sentence of their copy (no tie stronger than Associate, her name and UIA’s never in Chinese characters, Liu’s Gate never a lab or a group, by its name or its supervisor’s), the sky island’s City file (her category, her role, profile, UIA and its button, her staff page, her full profile folded away, the villa; the island’s own again with no record) and About’s Neighbours card (UIA in one line, her as a group leader, the tie, its two ways on, the island’s reading address), her name nowhere else on the page, the same wording rules over the file’s and the card’s copy, the Gate’s work never filed at her place, every link off the site opening a new tab with rel noopener noreferrer, still seven chapter chips, and site copy, the neighbours’ included, that never calls Liu’s Gate a lab.',
 );

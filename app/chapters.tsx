@@ -145,6 +145,7 @@ export const Chapters = memo(function Chapters({
                   locale={locale}
                   onOpen={onOpen}
                   onHover={onHoverBuilding}
+                  onExplore={onExplore}
                 />
               )}
             </div>
