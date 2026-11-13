@@ -39,6 +39,10 @@
   --accent-ink: #0d3f32;
   --accent-soft: rgba(20, 92, 72, 0.1);
   --amber: #c47a2f;
+  /* The day look's inks for green and amber text on the glass (see "Text on the glass by day"):
+     the accent and the amber darkened along their own hues to about 5:1 over the frosted sea. */
+  --ink-green: #032219;
+  --ink-amber: #2b1a09;
   --stage-a: #dde6e0;
   --stage-b: #c9d6cf;
   --shadow: 0 30px 60px -32px rgba(10, 20, 18, 0.35);
@@ -1619,8 +1623,9 @@ body:has(.mode-explore),
   gap: 4px;
   margin-bottom: 10px;
 }
-/* Her role and affiliation, the first facts in her file, in the text's own ink: the third ink, as on
-   a person's file, measured 2.2 to 2.9:1 over the sea glass by day. */
+/* Her role and affiliation, the first facts in her file, in the text's own ink at night (a person's
+   file has the third ink there). By day every file's eyebrows and grey text take the day inks (Text
+   on the glass by day): her role the ink-green, her affiliation the ink. */
 .neighbour-role .eyebrow,
 .neighbour-role .institution {
   color: var(--ink);
@@ -1688,7 +1693,8 @@ body:has(.mode-explore),
 /* The reading page's Neighbours card, at the end of About after its own sections (lab-content's
    NeighboursCard): the same flat tint as the island's file's group, its heading in the style of the
    chapter's place line, the group's name in the display face, and its two ways on in a row. Its
-   heading's line is the second ink, not the third: the tint darkens the glass by day. */
+   heading's line is the second ink at night, not the third; by day it is the ink-green of every
+   small heading on the glass (Text on the glass by day). */
 .neighbours {
   margin: 4px 0 18px;
   padding: 16px 18px 18px;
@@ -2340,6 +2346,65 @@ summary.board-row:hover {
     background: var(--glass-solid);
     border-color: var(--line-strong);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Text on the glass by day                                            */
+/* ------------------------------------------------------------------ */
+/* By day the glass's thin white tint lets the mid-blue sea through: behind the text the frosted sea
+   measures a luminance of about 0.25 to 0.30, where the second and third inks and the accent green
+   came to 2.3 to 3.4:1 (and the amber chapter numbers to 2:1). So on every glass surface the day
+   look sets its text in very dark inks, by colour alone: the glass, its tint and the layout are as
+   they were, with no wash, glow or shadow behind the text. What was grey takes the page's ink
+   (#15181a, 5.4:1 over the sea glass); links, the small headings (eyebrows), the expand toggles,
+   the hover and the keyboard ring take --ink-green (5.1:1), and the chapters' numbers and a done
+   status --ink-amber (5.1:1). The night look keeps its own inks: every rule here is for the day
+   only. A new glass surface joins the list in each rule. */
+:root:not([data-theme='night'])
+  :is(.panel, .hero-news, .dossier, .directory, .plan-legend, .tour-control, .inspection-toolbar, .hud, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .sky-chip, .hover-chip, .stage-loading, .building-hover-label, .home-tag, .scene-fallback, .skip-link) {
+  --ink-2: var(--ink);
+  --ink-3: var(--ink);
+}
+:root:not([data-theme='night'])
+  :is(.panel, .hero-news, .dossier, .directory, .plan-legend, .tour-control, .inspection-toolbar, .hud, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .sky-chip, .hover-chip, .stage-loading, .building-hover-label, .home-tag, .scene-fallback, .skip-link)
+  :is(.eyebrow, .chapter-place, .neighbours h3, .link-action:not(.quiet), .record-links a, .hero-news-join a, .dossier-foot button, .person-profile > summary, .neighbour-profile > summary, .architecture-note summary, .sheet-handle, .board-mark, .address-list .place-glyph, .pill-active) {
+  color: var(--ink-green);
+}
+:root:not([data-theme='night'])
+  :is(.panel, .hero-news, .dossier, .directory, .plan-legend, .tour-control, .inspection-toolbar, .hud, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .sky-chip, .hover-chip, .stage-loading, .building-hover-label, .home-tag, .scene-fallback, .skip-link)
+  :is(.chapter-no, .pill-done) {
+  color: var(--ink-amber);
+}
+/* The one link with neither an underline nor a weight or an arrow of its own (the news card's Join
+   us address): by day its green is too near the ink to tell it by, so it keeps an underline, and
+   its hover thickens it. */
+:root:not([data-theme='night']) .hero-news-join a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+:root:not([data-theme='night']) .hero-news-join a:hover {
+  text-decoration-thickness: 2px;
+}
+/* Hover and the keyboard reach the same inks. A chapter chip in the masthead went from the second
+   ink to the ink on hover, which by day are one: it takes the HUD buttons' soft green instead. */
+:root:not([data-theme='night'])
+  :is(.panel, .hero-news, .dossier, .directory, .plan-legend, .tour-control, .inspection-toolbar, .hud, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .sky-chip, .hover-chip, .stage-loading, .building-hover-label, .home-tag, .scene-fallback, .skip-link)
+  .record-related button:hover {
+  border-color: var(--ink-green);
+  color: var(--ink-green);
+}
+:root:not([data-theme='night']) .masthead-nav a:not([aria-current]):hover {
+  background: var(--accent-soft);
+}
+:root:not([data-theme='night']) .directory-row[aria-current] {
+  box-shadow: inset 3px 0 0 var(--ink-green);
+}
+:root:not([data-theme='night'])
+  :is(.panel, .hero-news, .dossier, .directory, .plan-legend, .tour-control, .inspection-toolbar, .hud, .masthead-nav, .mode-switch, .lang-switch, .button-ghost, .sky-chip, .hover-chip, .stage-loading, .building-hover-label, .home-tag, .scene-fallback, .skip-link)
+  :is(a, button, summary):focus-visible,
+:root:not([data-theme='night']) :is(.mode-switch, .lang-switch, .button-ghost, .skip-link):focus-visible {
+  outline-color: var(--ink-green);
 }
 
 /* ------------------------------------------------------------------ */
