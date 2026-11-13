@@ -2046,7 +2046,8 @@ assert.deepEqual(dipped.changes, [1, 0], 'The governor stepped to and fro.');
 const steps = [[1, 3, 3, 3, 3], [1, 3, 2, 3, 2], [1, 2, 2, 2, 2], [1, 2, 1, 2, 1], [1, 1, 1, 1, 1]],
   slow = runGovernor((quality, frame) => (steps[quality][frame % 5] * 1000) / 60, 300);
 assert.deepEqual(slow.changes, [1, 2], 'A slow machine steps down once to each level it needs, and no further.');
-// Selection adds one depth-aware mask pass; all renderer state survives failure.
+// Selection adds two depth-aware mask passes (the multisampled test, then its pixel centres;
+// check-hover holds their shaders); all renderer state survives failure.
 const { createCityInk } = await import(
   pathToFileURL(path.join(output, 'city-ink.mjs')).href
 );
@@ -2102,7 +2103,7 @@ assert.equal(renders, 2);
 ink.setSelection([selected]);
 renders = 0;
 ink.render();
-assert.equal(renders, 3);
+assert.equal(renders, 4);
 failMask = true;
 assert.throws(() => ink.render(), /mask failure/);
 assert.equal(currentTarget, priorTarget);
