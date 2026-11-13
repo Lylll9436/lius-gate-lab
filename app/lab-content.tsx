@@ -750,9 +750,9 @@ function ContinueExploring({
  * The sky island's City file while a neighbour's record is published for it (Alison Heppenstall's).
  * Under the file's eyebrow (her name and her group's) and title (the island's): her name again, for
  * screen readers only, then her role and affiliation, her short profile, her group on a flat tint
- * with the way out to its website, her staff page, her full profile folded away as on a person's
- * card, the villa, and the places next to it. No photo of her, nor a monogram in its place: the
- * site shows none.
+ * (its name, the way out to its website, what it does and the one tie), her staff page, her full
+ * profile folded away as on a person's card, the villa, and the places next to it. No photo of her,
+ * nor a monogram in its place: the site shows none.
  */
 function NeighbourFile({
   neighbour,
@@ -777,13 +777,15 @@ function NeighbourFile({
         <span className="institution">{neighbour.affiliation[locale]}</span>
       </p>
       <p className="record-lead">{neighbour.summary[locale]}</p>
+      {/* The island works as a link to UIA's site: its button comes right under the group's name,
+          on the file's first screen on a laptop, before what the group does and the one tie. */}
       <section className="neighbour-group">
         <h3>
           {group.name[locale]} · {group.fullName[locale]}
         </h3>
+        <GroupSiteLink site={group.site} locale={locale} withHost />
         <p>{group.summary[locale]}</p>
         <p className="neighbour-tie">{group.connection[locale]}</p>
-        <GroupSiteLink site={group.site} locale={locale} withHost />
       </section>
       {!!neighbour.links.length && (
         <div className="record-links">

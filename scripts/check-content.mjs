@@ -931,10 +931,11 @@ async function siteOver(name, testCatalog) {
 // The sky island's City file (#city/sky-island). The island keeps its name; while her record is
 // published its category names her and her group, as a home's names its resident's role (the file's
 // eyebrow, the Directory, the hover label), and its file is hers, in this order: her name (for screen
-// readers only), her role and affiliation, her short profile, her group (its full name, what it does, the one tie, and the way out
-// to its website, its address on the button and read aloud), her staff page, her full profile folded
-// away, the villa, and the places next to it. No photo of her, nor a monogram in its place. It stands
-// in the Directory and the tour after the Visiting PhD Residence and before the airport.
+// readers only), her role and affiliation, her short profile, her group (its full name, then the way
+// out to its website, its address on the button and read aloud, then what it does and the one tie),
+// her staff page, her full profile folded away, the villa, and the places next to it. No photo of
+// her, nor a monogram in its place. It stands in the Directory and the tour after the Visiting PhD
+// Residence and before the airport.
 {
   const island = buildings.find((b) => b.id === 'sky-island'),
     at = (id) => buildings.findIndex((b) => b.id === id);
@@ -958,9 +959,11 @@ async function siteOver(name, testCatalog) {
       alison.affiliation[locale],
       alison.summary[locale],
       group.name[locale] + ' · ' + group.fullName[locale],
+      // The island works as a link to UIA's site: the button comes right under the group's name, on
+      // the file's first screen on a laptop (1440 × 789, a 1440 × 900 screen's browser, and 1280 × 720).
+      site,
       group.summary[locale],
       group.connection[locale],
-      site,
       alison.links[0].label[locale],
       locale === 'zh' ? '完整简介' : 'Full profile',
       ...alison.sections.flatMap((s) => [s.heading[locale], s.body[locale]]),

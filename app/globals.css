@@ -1635,8 +1635,8 @@ body:has(.mode-explore),
   clip-path: inset(50%);
   white-space: nowrap;
 }
-/* Her profile in the text's own ink at its size, so that on a 1440 × 900 screen her group's button
-   shows whole on the file's first screen, in English too. */
+/* Her profile in the text's own ink, a size down from a record's lead, so the file's first screen
+   holds her group's name and its button below it, in English too. */
 .neighbour-file .record-lead {
   font-size: 15px;
   line-height: 1.55;
@@ -1667,8 +1667,13 @@ body:has(.mode-explore),
   margin-top: 10px;
   font-weight: 500;
 }
+/* The way out to its website comes right under the group's name, so a laptop shows it whole without
+   scrolling (a 1440 × 900 screen's browser is about 1440 × 789; 1280 × 720 too): a row of its own,
+   the button as wide as its label, as the site's primary button is everywhere. */
 .neighbour-group .site-link {
-  margin-top: 14px;
+  display: flex;
+  width: fit-content;
+  margin: 10px 0 14px;
 }
 /* A pill keeps its shape under the keyboard's ring. */
 .site-link:focus-visible {
