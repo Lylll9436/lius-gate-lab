@@ -1510,9 +1510,9 @@ export async function createCity(
    * the ground 18.7 beyond the island along the line of sight at that pitch, 30 degrees (11.7 at the
    * town's, 42.6); then the target is raised SKY_LIFT up that line. Nothing on screen changes, but
    * the idle drift now turns the view about a point 4 under the island's middle, not 10 (it swings
-   * the island much less far), and the target still
-   * stands under the pan limit's lift: a one-building framing, on the island's own middle 10.5 up,
-   * would stand over it, and the limit would slide the camera as the glide ended. At `zoom` (a zoom
+   * the island much less far), and the target still stands under the pan limit's lift: a
+   * one-building framing, on the island's own middle 10.5 up, would stand over it, and the limit
+   * would slide the camera as the glide ended. At `zoom` (a zoom
    * the visitor chose: Rotate after a pan or a zoom) the subject is the same, the panel offset
    * measured at that zoom instead of the fit's.
    */
