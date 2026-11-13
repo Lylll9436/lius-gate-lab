@@ -1660,6 +1660,70 @@ const laneD3 = {};
     assert(fog.rest <= 0.05 && fog.drift <= 0.15, `The fog reaches ${fog.rest.toFixed(3)} at rest (and ${fog.drift.toFixed(3)} through the drift) over the sky island in City mode's overview.`);
     skyNav.overview = `the fog ${(fog.rest * 100).toFixed(1)}% at rest, ${(worstCut * 100).toFixed(0)}% of it in frame through the drift`;
 
+    // (b2) Clear of the caption (the art review's fourth finding): at the opening bearing the island
+    // lands at the box's top left, and it stood under or right beside the caption's sky chip (16 to
+    // 182 px across with its longest caption, its foot 102 down): 3 px from its column at 1280 x 800,
+    // overlapping it at 1280 x 720, 1366 x 768 and 1440 x 900. In City mode fitOverview moves the
+    // view sideways (the town right), never up or down and at the same zoom, until the island, its
+    // clouds and rocks clear that column by 24 px (PANEL_CLEAR), the whole overview kept 24 px from
+    // the file and the frame's left edge; on every desktop size, the file open or hidden, it is then
+    // clear by 24 px at rest and off the column all through the idle drift. Where there is no room for
+    // that (a phone upright, the smallest on its side), the framing stays as it was.
+    {
+      const bearing = Math.PI / 4,
+        right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+        back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+        up = new T.Vector3().crossVectors(back, right),
+        // How far a screen box lies from the chip's column (negative: on it).
+        gap = ([x0, y0, x1, y1]) => Math.max(x0 - 182, y0 - 102, 16 - x1, 72 - y1),
+        found = { moved: [], rest: Infinity, drift: Infinity, kept: 0 },
+        // The overview of a w x h frame (beside a file `shift`, over a sheet `drop`): where it put the
+        // view, and how far (px) that is left of the box's own middle with the panel offset.
+        overviewOf = (w, h, shift, drop) => {
+          frame(w, h, shift, bearing);
+          Object.assign(view, { frameDrop: drop, cityMode: true });
+          scene.fitOverview();
+          const xs = [...scene.islandMarks, ...scene.SKY_MARKS].map((p) => p.dot(right)),
+            ys = [...scene.islandMarks, ...scene.SKY_MARKS].map((p) => p.dot(up)),
+            zoom = view.targetZoom,
+            centre = view.target.clone(),
+            perUnit = (h * zoom) / Math.max(53, (76 * h) / w),
+            moved = ((Math.min(...xs) + Math.max(...xs)) / 2 + view.shiftApplied.dot(right) - centre.dot(right)) * perUnit,
+            lifted = ((Math.min(...ys) + Math.max(...ys)) / 2 + view.shiftApplied.dot(up) - centre.dot(up)) * perUnit;
+          Object.assign(view, { frameDrop: 0, cityMode: false });
+          return { zoom, centre, moved, lifted, panel: shift > 0 ? w * (1 - 2 * shift) + 16 : w };
+        };
+      for (const [w, h] of desktops)
+        for (const open of [false, true]) {
+          const { zoom, centre, moved, lifted, panel } = overviewOf(w, h, open ? 492 / (2 * w) : 0, 0),
+            at = `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''}`,
+            all = box([...scene.islandMarks, ...shape].map((p) => px(w, h, zoom, bearing, centre, p))),
+            rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
+          if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
+          found.rest = Math.min(found.rest, rest);
+          assert(moved > -1e-6 && Math.abs(lifted) < 1e-6 && (moved < 1e-6 || rest < 24 + 6), `${at} moves the view ${moved.toFixed(1)} px sideways and ${lifted.toFixed(1)} px up, the island ${rest.toFixed(1)} px from the caption's column.`);
+          assert(rest >= 24 - 1e-6 && all[0] >= 24 - 1e-6 && all[2] <= panel - 24 + 1e-6, `${at} leaves the sky island ${rest.toFixed(1)} px from the caption's column, the overview spanning ${all[0].toFixed(0)} to ${all[2].toFixed(0)} px (the file at ${panel.toFixed(0)}).`);
+          for (const d of drifts) {
+            const off = gap(box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p))));
+            found.drift = Math.min(found.drift, off);
+            assert(off >= 0, `Drifted ${d.toFixed(2)}, ${at} brings the sky island onto the caption's column (${off.toFixed(1)} px).`);
+          }
+        }
+      // Phones: moved only where that clears the island (on their side, beside the file), else as they were.
+      for (const [w, h, shift, drop] of [
+        ...[[360, 640], [375, 667], [390, 844], [412, 915], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]),
+        ...[[667, 375], [844, 390], [932, 430]].map(([w, h]) => [w, h, (Math.min(340, 0.42 * w) + 28) / (2 * w), -33 / h]),
+      ]) {
+        const { zoom, centre, moved, panel } = overviewOf(w, h, shift, drop),
+          all = box([...scene.islandMarks, ...shape].map((p) => px(w, h, zoom, bearing, centre, p))),
+          rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
+        if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
+        else found.kept++;
+        assert(moved < 1e-6 || (rest >= 24 - 1e-6 && rest < 24 + 6 && all[2] <= panel - 24 + 1e-6), `City mode's overview on a ${w} x ${h} phone moves the view ${moved.toFixed(1)} px, the island ${rest.toFixed(1)} px from the caption's column.`);
+      }
+      laneD3.overview = `the sky island in City mode's overview ${found.rest.toFixed(1)} px clear of the caption's column at rest and ${found.drift.toFixed(1)} px through the drift on every desktop size (the view moved ${found.moved.join(', ')}; ${found.kept} phones as they were)`;
+    }
+
     // (c) Its own file, at its own lower pitch (city-scene's SKY_PITCH, 30 degrees; from the town's
     // 42.6 its rock showed as a fringe under the deck): framed as the camera will stand once it has
     // come down (aim() 1 for the island alone, the pitch at 1), SKY_FIT fitted like a group between

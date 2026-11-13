@@ -6,6 +6,8 @@ import { Script, createContext, runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as T from 'three';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// What the later checks found, for the summary.
+const hoverPins = [];
 const compile = (s) =>
   ts.transpileModule(s, {
     compilerOptions: {
@@ -35,6 +37,7 @@ const names = [
   'clearHover',
   'leave',
   'updateHover',
+  'subjectBox',
 ];
 const functions = new Map();
 function visit(node) {
@@ -106,6 +109,14 @@ const h = {
   height: 500,
   inspect: null,
   inViewport: true,
+  // The reading page's labels unless a check says City mode (subjectBox's: the toy island's silhouette
+  // is its box's corners, and it has no clouds or rocks).
+  cityMode: false,
+  frameShift: 0,
+  subjectPoints: new Map(),
+  subjectAt: new T.Vector3(),
+  SKY_MARKS: [-1, 1].flatMap((x) => [-1, 1].flatMap((y) => [-1, 1].map((z) => skyAt.clone().add(new T.Vector3(0.6 * x, 0.4 * y, 0.6 * z))))),
+  plan: { SKY_CLOUDS: [], SKY_ROCKS: [] },
   ray: new T.Raycaster(),
   mouse: new T.Vector2(),
   downX: 0,
@@ -338,6 +349,93 @@ assert(
   /\.building-hover-label\s*\{[^}]*pointer-events:\s*none/.test(css),
   'The label must not intercept clicks or trigger hover loops.',
 );
+// City mode keeps a place's label off the place (the art review's fourth finding: in City mode's
+// overview the label and the caption's chip both covered the sky island's villa). A label that would
+// cover its place goes beside it, 12 px clear, the first way that fits in the view: right of it,
+// below it, left of it, above it, in line with where the pointer put it. A place filling the view
+// keeps the pointer's place, and a label already clear of its place stays where it was.
+{
+  const label = { width: 195, height: 57 },
+    covers = (p, s) => p.x < s.right && p.x + label.width > s.left && p.y < s.bottom && p.y + label.height > s.top,
+    inside = (p, v) => p.x >= 10 && p.y >= 10 && p.x + label.width <= v.width - 10 && p.y + label.height <= v.height - 10,
+    // (labelPosition runs in a context of its own: its objects are compared by their fields.)
+    same = (a, b) => a.x === b.x && a.y === b.y,
+    // City mode's overview at 1440 x 900 beside the file (its left edge at 964): the island, the pointer on its villa.
+    view = { width: 964, height: 900 },
+    island = { left: 207, top: 83, right: 392, bottom: 246 },
+    plain = api.labelPosition({ x: 300, y: 140 }, label, view);
+  assert(covers(plain, island), 'The label check must start from a label on its place.');
+  assert(same(api.labelPosition({ x: 300, y: 140 }, label, view, island), { x: island.right + 12, y: plain.y }), 'Over the sky island in City mode\'s overview, its label does not go right of it, at the pointer\'s height.');
+  const below = { left: 700, top: 300, right: 900, bottom: 500 },
+    left = { left: 500, top: 600, right: 900, bottom: 880 };
+  assert.equal(api.labelPosition({ x: 800, y: 400 }, label, view, below).y, below.bottom + 12, 'With no room right of its place, the label does not go below it.');
+  assert.equal(api.labelPosition({ x: 700, y: 700 }, label, view, left).x, left.left - 12 - label.width, 'With no room right of its place or below it, the label does not go left of it.');
+  assert(same(api.labelPosition({ x: 400, y: 400 }, label, view, { left: 0, top: 0, right: 964, bottom: 900 }), api.labelPosition({ x: 400, y: 400 }, label, view)), 'A place filling the view moves its label.');
+  assert(same(api.labelPosition({ x: 418, y: 382 }, label, view, { left: 380, top: 380, right: 420, bottom: 420 }), api.labelPosition({ x: 418, y: 382 }, label, view)), 'A label clear of its place moves.');
+  // Swept over places of every size about the view, the pointer on each: always in the view, and on
+  // its place only where none of the four sides has room.
+  let swept = 0;
+  for (const [vw, vh] of [[964, 900], [1440, 900], [804, 800], [375, 667]])
+    for (let l = -40; l < vw; l += vw / 9)
+      for (let t = -40; t < vh; t += vh / 8)
+        for (const [w, h] of [[30, 30], [180, 160], [420, 380], [0.8 * vw, 0.8 * vh]]) {
+          const s = { left: l, top: t, right: Math.min(vw + 20, l + w), bottom: Math.min(vh + 20, t + h) },
+            v = { width: vw, height: vh },
+            pointer = { x: Math.min(vw - 1, Math.max(1, (s.left + s.right) / 2)), y: Math.min(vh - 1, Math.max(1, (s.top + s.bottom) / 2)) },
+            at = api.labelPosition(pointer, label, v),
+            p = api.labelPosition(pointer, label, v, s),
+            room = [
+              { x: s.right + 12, y: at.y },
+              { x: at.x, y: s.bottom + 12 },
+              { x: s.left - 12 - label.width, y: at.y },
+              { x: at.x, y: s.top - 12 - label.height },
+            ].find((q) => inside(q, v));
+          swept++;
+          assert(inside(p, v) || (p.x === at.x && p.y === at.y), `A label for a place at ${s.left}, ${s.top} in a ${vw} x ${vh} view leaves the view.`);
+          assert(covers(at, s) ? (room ? !covers(p, s) && p.x === room.x && p.y === room.y : p.x === at.x && p.y === at.y) : p.x === at.x && p.y === at.y, `A label for a place at ${s.left}, ${s.top} (${w} x ${h}) in a ${vw} x ${vh} view lands at ${p.x}, ${p.y}.`);
+        }
+  // Through the scene's own hover (updateHover, subjectBox) on the toy town: in City mode no label lands
+  // on its place, beside the file or not; on the reading page every label is where the pointer puts it.
+  const placeOf = (id) => {
+      const t = labels.find((l) => l.b.id === id).element.style.transform,
+        [, x, y] = /translate\((-?\d+)px,(-?\d+)px\)/.exec(t);
+      return { x: Number(x), y: Number(y) };
+    },
+    toy = { width: 240, height: 70 };
+  let kept = 0;
+  for (const [cityMode, frameShift] of [[true, 0], [true, 0.17], [false, 0]]) {
+    Object.assign(h, { cityMode, frameShift });
+    for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
+      const e = eventAt(id);
+      emit('pointermove', e);
+      f.updateHover();
+      const p = placeOf(id),
+        free = cityMode && frameShift ? 800 * (1 - 2 * frameShift) + 16 : 800,
+        plainAt = api.labelPosition({ x: e.clientX - 42, y: e.clientY - 20 }, toy, { width: free, height: 500 }),
+        s = f.subjectBox(id);
+      assert(s && s.right > s.left && s.bottom > s.top, `The scene finds no box on screen for ${id}.`);
+      if (cityMode) {
+        kept++;
+        assert(p.x + toy.width <= free - 10 + 0.5 && !(p.x < s.right && p.x + toy.width > s.left && p.y < s.bottom && p.y + toy.height > s.top), `In City mode${frameShift ? ' beside the file' : ''} the label for ${id} lands at ${p.x}, ${p.y} on its place (${[s.left, s.top, s.right, s.bottom].map((n) => n.toFixed(0)).join(', ')}) or under the file.`);
+      } else assert(same(p, { x: Math.round(plainAt.x), y: Math.round(plainAt.y) }), `On the reading page the label for ${id} moves.`);
+    }
+  }
+  Object.assign(h, { cityMode: false, frameShift: 0 });
+  emit('pointerleave', eventAt('town-hall'));
+  f.updateHover();
+  // One label for a place at a time: City mode hides the caption's chip for the place under the pointer
+  // (still read out: hidden by clipping in the live region, not removed); Inspect's chip still shows.
+  const stage = await fs.readFile(path.join(root, 'app/city-stage.tsx'), 'utf8'),
+    hidden = /\n\.is-explore \.stage-caption \.hover-chip\[data-pointed\] \{([^}]*)\}/.exec(css)?.[1] ?? '';
+  assert(
+    /<div className="caption-live" aria-live="polite">\s*\{caption && \(\s*<span className="hover-chip" data-pointed>/.test(stage) &&
+      /clip-path: inset\(50%\);/.test(hidden) &&
+      /width: 1px;/.test(hidden) &&
+      !/display:\s*none|visibility:\s*hidden|opacity:\s*0/.test(hidden),
+    'In City mode the caption\'s chip for the place under the pointer still shows beside its label, or is no longer read out.',
+  );
+  hoverPins.push(`labels beside their places (${swept} placements swept, ${kept} City mode hovers), one label a place in City mode`);
+}
 // Each hover mounts a new hover chip, and liquid glass gives every chip a refracting rim. The
 // chips that have left the page must be let go (no longer observed, their lens filters gone),
 // or a long visit keeps every chip it has ever shown.
@@ -579,5 +677,7 @@ assert(
   building.material.dispose();
 }
 console.log(
-  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose two mask passes share one depth test, tuned as measured and run on synthetic depths (its JS twins and its shaders agree), drawn at the beauty pass’s samples into one-channel masks.',
+  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose two mask passes share one depth test, tuned as measured and run on synthetic depths (its JS twins and its shaders agree), drawn at the beauty pass’s samples into one-channel masks; ' +
+    hoverPins.join('; ') +
+    '.',
 );

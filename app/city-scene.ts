@@ -1351,6 +1351,35 @@ export async function createCity(
       .addScaledVector(up, (minY + maxY) / 2);
     target.addScaledVector(back, -target.y / back.y);
     offsetTarget();
+    // City mode, where the sky island lands at the box's top left (the opening bearing): it stood
+    // under or right beside the caption's sky chip (16 px in, 166 wide with its longest caption, its
+    // foot 102 down; the chip naming the place under the pointer is hidden in City mode). The view
+    // moves left, the town right, until the island with its clouds and rocks clears the chip's column
+    // by PANEL_CLEAR, if the room before the file (PANEL_CLEAR from it) or the frame's edge allows;
+    // where it does not, the framing stays as it was. The zoom never changes.
+    if (cityMode) {
+      const perUnit = (width * targetZoom) / (camera.right - camera.left),
+        point = new T.Vector3();
+      let left = Infinity,
+        top = -Infinity;
+      for (const mark of SKY_MARKS) {
+        left = Math.min(left, mark.dot(right));
+        top = Math.max(top, mark.dot(up));
+      }
+      // Each cloud and rock as a disc round its slot, as wide as it reaches and as high as it rises
+      // (in units of its size: a cloud 2.55 out and 1.5 up, a rock 1.3 out and 1.2 up).
+      for (const [floats, reach, rise] of [[plan.SKY_CLOUDS, 2.55, 1.5], [plan.SKY_ROCKS, 1.3, 1.2]] as const)
+        for (const float of floats) {
+          point.set(float.x, float.y + rise * float.size, float.z);
+          left = Math.min(left, point.dot(right) - reach * float.size);
+          top = Math.max(top, point.dot(up) + reach * float.size * Math.hypot(up.x, up.z));
+        }
+      const centre = target.dot(right),
+        islandTop = height / 2 - (top - target.dot(up)) * perUnit,
+        need = 182 + PANEL_CLEAR - (width / 2 + (left - centre) * perUnit),
+        room = (frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width) - PANEL_CLEAR - (width / 2 + (maxX - centre) * perUnit);
+      if (islandTop < 102 + PANEL_CLEAR && need > 0 && need <= room) target.addScaledVector(right, -need / perUnit);
+    }
     tween = true;
   }
   function fitFocused() {
@@ -1798,6 +1827,57 @@ export async function createCity(
     multiPointer = false;
     clearHover();
   }
+  /**
+   * Where a place stands on screen (px in the stage), for its floating label to keep beside it
+   * (labelPosition, City mode): the box round its points as the camera sees them now. A building's
+   * points are the corners of its pointer box (its bounds; the airport's, its hall's), the park's those
+   * of its own; the sky island's are its silhouette (SKY_MARKS) and an octagon round each cloud and
+   * rock as far out as it reaches, at its foot and its top (in units of its size: a cloud 2.55 out,
+   * 0.07 under its base and 1.5 over it; a rock 1.3 out, 1.8 under and 1.2 over). Gathered once a place.
+   */
+  const subjectPoints = new Map<HoverTarget, T.Vector3[]>(),
+    subjectAt = new T.Vector3();
+  function subjectBox(id: HoverTarget) {
+    let points = subjectPoints.get(id);
+    if (!points) {
+      points = [];
+      if (id === 'sky-island') {
+        points.push(...SKY_MARKS);
+        for (const [floats, reach, sink, rise] of [[plan.SKY_CLOUDS, 2.55, 0.07, 1.5], [plan.SKY_ROCKS, 1.3, 1.8, 1.2]] as const)
+          for (const float of floats)
+            for (let k = 0; k < 8; k++) {
+              const angle = (k / 8) * Math.PI * 2,
+                out = (reach * float.size) / Math.cos(Math.PI / 8);
+              for (const y of [float.y - sink * float.size, float.y + rise * float.size])
+                points.push(new T.Vector3(float.x + Math.cos(angle) * out, y, float.z + Math.sin(angle) * out));
+            }
+      } else if (id) {
+        const model = id === 'corner-park' ? undefined : models.get(id),
+          own = id === 'corner-park' ? parkHit : model?.hit,
+          bounds =
+            own instanceof T.Mesh
+              ? new T.Box3().setFromBufferAttribute(own.geometry.getAttribute('position') as T.BufferAttribute).applyMatrix4(own.matrixWorld)
+              : model
+                ? new T.Box3().setFromObject(model.root)
+                : new T.Box3();
+        if (!bounds.isEmpty())
+          for (let i = 0; i < 8; i++) points.push(new T.Vector3(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z));
+      }
+      subjectPoints.set(id, points);
+    }
+    if (!points.length) return undefined;
+    const box = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+    for (const point of points) {
+      subjectAt.copy(point).project(camera);
+      const x = ((subjectAt.x + 1) / 2) * width,
+        y = ((1 - subjectAt.y) / 2) * height;
+      box.left = Math.min(box.left, x);
+      box.right = Math.max(box.right, x);
+      box.top = Math.min(box.top, y);
+      box.bottom = Math.max(box.bottom, y);
+    }
+    return box;
+  }
   function updateHover() {
     const active =
       hoverAllowed(hover, !!inspect, inViewport) && !document.hidden;
@@ -1810,10 +1890,13 @@ export async function createCity(
       const visible = id === b.id;
       element.style.visibility = visible ? 'visible' : 'hidden';
       if (visible) {
+        // In City mode the label keeps clear of the place it names, and of the file beside it (its
+        // left edge, from the frame shift: page.tsx's fileFrame).
         const p = labelPosition(
           { x: hover.x - rect.left, y: hover.y - rect.top },
           { width: element.offsetWidth, height: element.offsetHeight },
-          { width, height },
+          { width: cityMode && frameShift > 0 ? Math.min(width, width * (1 - 2 * frameShift) + 16) : width, height },
+          cityMode ? subjectBox(b.id) : undefined,
         );
         element.style.transform =
           'translate(' + Math.round(p.x) + 'px,' + Math.round(p.y) + 'px)';

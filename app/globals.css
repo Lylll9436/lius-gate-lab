@@ -656,6 +656,20 @@ body:has(.mode-explore),
     transform: none;
   }
 }
+/* City mode names the place under the pointer with its floating label, beside the place: the chip
+   for it stays in the live caption for screen readers only, hidden (not removed) as the phone layout
+   hides it, so one place never shows two labels (they covered half of the sky island's villa).
+   Inspect's chip, which has no floating label, still shows. */
+.is-explore .stage-caption .hover-chip[data-pointed] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .hud {
   position: absolute;
   display: flex;
