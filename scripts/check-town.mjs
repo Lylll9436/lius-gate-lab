@@ -5422,6 +5422,15 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(stones >= 2 && stones <= 3 && all.every((p) => p.faces === 20 * (ROCK.detail + 1) ** 2 || p.faces < 20 * (ROCK.detail + 1) ** 2 + 60) && all.every((p) => Math.min(p.box.max.x - p.box.min.x, p.box.max.z - p.box.min.z) >= 0.2 * size), `The rock is ${stones} boulders, or carries a piece under a fifth of its size across (a tussock).`);
     assert(!turfTop.isEmpty() && turfTop.max.y - stoneTop.max.y > -0.04 * size && turfTop.max.y - stoneTop.max.y < 0.12 * size && turfTop.max.x - turfTop.min.x < 0.8 * (stoneTop.max.x - stoneTop.min.x), `The rock's turf is not one thin patch on its stone's top (${(turfTop.max.y - stoneTop.max.y).toFixed(3)} over it).`);
     assert(built.rock.userData.period > 0 && ROCK.periods.includes(built.rock.userData.period), 'The rock does not say its period.');
+    // A chunk torn from the island's turf, not a capped pebble (the final art review: the patch in
+    // palette.grass facing straight up shone 14% over the lawn): every vertex of the patch is the
+    // lawn's own darker stripe (turfDark), and it spreads over half the big stone's width or more.
+    {
+      const dark = new T.Color(LOOK.turfDark),
+        turfLooks = [];
+      for (let i = 0; i < colour.count; i++) if (green(i)) turfLooks.push(new T.Color().fromBufferAttribute(colour, i));
+      assert(turfLooks.length && turfLooks.every((c) => Math.abs(c.r - dark.r) + Math.abs(c.g - dark.g) + Math.abs(c.b - dark.b) < 1e-3) && LOOK.turfDark === palette.grassDark && turfTop.max.x - turfTop.min.x >= 0.5 * (stoneTop.max.x - stoneTop.min.x), 'The rock\'s turf is not a wide patch of the lawn\'s darker stripe.');
+    }
   }
 
   // The tea table: the bench's seat height, clear seats, the tea set on the table.
@@ -5518,6 +5527,21 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     const piers = byName(built.lamp, 'sky-lamp-piers'),
       pier = new T.Box3().setFromObject(piers);
     assert(piers.material.userData.surfaceKind === 'stone' && byName(built.lamp, 'sky-lamp-cups').material.userData.surfaceKind === 'brass' && Math.abs(pier.max.y - GARDEN_LAMP.cap) < 1e-6 && Math.abs(pier.min.y + 0.04) < 1e-6 && GARDEN_LAMP.height < 0.9, 'A garden lamp is not a short stone pier under a brass cup.');
+    // By day it reads as a lamp, not a stone pawn (the final art review): its post (the shaft and
+    // the cap, over its plinth) is the town's dark cast iron, its plinth the pale stone, and its globe
+    // frosted, brighter than the stone and a touch cooler.
+    {
+      const q = piers.geometry.attributes.position,
+        tone = piers.geometry.getAttribute('color'),
+        c = new T.Color(),
+        post = [],
+        plinth = [];
+      // (The plinth's top is 0.08 up and the shaft runs down into it: the band between is left out.)
+      for (let i = 0; i < q.count; i++) if (q.getY(i) < 0.06 || q.getY(i) > 0.1) (q.getY(i) > 0.1 ? post : plinth).push(luminance(c.fromBufferAttribute(tone, i)));
+      const glass = single.material.color,
+        stone = new T.Color(LOOK.stone);
+      assert(post.length && Math.max(...post) < 0.1 && Math.min(...plinth) > 0.5 && luminance(glass) > luminance(stone) && glass.b / glass.r > stone.b / stone.r, `A garden lamp's post is not dark iron over a stone plinth (${Math.max(...post).toFixed(3)}), or its globe is not frosted.`);
+    }
   }
 
   // The urn: its plant's place; planted, the nature kit's ball sits in its bowl.
