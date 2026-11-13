@@ -1330,7 +1330,7 @@ export const SKY_DAY = (() => {
   // round (and on until her first sip).
   const period = Math.ceil(t + 1);
   add(period - t, { kind: 'seated', station: 'tea', settle: 0 });
-  return { period, acts, beside, chair, walked, stretches, saucer, can, fetch };
+  return { period, acts, beside, chair, walked, stretches, saucer, can };
 })();
 /** Her cup's phase in 'sip' at `t` seconds into her day: resting (0) but while she drinks (SKY_TEA.sips). */
 function sipPhase(t: number) {
