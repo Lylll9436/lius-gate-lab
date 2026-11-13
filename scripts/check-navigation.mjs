@@ -2034,7 +2034,15 @@ const plan = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href
         ts.forEachChild(node, collect);
       })(syntax);
       assert.equal(shadowPieces.length, 7, 'The shadow box check must find every piece it runs.');
-      assert(/skyShadowWanted\(camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch\)/.test(source), 'followSky no longer asks skyShadowWanted about the camera as it stands, its pitch included.');
+      {
+        // (By the syntax tree, so that a formatter's line breaks change nothing.)
+        const asked = [];
+        (function find(node, inFollow) {
+          if (inFollow && ts.isCallExpression(node) && node.expression.getText(syntax) === 'skyShadowWanted') asked.push(node.arguments.map((a) => a.getText(syntax)).join(', '));
+          ts.forEachChild(node, (child) => find(child, inFollow || (ts.isFunctionDeclaration(node) && node.name?.text === 'followSky')));
+        })(syntax, false);
+        assert(asked.length === 1 && asked[0] === 'camera, LAND_MARKS, frameShift, frameDrop, skyCast, pitch', 'followSky no longer asks skyShadowWanted about the camera as it stands, its pitch included.');
+      }
       const sun = runInNewContext(`${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ skyShadowWanted, bandShare, SKY_SHADOW, TOWN_WATERLINE, LAND_MARKS })`, { T, Math, plan }),
         // The scene's camera for a w x h stage (resize()), looking at `centre` from `bearing` at `low` of the way down to the file's pitch.
         lens = (w, h) => {
@@ -2643,13 +2651,35 @@ function collectContext(node) {
 }
 collectContext(syntax);
 assert.equal(contextPieces.length, 4, 'The context check must find every piece it runs.');
+// The canvas's listeners, found by the syntax tree (a formatter breaks a long call over lines, and a
+// search for its text then misses it: the 3D review's eighth finding): each handler added to the
+// canvas for its event while the town runs, and removed from it in dispose().
+const listens = (method, event, handler, disposing) => {
+  let found = false;
+  (function find(node, inDispose) {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === method &&
+      unformatted(node.expression.expression.getText(syntax)) === 'renderer.domElement' &&
+      node.arguments.length === 2 &&
+      ts.isStringLiteral(node.arguments[0]) &&
+      node.arguments[0].text === event &&
+      ts.isIdentifier(node.arguments[1]) &&
+      node.arguments[1].text === handler &&
+      inDispose === disposing
+    )
+      found = true;
+    ts.forEachChild(node, (child) => find(child, inDispose || (ts.isMethodDeclaration(node) && node.name.getText(syntax) === 'dispose')));
+  })(syntax, false);
+  return found;
+};
 for (const [event, handler] of [
   ['webglcontextlost', 'contextLost'],
   ['webglcontextrestored', 'contextRestored'],
 ])
   assert(
-    syntax.text.includes(`renderer.domElement.addEventListener('${event}', ${handler})`) &&
-      syntax.text.includes(`renderer.domElement.removeEventListener('${event}', ${handler})`),
+    listens('addEventListener', event, handler, false) && listens('removeEventListener', event, handler, true),
     `The town must listen for ${event} (and stop on dispose).`,
   );
 const bakes = [],
