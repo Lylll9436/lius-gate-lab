@@ -36,6 +36,40 @@ export const inkInFront = (depth: number, scene: number, fwidth: number) =>
  */
 export const inkKeeps = (front: boolean, tested: number) =>
   front || tested >= INK_KEEP;
+/**
+ * How far (device pixels) the multisampled test's scissor reaches past the ringed meshes' own box on
+ * screen: their fragments, and the samples they cover, all lie inside it.
+ */
+export const INK_SCISSOR_PAD = 4;
+/**
+ * The ringed meshes' box on a w x h target (device pixels, y up from the bottom as GL counts it, as
+ * a render target's scissor takes it), INK_SCISSOR_PAD round it and clamped to the target: the
+ * corners of each mesh's own bounds where `camera` draws them. Empty (no width) when none shows.
+ */
+export function inkScissor(meshes: T.Mesh[], camera: T.Camera, w: number, h: number, out = new T.Vector4()) {
+  const corner = new T.Vector3();
+  let x0 = Infinity,
+    x1 = -Infinity,
+    y0 = Infinity,
+    y1 = -Infinity;
+  for (const mesh of meshes) {
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    const b = mesh.geometry.boundingBox!;
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(mesh.matrixWorld).project(camera);
+      x0 = Math.min(x0, corner.x);
+      x1 = Math.max(x1, corner.x);
+      y0 = Math.min(y0, corner.y);
+      y1 = Math.max(y1, corner.y);
+    }
+  }
+  if (!(x0 <= x1)) return out.set(0, 0, 0, 0);
+  const left = Math.max(0, Math.floor(((x0 + 1) / 2) * w) - INK_SCISSOR_PAD),
+    right = Math.min(w, Math.ceil(((x1 + 1) / 2) * w) + INK_SCISSOR_PAD),
+    bottom = Math.max(0, Math.floor(((y0 + 1) / 2) * h) - INK_SCISSOR_PAD),
+    top = Math.min(h, Math.ceil(((y1 + 1) / 2) * h) + INK_SCISSOR_PAD);
+  return out.set(left, bottom, Math.max(0, right - left), Math.max(0, top - bottom));
+}
 
 /**
  * The final composite: a multisampled beauty pass, a soft vignette and the ring around a
@@ -69,6 +103,11 @@ export function createCityInk(
   // faces. And the test is drawn multisampled like the beauty pass, so a part that covers the
   // resolved sample but not the centre (a balcony before its wall, the coping before the lawn)
   // still has a fragment there to answer for its pixel. check-hover holds both (INK_DEPTH_TEST).
+  // That test is cleared, drawn and resolved only within the ringed meshes' own box on screen
+  // (inkScissor, the target's own scissor: three takes a render target's, not the renderer's): the
+  // centre pass reads it only at those meshes' own pixels, and a full-screen multisampled clear and
+  // resolve cost about a millisecond a frame at Retina size, whatever the place's size. The mask
+  // itself is cleared whole every frame, so the last ring never stays behind.
   const vertexShader =
     'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}';
   const maskMaterial = new T.ShaderMaterial({
@@ -204,18 +243,23 @@ export function createCityInk(
             savedOverride = scene.overrideMaterial,
             savedBackground = scene.background,
             savedShadow = renderer.shadowMap.autoUpdate;
-          const changed: T.Object3D[] = [];
+          const changed: T.Object3D[] = [],
+            ringed: T.Mesh[] = [];
           const clear = renderer.getClearColor(new T.Color()),
             alpha = renderer.getClearAlpha();
           try {
             selected.forEach((root) =>
               root.traverseVisible((o) => {
-                if (o instanceof T.Mesh && !o.layers.isEnabled(31)) {
+                if (!(o instanceof T.Mesh)) return;
+                ringed.push(o);
+                if (!o.layers.isEnabled(31)) {
                   o.layers.enable(31);
                   changed.push(o);
                 }
               }),
             );
+            inkScissor(ringed, camera, pixelWidth, pixelHeight, tested.scissor);
+            tested.scissorTest = true;
             camera.layers.set(31);
             scene.background = null;
             renderer.shadowMap.autoUpdate = false;
