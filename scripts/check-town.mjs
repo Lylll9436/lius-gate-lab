@@ -7498,11 +7498,11 @@ let skyReport = '';
   //   bounce and the mottle) is the same all round the island (a wandering line smeared like paint),
   //   and the boulders are pieces of their own, cool grey against the brown;
   // - the three floating rocks are not clones;
-  // - the lamps' pools: one opaque mesh laid over the deck (SKY_POOL.lift over the lawn and the
-  //   paths), on the solids' one program so the night wash reaches it, casting nothing; its wash is
-  //   strongest at each lamp's foot (plan.SKY_LAMPS, wherever they stand) and gone by SKY_POOL.r; by
-  //   day its paint is the ground's under it (a lawn tone through the grass grain and the lawn's tint
-  //   under the island, or the gravel's).
+  // - the lamps' pools: one opaque mesh laid over the deck (0.003 to 0.015 over the batched lawn and
+  //   paths under it, measured against their own triangles), on the solids' one program so the night
+  //   wash reaches it, casting nothing; its wash is strongest at each lamp's foot (plan.SKY_LAMPS,
+  //   wherever they stand) and gone by SKY_POOL.r; by day its paint is the ground's under it (the
+  //   lawn's stripe through the lawn material's own grain and LAWN_TINT, or the gravel's).
   {
     const { FALL } = await load('town-sky-garden'),
       { SKY_NOTCH, SKY_POOL } = await load('town-sky'),
@@ -7573,39 +7573,128 @@ let skyReport = '';
       for (let a = 0; a < shapes.length; a++)
         for (let b = a + 1; b < shapes.length; b++) assert(shapes[a].distanceTo(shapes[b]) > 0.08, `Floating rocks ${a} and ${b} are clones (${fmt3(shapes[a])} and ${fmt3(shapes[b])}).`);
     }
-    // The lamps' pools.
+    // The lamps' pools, against the ground as built: the batched lawn's and paths' own triangles,
+    // found under a point by where it falls in them (barycentric). Each pool vertex, and each pool
+    // triangle's middle, lies 0.003 to 0.015 over the lawn or the gravel under it: lower, the ground
+    // shows through it at night (or fights it for depth); higher, it floats, and what stands in it
+    // sinks into it. (As built 0.006 to 0.0105: SKY_POOL.lift, and more where the lawn's long
+    // triangles by the rim sag under the dome the pool follows.) By day its paint is that ground's
+    // as the visitor sees it: on the lawn, the stripe's colour there times the lawn material's own
+    // grain (its map's texels at the lawn's uv through the map's own repeat, decoded from sRGB and
+    // bilinear, as the GPU samples it close to) times the tint the empty masks leave (LAWN_TINT),
+    // within 5e-4 (under a quarter of an 8-bit step in any channel of the lawn's greens); on the
+    // gravel, the gravel's.
     {
       const pools = sky.land.children.filter((o) => o.isMesh && o.geometry.getAttribute('aWash')),
         [pool] = pools;
       assert(pools.length === 1 && !pool.castShadow && pool.material.vertexColors && pool.material.customProgramCacheKey() === 'lius-bake-solid' && !pool.material.transparent && pool.material.opacity === 1, 'The lamps\' pools are not one opaque mesh on the solids\' program, casting nothing.');
-      const q = pool.geometry.attributes.position,
+      /** The batched ground of a kind (one mesh): under(x, z) gives each of its triangles there, its height, colour and uv at the point. */
+      const groundOf = (kind) => {
+        const meshes = sky.land.children.filter((o) => o.isMesh && o.material.userData.surfaceKind === kind);
+        assert.equal(meshes.length, 1, `The sky island's ${kind} is not one batched mesh.`);
+        const [mesh] = meshes,
+          { position, color, uv } = mesh.geometry.attributes,
+          index = mesh.geometry.index,
+          cell = 0.5,
+          triangles = [],
+          grid = new Map();
+        for (let t = 0; t < (index?.count ?? position.count); t += 3) {
+          const corners = [0, 1, 2].map((k) => {
+              const i = index ? index.getX(t + k) : t + k;
+              return { p: new T.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld), c: new T.Color().fromBufferAttribute(color, i), uv: new T.Vector2().fromBufferAttribute(uv, i) };
+            }),
+            xs = corners.map((v) => v.p.x),
+            zs = corners.map((v) => v.p.z);
+          for (let i = Math.floor(Math.min(...xs) / cell); i <= Math.floor(Math.max(...xs) / cell); i++)
+            for (let j = Math.floor(Math.min(...zs) / cell); j <= Math.floor(Math.max(...zs) / cell); j++) (grid.get(`${i},${j}`) ?? grid.set(`${i},${j}`, []).get(`${i},${j}`)).push(triangles.length);
+          triangles.push(corners);
+        }
+        return {
+          mesh,
+          under(x, z) {
+            const hits = [];
+            for (const t of grid.get(`${Math.floor(x / cell)},${Math.floor(z / cell)}`) ?? []) {
+              const [a, b, c] = triangles[t],
+                det = (b.p.z - c.p.z) * (a.p.x - c.p.x) + (c.p.x - b.p.x) * (a.p.z - c.p.z);
+              if (Math.abs(det) < 1e-12) continue;
+              const la = ((b.p.z - c.p.z) * (x - c.p.x) + (c.p.x - b.p.x) * (z - c.p.z)) / det,
+                lb = ((c.p.z - a.p.z) * (x - c.p.x) + (a.p.x - c.p.x) * (z - c.p.z)) / det,
+                lc = 1 - la - lb,
+                at = (f) => f(a) * la + f(b) * lb + f(c) * lc;
+              // (Within a hair of its edges: a point on an edge the two triangles share lies in both.)
+              if (Math.min(la, lb, lc) >= -1e-4) hits.push({ y: at((v) => v.p.y), c: new T.Color(at((v) => v.c.r), at((v) => v.c.g), at((v) => v.c.b)), uv: new T.Vector2(at((v) => v.uv.x), at((v) => v.uv.y)) });
+            }
+            return hits;
+          },
+        };
+      };
+      const lawn = groundOf('grass'),
+        gravel = groundOf('gravel'),
+        map = lawn.mesh.material.map;
+      assert(map?.isDataTexture && map.colorSpace === T.SRGBColorSpace && map.wrapS === T.RepeatWrapping && map.wrapT === T.RepeatWrapping && !map.flipY, 'The lawn\'s grain is not the repeating sRGB map the pools\' day colour is read from.');
+      map.updateMatrix();
+      const { data, width: W, height: H } = map.image,
+        /** One of the map's texels, linear (the GPU decodes an sRGB map before it filters it), the map repeating. */
+        texel = (i, j) => {
+          const k = ((((j % H) + H) % H) * W + (((i % W) + W) % W)) * 4;
+          return new T.Color().setRGB(data[k] / 255, data[k + 1] / 255, data[k + 2] / 255, T.SRGBColorSpace);
+        },
+        /** The lawn's grain at a uv of its own: the map through its own transform (its repeat), bilinear at its finest level. */
+        grainAt = (uv) => {
+          const m = uv.clone().applyMatrix3(map.matrix),
+            u = m.x * W - 0.5,
+            v = m.y * H - 0.5,
+            i = Math.floor(u),
+            j = Math.floor(v),
+            fu = u - i,
+            fv = v - j;
+          return texel(i, j)
+            .multiplyScalar((1 - fu) * (1 - fv))
+            .add(texel(i + 1, j).multiplyScalar(fu * (1 - fv)))
+            .add(texel(i, j + 1).multiplyScalar((1 - fu) * fv))
+            .add(texel(i + 1, j + 1).multiplyScalar(fu * fv));
+        },
+        tint = new T.Color(...LAWN_TINT),
+        low = 0.003,
+        high = 0.015,
+        where = (x, z) => `${x.toFixed(2)}, ${z.toFixed(2)}`,
+        /**
+         * What a point of the pool lies on: the gravel's or else the lawn's triangles under it that
+         * it lies `low` to `high` over (the lawn runs on under the paths, so the gravel comes first).
+         */
+        restsOn = (x, y, z) => {
+          const turf = lawn.under(x, z),
+            paths = gravel.under(x, z),
+            over = (hits) => hits.filter((h) => y - h.y >= low && y - h.y <= high),
+            [onPaths, onTurf] = [over(paths), over(turf)];
+          assert(turf.length, `A lamp's pool reaches off the lawn at ${where(x, z)}.`);
+          assert(onPaths.length || onTurf.length, `A lamp's pool lies ${(y - turf[0].y).toFixed(4)} over the lawn${paths.length ? ` and ${(y - paths[0].y).toFixed(4)} over the gravel` : ''} at ${where(x, z)}, not ${low} to ${high} over the ground under it.`);
+          return onPaths.length ? { gravel: onPaths } : { lawn: onTurf };
+        },
+        near = (a, b, e) => Math.abs(a.r - b.r) < e && Math.abs(a.g - b.g) < e && Math.abs(a.b - b.b) < e,
+        q = pool.geometry.attributes.position,
         w = pool.geometry.attributes.aWash,
         col = pool.geometry.attributes.color,
-        tones = SKY_LOOK.lawn.map((h) => new T.Color(h)),
-        path = new T.Color(SKY_LOOK.path),
-        tint = LAWN_TINT,
+        paint = new T.Color(),
         nearest = (x, z) => Math.min(...plan.SKY_LAMPS.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
         lit = plan.SKY_LAMPS.map(() => 0);
       for (let i = 0; i < q.count; i++) {
         const x = q.getX(i),
           y = q.getY(i),
           z = q.getZ(i),
-          over = y - plan.skyTop(x, z),
           d = nearest(x, z),
-          r = col.getX(i),
-          g = col.getY(i),
-          b = col.getZ(i);
-        assert(Math.abs(over - SKY_POOL.lift) < 1e-4 || Math.abs(over - plan.SKY_PATHS.lift - SKY_POOL.lift) < 1e-4, `A lamp's pool lies ${over.toFixed(3)} over the deck at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-        assert(Math.abs(w.getX(i) - SKY_POOL.strength) < 1e-6 && w.getW(i) < 0 && Math.abs(w.getZ(i) - (WASH_PEAK + (0.85 - WASH_PEAK) * Math.min(1, d / SKY_POOL.r))) < 1e-5 && d < SKY_POOL.r + SKY_POOL.cell * 1.5, `A lamp's pool is not lit from the nearest lamp's foot at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-        if (Math.abs(over - SKY_POOL.lift) < 1e-4) {
-          // The lawn: one of its two tones, through a grain of 0.85 to 1.02 and the tint.
-          const fits = tones.some((t) => {
-            const k = r / (t.r * tint[0]);
-            return k > 0.85 && k < 1.02 && Math.abs(g - t.g * tint[1] * k) < 2e-3 && Math.abs(b - t.b * tint[2] * k) < 2e-3;
-          });
-          assert(fits, `A lamp's pool on the lawn is not the lawn's own colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-        } else assert(Math.abs(r - path.r) < 1e-4 && Math.abs(g - path.g) < 1e-4 && Math.abs(b - path.b) < 1e-4, `A lamp's pool on the gravel is not the gravel's colour at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+          on = restsOn(x, y, z);
+        assert(Math.abs(w.getX(i) - SKY_POOL.strength) < 1e-6 && w.getW(i) < 0 && Math.abs(w.getZ(i) - (WASH_PEAK + (0.85 - WASH_PEAK) * Math.min(1, d / SKY_POOL.r))) < 1e-5 && d < SKY_POOL.r + SKY_POOL.cell * 1.5, `A lamp's pool is not lit from the nearest lamp's foot at ${where(x, z)}.`);
+        paint.fromBufferAttribute(col, i);
+        if (on.gravel) assert(on.gravel.some((h) => near(paint, h.c, 1e-4)), `A lamp's pool on the gravel is not the gravel's colour at ${where(x, z)}.`);
+        else assert(on.lawn.some((h) => near(paint, h.c.clone().multiply(grainAt(h.uv)).multiply(tint), 5e-4)), `A lamp's pool on the lawn is not the lawn's own colour there (its stripe, the grass map's grain, LAWN_TINT) at ${where(x, z)}.`);
         plan.SKY_LAMPS.forEach(([lx, lz], k) => Math.hypot(x - lx, z - lz) < 0.3 && lit[k]++);
+      }
+      // Each triangle's middle as well: across two of the ground's triangles, it could dip under them.
+      const corners = pool.geometry.index;
+      for (let t = 0; t < (corners?.count ?? q.count); t += 3) {
+        const k = [0, 1, 2].map((j) => (corners ? corners.getX(t + j) : t + j));
+        restsOn(k.reduce((s, i) => s + q.getX(i), 0) / 3, k.reduce((s, i) => s + q.getY(i), 0) / 3, k.reduce((s, i) => s + q.getZ(i), 0) / 3);
       }
       assert(lit.every((n) => n > 6), `A garden lamp has no pool at its foot (${lit.join(', ')}).`);
     }
