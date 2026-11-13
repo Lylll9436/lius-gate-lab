@@ -5424,12 +5424,13 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
     assert(built.rock.userData.period > 0 && ROCK.periods.includes(built.rock.userData.period), 'The rock does not say its period.');
     // A chunk torn from the island's turf, not a capped pebble (the final art review: the patch in
     // palette.grass facing straight up shone 14% over the lawn): every vertex of the patch is the
-    // lawn's own darker stripe (turfDark), and it spreads over half the big stone's width or more.
+    // lawn's own darker stripe (turfDark) as the island's ground shows it (ROCK.turf.shade, 0.75 to
+    // 0.9: the lawn's grain and tint), and it spreads over half the big stone's width or more.
     {
-      const dark = new T.Color(LOOK.turfDark),
+      const dark = new T.Color(LOOK.turfDark).multiplyScalar(ROCK.turf.shade),
         turfLooks = [];
       for (let i = 0; i < colour.count; i++) if (green(i)) turfLooks.push(new T.Color().fromBufferAttribute(colour, i));
-      assert(turfLooks.length && turfLooks.every((c) => Math.abs(c.r - dark.r) + Math.abs(c.g - dark.g) + Math.abs(c.b - dark.b) < 1e-3) && LOOK.turfDark === palette.grassDark && turfTop.max.x - turfTop.min.x >= 0.5 * (stoneTop.max.x - stoneTop.min.x), 'The rock\'s turf is not a wide patch of the lawn\'s darker stripe.');
+      assert(turfLooks.length && turfLooks.every((c) => Math.abs(c.r - dark.r) + Math.abs(c.g - dark.g) + Math.abs(c.b - dark.b) < 1e-3) && LOOK.turfDark === palette.grassDark && ROCK.turf.shade >= 0.75 && ROCK.turf.shade <= 0.9 && turfTop.max.x - turfTop.min.x >= 0.5 * (stoneTop.max.x - stoneTop.min.x), 'The rock\'s turf is not a wide patch of the lawn\'s darker stripe.');
     }
   }
 

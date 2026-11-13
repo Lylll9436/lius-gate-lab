@@ -253,9 +253,10 @@ export function cloudDrift(time: number, seed: number) {
  * ragged patch of turf (`turf`: its reach over the big stone's top, how far it stands proud of it,
  * how much its outline wanders in its broad lobes, and how much more in its small tufts and bites,
  * `ragged`, round `sides` points) lies on the big one's top, set off its middle, in the lawn's own
- * darker stripe (turfDark), so the rock reads as a chunk torn from the island's turf, never a pebble
- * with a bright green cap (the art review: palette.grass facing straight up shone 14% over the
- * lawn); no tussocks (three small balls on a green cap read as eyes). Each seed turns, tilts and
+ * darker stripe (turfDark) as the island's ground shows it (`shade`: the lawn's grass grain and tint
+ * take about a fifth off its paint, which the rock's stone does not), so the rock reads as a chunk
+ * torn from the island's turf, never a pebble with a bright green cap (the art review: palette.grass
+ * facing straight up shone 14% over the lawn); no tussocks (three small balls on a green cap read as eyes). Each seed turns, tilts and
  * sizes its stones and its patch its own way (each big stone tipped `tilt` (from, to) radians either
  * way about both level axes, so no top lies level like a pot's), so no two are alike. The turf is the
  * crown of a low lens `turf.rise` deep sunk in the stone's top until `proud` of it shows, so its edge
@@ -269,7 +270,7 @@ export const ROCK = {
   top: [1.0, 0.68, 0.84] as [number, number, number],
   keel: { r: [0.66, 0.6, 0.6] as [number, number, number], at: [0.36, -0.52] as [number, number] },
   tilt: [0.14, 0.3] as [number, number],
-  turf: { reach: 0.8, proud: 0.04, rise: 0.16, wander: 0.2, ragged: 0.1, sides: 22 },
+  turf: { reach: 0.8, proud: 0.04, rise: 0.16, wander: 0.2, ragged: 0.1, sides: 22, shade: 0.8 },
   bob: 0.12,
   rock: 0.035,
   periods: [9, 10.5, 12],
@@ -859,7 +860,7 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
         at = new T.Vector3(Math.cos(side + Math.PI) * off, top[1] * 0.94 + (T0.proud - T0.rise) * size, Math.sin(side + Math.PI) * off);
       parts.push({
         geometry: cap,
-        tint: L.turfDark,
+        tint: toned(L.turfDark, T0.shade),
         matrix: turn2(at, new T.Vector3(T0.reach * top[0], T0.rise * size, T0.reach * top[2])),
       });
     }
