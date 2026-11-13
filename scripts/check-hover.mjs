@@ -680,8 +680,91 @@ assert(
   building.geometry.dispose();
   building.material.dispose();
 }
+// The multisampled depth test is cleared, drawn and resolved only round what is ringed (the final
+// integration review's first finding: full-screen, its clear and resolve cost about a millisecond a
+// frame at Retina size whatever the place's size): its own scissor (three takes a render target's,
+// not the renderer's) holds the ringed meshes' box on screen and INK_SCISSOR_PAD round it, and no
+// more than that; the one-sample mask is cleared and drawn whole every frame, so ringing a second
+// place never leaves the first's mask behind (its clear scissored to the second's box left the
+// first's ring on screen).
+{
+  const pass = await import('three/addons/postprocessing/Pass.js');
+  const ink = {};
+  runInNewContext(compile(await fs.readFile(path.join(root, 'app/city-ink.ts'), 'utf8')), {
+    exports: ink,
+    require: (id) => ({ three: T, 'three/addons/postprocessing/Pass.js': pass })[id],
+  });
+  const calls = [];
+  let current = null;
+  const state = () => ({ target: current, scissor: current?.scissorTest ? current.scissor.clone() : null });
+  const renderer = {
+    capabilities: { maxSamples: 4 },
+    shadowMap: { autoUpdate: false },
+    getPixelRatio: () => 2,
+    getRenderTarget: () => current,
+    setRenderTarget: (t) => (current = t),
+    getClearColor: (out) => out.set(0, 0, 0),
+    getClearAlpha: () => 0,
+    setClearColor() {},
+    clear: () => calls.push({ what: 'clear', ...state() }),
+    compileAsync: () => Promise.resolve(),
+    render: (s) => calls.push({ what: 'render', override: s.overrideMaterial ?? null, ...state() }),
+  };
+  const scene = new T.Scene(),
+    camera = new T.OrthographicCamera(-2, 2, 1, -1, 0.1, 100),
+    left = new T.Mesh(new T.BoxGeometry(0.4, 0.4, 0.4), new T.MeshBasicMaterial()),
+    right = new T.Mesh(new T.BoxGeometry(0.4, 0.4, 0.4), left.material);
+  left.position.set(-1.2, 0.3, -5);
+  right.position.set(1.1, -0.4, -5);
+  scene.add(left, right);
+  scene.updateMatrixWorld(true);
+  const ring = ink.createCityInk(renderer, scene, camera, 4),
+    w = 780,
+    h = 422;
+  ring.resize(390, 211);
+  // Each place's own box on the target (its eight corners as the camera draws them), in device pixels from the bottom.
+  const boxOf = (mesh) => {
+    let x0 = Infinity,
+      x1 = -Infinity,
+      y0 = Infinity,
+      y1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      const p = new T.Vector3(i & 1 ? 0.2 : -0.2, i & 2 ? 0.2 : -0.2, i & 4 ? 0.2 : -0.2).applyMatrix4(mesh.matrixWorld).project(camera);
+      x0 = Math.min(x0, ((p.x + 1) / 2) * w);
+      x1 = Math.max(x1, ((p.x + 1) / 2) * w);
+      y0 = Math.min(y0, ((p.y + 1) / 2) * h);
+      y1 = Math.max(y1, ((p.y + 1) / 2) * h);
+    }
+    return [x0, y0, x1, y1];
+  };
+  const holds = (s, [x0, y0, x1, y1], pad) => s.x <= x0 - pad + 1 && s.y <= y0 - pad + 1 && s.x + s.z >= x1 + pad - 1 && s.y + s.w >= y1 + pad - 1,
+    // (The scissor's edges are whole pixels: a pixel more either way.)
+    within = (s, [x0, y0, x1, y1], pad) => s.x >= x0 - pad - 1.5 && s.y >= y0 - pad - 1.5 && s.x + s.z <= x1 + pad + 1.5 && s.y + s.w <= y1 + pad + 1.5;
+  for (const [mesh, other] of [[left, right], [right, left]]) {
+    calls.length = 0;
+    ring.setSelection([mesh]);
+    ring.render();
+    const test = calls.filter((c) => c.target?.samples > 0 && c.target?.texture.format === T.RedFormat),
+      mask = calls.filter((c) => c.target && c.target.samples === 0 && c.target.texture.format === T.RedFormat);
+    assert(test.length === 2 && test.every((c) => c.scissor && holds(c.scissor, boxOf(mesh), ink.INK_SCISSOR_PAD) && within(c.scissor, boxOf(mesh), ink.INK_SCISSOR_PAD)), `The selection mask's depth test is not cleared and drawn within the ringed place's own box on screen (${ink.INK_SCISSOR_PAD} px round it).`);
+    assert(!holds(test[0].scissor, boxOf(other), 0), 'The selection mask\'s depth test still covers the place ringed before.');
+    assert(mask.length === 2 && mask.every((c) => !c.scissor), 'The selection mask is not cleared and drawn whole: ringing a second place would leave the first\'s ring behind.');
+  }
+  // Nothing of a ringed place in view: an empty scissor, never one off the target.
+  left.position.set(-30, 0, -5);
+  scene.updateMatrixWorld(true);
+  calls.length = 0;
+  ring.setSelection([left]);
+  ring.render();
+  const off = calls.find((c) => c.target?.samples > 0 && c.scissor);
+  assert(off && off.scissor.x >= 0 && off.scissor.y >= 0 && off.scissor.x + off.scissor.z <= w && off.scissor.y + off.scissor.w <= h && off.scissor.z * off.scissor.w === 0, 'A ringed place out of view gives the depth test a scissor off its target.');
+  ring.dispose();
+  left.geometry.dispose();
+  right.geometry.dispose();
+  left.material.dispose();
+}
 console.log(
-  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose two mask passes share one depth test, tuned as measured and run on synthetic depths (its JS twins and its shaders agree), drawn at the beauty pass’s samples into one-channel masks; ' +
+  'Hover checks passed: real raycasting, one passive label, the sky island on itself and not in the open sky round it nor hidden, empty land, drag, leave, cancel, blur, hidden tab, building inspection, touch selection with a 10 px tap tolerance, pans that come back, five viewport shapes, glass rims let go with the chips that leave the page, and a selection ring whose two mask passes share one depth test, tuned as measured and run on synthetic depths (its JS twins and its shaders agree), drawn at the beauty pass’s samples into one-channel masks, its multisampled test scissored to the ringed place and its mask cleared whole; ' +
     hoverPins.join('; ') +
     '.',
 );
