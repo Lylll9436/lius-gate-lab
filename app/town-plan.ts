@@ -928,6 +928,23 @@ export const SKY_LAMPS: XZ[] = [
   [-55.35, -20.1],
   [-49.4, -19.45],
 ];
+/**
+ * The clipped planting (the villa's reference: a striped lawn and clipped box), beside the borders'
+ * own (their mounds are the town's clipped box): a pair of stone urns (lane G's urn({ planted }), each
+ * with a clipped box ball) flanking the back door's step, `side` either side of the house's middle
+ * and `out` from its back wall, just outside the villa's footprint, where the north-west Rotate stop
+ * and the City overview's other stops look at the house's back. (Before the house the lawn is full:
+ * the tea table, the bench, the lamps and the telescope stand round the landing.)
+ */
+export const SKY_URN = { side: 1.1, out: 0.6 };
+/**
+ * The low rock outcrop on the south-west lawn (the owner's reference 2: a rock breaking through the
+ * grass): the island's own rock showing through its turf, between the terrace's west end and the west
+ * fall's pool, clear of the paths, the lamps, the tea table and the coping; `ry` lays its stones along
+ * the rim.
+ */
+export const SKY_OUTCROP = { x: -56.2, z: -21.6, ry: -1.07 };
+export const SKY_URNS: XZ[] = [-1, 1].map((k) => skyVillaPoint(k * SKY_URN.side, SKY_VILLA.house.back - SKY_URN.out));
 /** A piece that hangs in the air by the island (lane G's cloud() or floatingRock()): its origin, its turn, its size and its seed. */
 export type SkyFloat = { x: number; y: number; z: number; ry: number; size: number; seed: number };
 /**

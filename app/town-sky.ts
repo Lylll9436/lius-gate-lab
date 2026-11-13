@@ -205,6 +205,7 @@ export type SkySlot = { x: number; y: number; z: number; ry: number };
  * - `falls`: fall({ rise }) for each: the rim point at the deck's level, turned out over the sea.
  * - `clouds` and `rocks`: cloud({ size, seed }) and floatingRock({ size, seed }), where the plan's
  *   SKY_CLOUDS and SKY_ROCKS put them (in the air, so `y` is theirs, not the lawn's).
+ * - `urns`: urn({ planted: true }), the clipped planting (plan.SKY_URNS).
  * Pieces on the deck stand on the lawn (plan.skyTop).
  */
 export function skySlots() {
@@ -227,6 +228,7 @@ export function skySlots() {
     falls: plan.skyFalls.map((f) => ({ x: f.x, y: f.y, z: f.z, ry: f.ry, rise: f.rise })),
     clouds: plan.SKY_CLOUDS.map((c) => ({ ...c })),
     rocks: plan.SKY_ROCKS.map((r) => ({ ...r })),
+    urns: plan.SKY_URNS.map(([x, z]) => on(x, z)),
   };
 }
 
@@ -263,14 +265,33 @@ export function skyBorder(nature: Nature, g: T.Object3D, b: BorderSlot, k: numbe
   B.order.forEach((c, i) => nature.bloom(bed, x + side * (i - (B.order.length - 1) / 2) * B.spacing, b.floor + 0.4, b.z - b.d / 2 + B.back, BLOOMS[c]));
   return bed;
 }
+/**
+ * The outcrop (plan.SKY_OUTCROP): the rock's own warm grey breaking through the turf, three rounded
+ * blocks of falling size (`lumps`: each one's middle, half sizes, rounding and tilt, in the outcrop's
+ * frame, y 0 the lawn) blended by a small `fillet` into one low group of stones, sculpted on a grid of
+ * `grid` (smooth: its normals are the field's own), its foot cut flat `sink` under the lawn so the
+ * dome never shows a gap under it. Its creases between the stones take a shade (`crease`, read from
+ * the field: how soon a step out along the normal meets another stone), as the clouds' valleys do.
+ */
+export const SKY_OUTCROP_SHAPE = {
+  grid: 0.065,
+  fillet: 0.06,
+  sink: 0.12,
+  crease: 0.78,
+  lumps: [
+    { c: [0, 0.06, 0], h: [0.5, 0.38, 0.4], round: 0.3, rot: [0.08, 0, -0.1] },
+    { c: [0.62, -0.02, 0.24], h: [0.32, 0.27, 0.28], round: 0.2, rot: [-0.12, 0.5, 0.1] },
+    { c: [-0.52, -0.05, -0.26], h: [0.28, 0.19, 0.24], round: 0.15, rot: [0.12, -0.4, 0.06] },
+  ] as { c: [number, number, number]; h: [number, number, number]; round: number; rot: [number, number, number] }[],
+};
 
 /* ------------------------------------------------------------------ */
 /* The sky island                                                      */
 /* ------------------------------------------------------------------ */
 /**
  * The sky island's own ground: its lawn and paths, its garden (lane G's kit, `garden`, with the
- * town's own bench, tree and flower beds), and the rock under it and its coping (its villa is
- * town-sky-villa's).
+ * town's own bench, tree, flower beds and clipped box, and an outcrop of its own rock), and the rock
+ * under it and its coping (its villa is town-sky-villa's).
  */
 export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, nature: Nature, garden: SkyGarden) {
   const { material } = ctx;
@@ -394,6 +415,51 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     solid(g, gravel.geometry(), L.path, 'gravel', { shadow: false, ground: true, name: 'sky-paths' });
   }
   /**
+   * The low outcrop on the south-west lawn (SKY_OUTCROP_SHAPE, at plan.SKY_OUTCROP), batched with the
+   * lawn as its floor, so its foot takes the contact shade: its paint the rock's own warm grey, lighter
+   * where it faces the sky and a shade darker low down, with the rock's faint broad mottle. Its buried
+   * foot (the cut under the lawn) is left out.
+   */
+  function outcrop(g: T.Object3D) {
+    const O = SKY_OUTCROP_SHAPE,
+      P = plan.SKY_OUTCROP,
+      reach = 1.2,
+      s = sculpt([-reach, -O.sink - 2 * O.grid, -reach], [reach, 0.7, reach], O.grid);
+    O.lumps.forEach((l, k) => s.add(roundBox(l.c, l.h, l.round, l.rot), k ? O.fillet : 0));
+    s.cut(roundBox([0, -O.sink - 2, 0], [reach + 1, 2, reach + 1], 0), O.fillet / 2);
+    const geometry = s.mesh(),
+      p = geometry.getAttribute('position'),
+      n = geometry.getAttribute('normal'),
+      tones = new Float32Array(p.count * 3),
+      stone = L.rock.map((c) => new T.Color(c)),
+      c = new T.Color(),
+      step = T.MathUtils.smoothstep;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i),
+        y = p.getY(i),
+        z = p.getZ(i),
+        mottle = 1 + 0.07 * (noise3(x * 1.6 + 4.1, y * 1.6, z * 1.6 + 8.3) - 0.5),
+        // 1 in the open, less in a crease between two stones.
+        open = step(s.exact(x + n.getX(i) * 0.15, y + n.getY(i) * 0.15, z + n.getZ(i) * 0.15) / 0.15, 0.25, 0.75);
+      c.copy(stone[1])
+        .lerp(stone[0], step(n.getY(i), -0.1, 0.7))
+        .lerp(stone[2], 0.5 * (1 - step(y, -0.05, 0.12)))
+        .multiplyScalar(mottle * T.MathUtils.lerp(O.crease, 1, open))
+        .toArray(tones, i * 3);
+    }
+    geometry.setAttribute('color', new T.BufferAttribute(tones, 3));
+    const index = geometry.getIndex()!,
+      kept: number[] = [];
+    for (let t = 0; t < index.count; t += 3) {
+      const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+      if (!corners.every((i) => p.getY(i) < -O.sink + 0.02)) kept.push(...corners);
+    }
+    geometry.setIndex(kept);
+    const m = solid(g, geometry, '#ffffff', 'stone', { name: 'sky-outcrop' });
+    m.position.set(P.x, plan.skyTop(P.x, P.z), P.z);
+    m.rotation.y = P.ry;
+  }
+  /**
    * The garden (lane G's kit, `garden`, built once in town-build with the other factories), each
    * piece in its slot (skySlots, through standAt), everything in `land`: what stands on the deck is
    * batched with the lawn as its floor, and every part of a piece that hangs in the air (the falls'
@@ -404,6 +470,8 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
    *   other. The telescope on the rim, looking at the Town Hall, its tube along her own gaze.
    * - The town's bench, facing the town; the island's one tree, a round one that shows the season.
    * - The flower borders at the terrace's foot (SKY_BEDS) and the four garden lamps as one set.
+   * - The clipped box: a planted urn either side of the back door's step (plan.SKY_URNS); and a low
+   *   outcrop of the rock's own grey through the turf of the south-west lawn.
    * - The two short falls, the clouds and the floating rocks.
    */
   function skyGarden(land: T.Group, _air: T.Group) {
@@ -416,6 +484,8 @@ export function createSkyIsland(ctx: TownContext, _kit: Kit, props: Props, natur
     tree.position.y = s.tree.y;
     s.borders.forEach((b, k) => skyBorder(nature, land, b, k));
     standAt(land, s.lamps, 'sky-lamps').add(garden.gardenLamps(s.lamps.spots));
+    for (const u of s.urns) standAt(land, u, 'sky-urn').add(garden.urn({ planted: true }));
+    outcrop(land);
     s.falls.forEach((f, k) => standAt(land, f, 'sky-fall').add(garden.fall({ rise: f.rise, seed: k + 1 })));
     for (const c of s.clouds) standAt(land, c, 'sky-cloud').add(garden.cloud({ size: c.size, seed: c.seed }));
     for (const r of s.rocks) standAt(land, r, 'sky-float').add(garden.floatingRock({ size: r.size, seed: r.seed }));

@@ -6701,10 +6701,10 @@ let skyReport = '';
       gardenMoving = skyMoving.filter((e) => e.object !== sky.rock);
 
     // Each piece in its slot.
-    const counts = Object.fromEntries(['sky-tea', 'sky-telescope', 'sky-bench', 'sky-tree', 'sky-border', 'sky-lamps', 'sky-fall', 'sky-cloud', 'sky-float'].map((n) => [n, frames(n).length]));
-    assert.deepEqual(counts, { 'sky-tea': 1, 'sky-telescope': 1, 'sky-bench': 1, 'sky-tree': 1, 'sky-border': 2, 'sky-lamps': 1, 'sky-fall': 2, 'sky-cloud': 2, 'sky-float': 3 }, 'The garden is not a tea table, a telescope, a bench and a tree, two borders, a set of lamps, two falls, two clouds and three floating rocks.');
+    const counts = Object.fromEntries(['sky-tea', 'sky-telescope', 'sky-bench', 'sky-tree', 'sky-border', 'sky-lamps', 'sky-urn', 'sky-fall', 'sky-cloud', 'sky-float'].map((n) => [n, frames(n).length]));
+    assert.deepEqual(counts, { 'sky-tea': 1, 'sky-telescope': 1, 'sky-bench': 1, 'sky-tree': 1, 'sky-border': 2, 'sky-lamps': 1, 'sky-urn': 2, 'sky-fall': 2, 'sky-cloud': 2, 'sky-float': 3 }, 'The garden is not a tea table, a telescope, a bench and a tree, two borders, a set of lamps, two urns, two falls, two clouds and three floating rocks.');
     assert(inSlot(frames('sky-tea')[0], slots.tea) && inSlot(frames('sky-telescope')[0], slots.telescope) && inSlot(frames('sky-bench')[0], slots.bench) && inSlot(frames('sky-lamps')[0], slots.lamps), 'The tea table, the telescope, the bench or the lamps are off their slots.');
-    for (const [name, list] of [['sky-fall', slots.falls], ['sky-cloud', slots.clouds], ['sky-float', slots.rocks]]) frames(name).forEach((f, k) => assert(inSlot(f, list[k]), `The garden's ${name} ${k} is off its slot.`));
+    for (const [name, list] of [['sky-urn', slots.urns], ['sky-fall', slots.falls], ['sky-cloud', slots.clouds], ['sky-float', slots.rocks]]) frames(name).forEach((f, k) => assert(inSlot(f, list[k]), `The garden's ${name} ${k} is off its slot.`));
     // The clouds lie long across the view from the island's file and the opening bearing (a cloud's
     // length is its x, turned by ry; a camera's screen runs along its bearing's): end on, a cloud is a lump.
     assert(plan.SKY_CLOUDS.every((c) => [file, Math.PI / 4].every((b) => Math.abs(Math.sin(c.ry - b)) < Math.sin(20 * deg))), 'A cloud is seen end on from the island\'s file or the opening bearing.');
@@ -6776,6 +6776,12 @@ let skyReport = '';
           if (p.y > S.top + 1 && Math.abs(p.x - site.x) < H.hw + 0.3) crowd = Math.min(crowd, wallZ - p.z);
         });
         assert(top <= S.top + plan.SKY_TREE.top + 1e-6 && foot < -0.02 && crowd >= 0.3, `In ${season} the sky island's tree tops out at ${top.toFixed(2)}, its foot ${foot.toFixed(3)} in the lawn, its crown ${crowd.toFixed(2)} from the house.`);
+        // (Over the urns by the back door, its crown keeps 0.3 above their clipped balls.)
+        let overUrns = Infinity;
+        each(g, (p) => {
+          for (const [x, z] of plan.SKY_URNS) if (Math.hypot(p.x - x, p.z - z) < 0.4) overUrns = Math.min(overUrns, p.y - plan.skyTop(x, z) - (G.URN.plant.y + G.URN.plant.r * 0.8 + G.URN.plant.r * 0.9));
+        });
+        assert(overUrns >= 0.3, `In ${season} the tree's crown comes within ${overUrns.toFixed(2)} of the urns' clipped balls.`);
       }
     }
 
@@ -6850,6 +6856,7 @@ let skyReport = '';
       put(slots.tea, garden.teaTable());
       put(slots.telescope, garden.telescope({ eyepiece: slots.telescope.eyepiece, tilt: slots.telescope.tilt }));
       put(slots.lamps, garden.gardenLamps(slots.lamps.spots));
+      for (const u of slots.urns) put(u, garden.urn({ planted: true }));
       slots.falls.forEach((f, k) => put(f, garden.fall({ rise: f.rise, seed: k + 1 })));
       for (const c of slots.clouds) put(c, garden.cloud({ size: c.size, seed: c.seed }));
       for (const r of slots.rocks) put(r, garden.floatingRock({ size: r.size, seed: r.seed }));
@@ -6875,6 +6882,49 @@ let skyReport = '';
         gardenMeshes++;
         gardenTriangles += trianglesOf(m);
       }
+
+    // The clipped planting: a planted urn either side of the back door's step, outside the villa's
+    // footprint and its back wall's plinth, on the deck. And the low outcrop of the rock's own grey
+    // on the south-west lawn (it is the island's own, batched with the deck's stone): low (half a unit
+    // at the most over the lawn), its foot in the lawn all round, smooth (one normal wherever its
+    // triangles meet), in the rock's own greys (SKY_LOOK.rock, held to their family above), 0.6 or
+    // more from the rim (clear of the coping), clear of the paths, the lamps and her stations (the
+    // walk's check below).
+    {
+      const urnReach = 0.335;
+      for (const [x, z] of plan.SKY_URNS) {
+        const [fx, fz] = [x - site.x, z - site.z];
+        assert(Math.abs(Math.abs(fx) - plan.SKY_URN.side) < 1e-9 && fz + urnReach < -V.d / 2 && Math.abs(fx) - urnReach > 0.62 + 0.1 && plan.onSky(x, z, -1), `The urn at ${x.toFixed(2)}, ${z.toFixed(2)} is not beside the back step, outside the villa.`);
+      }
+      const { SKY_OUTCROP_SHAPE: O } = await load('town-sky'),
+        P = plan.SKY_OUTCROP,
+        stones = standingMeshes.filter((m) => m.material.userData.surfaceKind === 'stone'),
+        seen = new Map();
+      let top = -Infinity,
+        foot = Infinity,
+        rim = Infinity,
+        points = 0;
+      for (const m of stones) {
+        const q = m.geometry.attributes.position,
+          nn = m.geometry.attributes.normal;
+        for (let i = 0; i < q.count; i++) {
+          v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+          if (Math.hypot(v.x - P.x, v.z - P.z) > 1.3) continue;
+          points++;
+          const lawnAt = plan.skyTop(v.x, v.z);
+          top = Math.max(top, v.y - lawnAt);
+          foot = Math.min(foot, v.y - lawnAt);
+          rim = Math.min(rim, -plan.skyDistance(v.x, v.z));
+          const key = [v.x, v.y, v.z].map((n) => Math.round(n * 2000)).join(),
+            normal = new T.Vector3().fromBufferAttribute(nn, i);
+          if (seen.has(key)) assert(seen.get(key).dot(normal) > 0.999, 'The outcrop is faceted: two normals at one point.');
+          else seen.set(key, normal);
+        }
+      }
+      assert(points > 300 && top > 0.25 && top <= 0.5 && foot < -0.05 && rim >= 0.6 && O.sink >= 0.1, `The outcrop stands ${top.toFixed(2)} over the lawn, its foot ${foot.toFixed(2)} in it, ${rim.toFixed(2)} from the rim.`);
+      assert(SKY_LOOK.rock.length === 3 && O.lumps.length === 3 && O.lumps.every((l) => Math.min(...l.h) >= 0.15), 'The outcrop is not three chunky stones of the rock\'s own greys.');
+      skyReport += `, its outcrop ${top.toFixed(2)} over the lawn`;
+    }
 
     // Every joined piece standing in the garden is 0.07 across or more.
     for (const m of standingMeshes)
