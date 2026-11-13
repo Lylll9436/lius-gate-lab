@@ -1,0 +1,1006 @@
+import * as T from 'three';
+import type { SurfaceKind } from './city-materials';
+import { animateResident, blob, DEPTH, HEAD, lathe, paint, part, shade, taper, TORSO, torsoAt } from './city-people';
+import { ellipsoid, sculpt } from './town-sculpt';
+
+/*
+ * Alison Heppenstall's little figure for the sky island, built like the town's residents
+ * (city-people.ts: the same kit, scale and joints, so their walk code drives her) but as one named
+ * person: long, loose, curly ginger hair, dark rectangular glasses, a black long-sleeved top with a
+ * small pale pendant, fair skin, dark trousers. Her hands carry a watering can, or a teacup and its
+ * saucer, or a book; poseAlison() sets every joint and prop for a pose and a phase, from nothing
+ * else, so town time can drive it and a paused town holds it. Nothing in the town builds her yet:
+ * the sky island's own task places her and scripts her day.
+ */
+type Material = (c: string, k?: SurfaceKind) => T.MeshStandardMaterial;
+type V3 = [number, number, number];
+
+/**
+ * Her colours (sRGB). Like the residents', every one stays at or under HSV saturation 0.55, but for
+ * the hair: one ginger, the portrait's orange (hue 25), in shades of its one saturation, just under
+ * HAIR_SATURATION, its hue turning between copper and a golden ginger with the light each face gets
+ * (HAIR_TURN; the hair is the likeness, and held to 0.55 it reads brown). check-town names that
+ * exception and holds everything else to 0.55.
+ */
+export const ALISON_LOOK = {
+  hair: '#cc793e',
+  skin: '#f0cba9',
+  top: '#2d2b2e',
+  trousers: '#3b4552',
+  shoes: '#4b392e',
+  frames: '#262220',
+  lens: '#f2d7c3',
+  eyes: '#2b2622',
+  pendant: '#ece4d3',
+  zinc: '#a7aeb1',
+  china: '#efeae0',
+  chinaBand: '#8ea2b4',
+  tea: '#a07a58',
+  cover: '#6f4a44',
+  pages: '#efe7d6',
+};
+/**
+ * The hair's saturation cap (HSV, sRGB): her one exception to the figures' 0.55. It is 0.70, not the
+ * 0.62 it was: under the town's 0.72 grade a copper held to 0.62 rendered a salmon brown beside the
+ * portrait's ginger.
+ */
+export const HAIR_SATURATION = 0.7;
+/**
+ * How many degrees the hair's hue turns from ALISON_LOOK.hair's: more golden on what faces straight
+ * up, more coppery on what faces straight down and as a shade deepens to black (see hair()); and the
+ * band every shade's hue stays in, from a copper to a golden ginger.
+ */
+const HAIR_TURN = [5, 8, 10],
+  HAIR_HUES = [16, 32];
+
+/* ------------------------------------------------------------------ */
+/* Measures (the residents', see city-people.ts)                       */
+/* ------------------------------------------------------------------ */
+/** The hips' pivot height (each leg's group), and the arms' pivots (shoulders). */
+const HIP = 0.31,
+  SHOULDER = { x: 0.165, y: 0.6 };
+/** The arm's two bones: shoulder to elbow, and elbow to the hand's (mitten's) centre (0.215 in all, as a resident's). */
+const UPPER = 0.095,
+  FORE = 0.12;
+/** The thigh's radius at the hip: seated, its underside rests this far below the hip line. */
+const THIGH_R = 0.063;
+/** An eye's point on the face (where a resident's eyes sit), behind the glasses. */
+const EYE: V3 = [0, 0.772, 0.137];
+/** The pendant's middle, just under the top's collar. */
+const PENDANT_Y = 0.565;
+/** The teacup's axis stands this far from its handle (the cup's origin), along its +x. */
+const CUP_AXIS = 0.058;
+/** The spacing of the distance grid the hair's crown is meshed on: its triangles go as 1/h² (about 460 show at this spacing). */
+const HAIR_GRID = 0.034;
+
+/**
+ * The seat she sits on, its top above her floor: the town's park bench (town-props' bench: slats
+ * centred 0.405 up, 0.07 thick, so 0.44; the residence's oak bench is 0.40 and the airport's 0.38).
+ * Seated, her hip line is 0.193 over her floor (`lift`), her thighs rest on the seat, and her
+ * short legs hang from the knee with her soles 0.33 clear of the floor, as a resident's would. Any
+ * seat from 0.11 (where her soles just clear the floor) works: pass `seat` to poseAlison.
+ */
+const SEAT = 0.44;
+/** A stride (one 'walk' phase, two steps) in units: animateResident's gait turns 17 radians a unit. */
+const STRIDE = (Math.PI * 2) / 17;
+
+/* ------------------------------------------------------------------ */
+/* Builders                                                            */
+/* ------------------------------------------------------------------ */
+const srgb = new T.Color();
+/** A geometry's colours on its vertices from its position and normal (sRGB triples): paint(), continuous. */
+function tint(geometry: T.BufferGeometry, fn: (p: T.Vector3, n: T.Vector3) => V3) {
+  const g = geometry.index ? geometry.toNonIndexed() : geometry;
+  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+  const p = g.getAttribute('position'),
+    nrm = g.getAttribute('normal'),
+    out = new Float32Array(p.count * 3),
+    v = new T.Vector3(),
+    n = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    const [r, gg, b] = fn(v.fromBufferAttribute(p, i), n.fromBufferAttribute(nrm, i));
+    srgb.setRGB(r, gg, b, T.SRGBColorSpace).toArray(out, i * 3);
+  }
+  g.setAttribute('color', new T.BufferAttribute(out, 3));
+  return g;
+}
+/** A hex colour as sRGB components (0..1). */
+function sRGB(hex: string): V3 {
+  const n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+/** A hex colour as HSV: hue in degrees, saturation and value 0..1. */
+function toHsv(hex: string): V3 {
+  const [r, g, b] = sRGB(hex),
+    max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  return [max === min ? 0 : (60 * (g - b)) / (max - min), max ? (max - min) / max : 0, max];
+}
+/** HSV (hue in degrees, saturation and value 0..1) as sRGB components. */
+function hsv(h: number, sat: number, v: number): V3 {
+  const f = (k: number) => {
+    const m = (k + h / 60) % 6;
+    return v - v * sat * Math.max(0, Math.min(m, 4 - m, 1));
+  };
+  return [f(5), f(3), f(1)];
+}
+/** Whether a point is hidden inside her head or her torso (a little under their surfaces). */
+function insideBody(x: number, y: number, z: number) {
+  const [a, b, c] = HEAD.r;
+  if (Math.hypot(x / a, (y - HEAD.y) / b, (z - 0.005) / c) < 0.94) return true;
+  const r = torsoAt(y);
+  return r > 0 && Math.hypot(x / r, z / (r * DEPTH)) < 0.9;
+}
+/** A geometry (un-indexed, its positions and normals only) without the triangles whose three corners are all `hidden`. */
+function shown(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean) {
+  const flat = geometry.index ? geometry.toNonIndexed() : geometry,
+    p = flat.getAttribute('position'),
+    n = flat.getAttribute('normal'),
+    pos: number[] = [],
+    nor: number[] = [];
+  for (let i = 0; i < p.count; i += 3) {
+    if ([0, 1, 2].every((k) => hidden(p.getX(i + k), p.getY(i + k), p.getZ(i + k)))) continue;
+    for (let k = 0; k < 3; k++) {
+      pos.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k));
+      nor.push(n.getX(i + k), n.getY(i + k), n.getZ(i + k));
+    }
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  return g;
+}
+/**
+ * Which way a point of the hair faces: out from the head's middle above it and the body's upright
+ * axis below, or, below the jaw, towards `face` if a lock is given one (a lock hanging in front of
+ * the shoulder turns its flat side forward).
+ */
+function away(q: T.Vector3, out: T.Vector3, face?: V3) {
+  out.set(q.x, q.y - Math.min(q.y, HEAD.y), q.z - (q.y < HEAD.y ? -0.02 : 0.005)).normalize();
+  if (face) out.lerp(new T.Vector3(...face), 1 - T.MathUtils.smoothstep(q.y, 0.6, 0.7)).normalize();
+  return out;
+}
+/**
+ * A lock of hair: a smooth tube along a centripetal Catmull-Rom curve through `p`, its section an
+ * ellipse lying on the mass (half-width `a` across it, half-thickness `b` along `out`, the way it
+ * faces, all running smoothly through their lists, one a point), closed at each end by a half
+ * ellipsoid, so its tip is round. Rings about `step` apart along it, `radial` points round each,
+ * `tip` more rings in the round end; every normal is the surface's own (the section's, tilted as
+ * the lock narrows), so it shades round at any size and has no seams along it. `shape` is the same
+ * solid as a field: the nearest point of its axis, and the ellipse round it.
+ */
+function lock(p: V3[], a: number[], b: number[], out: V3[], radial = 10, step = 0.036, tip = 2) {
+  const curve = new T.CatmullRomCurve3(p.map((q) => new T.Vector3(...q)), false, 'centripetal'),
+    length = curve.getLength(),
+    n = Math.max(4, Math.ceil(length / step)),
+    m = a.length - 1,
+    // A list's value at curve parameter t: a Catmull-Rom through it (point k is at t = k / m), held at the ends.
+    spline = (r: number[], t: number) => {
+      const f = Math.min(m - 1e-9, Math.max(0, t * m)),
+        i = Math.floor(f),
+        s = f - i,
+        r0 = r[Math.max(0, i - 1)],
+        r1 = r[i],
+        r2 = r[i + 1],
+        r3 = r[Math.min(m, i + 2)];
+      return r1 + 0.5 * s * (r2 - r0 + s * (2 * r0 - 5 * r1 + 4 * r2 - r3 + s * (3 * (r1 - r2) + r3 - r0)));
+    },
+    c: T.Vector3[] = [],
+    t: T.Vector3[] = [],
+    N: T.Vector3[] = [],
+    S: T.Vector3[] = [],
+    A: number[] = [],
+    B: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const u = i / n,
+      q = curve.getPointAt(u),
+      tt = curve.getTangentAt(u),
+      k = curve.getUtoTmapping(u, u * length),
+      // The way it faces, square to the lock (or the last ring's, where the lock runs out along it).
+      o = new T.Vector3(...([0, 1, 2].map((j) => spline(out.map((v) => v[j]), k)) as V3));
+    o.addScaledVector(tt, -o.dot(tt));
+    if (o.lengthSq() < 0.04 && i) o.copy(N[i - 1]).addScaledVector(tt, -N[i - 1].dot(tt));
+    o.normalize();
+    c.push(q);
+    t.push(tt);
+    N.push(o);
+    S.push(new T.Vector3().crossVectors(o, tt));
+    A.push(spline(a, k));
+    B.push(Math.min(spline(b, k), spline(a, k)));
+  }
+  const slope = (r: number[], i: number) => {
+      const i0 = Math.max(0, i - 1),
+        i1 = Math.min(n, i + 1);
+      return T.MathUtils.clamp(((r[i1] - r[i0]) * n) / ((i1 - i0) * length), -0.8, 0.8);
+    },
+    pos: number[] = [],
+    nor: number[] = [],
+    idx: number[] = [],
+    rings: number[] = [],
+    d = new T.Vector3();
+  /**
+   * A ring of ellipsoid points round ring i's centre: at latitude `lat` towards `end` (+1 the tip,
+   * -1 the root; 0 is the tube's own section), the ellipsoid's third half-axis `along`.
+   */
+  const ring = (i: number, lat: number, end: number, along: number) => {
+    rings.push(pos.length / 3);
+    const ca = Math.cos(lat),
+      sa = Math.sin(lat),
+      sA = slope(A, i),
+      sB = slope(B, i);
+    for (let j = 0; j < radial; j++) {
+      const th = (j / radial) * Math.PI * 2,
+        x = Math.cos(th),
+        y = Math.sin(th);
+      // The point, and the ellipsoid's normal there (its gradient); on the tube, tilted by the section's narrowing.
+      d.copy(S[i]).multiplyScalar(A[i] * x * ca).addScaledVector(N[i], B[i] * y * ca).addScaledVector(t[i], along * sa * end).add(c[i]);
+      pos.push(d.x, d.y, d.z);
+      d.copy(S[i]).multiplyScalar((x * ca) / A[i]).addScaledVector(N[i], (y * ca) / B[i]);
+      const l = d.length();
+      d.multiplyScalar(1 / l).addScaledVector(t[i], lat ? ((sa * end) / along) / l : -(sA * x * x + sB * y * y)).normalize();
+      nor.push(d.x, d.y, d.z);
+    }
+  };
+  const pole = (i: number, end: number, along: number) => {
+    pos.push(c[i].x + t[i].x * along * end, c[i].y + t[i].y * along * end, c[i].z + t[i].z * along * end);
+    nor.push(t[i].x * end, t[i].y * end, t[i].z * end);
+    return pos.length / 3 - 1;
+  };
+  // The root's end, the tube, and the tip's end: each end half an ellipsoid as deep as the section is thick.
+  const pole0 = pole(0, -1, B[0]);
+  ring(0, Math.PI / 4, -1, B[0]);
+  for (let i = 0; i <= n; i++) ring(i, 0, 1, 1);
+  for (let k = 1; k <= tip; k++) ring(n, ((Math.PI / 2) * k) / (tip + 1), 1, B[n]);
+  const pole1 = pole(n, 1, B[n]);
+  for (let k = 0; k < rings.length; k++)
+    for (let j = 0; j < radial; j++) {
+      const v0 = rings[k] + j,
+        v1 = rings[k] + ((j + 1) % radial);
+      if (k === 0) idx.push(pole0, v1, v0);
+      if (k === rings.length - 1) idx.push(v0, v1, pole1);
+      else idx.push(v0, v1, v1 + radial, v0, v1 + radial, v0 + radial);
+    }
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  geometry.setIndex(idx);
+  // The field: from the nearest point of the axis (each segment's frame and half-axes blended
+  // along it), the ellipsoid bound of the section there (its third half-axis the thickness, so
+  // the ends come out round).
+  const lo = [1e3, 1e3, 1e3],
+    hi = [-1e3, -1e3, -1e3],
+    reach = Math.max(...A);
+  for (const q of c)
+    q.toArray().forEach((v, k) => {
+      lo[k] = Math.min(lo[k], v - reach);
+      hi[k] = Math.max(hi[k], v + reach);
+    });
+  const shape = {
+    d(x: number, y: number, z: number) {
+      let best = 1e3;
+      for (let i = 0; i < n; i++) {
+        const P = c[i],
+          Q = c[i + 1],
+          sx = Q.x - P.x,
+          sy = Q.y - P.y,
+          sz = Q.z - P.z,
+          f = T.MathUtils.clamp(((x - P.x) * sx + (y - P.y) * sy + (z - P.z) * sz) / (sx * sx + sy * sy + sz * sz), 0, 1),
+          px = x - P.x - sx * f,
+          py = y - P.y - sy * f,
+          pz = z - P.z - sz * f,
+          ra = A[i] + (A[i + 1] - A[i]) * f;
+        // Too far from this segment to be nearer than the best so far.
+        if (Math.sqrt(px * px + py * py + pz * pz) - ra > best) continue;
+        const rb = B[i] + (B[i + 1] - B[i]) * f,
+          g = (V: T.Vector3[]) => [V[i].x + (V[i + 1].x - V[i].x) * f, V[i].y + (V[i + 1].y - V[i].y) * f, V[i].z + (V[i + 1].z - V[i].z) * f],
+          [ux, uy, uz] = g(S),
+          [vx, vy, vz] = g(N),
+          [wx, wy, wz] = g(t),
+          u = (px * ux + py * uy + pz * uz) / ra,
+          v = (px * vx + py * vy + pz * vz) / rb,
+          w = (px * wx + py * wy + pz * wz) / rb,
+          k0 = Math.sqrt(u * u + v * v + w * w),
+          k1 = Math.sqrt((u / ra) ** 2 + (v / rb) ** 2 + (w / rb) ** 2);
+        best = Math.min(best, k1 < 1e-9 ? -rb : (k0 * (k0 - 1)) / k1);
+      }
+      return best;
+    },
+    min: lo as unknown as V3,
+    max: hi as unknown as V3,
+  };
+  return { geometry, shape };
+}
+/**
+ * The triangles of an indexed geometry that are not wholly `hidden`, un-indexed, with colours on
+ * their vertices from `colour` (sRGB, from each vertex's position and normal).
+ */
+function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean, colour: (p: T.Vector3, n: T.Vector3) => V3) {
+  const p = geometry.getAttribute('position'),
+    nrm = geometry.getAttribute('normal'),
+    index = geometry.index!,
+    gone = new Uint8Array(p.count),
+    rgb = new Float32Array(p.count * 3),
+    v = new T.Vector3(),
+    n = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    gone[i] = hidden(p.getX(i), p.getY(i), p.getZ(i)) ? 1 : 0;
+    const [r, g, b] = colour(v.fromBufferAttribute(p, i), n.fromBufferAttribute(nrm, i));
+    srgb.setRGB(r, g, b, T.SRGBColorSpace).toArray(rgb, i * 3);
+  }
+  const pos: number[] = [],
+    nor: number[] = [],
+    col: number[] = [];
+  for (let k = 0; k < index.count; k += 3) {
+    const tri = [index.getX(k), index.getX(k + 1), index.getX(k + 2)];
+    if (tri.every((i) => gone[i])) continue;
+    for (const i of tri) {
+      pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      nor.push(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+      col.push(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+    }
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+  return g;
+}
+/**
+ * A lock's line and section, from its spine `p` (inside the crown down to where its curl begins)
+ * and its half-width `r` at each spine point: resampled to `k` points, each moved across the fall
+ * by a gentle wave (`wave` across the mass, half as much out from it, a quarter turn behind, so the
+ * lock winds a little as a ringlet does), `turns` waves over its length from `phase`, faded in from
+ * the root so it stays in the crown; its width swells a little with the wave, and it is `flat` as
+ * thick as it is wide (never under 0.072 through). Then the curl: the line turns towards `curl`
+ * through `hook` radians on a bend of radius `bend`, rounding as it goes, so the tip ends in a
+ * round curl. Returns the line, the section's half-width and half-thickness along it, and the way
+ * it faces (away(), with the lock's `face`).
+ */
+function line(spec: Lock, k = 12): [V3[], number[], number[], V3[]] {
+  const { p, r, flat = 0.62, wave = 0.026, phase = 0, turns = 1.5, curl, hook = 1.4, bend = 0.032, face } = spec,
+    curve = new T.CatmullRomCurve3(p.map((q) => new T.Vector3(...q)), false, 'centripetal'),
+    length = curve.getLength(),
+    m = r.length - 1,
+    pts: V3[] = [],
+    wide: number[] = [],
+    thick: number[] = [],
+    outs: V3[] = [],
+    o = new T.Vector3(),
+    s = new T.Vector3();
+  for (let i = 0; i < k; i++) {
+    const u = i / (k - 1),
+      q = curve.getPointAt(u),
+      tt = curve.getTangentAt(u),
+      f = curve.getUtoTmapping(u, u * length) * m,
+      j = Math.min(m - 1, Math.floor(f)),
+      a = (phase + turns * u) * Math.PI * 2,
+      fade = T.MathUtils.smoothstep(u, 0, 0.35),
+      w = (r[j] + (r[j + 1] - r[j]) * (f - j)) * (1 + 0.07 * fade * Math.cos(a));
+    away(q, o, face);
+    outs.push([o.x, o.y, o.z]);
+    o.addScaledVector(tt, -o.dot(tt)).normalize();
+    s.crossVectors(o, tt);
+    q.addScaledVector(s, wave * fade * Math.sin(a)).addScaledVector(o, 0.5 * wave * fade * Math.cos(a));
+    pts.push([q.x, q.y, q.z]);
+    wide.push(w);
+    thick.push(Math.max(0.036, w * flat));
+  }
+  // The curl: an arc from the end, leaving along the line's last direction and turning towards `curl`.
+  const end = new T.Vector3(...pts[k - 1]),
+    dir = end.clone().sub(new T.Vector3(...pts[k - 2])).normalize(),
+    side = new T.Vector3(...curl).addScaledVector(dir, -new T.Vector3(...curl).dot(dir)).normalize(),
+    centre = end.clone().addScaledVector(side, bend),
+    w0 = wide[k - 1],
+    b0 = thick[k - 1];
+  for (let i = 1; i <= 4; i++) {
+    const a = (hook * i) / 4,
+      q = centre.clone().addScaledVector(side, -bend * Math.cos(a)).addScaledVector(dir, bend * Math.sin(a));
+    pts.push([q.x, q.y, q.z]);
+    wide.push(Math.max(b0, w0 + (b0 - w0) * (i / 4)));
+    thick.push(b0);
+    outs.push(outs[k - 1]);
+  }
+  return [pts, wide, thick, outs];
+}
+/** A lock's spec for line(): see there. `radial` is its points round, for lock(). */
+type Lock = { p: V3[]; r: number[]; curl: V3; flat?: number; wave?: number; phase?: number; turns?: number; hook?: number; bend?: number; face?: V3; radial?: number };
+/**
+ * The hair, blocked out from the portrait for a camera that looks down on her: a smooth crown and
+ * ten big locks, every normal an exact one, so nothing is faceted.
+ * - The crown, from town-sculpt's distance grid: close over the skull (under the tallest
+ *   resident's head), with the face carved out of it from a hairline well above the glasses, so
+ *   her forehead and face stay clear; and a curtain down her back, so no gap between the locks
+ *   shows her top.
+ * - The locks (LOCKS, lock()): each one smooth form, flat as hair lies, tapering from the crown to
+ *   a round curl at its tip and waving gently from side to side as it falls, neighbours out of
+ *   step. The first is the swoop: from her parting, on her right, over the top of her head to her
+ *   left temple, then down past her cheek onto her chest; on the parting's other side one falls
+ *   down her right temple and cheek. Those two frame her face and lie in over her collarbones, so
+ *   a reaching arm comes out beside them rather than through them. The rest fall from the crown
+ *   down the sides and back, past her shoulders and behind her arms, to mid-back. The locks meet
+ *   one another and the crown in crisp creases: at the town's scale that is what reads as curls,
+ *   where a blended mass reads as a hood and a cluster of small balls as bubbles.
+ * From in front the hair is widest at her cheeks, about 1.4 times her head, and narrows below.
+ * Whatever another part of the hair, the head or the torso hides is left out. Returns the pieces
+ * (the crown, then each lock) and `covers`: whether a point lies under the hair.
+ */
+function hair() {
+  const s = sculpt([-0.24, 0.42, -0.26], [0.24, 0.97, 0.21], HAIR_GRID),
+    e = (c: V3, r: V3, rot?: V3) => ellipsoid(c, r, rot);
+  // The crown, close over the skull, and a thin curtain down her back, behind the locks.
+  s.add(e([0.002, 0.758, -0.01], [0.168, 0.162, 0.165]));
+  s.add(e([0, 0.6, -0.12], [0.12, 0.16, 0.05]), 0.05);
+  // The face, carved out from a hairline well above the glasses down past the chin, tilted so the
+  // hairline rises towards her parting.
+  s.cut(e([0, 0.735, 0.15], [0.118, 0.14, 0.13], [0, 0, 0.15]), 0.015);
+  const locks = LOCKS.map((spec) => lock(...line(spec), spec.radial ?? 10, 0.04));
+  /** The hair's distance field: the crown (unless `cap` is false) and every lock but `skip`. */
+  const field = (x: number, y: number, z: number, skip = -1, cap = true) => {
+    let d = cap ? s.exact(x, y, z) : 1e3;
+    for (let i = 0; i < locks.length; i++) {
+      if (i === skip) continue;
+      const shape = locks[i].shape,
+        { min, max } = shape,
+        ox = Math.max(min[0] - x, 0, x - max[0]),
+        oy = Math.max(min[1] - y, 0, y - max[1]),
+        oz = Math.max(min[2] - z, 0, z - max[2]);
+      if (ox * ox + oy * oy + oz * oz < d * d) d = Math.min(d, shape.d(x, y, z));
+    }
+    return d;
+  };
+  const [hue, sat, value] = toHsv(ALISON_LOOK.hair),
+    copper = (p: T.Vector3, n: T.Vector3): V3 => {
+      // How far the field opens out along the normal (a distance-field occlusion): the creases
+      // between locks and the hair's own underside come out deeper, so the locks read.
+      let shut = 0;
+      for (const [d, w] of [[0.012, 0.5], [0.028, 0.35], [0.05, 0.2]])
+        shut += (w * Math.max(0, d - field(p.x + n.x * d, p.y + n.y * d, p.z + n.z * d))) / d;
+      // One ginger, in shades of one saturation (ALISON_LOOK.hair's): deeper towards the hem and in
+      // the creases. Its hue turns with the light each face gets, against what the town's light
+      // does to it, so the hair reads ginger in sun and copper in shade, never salmon or brown: in
+      // sun (what faces the sky) the key light, the grade and the tone curve pull an orange towards
+      // salmon, so it is more golden there, and a touch deeper; in shade the sky's blue and the
+      // ground's olive bounce pull it towards brown, so it warms towards copper on what faces down
+      // and as it deepens in the creases.
+      const up = T.MathUtils.smoothstep(n.y, 0.2, 0.9),
+        down = T.MathUtils.smoothstep(-n.y, 0.1, 0.8),
+        k = T.MathUtils.lerp(0.84, 1, T.MathUtils.smoothstep(p.y, 0.44, 0.84)) * (1 - 0.42 * Math.min(1, shut));
+      return hsv(T.MathUtils.clamp(hue + HAIR_TURN[0] * up - HAIR_TURN[1] * down - HAIR_TURN[2] * (1 - k), HAIR_HUES[0], HAIR_HUES[1]), sat, value * k * (1 - 0.12 * up));
+    };
+  // Every triangle that shows: not wholly inside another part of the hair, the head or the torso.
+  return {
+    pieces: [
+      kept(s.mesh(), (x, y, z) => insideBody(x, y, z) || field(x, y, z, -1, false) < -0.004, copper),
+      ...locks.map((l, i) => kept(l.geometry, (x, y, z) => insideBody(x, y, z) || field(x, y, z, i) < -0.004, copper)),
+    ],
+    covers: (x: number, y: number, z: number) => field(x, y, z) < -0.004,
+  };
+}
+/**
+ * Her locks (line() has the fields): each spine runs from inside the crown down to where its curl
+ * begins. Her left is +x.
+ */
+const LOCKS: Lock[] = [
+  // The swoop: from her parting (on her right) over the top of her head to her left temple, then
+  // down past her cheek and in over the collarbone onto her chest; on the parting's other side, a
+  // lock falls down her right temple and cheek and in onto her right collarbone. Below the jaw
+  // both turn their flat side forward.
+  { p: [[-0.045, 0.88, 0.03], [0.01, 0.893, 0.035], [0.078, 0.872, 0.05], [0.13, 0.815, 0.072], [0.148, 0.735, 0.07], [0.128, 0.66, 0.088], [0.1, 0.6, 0.106], [0.085, 0.55, 0.118]], r: [0.04, 0.048, 0.054, 0.058, 0.055, 0.05, 0.046, 0.042], curl: [1, 0.3, 0.2], phase: 0.1, wave: 0.022, turns: 1.25, face: [0.25, 0, 1] },
+  { p: [[-0.09, 0.86, 0.01], [-0.135, 0.815, 0.045], [-0.15, 0.748, 0.066], [-0.135, 0.675, 0.082], [-0.108, 0.615, 0.1], [-0.092, 0.57, 0.112]], r: [0.04, 0.05, 0.055, 0.052, 0.047, 0.043], curl: [-1, 0.3, 0.2], phase: 0.6, wave: 0.022, turns: 1.25, face: [-0.25, 0, 1] },
+  // Over each ear, behind the face's lock and further out, falling onto the back of the shoulder.
+  { p: [[0.112, 0.835, 0.005], [0.152, 0.785, 0.02], [0.16, 0.72, 0.012], [0.153, 0.648, -0.035], [0.142, 0.594, -0.082]], r: [0.045, 0.056, 0.06, 0.056, 0.052], curl: [0.2, 0.3, -1], phase: 0.35, wave: 0.02 },
+  { p: [[-0.112, 0.835, 0.003], [-0.151, 0.785, 0.018], [-0.158, 0.722, 0.01], [-0.152, 0.652, -0.037], [-0.14, 0.602, -0.082]], r: [0.044, 0.054, 0.058, 0.054, 0.05], curl: [-0.2, 0.3, -1], phase: 0.85, wave: 0.02 },
+  // Down each side, from above the ear on behind the shoulder.
+  { p: [[0.105, 0.83, -0.04], [0.154, 0.785, -0.058], [0.158, 0.71, -0.08], [0.146, 0.63, -0.115], [0.127, 0.55, -0.15], [0.115, 0.49, -0.168]], r: [0.045, 0.056, 0.06, 0.058, 0.054, 0.05], curl: [-0.6, 0.3, -1], phase: 0.7 },
+  { p: [[-0.105, 0.83, -0.04], [-0.154, 0.785, -0.058], [-0.158, 0.712, -0.08], [-0.146, 0.634, -0.115], [-0.127, 0.556, -0.15], [-0.116, 0.498, -0.168]], r: [0.044, 0.055, 0.059, 0.057, 0.053, 0.049], curl: [0.6, 0.3, -1], phase: 0.2 },
+  // Down her back: four, out of step with one another, to a ragged hem at mid-back, curling to the side.
+  { p: [[0.065, 0.83, -0.085], [0.102, 0.79, -0.135], [0.108, 0.715, -0.156], [0.1, 0.635, -0.163], [0.09, 0.555, -0.174], [0.085, 0.495, -0.178]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [1, 0.4, 0.3], phase: 0.45, radial: 9 },
+  { p: [[0.022, 0.83, -0.09], [0.034, 0.79, -0.148], [0.036, 0.715, -0.168], [0.034, 0.635, -0.172], [0.03, 0.555, -0.178], [0.028, 0.48, -0.182]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [-1, 0.4, 0.3], phase: 0.95, radial: 9 },
+  { p: [[-0.022, 0.83, -0.09], [-0.034, 0.79, -0.148], [-0.036, 0.715, -0.168], [-0.034, 0.635, -0.172], [-0.03, 0.555, -0.178], [-0.028, 0.488, -0.182]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [1, 0.4, 0.3], phase: 0.25, radial: 9 },
+  { p: [[-0.065, 0.83, -0.085], [-0.102, 0.79, -0.135], [-0.108, 0.715, -0.156], [-0.1, 0.635, -0.163], [-0.09, 0.555, -0.174], [-0.085, 0.5, -0.178]], r: [0.045, 0.058, 0.062, 0.06, 0.056, 0.052], curl: [-1, 0.4, 0.3], phase: 0.7, radial: 9 },
+];
+
+/** The glasses' band: its middle's height, half-height, how far it stands proud of the face and sinks into it, and its half-length round the face. */
+const GLASSES = { y: 0.776, half: 0.036, out: 0.006, sink: 0.064, reach: 0.135 };
+/**
+ * The frames drawn on the band, as |u| (arc length from the bridge) and v (height from the band's
+ * middle) edges: each rim's outer and inner (lens) edges, the eye's cell, the bridge and the arm.
+ */
+const FRAME = { rim: [0.012, 0.102, -0.03, 0.03], lens: [0.026, 0.088, -0.02, 0.013], eye: [0.043, 0.064, -0.012, 0.005], bar: [0.008, 0.026] };
+/**
+ * Her glasses: one solid band across the eyes, hugging the face, 0.072 tall, 0.07 deep and 0.27
+ * round it, its ends running under the hair like the arms. It stands only 0.006 proud of the face,
+ * so from above it shows no top of its own, and on its front, in flat colours whose edges are the
+ * triangles' own (so the ink pass's multisampling smooths them), are the dark rectangular frames (a
+ * heavier top bar, as in the portrait), a slim bridge, the clear lenses (her skin a shade lighter
+ * through them), her eyes, and her skin round them. Rims 0.07 thick round open lenses would be
+ * wider than her face; thinner ones standing free would twinkle; drawn on the band they hold still.
+ */
+function glassesGeometry() {
+  const { y: yc, half, out, sink, reach } = GLASSES,
+    [a, , c] = HEAD.r,
+    // The head's cross-section at height y (its half-widths shrink by q above and below the middle).
+    qAt = (y: number) => Math.sqrt(1 - ((y - HEAD.y) / HEAD.r[1]) ** 2),
+    R = ((a + c) / 2) * qAt(yc),
+    { rim, lens: glass, eye: pupil, bar } = FRAME,
+    // Columns along the band (arc length from its middle) at every edge of the pattern, rows the same.
+    edges = [0, rim[0], glass[0], pupil[0], pupil[1], glass[1], rim[1], reach],
+    cols = [...edges.slice(1).map((u) => -u).reverse(), ...edges],
+    rows = [...new Set([-half, rim[2], glass[2], pupil[2], pupil[3], bar[0], glass[3], bar[1], rim[3], half])].sort((p, q) => p - q),
+    frame = sRGB(ALISON_LOOK.frames),
+    lens = sRGB(ALISON_LOOK.lens),
+    eye = sRGB(ALISON_LOOK.eyes),
+    skin = sRGB(ALISON_LOOK.skin),
+    inside = (x: number, lo: number, hi: number) => x > lo && x < hi,
+    colourAt = (u: number, v: number): V3 => {
+      const m = Math.abs(u);
+      if (inside(m, pupil[0], pupil[1]) && inside(v, pupil[2], pupil[3])) return eye;
+      if (inside(m, glass[0], glass[1]) && inside(v, glass[2], glass[3])) return lens;
+      if (inside(m, rim[0], rim[1]) && inside(v, rim[2], rim[3])) return frame;
+      // The bridge between the rims and the arms beyond them, at the top bar's height.
+      return inside(v, bar[0], bar[1]) ? frame : skin;
+    },
+    pos: number[] = [],
+    nor: number[] = [],
+    col: number[] = [];
+  /**
+   * The face's point at arc length u and height yc + v, pushed out by w (negative: into the face),
+   * and the band's outward normal there: the band hugs the head's curve up and down as well as round.
+   */
+  const at = (u: number, w: number, v: number) => {
+    const t = u / R,
+      q = qAt(yc + v),
+      x = a * q * Math.sin(t),
+      z = c * q * Math.cos(t),
+      nx = Math.sin(t) / (a * q),
+      nz = Math.cos(t) / (c * q),
+      l = Math.hypot(nx, nz);
+    return { p: [x + (nx / l) * w, yc + v, 0.005 + z + (nz / l) * w], n: [nx / l, 0, nz / l] };
+  };
+  const quad = (A: { p: number[] }, B: { p: number[] }, C: { p: number[] }, D: { p: number[] }, n: (k: number) => number[], colour: V3) => {
+    // A B C D anticlockwise seen from outside; n(k) gives each corner's normal.
+    for (const [k, Q] of [[0, A], [1, B], [2, C], [0, A], [2, C], [3, D]] as const) {
+      pos.push(...Q.p);
+      nor.push(...n(k));
+      col.push(...colour);
+    }
+  };
+  for (let i = 0; i < cols.length - 1; i++) {
+    const u0 = cols[i],
+      u1 = cols[i + 1],
+      um = (u0 + u1) / 2;
+    // The front, one flat colour a cell; cells of one colour up a column are one quad.
+    for (let j = 0, k = 1; j < rows.length - 1; j = k++) {
+      const colour = colourAt(um, (rows[j] + rows[j + 1]) / 2);
+      while (k < rows.length - 1 && colourAt(um, (rows[k] + rows[k + 1]) / 2) === colour) k++;
+      const A = at(u0, out, rows[j]),
+        B = at(u1, out, rows[j]),
+        C = at(u1, out, rows[k]),
+        D = at(u0, out, rows[k]);
+      quad(A, B, C, D, (q) => (q === 0 || q === 3 ? A.n : B.n), colour);
+    }
+    // The top and the underside, running back into the face (whose skin hides the band's back).
+    const ft = [at(u0, out, half), at(u1, out, half)],
+      bt = [at(u0, -sink, half), at(u1, -sink, half)],
+      fb = [at(u0, out, -half), at(u1, out, -half)],
+      bb = [at(u0, -sink, -half), at(u1, -sink, -half)];
+    quad(ft[0], ft[1], bt[1], bt[0], () => [0, 1, 0], colourAt(um, half));
+    quad(fb[1], fb[0], bb[0], bb[1], () => [0, -1, 0], colourAt(um, -half));
+  }
+  // The two ends, where the arms run back into the hair.
+  for (const [u, s] of [[cols[0], -1], [cols[cols.length - 1], 1]] as const) {
+    const A = at(u, -sink, -half),
+      B = at(u, out, -half),
+      C = at(u, out, half),
+      D = at(u, -sink, half),
+      t = [A.n[2] * s, 0, -A.n[0] * s];
+    if (s > 0) quad(A, B, C, D, () => t, frame);
+    else quad(B, A, D, C, () => t, frame);
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  const lin = new Float32Array(col.length);
+  for (let i = 0; i < col.length; i += 3) srgb.setRGB(col[i], col[i + 1], col[i + 2], T.SRGBColorSpace).toArray(lin, i);
+  g.setAttribute('color', new T.BufferAttribute(lin, 3));
+  return g;
+}
+
+export type AlisonJoints = {
+  root: T.Group;
+  body: T.Object3D;
+  /** leg-left (-x) and leg-right (+x), and their knees. */
+  legs: [T.Object3D, T.Object3D];
+  knees: [T.Object3D, T.Object3D];
+  /** arm-left (-x: her right hand; the residents name their sides by the viewer's left) and arm-right (+x), and their elbows. */
+  arms: [T.Object3D, T.Object3D];
+  elbows: [T.Object3D, T.Object3D];
+};
+export type AlisonProps = { can: T.Group; cup: T.Group; saucer: T.Group; book: T.Group };
+
+/** The watering can's drum: its axis this far ahead of the handle's grip (the can's origin, +z towards the spout). */
+const DRUM = 0.141;
+/** A 0.07 tube's radius: six-sided, so 0.041 to its corners leaves it 0.071 across its flats. */
+const TUBE = 0.041;
+/** The middle of the can's rose (the spout's flared end), in the can's frame. */
+const ROSE: V3 = [0, 0.004, DRUM + 0.195];
+/**
+ * Her hand props, each a group of its own in her root (so batching part by part makes each one
+ * mesh, and a pose shows only its own), placed by poseAlison. Every joined piece is at least 0.07
+ * thick: the can's handle and its spout are 0.07 tubes (the spout flares into its rose), the cup's
+ * handle is a 0.07 lug, the saucer stands 0.07 from its foot to its rim, the book's boards are
+ * 0.07. Their origins are where they are held: the can's handle at its back, the cup's handle, the
+ * saucer's foot, the book's spine.
+ */
+function createProps(material: Material): AlisonProps {
+  const L = ALISON_LOOK;
+  const can = new T.Group(),
+    cup = new T.Group(),
+    saucer = new T.Group(),
+    book = new T.Group();
+  can.name = 'watering-can';
+  cup.name = 'teacup';
+  saucer.name = 'saucer';
+  book.name = 'book';
+  // The can, level: a zinc drum, a loop handle on its back (held at its rearmost point, the
+  // origin) and a spout from its foot, forward and a little up, flaring into the rose.
+  part(can, [
+    paint(lathe([[0, -0.09], [0.064, -0.09], [0.07, -0.076], [0.07, 0.04], [0.061, 0.055], [0, 0.055]], 10).translate(0, 0, DRUM), L.zinc, [-0.09, 0.055, 0.9, 1.04]),
+    paint(taper([[0, 0.032, DRUM - 0.062], [0, 0.044, 0.04], [0, 0.028, 0.004], [0, -0.024, 0.002], [0, -0.062, 0.034], [0, -0.066, DRUM - 0.062]], [TUBE, TUBE, TUBE, TUBE, TUBE, TUBE], 6, 6), shade(L.zinc, 0.9)),
+    paint(taper([[0, -0.054, DRUM + 0.04], [0, -0.034, DRUM + 0.105], [0, -0.012, DRUM + 0.165], ROSE], [TUBE, TUBE, TUBE, 0.062], 5, 6), shade(L.zinc, 0.96)),
+  ], material, 'paint', 'watering-can');
+  // The teacup, its handle (a lug) at the origin on its -x side; milky tea inside, a blue band at the rim.
+  const ring = (p: T.Vector3) => Math.hypot(p.x - CUP_AXIS, p.z);
+  part(cup, [
+    paint(lathe([[0, -0.037], [0.034, -0.037], [0.049, 0.014], [0.052, 0.037], [0.046, 0.039], [0.041, 0.024], [0, 0.024]], 9).translate(CUP_AXIS, 0, 0), (p) =>
+      p.y < 0.0245 && p.y > 0.02 && ring(p) < 0.0415 ? L.tea : p.y > 0.024 && ring(p) > 0.0485 ? L.chinaBand : L.china,
+    ),
+    paint(blob([0.037, 0.037, 0.037], [0, 0, 0], 8), L.china),
+  ], material, 'paint', 'teacup');
+  // The saucer, its foot at the origin: a dish 0.15 across with a well for the cup.
+  part(saucer, [
+    paint(lathe([[0, 0], [0.04, 0], [0.06, 0.03], [0.075, 0.064], [0.071, 0.07], [0.056, 0.044], [0.044, 0.036], [0, 0.036]], 9), (p) =>
+      p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? L.chinaBand : L.china,
+    ),
+  ], material, 'paint', 'saucer');
+  // The book, open: two boards with their pages, each 0.07 thick and 0.15 long, meeting at the
+  // spine (the origin, along z) in a shallow V, the pages up and the cloth cover below and round them.
+  const pages = sRGB(L.pages),
+    cover = sRGB(L.cover),
+    leaf = (s: number) =>
+      tint(new T.BoxGeometry(0.11, 0.07, 0.15), (_, n) => (n.y > 0.5 ? pages : cover))
+        .translate(s * 0.058, -0.035, 0)
+        .rotateZ(s * 0.22);
+  part(book, [leaf(-1), leaf(1)], material, 'paint', 'book');
+  for (const g of [can, cup, saucer, book]) g.visible = false;
+  return { can, cup, saucer, book };
+}
+
+/**
+ * Alison Heppenstall's figure: a resident's 0.9-tall body (city-people's measures: the head a
+ * third of her height, hips at 0.31, shoulders at 0.6, the same thighs, shins and shoes) in her own
+ * look, standing with her soles on y 0 and facing +z. Her joints are the residents' ('body',
+ * 'leg-left' and 'leg-right' with a 'knee' each, 'arm-left' and 'arm-right'), so animateResident
+ * walks her, plus an 'elbow' in each arm for the poses that hold things. Every part is one mesh per
+ * surface kind, its colours on its vertices: batched part by part (as town-build batches its
+ * figures) she is 10 meshes, and each prop one more. She takes the material function as the
+ * residents do. `props` hang in her root, hidden until a pose shows them.
+ */
+export function createAlison(material: Material) {
+  const L = ALISON_LOOK,
+    root = new T.Group(),
+    body = new T.Group();
+  root.name = 'alison';
+  body.name = 'body';
+  root.add(body);
+  // The top: a resident's torso in soft black, a shade deeper towards its hem.
+  part(body, [paint(lathe(TORSO, 14).scale(1, 1, DEPTH), L.top, [0.27, 0.6, 0.9, 1.06])], material, 'fabric');
+  const locks = hair();
+  part(body, locks.pieces, material, 'fabric', 'alison-hair');
+  // Skin and the small hard things on it: the head, the neck (a shade deeper, so the chin parts
+  // from it), a resident's small nose under the glasses' bridge, the glasses, and the pendant, which
+  // hangs on the black just under the collar, where a short cord would bring it.
+  const chest = torsoAt(PENDANT_Y) * DEPTH;
+  part(body, [
+    paint(shown(blob(HEAD.r, [0, HEAD.y, 0.005], 16), locks.covers), L.skin),
+    paint(lathe([[0, 0.585], [0.05, 0.585], [0.05, 0.66], [0, 0.66]], 8), shade(L.skin, 0.96)),
+    paint(blob([0.021, 0.019, 0.019], [0, 0.727, 0.005 + HEAD.r[2] * Math.sqrt(1 - ((0.727 - HEAD.y) / HEAD.r[1]) ** 2) - 0.006], 6), shade(L.skin, 0.97)),
+    glassesGeometry(),
+    paint(lathe([[0, -0.048], [0.018, -0.032], [0.034, -0.006], [0.038, 0.012], [0.028, 0.032], [0, 0.04]], 8).rotateX(-0.2).translate(0, PENDANT_Y, chest - 0.012), L.pendant),
+  ], material, 'paint');
+  const legs: T.Object3D[] = [],
+    knees: T.Object3D[] = [],
+    arms: T.Object3D[] = [],
+    elbows: T.Object3D[] = [];
+  for (const side of [-1, 1]) {
+    // The legs are a resident's, in dark trousers over plain shoes.
+    const hip = new T.Group();
+    hip.name = side < 0 ? 'leg-left' : 'leg-right';
+    hip.position.set(side * 0.065, HIP, 0);
+    root.add(hip);
+    part(hip, [paint(lathe([[0, 0.03], [0.05, 0.025], [THIGH_R, 0.0], [0.06, -0.07], [0.055, -0.14], [0.03, -0.165], [0, -0.17]], 10), L.trousers, [-0.17, 0.02, 0.92, 1.02])], material, 'fabric');
+    const knee = new T.Group();
+    knee.name = 'knee';
+    knee.position.y = -0.14;
+    hip.add(knee);
+    const shoe = blob([0.058, 0.044, 0.09], [0, 0, 0], 10),
+      sp = shoe.getAttribute('position');
+    for (let i = 0; i < sp.count; i++) if (sp.getY(i) < 0) sp.setY(i, sp.getY(i) * 0.8); // a flatter sole
+    shoe.computeVertexNormals();
+    shoe.translate(0, -0.135, 0.025);
+    part(knee, [
+      paint(lathe([[0, 0.02], [0.055, 0.01], [0.052, -0.07], [0.053, -0.094], [0.04, -0.106], [0, -0.108]], 10), L.trousers, [-0.1, 0.02, 0.84, 0.94]),
+      paint(shoe, (p) => (p.y < -0.157 ? shade(L.shoes, 1.35) : L.shoes)),
+    ], material, 'fabric', 'shoe');
+    // The arms: a resident's sleeve and mitten hand, split at an elbow (0.095 down) so a hand can
+    // reach a cup or a can; each half is capped round at the elbow, so the joint stays whole bent.
+    const arm = new T.Group();
+    arm.name = side < 0 ? 'arm-left' : 'arm-right';
+    arm.position.set(side * SHOULDER.x, SHOULDER.y, 0);
+    arm.rotation.z = side * 0.12;
+    root.add(arm);
+    part(arm, [paint(lathe([[0, 0.045], [0.04, 0.035], [0.055, 0.0], [0.051, -0.05], [0.048, -UPPER], [0.034, -0.129], [0, -0.143]], 10), L.top, [-0.14, 0.03, 0.9, 1.04])], material, 'fabric');
+    const elbow = new T.Group();
+    elbow.name = 'elbow';
+    elbow.position.y = -UPPER;
+    arm.add(elbow);
+    part(elbow, [
+      paint(lathe([[0, 0.048], [0.034, 0.034], [0.047, 0.0], [0.045, -0.04], [0.043, -0.072], [0.03, -0.083], [0, -0.088]], 10), L.top, [-0.08, 0.04, 0.88, 1.0]),
+      paint(blob([0.043, 0.05, 0.046], [0, -FORE, 0], 8), L.skin),
+    ], material, 'fabric');
+    legs.push(hip);
+    knees.push(knee);
+    arms.push(arm);
+    elbows.push(elbow);
+  }
+  const props = createProps(material);
+  root.add(props.can, props.cup, props.saucer, props.book);
+  root.userData.gait = { phase: 0, amount: 0 };
+  root.userData.sole = 0;
+  const joints: AlisonJoints = {
+    root,
+    body,
+    legs: legs as [T.Object3D, T.Object3D],
+    knees: knees as [T.Object3D, T.Object3D],
+    arms: arms as [T.Object3D, T.Object3D],
+    elbows: elbows as [T.Object3D, T.Object3D],
+  };
+  poseAlison(joints, props, 'stand', 0);
+  return { root, joints, props };
+}
+
+/* ------------------------------------------------------------------ */
+/* Poses                                                               */
+/* ------------------------------------------------------------------ */
+export const ALISON_POSES = ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'read'] as const;
+export type AlisonPose = (typeof ALISON_POSES)[number];
+
+const tmp = new T.Vector3(),
+  basis = new T.Matrix4();
+/** A body-frame point after the body leans forward by `a` about the hip line (as seatRider leans the rider). */
+function leaned([x, y, z]: V3, a: number): V3 {
+  const dy = y - HIP;
+  return [x, HIP + dy * Math.cos(a) - z * Math.sin(a), dy * Math.sin(a) + z * Math.cos(a)];
+}
+/**
+ * Lean the body forward by `a` about the hip line (y 0.31), carrying the shoulders with it; `reach`
+ * draws each shoulder in, up and forward (the shoulder blade sliding round as an arm reaches out).
+ */
+function lean(j: AlisonJoints, a: number, reach: V3 = [0, 0, 0]) {
+  j.body.rotation.set(a, 0, 0);
+  j.body.position.set(0, HIP - HIP * Math.cos(a), -HIP * Math.sin(a));
+  j.arms.forEach((arm, k) => arm.position.set(...leaned([(k ? 1 : -1) * (SHOULDER.x - reach[0]), SHOULDER.y + reach[1], reach[2]], a)));
+}
+/** A hand's centre (the mitten's) in her root's frame, from its arm and elbow as posed. */
+export function alisonHand(j: AlisonJoints, k: 0 | 1, out = new T.Vector3()) {
+  const arm = j.arms[k],
+    elbow = j.elbows[k];
+  return out.set(0, -FORE, 0).applyQuaternion(elbow.quaternion).add(elbow.position).applyQuaternion(arm.quaternion).add(arm.position);
+}
+/**
+ * Put hand k's centre on `target` (her root's frame) by a two-bone solve from the shoulder, the
+ * elbow pointing along `bend` as far as it can (out and down, so the arm folds as an arm does), the
+ * forearm folding forward about the elbow. A target out of reach leaves the arm straight towards
+ * it, and the checks catch that.
+ */
+function reach(j: AlisonJoints, k: 0 | 1, target: V3, bend: V3) {
+  const S = j.arms[k].position,
+    d = new T.Vector3(target[0] - S.x, target[1] - S.y, target[2] - S.z),
+    dist = T.MathUtils.clamp(d.length(), FORE - UPPER + 1e-4, UPPER + FORE - 1e-4),
+    a = d.normalize(),
+    cosA = (UPPER * UPPER + dist * dist - FORE * FORE) / (2 * UPPER * dist),
+    e = new T.Vector3(...bend);
+  e.addScaledVector(a, -e.dot(a)).normalize();
+  // The upper arm's direction, then the forearm's.
+  const u = a.clone().multiplyScalar(cosA).addScaledVector(e, Math.sqrt(Math.max(0, 1 - cosA * cosA))),
+    f = a.clone().multiplyScalar(dist).addScaledVector(u, -UPPER).normalize(),
+    cosE = T.MathUtils.clamp(f.dot(u), -1, 1);
+  // The arm's frame: -y down the upper arm, z the way the forearm folds, x across.
+  const ly = u.clone().negate(),
+    lz = f.clone().addScaledVector(u, -cosE);
+  if (lz.lengthSq() < 1e-10) lz.set(0, 0, 1).addScaledVector(u, -u.z);
+  lz.normalize();
+  j.arms[k].quaternion.setFromRotationMatrix(basis.makeBasis(new T.Vector3().crossVectors(ly, lz), ly, lz));
+  j.elbows[k].rotation.set(-Math.acos(cosE), 0, 0);
+}
+/** The lowest point of a leg's shoe above the floor its hip stands over, for a hip swing a and a knee bend b (animateResident's sole). */
+function sole(a: number, b: number) {
+  const c = a + b;
+  return HIP - 0.14 * Math.cos(a) - 0.135 * Math.cos(c) - 0.025 * Math.sin(c) - Math.hypot(0.035 * Math.cos(c), 0.09 * Math.sin(c));
+}
+const smooth = T.MathUtils.smoothstep,
+  TAU = Math.PI * 2;
+
+/** The 'water' pose: her lean, how far her shoulders reach in, up and forward, the can's grip in her -x hand, and its tilt (spout down) and turn (towards her middle). */
+const WATER = { lean: 0.14, reach: [0.01, 0.015, 0.04] as V3, grip: [-0.125, 0.636, 0.26] as V3, tilt: 0.62, yaw: 0.25 };
+/** The 'sip' pose: her lean and reach, the saucer's foot where her +x hand holds it, in front of her, and her lips (the cup's axis there, before the lean). */
+const SIP = { lean: 0.05, reach: [0.012, 0, 0.035] as V3, saucer: [0.03, 0.468, 0.214] as V3, lips: [0, 0.655, 0.178] as V3 };
+/** The 'read' pose: her lean and reach, the book's spine where she holds it, and its tilt (the pages up and a little towards her). */
+const READ = { lean: 0.05, reach: [0.012, 0, 0.03] as V3, book: [0, 0.478, 0.215] as V3, tilt: -0.2 };
+/** The 'telescope' pose's stoop (from the hips) and how far her shoulders reach in, up and forward. */
+const SCOPE = { lean: 0.26, reach: [0.015, 0.02, 0.05] as V3 };
+/**
+ * Where a hand holds each prop, in the prop's own frame: the can's handle and the cup's lug in her
+ * -x hand (hand 0), the saucer's near rim in her +x hand (hand 1), the book's near corners in both.
+ */
+export const ALISON_HOLDS = {
+  can: [0, 0, 0] as V3,
+  cup: [0, 0, 0] as V3,
+  saucer: [0.066, 0.03, -0.038] as V3,
+  book: [[-0.118, -0.012, -0.045], [0.118, -0.012, -0.045]] as [V3, V3],
+};
+/**
+ * The telescope in her frame, which is the station's: her root on the deck, facing +z, the town
+ * ahead and below. She stands stooped from the hips, so she looks `gaze` (15 degrees below level)
+ * straight down a refractor on a tripod: its eyepiece's eye end at `eyepiece` (0.06 beyond her
+ * eye, clear of her glasses); its tube runs on from there along `gaze`, radius `radius`; her hands
+ * cradle the eyepiece end from below on either side (`grips`, their centres 0.083 off the axis),
+ * elbows out. She is 0.93 tall and her eye is 0.77 up standing, so an eyepiece 1.1 to 1.3 up would
+ * be over her head: the eyepiece is at her stooped eye (ALISON.eyepiece up, ALISON.standOff ahead).
+ */
+export const ALISON_TELESCOPE = (() => {
+  const eye = leaned(EYE, SCOPE.lean),
+    gaze: V3 = [0, -Math.sin(SCOPE.lean), Math.cos(SCOPE.lean)],
+    eyepiece: V3 = [0, eye[1] + gaze[1] * 0.06, eye[2] + gaze[2] * 0.06],
+    grips = [-1, 1].map((s) => leaned([s * 0.06, 0.715, 0.21], SCOPE.lean)) as [V3, V3];
+  return { eye, gaze, eyepiece, radius: 0.04, grips };
+})();
+
+/**
+ * Pose her for `name` at `phase` (0..1, looping), from nothing else: every joint and prop that any
+ * pose moves is set on each call, so poses never leak into one another, and the same arguments
+ * always give the same pose. Returns `lift`: her root's height over the floor under her (standing
+ * and walking, her lowest sole touches it; seated, her thighs rest on a seat `seat` high,
+ * ALISON.seat by default). Place her root at the floor plus lift.
+ * - 'stand': at ease.
+ * - 'walk': one stride a phase (two steps), the residents' gait: ALISON.stride units a phase.
+ *   `amount` (1 by default) scales the gait, so 0 is 'stand' and a walk can ease in and out.
+ * - 'water': standing, the can held out in her -x hand by its handle and tipped, so its rose hangs
+ *   over a border in front of her (ALISON.rose), swaying gently along it; her other hand on her hip.
+ * - 'sit': on a seat, hands on her thighs.
+ * - 'sip': seated, the saucer held in front of her in her +x hand, the cup lifted from it to her
+ *   lips and down again in her -x hand (on the saucer from 0.88 round to 0.12, at her lips from
+ *   0.4 to 0.6).
+ * - 'telescope': standing, stooped a little to the eyepiece (ALISON_TELESCOPE), both hands on the tube.
+ * - 'read': seated, an open book held by its near corners.
+ */
+export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose, phase: number, opts: { seat?: number; amount?: number } = {}) {
+  const u = ((phase % 1) + 1) % 1;
+  // At ease: upright, legs straight, arms down and a little out, elbows soft, no props.
+  lean(j, 0);
+  j.legs.forEach((leg) => leg.rotation.set(0, 0, 0));
+  j.knees.forEach((knee) => knee.rotation.set(0, 0, 0));
+  j.arms.forEach((arm, k) => arm.rotation.set(0, 0, (k ? 1 : -1) * 0.12));
+  j.elbows.forEach((elbow) => elbow.rotation.set(-0.12, 0, 0));
+  for (const p of Object.values(props)) {
+    p.visible = false;
+    p.position.set(0, 0, 0);
+    p.rotation.set(0, 0, 0, 'XYZ');
+  }
+  let lift = 0;
+  if (name === 'sit' || name === 'sip' || name === 'read') {
+    // Thighs level and a little apart, shins hanging just forward of plumb, sitting up.
+    lift = Math.max(0.11, opts.seat ?? SEAT) + THIGH_R - HIP;
+    j.legs.forEach((leg, k) => leg.rotation.set(-Math.PI / 2, 0, (k ? 1 : -1) * 0.07));
+    j.knees.forEach((knee) => knee.rotation.set(Math.PI / 2 - 0.12, 0, 0));
+    lean(j, -0.03);
+  }
+  if (name === 'walk') {
+    // The residents' own walk, one stride a phase; the elbows fold a little more as each arm swings forward.
+    const amount = T.MathUtils.clamp(opts.amount ?? 1, 0, 1);
+    j.root.userData.gait = { phase: u * TAU, amount };
+    animateResident(j.root, 0, 0, false);
+    lift = -j.root.userData.sole;
+    j.arms.forEach((arm, k) => j.elbows[k].rotation.set(-0.12 - 0.04 * amount - 0.5 * Math.max(0, -arm.rotation.x), 0, 0));
+  } else if (name === 'water') {
+    const sway = Math.sin(u * TAU),
+      can = props.can;
+    lean(j, WATER.lean, WATER.reach);
+    reach(j, 0, [WATER.grip[0] + 0.014 * sway, WATER.grip[1] + 0.006 * Math.sin(u * TAU * 2), WATER.grip[2]], [-0.8, -0.6, -0.2]);
+    can.visible = true;
+    alisonHand(j, 0, can.position);
+    can.rotation.set(WATER.tilt + 0.05 * Math.sin(u * TAU * 2), WATER.yaw + 0.1 * sway, 0, 'YXZ');
+    // Her other hand rests on her hip, its elbow out.
+    reach(j, 1, leaned([0.19, 0.455, 0.03], WATER.lean), [0.9, -0.1, -0.5]);
+  } else if (name === 'sit') {
+    for (const k of [0, 1] as const) reach(j, k, [(k ? 1 : -1) * 0.1, 0.42, 0.075], [(k ? 1 : -1) * 0.8, -0.2, -0.6]);
+  } else if (name === 'sip') {
+    // The saucer held level in front of her; the cup lifted from its well to her lips and back,
+    // on an arc that swings it clear of her chin.
+    const { cup, saucer } = props,
+      S = SIP.saucer,
+      lifted = smooth(u, 0.12, 0.4) - smooth(u, 0.6, 0.88),
+      rest: V3 = [S[0], S[1] + 0.036 + 0.037, S[2]],
+      lips = leaned(SIP.lips, SIP.lean),
+      at = (i: number) => T.MathUtils.lerp(rest[i], lips[i], lifted) + (i === 2 ? 0.03 * Math.sin(Math.PI * lifted) : 0);
+    lean(j, SIP.lean, SIP.reach);
+    saucer.visible = cup.visible = true;
+    saucer.position.set(...S);
+    // The cup turned so its handle faces her -x hand (back and to -x), tipped to her lips at the top.
+    cup.rotation.set(-0.55 * smooth(lifted, 0.55, 1), -0.5, 0, 'YXZ');
+    const lug = tmp.set(-CUP_AXIS, 0, 0).applyQuaternion(cup.quaternion);
+    cup.position.set(at(0) + lug.x, at(1) + lug.y, at(2) + lug.z);
+    reach(j, 0, [cup.position.x, cup.position.y, cup.position.z], [-0.8, -0.5, -0.3]);
+    const hold = ALISON_HOLDS.saucer;
+    reach(j, 1, [S[0] + hold[0], S[1] + hold[1], S[2] + hold[2]], [0.8, -0.4, -0.3]);
+  } else if (name === 'telescope') {
+    const S = ALISON_TELESCOPE;
+    lean(j, SCOPE.lean, SCOPE.reach);
+    // A short stance: her -x foot a little back.
+    j.legs[0].rotation.set(0.09, 0, 0);
+    j.legs[1].rotation.set(-0.05, 0, 0);
+    lift = -Math.min(sole(0.09, 0), sole(-0.05, 0));
+    for (const k of [0, 1] as const) reach(j, k, S.grips[k], [(k ? 1 : -1) * 0.9, -0.4, -0.3]);
+  } else if (name === 'read') {
+    const book = props.book;
+    lean(j, READ.lean, READ.reach);
+    book.visible = true;
+    book.position.set(...READ.book);
+    book.rotation.set(READ.tilt, 0, 0, 'XYZ');
+    book.updateMatrix();
+    for (const k of [0, 1] as const) {
+      const corner = tmp.set(...ALISON_HOLDS.book[k]).applyMatrix4(book.matrix);
+      reach(j, k, [corner.x, corner.y, corner.z], [(k ? 1 : -1) * 0.8, -0.4, -0.4]);
+    }
+  }
+  j.root.userData.lift = lift;
+  return { lift };
+}
+/** Where the 'water' pose's rose (the middle of the spout's flared end) is at phase 0, in her frame. */
+const WATER_ROSE = ((): V3 => {
+  const g = () => new T.Group(),
+    j: AlisonJoints = { root: g(), body: g(), legs: [g(), g()], knees: [g(), g()], arms: [g(), g()], elbows: [g(), g()] },
+    props: AlisonProps = { can: g(), cup: g(), saucer: g(), book: g() };
+  j.elbows.forEach((e, k) => {
+    j.arms[k].add(e);
+    e.position.y = -UPPER;
+  });
+  poseAlison(j, props, 'water', 0);
+  props.can.updateMatrix();
+  const tip = new T.Vector3(...ROSE).applyMatrix4(props.can.matrix);
+  return [tip.x, tip.y, tip.z];
+})();
+
+/**
+ * What a station needs to know of her (units; her frame has its origin under her root, +z the way
+ * she faces):
+ * - `height`: standing, to the crown of her hair.
+ * - `seat`: the seat she sits at, its top above her floor (the town's park bench); `setback`: her
+ *   root stands this far behind the seat's front edge, so her knees clear it and her shins hang free.
+ * - `eyepiece` and `standOff`: where the telescope's eyepiece must be for the 'telescope' pose,
+ *   above the floor she stands on and ahead of her root (ALISON_TELESCOPE has the rest).
+ * - `rose`: the middle of the can's rose in the 'water' pose, [x, y above her floor, z ahead of her
+ *   root]. Nothing of the can hangs under 0.38, so what she waters should stand under that there
+ *   (the town's flower bed does between its blooms: its mound tops out at 0.37, they reach 0.47).
+ * - `stride`: how far one 'walk' phase (two steps) carries her.
+ */
+export const ALISON = {
+  height: 0.93,
+  seat: SEAT,
+  setback: 0.09,
+  eyepiece: ALISON_TELESCOPE.eyepiece[1],
+  standOff: ALISON_TELESCOPE.eyepiece[2],
+  rose: WATER_ROSE,
+  stride: STRIDE,
+};

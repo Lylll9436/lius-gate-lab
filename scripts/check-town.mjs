@@ -20,6 +20,7 @@ for (const name of [
   'city-districts',
   'city-materials',
   'city-people',
+  'sky-figure',
   'city-hover',
   'city-inspection',
   'city-ink',
@@ -4395,6 +4396,351 @@ const atRest = (p, level) => [0, p.light[0], 0.8].some((v) => Math.abs(level - v
   const size = box.getSize(new T.Vector3()),
     trunk = new T.Box3().setFromObject(dog.children.find((m) => m.isMesh && m.castShadow)).getSize(new T.Vector3());
   assert(trunk.z > 0.3 && trunk.z < 0.4 && size.z < 0.62 && box.max.y < 0.33 && Math.abs(box.min.y) < 0.004, `The dog is ${size.toArray().map((v) => v.toFixed(2)).join(' x ')}.`);
+}
+// Alison Heppenstall's figure (sky-figure.ts), built on her own. She is the town's one named
+// person, so she has a builder and a block of her own, and the residents above stay generic.
+// - Build: a resident's pivots (so their walk drives her) and an elbow in each arm; at most 5,000
+//   triangles in 15 meshes as built (11 of her and her four hand props), 14 once batched part by
+//   part; every mesh in a surface kind, one-sided, opaque and cutting no holes, its colours on its
+//   vertices. She stands as tall as a resident (from the shortest walker to the helmeted rider),
+//   her soles on y 0, inside the walkers' 0.27.
+// - Colour: everything on her stays at or under the figures' 0.55 (HSV, sRGB) BUT HER HAIR, the
+//   one named exception to that rule: a ginger that may reach HAIR_SATURATION, 0.70 (her hair is her
+//   likeness; held to 0.55 it reads brown, and at F1a's 0.62 it rendered a salmon brown beside the
+//   portrait under the town's 0.72 grade). It must be copper to ginger: over 0.55, every shade's hue
+//   between 15 and 32 degrees, and its median the portrait's orange, 20 to 28 (F1a's salmon copper
+//   is 19).
+// - Hair: long, loose locks falling past her shoulders, never again a cluster of small balls (F1a's
+//   34 lobes, none over 0.16 long) or a hood. Standing: its pieces (runs of joined faces) of 12
+//   triangles or more number 8 to 20, and four fifths of its triangles lie in pieces 0.25 or more
+//   long; from in front it is at most 1.5 times her head's width at her cheeks, at least 1.2 times
+//   (so it still frames her face), and no wider below them; behind her it reaches below 0.5, well
+//   under her shoulders (0.6), and stops above 0.36 (about mid-back); and from the town camera's
+//   height, from in front to 40 degrees either side, a ray at each of her eyes meets her glasses
+//   band at the eye, not her hair.
+// - Thickness: every joined piece of her props, her glasses and her pendant is 0.07 or more across
+//   every way (thinner ones twinkle as the view moves). Her nose is a resident's, a 0.04 bump sunk
+//   in her face. Each of her hair's locks is 0.072 or more through as built (sky-figure's line());
+//   they run into one another and the crown, so the bits of one that show between others are not
+//   pieces of their own.
+// - Poses, each over a sweep of phases: nothing non-finite; standing, walking, watering and at the
+//   telescope her lower sole is on her floor; seated, her thighs rest on the seat (the park
+//   bench's, which ALISON.seat must be, and any other she is given) and her shins hang clear of
+//   its front edge; her hands are on what the pose holds (the can's handle; the cup's lug and the
+//   saucer's rim; the book's corners; the telescope's grips) and only that pose's props show; a
+//   pose depends on nothing but its arguments; a walk of amount 0 is 'stand', and one phase of it
+//   is one of the residents' strides. The can's rose stays about ALISON.rose, ahead of her toes,
+//   and at the telescope her eye is behind the eyepiece ALISON places, looking down its tube.
+{
+  const { createAlison, poseAlison, alisonHand, ALISON, ALISON_POSES, ALISON_HOLDS, ALISON_TELESCOPE, HAIR_SATURATION } = await load('sky-figure'),
+    { createResident, animateResident, HEAD } = await load('city-people'),
+    { createProps } = await load('town-props'),
+    { createKit } = await load('town-kit'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    { root, joints, props } = createAlison(library.material),
+    hand = Object.values(props),
+    meshes = [],
+    v = new T.Vector3(),
+    tri = (m) => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3,
+    held = (m) => hand.includes(m.parent),
+    label = (m) => `${m.parent.name || 'part'}${m.name ? '/' + m.name : ''}`;
+  root.traverse((o) => o.isMesh && meshes.push(o));
+  assert.equal(root.name, 'alison');
+  assert.equal(meshes.length, 15, `Alison is ${meshes.length} meshes as built.`);
+  assert.equal(meshes.filter(held).length, 4, 'Each of her four props is one mesh.');
+  const triangles = meshes.reduce((n, m) => n + tri(m), 0);
+  assert(triangles <= 5000, `Alison costs ${triangles} triangles.`);
+  // Her pivots are the residents', found by name as animateResident finds them.
+  assert.equal(root.getObjectByName('body'), joints.body);
+  for (const [k, name] of ['left', 'right'].entries()) {
+    assert.equal(root.getObjectByName('leg-' + name), joints.legs[k]);
+    assert.equal(joints.legs[k].getObjectByName('knee'), joints.knees[k]);
+    assert.equal(root.getObjectByName('arm-' + name), joints.arms[k]);
+    assert.equal(joints.arms[k].getObjectByName('elbow'), joints.elbows[k]);
+  }
+  // Batched as town-build batches its figures (each group's own meshes, one batch a kind and a
+  // shadow flag, a mesh casting when its longest side is 0.3 or more): 14.
+  let batched = 0;
+  for (const g of [joints.body, ...joints.legs, ...joints.knees, ...joints.arms, ...joints.elbows, ...hand]) {
+    const own = g.children.filter((c) => c.isMesh);
+    assert(own.length, `Her ${g.name} has no mesh.`);
+    batched += new Set(own.map((m) => {
+      m.geometry.computeBoundingBox();
+      const s = m.geometry.boundingBox.getSize(v);
+      return `${m.material.userData.surfaceKind}|${Math.max(s.x, s.y, s.z) >= 0.3}`;
+    })).size;
+  }
+  assert.equal(batched, 14, `Alison batches into ${batched} meshes.`);
+  const saturation = (c) => {
+      const max = Math.max(c.r, c.g, c.b);
+      return max ? (max - Math.min(c.r, c.g, c.b)) / max : 0;
+    },
+    colour = new T.Color(),
+    hues = [];
+  // 0.70, raised from F1a's 0.62 so her hair reads the portrait's ginger after the town's grade.
+  assert.equal(HAIR_SATURATION, 0.7, 'Her hair’s exception is 0.70, and no more.');
+  for (const m of meshes) {
+    const kind = m.material.userData.surfaceKind,
+      c = m.geometry.getAttribute('color'),
+      hair = m.name === 'alison-hair';
+    assert(kind === 'fabric' || kind === 'paint', `Her ${label(m)} is in no surface kind of a figure's (${kind}).`);
+    assert(m.material.side === T.FrontSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest && m.material.depthWrite, `Her ${label(m)} is two-sided, transparent or cut out.`);
+    assert(!m.material.onBeforeCompile || !patchedShader(m.material).fragmentShader.includes('discard'), `Her ${label(m)} cuts holes.`);
+    assert(c && c.count === m.geometry.getAttribute('position').count, `Her ${label(m)} has no colours on its vertices.`);
+    let loudest = 0;
+    for (let k = 0; k < c.count; k++) {
+      colour.fromBufferAttribute(c, k).convertLinearToSRGB();
+      const s = saturation(colour);
+      loudest = Math.max(loudest, s);
+      // The named exception: her hair, and only her hair, up to HAIR_SATURATION.
+      assert(s <= (hair ? HAIR_SATURATION : 0.55) + 1e-4, `Her ${label(m)} wears a colour louder than ${hair ? 'her hair may be' : "the town's figures"} (${colour.getHexString()}, ${s.toFixed(3)}).`);
+      if (hair) {
+        const hue = (60 * (colour.g - colour.b)) / (colour.r - colour.b);
+        assert(colour.r > colour.g && colour.g > colour.b && hue >= 15 && hue <= 32, `Her hair is not copper to ginger (${colour.getHexString()}, hue ${hue.toFixed(0)}).`);
+        hues.push(hue);
+      }
+    }
+    if (hair) {
+      assert(loudest > 0.55, `Her hair is no louder than a resident's (${loudest.toFixed(3)}): the exception is not needed, or the ginger has gone brown.`);
+      const median = hues.sort((a, b) => a - b)[hues.length >> 1];
+      assert(median >= 20 && median <= 28, `Her hair's median hue is ${median.toFixed(1)}, not the portrait's orange (20 to 28).`);
+    }
+  }
+  // Each run of joined faces in a mesh, as its box in the mesh's own frame.
+  const pieces = (m) => {
+    const q = m.geometry.getAttribute('position'),
+      index = m.geometry.index,
+      at = (i) => (index ? index.getX(i) : i),
+      key = (i) => [q.getX(at(i)), q.getY(at(i)), q.getZ(at(i))].map((n) => n.toFixed(4)).join(','),
+      n = index ? index.count : q.count,
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+    for (let i = 0; i < n; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let i = 0; i + 2 < n; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
+    const boxes = new Map(),
+      counts = new Map();
+    for (let i = 0; i < n; i++) {
+      const piece = find(key(i));
+      if (!boxes.has(piece)) boxes.set(piece, new T.Box3());
+      boxes.get(piece).expandByPoint(v.fromBufferAttribute(q, at(i)));
+      counts.set(piece, (counts.get(piece) ?? 0) + 1 / 3);
+    }
+    return [...boxes].map(([piece, b]) => ({ size: b.getSize(new T.Vector3()), centre: b.getCenter(new T.Vector3()), triangles: Math.round(counts.get(piece)) }));
+  };
+  const thin = (p) => Math.min(p.size.x, p.size.y, p.size.z) < 0.07 - 1e-3,
+    sized = (p) => p.size.toArray().map((n) => n.toFixed(3)).join(' x ');
+  for (const m of meshes.filter(held)) for (const p of pieces(m)) assert(!thin(p), `A piece of her ${label(m)} is ${sized(p)}.`);
+  // Her face's mesh: the head, the neck, the nose, the glasses and the pendant.
+  const face = joints.body.children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'paint'),
+    hard = pieces(face),
+    slight = hard.filter(thin);
+  assert.equal(hard.length, 5, `Her face is ${hard.length} pieces, not her head, neck, nose, glasses and pendant.`);
+  assert(slight.length === 1 && Math.abs(slight[0].centre.x) < 0.005 && Math.abs(slight[0].centre.y - 0.727) < 0.01 && slight[0].centre.z > 0.12 && Math.max(slight[0].size.x, slight[0].size.y, slight[0].size.z) < 0.05, `Something on her face other than her nose is under 0.07: ${slight.map(sized).join('; ')}.`);
+  const glasses = hard.find((p) => Math.abs(p.centre.y - 0.776) < 0.005 && p.size.x > 0.2),
+    pendant = hard.find((p) => p.centre.y < 0.6 && p.centre.z > 0.05 && p.size.x < 0.1);
+  assert(glasses && glasses.size.y >= 0.07 && glasses.size.z >= 0.07, 'Her glasses are no longer a band 0.07 tall and deep across her eyes.');
+  assert(pendant && !thin(pendant) && Math.max(pendant.size.x, pendant.size.y, pendant.size.z) < 0.1, 'Her pendant is not a small one of 0.07 or more.');
+  // Standing: her height, her soles and her width, her props aside.
+  const body = meshes.filter((m) => !held(m)),
+    pose = (name, phase, opts) => {
+      const { lift } = poseAlison(joints, props, name, phase, opts);
+      assert(Number.isFinite(lift), `'${name}' at ${phase} lifts her by ${lift}.`);
+      root.position.set(0, lift, 0);
+      root.updateMatrixWorld(true);
+      root.traverse((o) => assert(o.matrixWorld.elements.every(Number.isFinite), `'${name}' at ${phase} leaves her ${o.name || o.type} nowhere.`));
+      return lift;
+    },
+    box = new T.Box3();
+  pose('stand', 0);
+  for (const m of body) box.expandByObject(m);
+  const heights = [];
+  for (let i = 0; i < 9; i++) {
+    const r = createResident(i, library.material);
+    r.updateMatrixWorld(true);
+    heights.push(new T.Box3().setFromObject(r).max.y);
+  }
+  assert(box.max.y >= Math.min(...heights) - 1e-3 && box.max.y <= Math.max(...heights) + 1e-3, `Alison stands ${box.max.y.toFixed(3)} tall, the residents ${Math.min(...heights).toFixed(3)} to ${Math.max(...heights).toFixed(3)}.`);
+  assert(Math.abs(box.max.y - ALISON.height) < 0.005, `ALISON.height is ${ALISON.height}, and she stands ${box.max.y.toFixed(3)}.`);
+  assert(Math.abs(box.min.y) < 0.004, `Standing, her soles are at ${box.min.y.toFixed(3)}.`);
+  assert(Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) < 0.27, 'Alison is wider than the walkers’ clearances allow.');
+  // Her hair's shape, standing (see above): locks, not balls or a hood; its width at her cheeks and
+  // below; how far down her back it falls; and her eyes clear of it from the town camera.
+  {
+    const hair = meshes.find((m) => m.name === 'alison-hair'),
+      lumps = pieces(hair).filter((p) => p.triangles >= 12),
+      length = (p) => Math.max(p.size.x, p.size.y, p.size.z),
+      inLocks = lumps.filter((p) => length(p) >= 0.25).reduce((n, p) => n + p.triangles, 0) / lumps.reduce((n, p) => n + p.triangles, 0);
+    assert(lumps.length >= 8 && lumps.length <= 20, `Her hair is ${lumps.length} pieces: locks number 10 to 16, a cluster of balls many more, a hood one.`);
+    assert(inLocks >= 0.8, `Only ${(inLocks * 100).toFixed(0)}% of her hair lies in pieces 0.25 or more long: it is balls, not locks.`);
+    const q = hair.geometry.getAttribute('position'),
+      width = (lo, hi) => {
+        let min = Infinity,
+          max = -Infinity;
+        for (let i = 0; i < q.count; i++) {
+          v.fromBufferAttribute(q, i).applyMatrix4(hair.matrixWorld);
+          if (v.y >= lo && v.y < hi) {
+            min = Math.min(min, v.x);
+            max = Math.max(max, v.x);
+          }
+        }
+        return max - min;
+      },
+      head = 2 * HEAD.r[0],
+      cheeks = width(0.68, 0.74);
+    assert(cheeks <= 1.5 * head && cheeks >= 1.2 * head, `At her cheeks her hair is ${(cheeks / head).toFixed(2)} times her head's width, not 1.2 to 1.5.`);
+    for (const [lo, hi] of [[0.6, 0.68], [0.5, 0.6], [0.4, 0.5]]) assert(width(lo, hi) <= cheeks + 0.005, `Her hair is wider from ${lo} to ${hi} (${width(lo, hi).toFixed(3)}) than at her cheeks (${cheeks.toFixed(3)}).`);
+    let back = Infinity;
+    for (let i = 0; i < q.count; i++) if (v.fromBufferAttribute(q, i).applyMatrix4(hair.matrixWorld).z < -0.06) back = Math.min(back, v.y);
+    assert(back < 0.5 && back > 0.36, `Behind her, her hair reaches down to ${back.toFixed(3)}: not past her shoulders to mid-back.`);
+    // Her eyes as drawn on the glasses band: 0.054 either side of the bridge, 0.772 up, just in front of it.
+    const ray = new T.Raycaster(),
+      rise = Math.atan2(35, 38);
+    for (let deg = -40; deg <= 40; deg += 10)
+      for (const side of [-1, 1]) {
+        const turn = (deg * Math.PI) / 180,
+          look = new T.Vector3(-Math.sin(turn) * Math.cos(rise), -Math.sin(rise), -Math.cos(turn) * Math.cos(rise)),
+          eye = new T.Vector3(side * 0.054, 0.772, 0.145);
+        ray.set(eye.clone().addScaledVector(look, -3), look);
+        const first = ray.intersectObjects([hair, face])[0];
+        assert(first && first.object === face && first.point.distanceTo(eye) < 0.012, `From ${deg} degrees her ${side < 0 ? 'right' : 'left'} eye is hidden by her hair.`);
+      }
+  }
+  // The seat she sits at is the park bench's: the top of its seat's slats, under its back's.
+  const ctx = { library, material: library.material, season: 'summer', land: new T.Group(), lamps: [], clocks: [], animated: [] },
+    bench = createProps(ctx, createKit(ctx)).bench(new T.Group(), 0, 0, 0);
+  let seatTop = 0,
+    seatFront = 0;
+  bench.updateMatrixWorld(true);
+  bench.traverse((m) => {
+    if (!m.isMesh || m.material.userData.surfaceKind !== 'wood') return;
+    const q = m.geometry.getAttribute('position');
+    for (let i = 0; i < q.count; i++) {
+      v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+      if (v.y > 0.47) continue; // the back's lower slat comes down to 0.50
+      seatTop = Math.max(seatTop, v.y);
+      seatFront = Math.max(seatFront, v.z);
+    }
+  });
+  assert(Math.abs(ALISON.seat - seatTop) < 1e-3, `ALISON.seat is ${ALISON.seat}, the park bench's seat ${seatTop.toFixed(3)}.`);
+  assert(seatFront > 0.2 && ALISON.setback > 0 && ALISON.setback < seatFront, `She cannot sit ${ALISON.setback} back on a seat that reaches ${seatFront.toFixed(3)} forward.`);
+  const lowest = (list) => {
+      let low = Infinity;
+      for (const m of list) {
+        const q = m.geometry.getAttribute('position');
+        for (let i = 0; i < q.count; i++) low = Math.min(low, v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld).y);
+      }
+      return low;
+    },
+    own = (g) => g.children.filter((c) => c.isMesh),
+    shoes = joints.knees.map((k) => own(k)[0]),
+    thighs = joints.legs.map((l) => own(l)[0]),
+    snapshot = () => [joints.body, ...joints.legs, ...joints.knees, ...joints.arms, ...joints.elbows, ...hand].flatMap((o) => [...o.matrixWorld.elements, o.visible ? 1 : 0]),
+    same = (a, b) => a.every((n, i) => Math.abs(n - b[i]) < 1e-12),
+    grip = (prop, at) => v.set(...at).applyMatrix4(prop.matrixWorld).clone(),
+    palm = [new T.Vector3(), new T.Vector3()],
+    shows = { water: ['can'], sip: ['cup', 'saucer'], read: ['book'] },
+    phases = [...Array.from({ length: 25 }, (_, s) => s / 24), -0.25, 7.6];
+  assert.deepEqual([...ALISON_POSES], ['stand', 'walk', 'water', 'sit', 'sip', 'telescope', 'read']);
+  for (const name of ALISON_POSES)
+    for (const seat of name === 'sit' || name === 'sip' || name === 'read' ? [undefined, 0.38] : [undefined])
+      for (const phase of phases) {
+        const at = `'${name}' at ${phase}`,
+          opts = seat ? { seat } : {},
+          lift = pose(name, phase, opts),
+          first = snapshot();
+        for (const [prop, g] of Object.entries(props)) assert.equal(g.visible, (shows[name] ?? []).includes(prop), `${at}: her ${prop} ${g.visible ? 'shows' : 'is hidden'}.`);
+        if (name === 'sit' || name === 'sip' || name === 'read') {
+          const top = seat ?? ALISON.seat;
+          assert(Math.abs(lowest(thighs) - top) < 2e-3, `${at}: her thighs rest ${lowest(thighs).toFixed(3)} up, the seat is ${top}.`);
+          // Her shins and shoes hang in front of the seat's front edge, ALISON.setback ahead of her root.
+          for (const m of shoes) {
+            const q = m.geometry.getAttribute('position');
+            for (let i = 0; i < q.count; i++) {
+              v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld);
+              assert(v.y > top - 1e-3 || v.z > ALISON.setback, `${at}: her shin is in the seat at ${v.y.toFixed(3)} up, ${v.z.toFixed(3)} forward.`);
+            }
+          }
+          assert(lift > 0 && lowest(shoes) > 0.02, `${at}: her soles are in her floor.`);
+        } else {
+          const low = shoes.map((m) => lowest([m]));
+          assert(Math.abs(Math.min(...low)) < 4e-3, `${at}: her lower sole is ${Math.min(...low).toFixed(4)} off her floor.`);
+        }
+        for (const k of [0, 1]) alisonHand(joints, k, palm[k]).applyMatrix4(root.matrixWorld);
+        const holds =
+          name === 'water' ? [grip(props.can, ALISON_HOLDS.can), null]
+          : name === 'sip' ? [grip(props.cup, ALISON_HOLDS.cup), grip(props.saucer, ALISON_HOLDS.saucer)]
+          : name === 'read' ? ALISON_HOLDS.book.map((c) => grip(props.book, c))
+          : name === 'telescope' ? ALISON_TELESCOPE.grips.map((c) => new T.Vector3(...c).applyMatrix4(root.matrixWorld))
+          : [null, null];
+        holds.forEach((h, k) => h && assert(palm[k].distanceTo(h) < 2e-3, `${at}: her hand ${k} is ${palm[k].distanceTo(h).toFixed(3)} off what it holds.`));
+        // The same arguments give the same pose, whatever she did in between.
+        pose(name === 'walk' ? 'sip' : 'walk', 0.37);
+        pose(name, phase, opts);
+        assert(same(first, snapshot()), `${at} depends on the pose before it.`);
+      }
+  // A walk loops, a walk of amount 0 is 'stand', and one phase is one of the residents' strides.
+  pose('walk', 0);
+  const start = snapshot();
+  pose('walk', 1);
+  assert(same(start, snapshot()), 'Her walk does not loop.');
+  pose('stand', 0);
+  const still = snapshot();
+  pose('walk', 0.3, { amount: 0 });
+  assert(same(still, snapshot()), 'A walk of amount 0 is not her standing.');
+  const walker = createResident(0, library.material);
+  walker.userData.gait = { phase: 0, amount: 1 };
+  animateResident(walker, ALISON.stride, 0.1, false);
+  assert(Math.abs(walker.userData.gait.phase - Math.PI * 2) < 1e-9, `ALISON.stride (${ALISON.stride}) is not one of the residents' strides.`);
+  // Watering: the can's far end, its rose, is where ALISON.rose says, ahead of her toes; nothing
+  // of the can hangs under 0.38 (the town's flower beds mound to 0.37), and the rose sways about
+  // ALISON.rose, gently.
+  const toes = (pose('stand', 0), Math.max(...shoes.map((m) => new T.Box3().setFromObject(m).max.z)));
+  assert(ALISON.rose[2] > toes + 0.2 && ALISON.rose[1] > 0.4 && ALISON.rose[1] < 0.6, `The can's rose is at ${ALISON.rose.map((n) => n.toFixed(3))}.`);
+  const can = own(props.can)[0],
+    rose = new T.Vector3(...ALISON.rose),
+    tip = (phase) => {
+      pose('water', phase);
+      // The rose: the middle of the can's vertices within 0.06 of its far end, along its length.
+      const q = can.geometry.getAttribute('position'),
+        mid = new T.Vector3();
+      let far = -Infinity,
+        n = 0;
+      for (let i = 0; i < q.count; i++) far = Math.max(far, q.getZ(i));
+      for (let i = 0; i < q.count; i++)
+        if (q.getZ(i) > far - 0.06) {
+          mid.add(v.fromBufferAttribute(q, i));
+          n++;
+        }
+      return mid.divideScalar(n).applyMatrix4(can.matrixWorld);
+    };
+  assert(tip(0).distanceTo(rose) < 0.03, `ALISON.rose is ${tip(0).distanceTo(rose).toFixed(3)} from the can's rose.`);
+  let sway = 0;
+  for (let s = 0; s < 24; s++) {
+    const d = tip(s / 24).distanceTo(rose);
+    assert(d < 0.08, `The can's rose swings ${d.toFixed(3)} from ALISON.rose.`);
+    assert(lowest([can]) >= 0.38, `The can hangs down to ${lowest([can]).toFixed(3)}.`);
+    sway = Math.max(sway, d);
+  }
+  assert(sway > 0.015, 'The can does not sway.');
+  // At the telescope: her eye where ALISON_TELESCOPE has it, 0.05 to 0.08 behind the eyepiece
+  // and on its axis; the eyepiece where ALISON says, in front of her and no higher than her head.
+  pose('telescope', 0);
+  const S = ALISON_TELESCOPE,
+    eye = new T.Vector3(0, 0.772, 0.137).applyMatrix4(joints.body.matrixWorld).sub(root.position),
+    gaze = new T.Vector3(...S.gaze),
+    back = new T.Vector3(...S.eyepiece).sub(eye);
+  assert(eye.distanceTo(new T.Vector3(...S.eye)) < 1e-3, 'At the telescope her eye is not where ALISON_TELESCOPE has it.');
+  assert(Math.abs(gaze.length() - 1) < 1e-9 && gaze.y < -0.1 && gaze.y > -0.45 && gaze.z > 0, `She looks ${S.gaze.map((n) => n.toFixed(3))} down the telescope.`);
+  assert(back.length() > 0.05 && back.length() < 0.08 && back.clone().normalize().dot(gaze) > 0.999, 'The eyepiece is not on her line of sight, a little in front of her eye.');
+  assert(ALISON.eyepiece === S.eyepiece[1] && ALISON.standOff === S.eyepiece[2] && S.eyepiece[0] === 0, 'ALISON’s eyepiece is not ALISON_TELESCOPE’s.');
+  assert(ALISON.eyepiece > 0.6 && ALISON.eyepiece < ALISON.height - 0.15 && ALISON.standOff > toes + 0.1 && ALISON.standOff < 0.45, `The eyepiece is ${ALISON.eyepiece.toFixed(3)} up and ${ALISON.standOff.toFixed(3)} out.`);
+  for (const g of S.grips) {
+    // Each hand's middle: its own radius and the tube's off the axis, at the tube's eyepiece end.
+    const off = new T.Vector3(...g).sub(new T.Vector3(...S.eyepiece));
+    assert(Math.abs(off.clone().cross(gaze).length() - (S.radius + 0.043)) < 0.01 && off.dot(gaze) > -0.02 && off.dot(gaze) < 0.2, 'Her hands are not on the telescope’s tube.');
+  }
+  pose('stand', 0);
 }
 // The Wellington statue as built (before batching, at its own origin): the bronze stands on its
 // plate, touching it only over the plate (in at least three of its corners: three hooves down, one
