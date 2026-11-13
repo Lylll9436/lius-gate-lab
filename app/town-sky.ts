@@ -109,8 +109,8 @@ export const SKY_ROCK = {
     // Rock standing out of the flanks, each where a view's key light finds it: south-south-west (the
     // file and the opening bearing), south-east lower down, east (q3), north-north-west (q5) and
     // west-south-west (q7).
-    lobe(-25, 0.55, -3.0, 0.8, 1.1, 0.85, 0.12, true),
-    lobe(30, 0.5, -4.6, 0.65, 0.85, 0.7, -0.1, true),
+    lobe(-22, 0.8, -3.2, 0.9, 1.3, 1.0, 0.12, true),
+    lobe(32, 0.65, -4.9, 0.7, 0.9, 0.8, -0.1, true),
     lobe(80, 0.5, -2.8, 0.65, 0.9, 0.7, 0.08, true),
     lobe(200, 0.5, -3.3, 0.7, 0.9, 0.75, -0.08, true),
     lobe(292, 0.5, -3.6, 0.7, 0.9, 0.75, 0.1, true),
@@ -126,7 +126,7 @@ export const SKY_ROCK = {
   seam: [0.12, 0.4] as [number, number],
   spike: [6.4, 7.4] as [number, number],
   wander: 0.5,
-  outcrop: [0.12, 0.45],
+  outcrop: [0.15, 0.32],
 };
 
 /**
