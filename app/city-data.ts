@@ -40,8 +40,8 @@ const places: Building[] = [
     short: t("LIU'S GATE", '刘家门'),
     category: t('CENTRAL LANDMARK', '中央地标'),
     summary: t(
-      'The gate puts the name Liu’s Gate at the centre of the city. The avenues to the other districts start here.',
-      '拱门把「刘家门」这个名字放在小城中央，通往各区的大道由此出发。',
+      'The gate puts the name Liu’s Gate at the centre of the city, and the avenues to the other districts start here. The four letters of GATE also stand for GeoAI, Analytics, Topology and Environments.',
+      '拱门把「刘家门」这个名字放在小城中央，通往各区的大道由此出发。英文名 LIU’S GATE 里的 GATE 四个字母，也分别代表 GeoAI、Analytics（城市分析）、Topology（拓扑结构）与 Environments（城市环境）。',
     ),
     style: t('Sandstone arch', '砂岩拱门'),
     architecture: t(

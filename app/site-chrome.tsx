@@ -98,7 +98,17 @@ export function Masthead({
         {/* The glass behind the wordmark: shown on narrow screens only (globals.css). */}
         <span className="wordmark-glass" aria-hidden="true" />
         <GateMark size={26} />
-        <span className="wordmark-name">{zh ? '刘家门' : 'LIU’S GATE'}</span>
+        <span className="wordmark-name">
+          {zh ? '刘家门' : 'LIU’S GATE'}
+          {/* What GATE stands for (the About this site chapter says so), under the name and left
+              out of the link's name, which stays the site's. One line on wide screens, two where
+              room is short, none on phones (globals.css), broken after its second word. */}
+          <span className="wordmark-motto" aria-hidden="true">
+            <span>GeoAI · Analytics</span>
+            <span className="wordmark-motto-dot"> · </span>
+            <span>Topology · Environments</span>
+          </span>
+        </span>
       </a>
       <nav className="masthead-nav" aria-label={zh ? '章节' : 'Chapters'}>
         {chapterMeta.map((chapter) => (

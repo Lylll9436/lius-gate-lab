@@ -351,6 +351,40 @@ img {
 .wordmark .gate-mark {
   color: var(--accent);
 }
+/* The name, with the line under it of what GATE stands for. */
+.wordmark-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  line-height: 1.1;
+}
+.wordmark-motto {
+  display: flex;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  /* The name's ink: by day the second ink went muddy on the sea under it. */
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* Its spaces kept (a flex item drops them otherwise), so this dot is spaced as the other two. */
+.wordmark-motto-dot {
+  white-space: pre;
+}
+/* On one line the motto is the wordmark's widest part (234 px): under 1240 px it would push the
+   chapter chips into two rows (from 1100 px down) and on phones push the buttons off the screen.
+   There it takes two lines, and the wordmark is 11 px wider than the name alone. */
+@media (max-width: 1239px) {
+  .wordmark-motto {
+    flex-direction: column;
+    gap: 1px;
+    font-size: 10.5px;
+  }
+  .wordmark-motto-dot {
+    display: none;
+  }
+}
 /* The wordmark's glass, behind the mark and the name on narrow screens only (see the 960 px
    rules), where the reading page scrolls under the masthead. A layer of its own, so the shared
    glass rules below can list it beside the buttons while desktop keeps the bare wordmark. */
@@ -2477,12 +2511,25 @@ summary.board-row:hover {
     padding: 0 12px;
   }
   /* The reading page scrolls under the masthead: the wordmark sits on the buttons' glass, a
-     pill of their height, so the text passing under it never runs into the name. */
+     pill of their height, so the text passing under it never runs into the name. With the nav
+     hidden the motto has the room for one line again; the name keeps 4 px above and below it,
+     so the pill holds its two lines at 44 px (in the 58 px masthead) and the name alone at the
+     buttons' height. */
   .wordmark {
     position: relative;
     min-height: 38px;
     padding: 0 14px;
     border-radius: 999px;
+  }
+  .wordmark-name {
+    padding: 4px 0;
+  }
+  .wordmark-motto {
+    flex-direction: row;
+    gap: 0;
+  }
+  .wordmark-motto-dot {
+    display: inline;
   }
   .wordmark-glass {
     display: block;
@@ -2647,6 +2694,11 @@ summary.board-row:hover {
     justify-content: center;
   }
   .wordmark-zh {
+    display: none;
+  }
+  /* No room for the motto beside the buttons on a phone (one line is 234 px; two made the pill
+     three lines tall, the name against its top): the name stands alone in its pill, as before. */
+  .wordmark-motto {
     display: none;
   }
   .hero-hint {

@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  The share card (public/og-image.jpg): the page's own fonts and colours on the left, the town on the
+  right (town.jpg: the daytime town at 680 x 630, rendered at 2x from the ?debug page). Not published.
+  To make the image again (see MAINTENANCE.md, 文案): open this file in Chrome at a 1200 x 630 viewport
+  with 2x device pixels, take a screenshot and scale it to 1200 x 630 as a JPEG of quality 88.
+  The Chinese name uses Songti SC (macOS), as the site's display font falls back to it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LIU’S GATE share card</title>
+<style>
+  @font-face { font-family: 'Fraunces'; src: url(../../node_modules/@fontsource-variable/fraunces/files/fraunces-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; }
+  @font-face { font-family: 'Inter'; src: url(../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; }
+  @font-face { font-family: 'Plex Mono'; src: url(../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2) format('woff2'); font-weight: 500; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { display: flex; background: #f6f5f0; color: #15181a; -webkit-font-smoothing: antialiased; }
+  .text { width: 520px; box-sizing: border-box; padding: 64px 40px 56px 68px; display: flex; flex-direction: column; }
+  .mark { width: 58px; height: 58px; color: #145c48; }
+  .eyebrow { margin-top: 34px; font: 500 14px/1 'Plex Mono', monospace; letter-spacing: 0.2em; color: #5f6468; }
+  h1 { margin: 16px 0 0; font: 500 80px/0.95 'Fraunces', serif; letter-spacing: -0.015em; }
+  .zh { margin-top: 12px; font: 400 34px/1.1 'Songti SC', 'Noto Serif SC', serif; color: #474c4f; letter-spacing: 0.06em; }
+  .motto { margin-top: auto; font: 500 23px/1.4 'Inter', sans-serif; color: #145c48; letter-spacing: 0.005em; }
+  .site { margin-top: 18px; font: 500 14px/1 'Plex Mono', monospace; letter-spacing: 0.12em; color: #5f6468; }
+  .town { width: 680px; height: 630px; object-fit: cover; display: block; }
+</style>
+</head>
+<body>
+  <div class="text">
+    <svg class="mark" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 26V15.5a9 9 0 0 1 18 0V26"/><path d="M4.5 26h7M20.5 26h7"/><path d="M11 26v-9a5 5 0 0 1 10 0v9"/><path d="M6 7.5h20"/></svg>
+    <div class="eyebrow">UNIVERSITY OF GLASGOW</div>
+    <h1>LIU’S GATE</h1>
+    <div class="zh">刘家门</div>
+    <div class="motto">GeoAI · Analytics<br />Topology · Environments</div>
+    <div class="site">LIUGATE.UK</div>
+  </div>
+  <img class="town" src="town.jpg" alt="" />
+</body>
+</html>

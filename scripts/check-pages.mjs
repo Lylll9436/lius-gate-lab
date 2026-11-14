@@ -11,6 +11,13 @@ for (const [, url] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
   assert(url.startsWith(prefix), `Wrong deployed base path: ${url}`);
   await access(path.join(dir, url.slice(prefix.length)));
 }
+// The share card's image is an absolute URL on the public domain (link previews need one), so the
+// base path check above never sees it: the file it names must be published with the page.
+const shareImage = html.match(/<meta property="og:image" content="https:\/\/liugate\.uk\/([^"]+)"/);
+assert(shareImage, 'index.html must name its share image (og:image) on https://liugate.uk/.');
+await access(path.join(dir, shareImage[1])).catch(() =>
+  assert.fail(`The share image ${shareImage[1]} (og:image) is not in public/.`),
+);
 const manifest = JSON.parse(await readFile(path.join(dir, '.vite/manifest.json'), 'utf8'));
 assert(manifest['index.html'].dynamicImports.includes('app/city-scene.ts'), 'Scene must remain lazy-loaded.');
 // The first download is the entry chunk plus every chunk it imports statically.
