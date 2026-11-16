@@ -673,7 +673,8 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, nature: Na
         y2 = p2.y1,
         G2 = S.glass[2];
       // The first floor's terrace: its front and its east strip railed, left open (the glass
-      // balustrade before the glass, as the photo's lower terrace).
+      // balustrade before the glass, as the photo's lower terrace: 0.6 deep, it holds no planter
+      // whose shrubs would be more than a row of small lumps behind the rail).
       balustrade(west, p1.east - 0.045, p1.front - 0.115, p1.front - 0.045, y1);
       balustrade(p1.east - 0.115, p1.east - 0.045, p1.back + 0.1, p1.front - 0.045, y1);
       // The top floor's terrace wraps round its front, its east end and its back: railed all round,
