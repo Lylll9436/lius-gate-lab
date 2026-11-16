@@ -2,12 +2,13 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LAWN_TINT, WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
-import { palette, hash, type AnimationFrame, type TownContext } from './town-shared';
+import { palette, hash, type TownContext } from './town-shared';
 import { noise3, roundBox, roundCone, sculpt, type Shape } from './town-sculpt';
 import { BLOOMS, type Nature } from './town-nature';
 import type { Props } from './town-props';
 import { FALL, boulder, type SkyGarden } from './town-sky-garden';
 import { createAlison, poseAlison } from './sky-figure';
+import { figureClock } from './figure-rig';
 
 /**
  * The sky island's colours, each no more saturated than its palette family: the lawn's two mown
@@ -1243,50 +1244,32 @@ export function createSkyIsland(ctx: TownContext, props: Props, nature: Nature, 
     figure.userData.keepSeparate = true;
     figure.userData.prebatched = true;
     root.add(figure);
+    type Water = { front: number; tail: number };
     const H = plan.SKY_HOLD,
-      pose = (day: plan.AlisonDay) => {
+      hidden = (s: Water) => s.front <= 1e-6 || s.tail >= 1 - 1e-6;
+    // Her clock (figure-rig's): held, she settles into alisonStill over SKY_HOLD's seconds (`take` if
+    // she is bending to her can, `reduced` under reduced motion), and her water goes on in real time
+    // (the clock's flow), down into the bed, until her day's own catches up with it.
+    const update = figureClock<plan.AlisonDay, Water>({
+      day: plan.alisonDay,
+      still: plan.alisonStill,
+      blend: plan.alisonBlend,
+      settle: (live, cut) => (cut ? H.reduced : live.pose === 'take' ? H.take : H.settle),
+      pose: (day) => {
         // (alisonDay's answer carries poseAlison's options by their own names.)
         const { lift } = poseAlison(joints, held, day.pose, day.phase, day);
         figure.position.set(day.x, plan.skyFloor(day.x, day.z) + lift, day.z);
         figure.rotation.y = day.heading;
       },
-      hidden = (s: { front: number; tail: number }) => s.front <= 1e-6 || s.tail >= 1 - 1e-6;
-    // Her clock's lag behind town time; how far she has settled (0 to 1); and the water while it
-    // goes by itself, until her day's own catches up with it.
-    let lag = 0,
-      last = 0,
-      settled = 0,
-      water: { front: number; tail: number } | null = null;
-    const update = (time: number, _night?: number, _rain?: number, frame?: AnimationFrame) => {
-      const step = time - last,
-        dt = frame?.dt ?? 0;
-      last = time;
-      // Asked for a moment of her day outside the frame loop (the build's own first pose, a check
-      // sampling her day), or a jump in town time (the debug clock): she is straight there, out of any
-      // hold; held, and until she is back in her day, her clock stands.
-      if (!frame || Math.abs(step) > 1) {
-        lag = settled = 0;
-        water = null;
-        if (!frame) return pose(plan.alisonDay(time));
-      } else if (frame.held || settled > 0) lag += step;
-      const clock = time - lag,
-        live = plan.alisonDay(clock),
-        settle = frame.cut ? H.reduced : live.pose === 'take' ? H.take : H.settle,
-        was = settled;
-      settled = frame.held ? Math.min(1, settled + dt / settle) : Math.max(0, settled - dt / settle);
-      if (!settled && !water) return pose(live);
-      const day = plan.alisonBlend(live, plan.alisonStill(clock), T.MathUtils.smoothstep(settled, 0, 1)),
-        from = water ?? { front: live.front, tail: live.tail };
-      water = plan.alisonStream(from, day.pour, (dt * H.settle) / settle);
-      // Held, and moving in real time (settling, or her water going on down into the bed while some
-      // of it shows): the loop draws her shadow again this frame (the frame's `moved`).
-      const flowing = (water.front !== from.front || water.tail !== from.tail) && !(hidden(water) && hidden(from));
-      if (frame.held && (settled !== was || flowing)) frame.moved = true;
-      Object.assign(day, water);
-      // Let go, and her day's water where this is: hers again.
-      if (!settled && ((hidden(water) && hidden(live)) || (Math.abs(water.front - live.front) < 1e-6 && Math.abs(water.tail - live.tail) < 1e-6))) water = null;
-      pose(day);
-    };
+      flow: {
+        from: (live) => ({ front: live.front, tail: live.tail }),
+        step: (from, day, dt, settle) => plan.alisonStream(from, day.pour, (dt * H.settle) / settle),
+        // (Moving while some of it shows: the loop draws her shadow again.)
+        moved: (from, to) => (to.front !== from.front || to.tail !== from.tail) && !(hidden(to) && hidden(from)),
+        apply: (day, water) => Object.assign(day, water),
+        home: (water, live) => (hidden(water) && hidden(live)) || (Math.abs(water.front - live.front) < 1e-6 && Math.abs(water.tail - live.tail) < 1e-6),
+      },
+    });
     update(0);
     ctx.animated.push({ object: figure, update });
     return figure;

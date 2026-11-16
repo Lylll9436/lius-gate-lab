@@ -20,6 +20,7 @@ for (const name of [
   'city-districts',
   'city-materials',
   'city-people',
+  'figure-rig',
   'sky-figure',
   'city-hover',
   'city-inspection',
@@ -9964,6 +9965,60 @@ let skyReport = '';
   assert(late.every((p) => level(p, 4) > 0.1 && level(p, 5.4) > 0.1), 'A villa room lit at 02:30 goes out before morning.');
   assert(offs.length === rooms.length - late.length && new Set(offs).size === offs.length, 'Two villa rooms go out together.');
   skyReport += `; its villa ${batched.length} meshes and ${Math.round(tris)} triangles, ${late.length} of its ${rooms.length} rooms still lit at 02:30`;
+}
+// Alison is as she was before her rig was shared (lane figure: her joints, solves, china and the
+// poses every figure has went to figure-rig.ts, her day's planner and blend and her floor to
+// town-plan's planDay, blendDay and pathFloor, and town-sky's alison() onto figure-rig's clock):
+// every joint and prop of hers (each object's place, turn and size and whether it shows) and her
+// water's tube while it shows, as the town poses her at 2,048 moments of her day asked without a frame, and through
+// a second of Pause and a second let go at eight moments (and again under reduced motion, the frame's
+// `moved` too), each number to 1e-7, hashed (FNV-1a), are what they were (work/ual-design/figure/
+// alison-same.mjs compared the two builds number for number: 51,495 states, none different). A change
+// to her that is meant must look at her day again and pin the new hash, and say so.
+{
+  const her = model.sky.root.children.find((o) => o.name === 'alison'),
+    entry = model.animated.find((e) => e.object === her),
+    { animationFrame } = await load('town-shared'),
+    P = plan.SKY_DAY.period,
+    dt = 1 / 60;
+  let h = 0x811c9dc5,
+    count = 0;
+  const feed = (v) => {
+    const q = Math.round(v * 1e7);
+    for (let s = 0; s < 32; s += 8) {
+      h ^= (q >>> s) & 255;
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    count++;
+  };
+  const sample = () =>
+    her.traverse((o) => {
+      for (const v of [o.position.x, o.position.y, o.position.z, o.quaternion.x, o.quaternion.y, o.quaternion.z, o.quaternion.w, o.scale.x, o.scale.y, o.scale.z, o.visible ? 1 : 0]) feed(v);
+      if (o.isMesh && o.parent?.name === 'water-stream' && o.parent.visible) for (const v of o.geometry.attributes.position.array) feed(v);
+    });
+  for (let k = 0; k < 2048; k++) {
+    entry.update((k / 2048) * P, 0, 0);
+    sample();
+  }
+  for (const cut of [false, true])
+    for (let k = 0; k < 8; k++) {
+      const t0 = 0.37 + k * (P / 8);
+      for (let n = 30; n >= 0; n--) entry.update(t0 - n * dt, 0, 0, animationFrame(false, cut, dt));
+      for (let n = 0; n < 60; n++) {
+        const fr = animationFrame(true, cut, dt);
+        entry.update(t0, 0, 0, fr);
+        feed(fr.moved ? 1 : 0);
+        sample();
+      }
+      for (let n = 1; n <= 60; n++) {
+        entry.update(t0 + n * dt, 0, 0, animationFrame(false, cut, dt));
+        sample();
+      }
+    }
+  entry.update(0, 0, 0);
+  const pin = h.toString(16).padStart(8, '0');
+  assert(count === 1580368 && pin === '8a4162e8', `Alison's day is no longer what it was (${count} numbers, hash ${pin}, pinned 8a4162e8): if that is meant, look at her day again and pin the new hash.`);
+  skyReport += `; Alison exactly as she was before her rig was shared (${count.toLocaleString('en-GB')} numbers of her day hashed)`;
 }
 console.log(
   `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,

@@ -646,6 +646,151 @@ export const APRON_KIT = {
 };
 
 /* ------------------------------------------------------------------ */
+/* A figure's day (the islands' named figures share it)               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The days of the town's named figures (Alison's on the sky island, below; Filip's on the tropic
+ * island, tropic-figure.ts) are built the same way: a list of acts laid down one after another
+ * (planDay), each a stretch of seconds at a station or a walk along a line, and a pure function of
+ * town time that looks up the act and says where the figure is and what it does there. A figure is
+ * posed by its own figure module (figure-rig.ts and its own) and kept by figure-rig's clock, which
+ * blends its day into a still pose (blendDay) while the town is held.
+ */
+/**
+ * How a figure walks and turns (planDay): its walking `speed` (units a second); its `stride`, one
+ * walk phase (two steps, in the town's units), so a walk's phase is the distance walked over it and
+ * the feet never slide; `ease`, the seconds over which a walk's pace and gait come up from a
+ * standstill and go down to one (a smoothstep in time; a walk too short for both never reaches full
+ * pace); `turn`, the seconds it takes to turn a quarter on the spot, `minTurn` at the least.
+ */
+export type DayGait = { speed: number; stride: number; ease: number; turn: number; minTurn: number };
+/** The integral of a smoothstep from 0 to u (in units of its span): how far an easing walk has come. */
+export const eased = (u: number) => u * u * u - (u * u * u * u) / 2;
+/** A smoothstep of u from 0 to 1, held at its ends. */
+export const smoothstep = (u: number) => {
+  const x = Math.min(1, Math.max(0, u));
+  return x * x * (3 - 2 * x);
+};
+/** A walk of `length` at `gait`: its seconds, and its peak pace (under the gait's speed when it is too short to reach it). */
+export function walkTiming(length: number, gait: DayGait) {
+  const { speed, ease } = gait;
+  return length >= speed * ease ? { seconds: length / speed + ease, peak: speed } : { seconds: 2 * ease, peak: length / ease };
+}
+/** How far a figure has come `t` seconds into a walk of `length` at `gait`, and its pace there. */
+export function walkProgress(length: number, t: number, gait: DayGait) {
+  const { ease } = gait,
+    { seconds, peak } = walkTiming(length, gait);
+  if (t <= ease && t <= seconds / 2) return { along: peak * ease * eased(t / ease), pace: peak * smoothstep(t / ease) };
+  if (t >= seconds - ease) {
+    const back = Math.max(0, seconds - t);
+    return { along: length - peak * ease * eased(back / ease), pace: peak * smoothstep(back / ease) };
+  }
+  return { along: (peak * ease) / 2 + peak * (t - ease), pace: peak };
+}
+/**
+ * A day's acts laid down one after another from time 0, the figure facing `heading` at the start:
+ * `add(seconds, act)` adds an act (`tag`'s fields and its times, `t0` and `t1`, written into it);
+ * `turnTo(x, z, to, station)` turns the figure on the spot at (x, z) to face `to` the shorter way
+ * (`quarter()` seconds a quarter turn, `gait.minTurn` at the least; no act if it already does);
+ * `walk(points, pace)` turns it to the line's first stretch and walks it along the line (`gait`, or
+ * `pace`'s, which the act then carries as its `gait`), its `walked` the distance walked before it
+ * (so a walk's phase goes on from where the last left off). `day` holds the time laid down so far,
+ * the distance walked and the way the figure faces.
+ */
+export function planDay<Act extends { t0: number; t1: number }>(heading: number, gait: DayGait, quarter: () => number = () => gait.turn) {
+  const acts: Act[] = [],
+    day = { t: 0, walked: 0, heading, tag: {} as Record<string, unknown> };
+  const add = (seconds: number, act: object) => {
+      acts.push({ ...act, ...day.tag, t0: day.t, t1: day.t + seconds } as unknown as Act);
+      day.t += seconds;
+    },
+    turnTo = (x: number, z: number, to: number, station: string) => {
+      const turn = angleDiff(to, day.heading);
+      if (Math.abs(turn) > 1e-6) add(Math.max(gait.minTurn, (quarter() * Math.abs(turn)) / (Math.PI / 2)), { kind: 'turn', station, x, z, from: day.heading, to: day.heading + turn });
+      day.heading = to;
+    },
+    walk = (points: XZ[], pace?: DayGait) => {
+      // (A point where the last one is, as where a stretch ends at the curve's start, has no heading.)
+      const line = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-9),
+        length = polylineLength(line),
+        first = Math.atan2(line[1][0] - line[0][0], line[1][1] - line[0][1]),
+        n = line.length - 1;
+      turnTo(line[0][0], line[0][1], first, 'walk');
+      add(walkTiming(length, pace ?? gait).seconds, pace ? { kind: 'walk', station: 'walk', line, length, walked: day.walked, gait: pace } : { kind: 'walk', station: 'walk', line, length, walked: day.walked });
+      day.walked += length;
+      day.heading = Math.atan2(line[n][0] - line[n - 1][0], line[n][1] - line[n - 1][1]);
+    };
+  return { acts, day, add, turnTo, walk };
+}
+/**
+ * A figure part of the way `e` from one moment of its day `a` to another `b` of the same pose (its
+ * live day and the still pose it settles into): every number named in `keys` mixed, each pair named
+ * in `pairs` mixed, the heading the shorter way round. The rest is `a`'s.
+ */
+export function blendDay<D extends { heading: number }>(a: D, b: D, e: number, keys: readonly (keyof D)[], pairs: readonly (keyof D)[] = []): D {
+  const mix = (p: number, q: number) => p + (q - p) * e,
+    out = { ...a } as Record<keyof D, unknown>,
+    of = (d: D, k: keyof D) => d[k] as unknown;
+  for (const k of pairs) {
+    const [p0, p1] = of(a, k) as XZ,
+      [q0, q1] = of(b, k) as XZ;
+    out[k] = [mix(p0, q0), mix(p1, q1)];
+  }
+  for (const k of keys) out[k] = mix(of(a, k) as number, of(b, k) as number);
+  const blended = out as D;
+  blended.heading = a.heading + angleDiff(b.heading, a.heading) * e;
+  return blended;
+}
+/**
+ * A point a share `t` of the way along a centripetal Catmull-Rom through `points` (three's open
+ * CatmullRomCurve3, 'centripetal': its ends' outer neighbours mirrored), as the islands draw their paths.
+ */
+export function centripetal(points: XZ[], t: number): XZ {
+  const l = points.length,
+    f = (l - 1) * t,
+    i = Math.min(l - 2, Math.floor(f)),
+    w = f - i,
+    at = (k: number): XZ => (k < 0 ? [2 * points[0][0] - points[1][0], 2 * points[0][1] - points[1][1]] : k >= l ? [2 * points[l - 1][0] - points[l - 2][0], 2 * points[l - 1][1] - points[l - 2][1]] : points[k]),
+    [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
+    span = (a: XZ, b: XZ) => ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.25;
+  let d0 = span(p0, p1),
+    d1 = span(p1, p2),
+    d2 = span(p2, p3);
+  if (d1 < 1e-4) d1 = 1;
+  if (d0 < 1e-4) d0 = d1;
+  if (d2 < 1e-4) d2 = d1;
+  const cubic = (x0: number, x1: number, x2: number, x3: number) => {
+    const t1 = ((x1 - x0) / d0 - (x2 - x0) / (d0 + d1) + (x2 - x1) / d1) * d1,
+      t2 = ((x2 - x1) / d1 - (x3 - x1) / (d1 + d2) + (x3 - x2) / d2) * d1;
+    return x1 + t1 * w + (-3 * x1 + 3 * x2 - 2 * t1 - t2) * w * w + (2 * x1 - 2 * x2 + t1 + t2) * w * w * w;
+  };
+  return [cubic(p0[0], p1[0], p2[0], p3[0]), cubic(p0[1], p1[1], p2[1], p3[1])];
+}
+/** How far (x, z) is from a polyline. */
+export function polylineDistance(line: XZ[], x: number, z: number) {
+  let best = Infinity;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [ax, az] = line[i],
+      dx = line[i + 1][0] - ax,
+      dz = line[i + 1][1] - az,
+      f = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+    best = Math.min(best, Math.hypot(x - ax - dx * f, z - az - dz * f));
+  }
+  return best;
+}
+/**
+ * The floor a figure stands on where paths are laid `lift` over a lawn: the lawn's `top`, or the
+ * path's where the figure is `inside` it (how far in from its edge; outside, negative), the step
+ * between them eased over `ease` of the lawn outside the path's edge, so the figure steps up onto it
+ * and down off it over one of its steps (a step of `lift` at the edge would pop).
+ */
+export function pathFloor(top: number, inside: number, lift: number, ease: number) {
+  const u = Math.min(1, Math.max(0, 1 + inside / ease));
+  return top + lift * u * u * (3 - 2 * u);
+}
+
+/* ------------------------------------------------------------------ */
 /* The sky island                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -923,45 +1068,8 @@ export const SKY_PATHS = (() => {
     landing,
   };
 })();
-/**
- * A point a share `t` of the way along a centripetal Catmull-Rom through `points` (three's open
- * CatmullRomCurve3, 'centripetal': its ends' outer neighbours mirrored), as town-sky draws the walk.
- */
-function centripetal(points: XZ[], t: number): XZ {
-  const l = points.length,
-    f = (l - 1) * t,
-    i = Math.min(l - 2, Math.floor(f)),
-    w = f - i,
-    at = (k: number): XZ => (k < 0 ? [2 * points[0][0] - points[1][0], 2 * points[0][1] - points[1][1]] : k >= l ? [2 * points[l - 1][0] - points[l - 2][0], 2 * points[l - 1][1] - points[l - 2][1]] : points[k]),
-    [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
-    span = (a: XZ, b: XZ) => ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.25;
-  let d0 = span(p0, p1),
-    d1 = span(p1, p2),
-    d2 = span(p2, p3);
-  if (d1 < 1e-4) d1 = 1;
-  if (d0 < 1e-4) d0 = d1;
-  if (d2 < 1e-4) d2 = d1;
-  const cubic = (x0: number, x1: number, x2: number, x3: number) => {
-    const t1 = ((x1 - x0) / d0 - (x2 - x0) / (d0 + d1) + (x2 - x1) / d1) * d1,
-      t2 = ((x2 - x1) / d1 - (x3 - x1) / (d1 + d2) + (x3 - x2) / d2) * d1;
-    return x1 + t1 * w + (-3 * x1 + 3 * x2 - 2 * t1 - t2) * w * w + (2 * x1 - 2 * x2 + t1 + t2) * w * w * w;
-  };
-  return [cubic(p0[0], p1[0], p2[0], p3[0]), cubic(p0[1], p1[1], p2[1], p3[1])];
-}
-/** The walk's middle line as a fine polyline (its curve to the telescope a few hundredths between points). */
+/** The walk's middle line as a fine polyline (its curve to the telescope a few hundredths between points; centripetal, as town-sky draws the walk). */
 const SKY_WALK_LINE = Array.from({ length: 161 }, (_, k) => centripetal(SKY_PATHS.walk, k / 160));
-/** How far (x, z) is from a polyline. */
-function polylineDistance(line: XZ[], x: number, z: number) {
-  let best = Infinity;
-  for (let i = 0; i + 1 < line.length; i++) {
-    const [ax, az] = line[i],
-      dx = line[i + 1][0] - ax,
-      dz = line[i + 1][1] - az,
-      f = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
-    best = Math.min(best, Math.hypot(x - ax - dx * f, z - az - dz * f));
-  }
-  return best;
-}
 /** How far (x, z) is inside the gravel paths (SKY_PATHS: the walk and the stem with their round ends, and the landing); outside, negative. */
 export function skyGravel(x: number, z: number) {
   const P = SKY_PATHS,
@@ -971,12 +1079,11 @@ export function skyGravel(x: number, z: number) {
 /**
  * The ground drawn at (x, z), what she stands on: the lawn (skyTop), or the gravel where she is on it
  * (SKY_PATHS.lift over the lawn), the step between them eased over SKY_PATHS.ease of the lawn outside
- * the gravel's edge, so she steps up onto it and down off it over one of her steps.
+ * the gravel's edge, so she steps up onto it and down off it over one of her steps (pathFloor).
  */
 export function skyFloor(x: number, z: number) {
-  const P = SKY_PATHS,
-    u = Math.min(1, Math.max(0, 1 + skyGravel(x, z) / P.ease));
-  return skyTop(x, z) + P.lift * u * u * (3 - 2 * u);
+  const P = SKY_PATHS;
+  return pathFloor(skyTop(x, z), skyGravel(x, z), P.lift, P.ease);
 }
 /**
  * The garden lamps (lane G's gardenLamps, one set): their feet, on the lawn either side of the
@@ -1169,28 +1276,6 @@ export type SkyDayAct = { t0: number; t1: number; station: SkyDayStation; carry:
 );
 /** An act as SKY_DAY lays it down, before its times are known. */
 type SkyDayStep<A = SkyDayAct> = A extends SkyDayAct ? Omit<A, 't0' | 't1' | 'carry'> : never;
-/** The integral of a smoothstep from 0 to u (in units of its span): how far an easing walk has come. */
-const eased = (u: number) => u * u * u - (u * u * u * u) / 2;
-const smoothstep = (u: number) => {
-  const x = Math.min(1, Math.max(0, u));
-  return x * x * (3 - 2 * x);
-};
-/** A walk of `length`: its seconds, and its peak pace (under SKY_GAIT.speed when it is too short to reach it). */
-function walkTiming(length: number) {
-  const { speed, ease } = SKY_GAIT;
-  return length >= speed * ease ? { seconds: length / speed + ease, peak: speed } : { seconds: 2 * ease, peak: length / ease };
-}
-/** How far she has come `t` seconds into a walk of `length`, and her pace there. */
-function walkProgress(length: number, t: number) {
-  const { ease } = SKY_GAIT,
-    { seconds, peak } = walkTiming(length);
-  if (t <= ease && t <= seconds / 2) return { along: peak * ease * eased(t / ease), pace: peak * smoothstep(t / ease) };
-  if (t >= seconds - ease) {
-    const back = Math.max(0, seconds - t);
-    return { along: length - peak * ease * eased(back / ease), pace: peak * smoothstep(back / ease) };
-  }
-  return { along: (peak * ease) / 2 + peak * (t - ease), pace: peak };
-}
 /**
  * A watering stretch of `steps` sidesteps, its moments in seconds from its start (SKY_WATERING):
  * the can up to the hold by `held`, tipped by `tipped` (the water starting at `on`), the first
@@ -1278,48 +1363,31 @@ export const SKY_DAY = (() => {
         w = [(1 - u) ** 2, 2 * u * (1 - u), u * u],
         p: XZ[] = [[fetch[0] + 0.9, z], [fetch[0] + 0.25, z], fetch];
       return [w.reduce((sum, c, i) => sum + c * p[i][0], 0), w.reduce((sum, c, i) => sum + c * p[i][1], 0)];
-    }),
-    acts: SkyDayAct[] = [];
-  let t = 0,
-    walked = 0,
-    heading = chair.facing,
-    carry = false;
-  const add = (seconds: number, act: SkyDayStep) => {
-      acts.push({ ...act, carry, t0: t, t1: t + seconds } as SkyDayAct);
-      t += seconds;
-    },
-    turnTo = (x: number, zz: number, to: number, station: SkyDayStation) => {
-      const turn = angleDiff(to, heading);
-      if (Math.abs(turn) > 1e-6) add(Math.max(G.minTurn, ((carry ? G.carryTurn : G.turn) * Math.abs(turn)) / (Math.PI / 2)), { kind: 'turn', station, x, z: zz, from: heading, to: heading + turn });
-      heading = to;
-    },
-    walk = (points: XZ[]) => {
-      // (A point where the last one is, as where a stretch ends at the curve's start, has no heading.)
-      const line = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-9),
-        length = polylineLength(line),
-        first = Math.atan2(line[1][0] - line[0][0], line[1][1] - line[0][1]),
-        n = line.length - 1;
-      turnTo(line[0][0], line[0][1], first, 'walk');
-      add(walkTiming(length).seconds, { kind: 'walk', station: 'walk', line, length, walked });
-      walked += length;
-      heading = Math.atan2(line[n][0] - line[n - 1][0], line[n][1] - line[n - 1][1]);
-    },
+    });
+  // (Laid down with planDay: each act carries whether she has her can in her hand all through it,
+  // and with it in her hand she turns at SKY_GAIT.carryTurn.)
+  const tag = { carry: false },
+    days = planDay<SkyDayAct>(chair.facing, G, () => (tag.carry ? G.carryTurn : G.turn)),
+    { acts, walk } = days;
+  days.day.tag = tag;
+  const add = (seconds: number, act: SkyDayStep) => days.add(seconds, act),
+    turnTo = (x: number, zz: number, to: number, station: SkyDayStation) => days.turnTo(x, zz, to, station),
     water = (station: 'water-west' | 'water-east', { from, to }: { from: number; to: number }) => {
       turnTo(from, zw, watering.facing - W.turn, station);
       const steps = Math.round((to - from) / W.step);
-      add(wateringTimes(steps).seconds, { kind: 'water', station, x: from, z: zw, step: (to - from) / steps, steps, heading });
+      add(wateringTimes(steps).seconds, { kind: 'water', station, x: from, z: zw, step: (to - from) / steps, steps, heading: days.day.heading });
     },
     take = (up: boolean) => {
       turnTo(fetch[0], fetch[1], SKY_CAN.turn + SKY_CAN.face, 'water-west');
-      add(SKY_CAN.take, { kind: 'take', station: 'water-west', x: fetch[0], z: fetch[1], heading, up });
-      carry = up;
+      add(SKY_CAN.take, { kind: 'take', station: 'water-west', x: fetch[0], z: fetch[1], heading: days.day.heading, up });
+      tag.carry = up;
     };
   const TEA = SKY_TEA;
   add(TEA.down[0], { kind: 'seated', station: 'tea', settle: 0 });
   add(TEA.down[1] - TEA.down[0], { kind: 'saucer', station: 'tea', down: true });
   add(TEA.rise - TEA.down[1], { kind: 'seated', station: 'tea', settle: TEA.rise - TEA.down[1] });
   add(TEA.up, { kind: 'rise', station: 'tea', up: true });
-  add(G.pause, { kind: 'stand', station: 'tea', x: beside[0], z: beside[1], heading });
+  add(G.pause, { kind: 'stand', station: 'tea', x: beside[0], z: beside[1], heading: days.day.heading });
   walk([beside, fetch]);
   take(true);
   water('water-west', stretches.west);
@@ -1327,20 +1395,21 @@ export const SKY_DAY = (() => {
   water('water-east', stretches.east);
   walk(toward([stretches.east.to, zw]));
   turnTo(stand[0], stand[1], telescope.look, 'telescope');
-  add(SKY_SCOPE.look, { kind: 'scope', station: 'telescope', x: stand[0], z: stand[1], heading });
+  add(SKY_SCOPE.look, { kind: 'scope', station: 'telescope', x: stand[0], z: stand[1], heading: days.day.heading });
   walk([...toScope.slice().reverse(), ...home]);
   take(false);
   walk([fetch, beside]);
   turnTo(beside[0], beside[1], chair.facing, 'tea');
-  add(G.pause, { kind: 'stand', station: 'tea', x: beside[0], z: beside[1], heading });
+  add(G.pause, { kind: 'stand', station: 'tea', x: beside[0], z: beside[1], heading: days.day.heading });
   add(TEA.up, { kind: 'rise', station: 'tea', up: false });
   add(TEA.settle, { kind: 'seated', station: 'tea', settle: TEA.settle });
   add(TEA.take, { kind: 'saucer', station: 'tea', down: false });
   // Back in her chair, her cup resting on its saucer in her hands a second or so before the day comes
   // round (and on until her first sip).
-  const period = Math.ceil(t + 1);
+  const { t } = days.day,
+    period = Math.ceil(t + 1);
   add(period - t, { kind: 'seated', station: 'tea', settle: 0 });
-  return { period, acts, beside, chair, walked, stretches, saucer, can };
+  return { period, acts, beside, chair, walked: days.day.walked, stretches, saucer, can };
 })();
 /** Her cup's phase in 'sip' at `t` seconds into her day: resting (0) but while she drinks (SKY_TEA.sips). */
 function sipPhase(t: number) {
@@ -1447,7 +1516,7 @@ export function alisonDay(time: number): AlisonDay {
       Object.assign(out, { x: act.x, z: act.z, heading: act.from + (act.to - act.from) * smoothstep(into / (act.t1 - act.t0)) });
       break;
     case 'walk': {
-      const { along, pace } = walkProgress(act.length, into),
+      const { along, pace } = walkProgress(act.length, into, SKY_GAIT),
         p = samplePolyline(act.line, Math.min(act.length - 1e-9, along), false, true);
       Object.assign(out, { pose: 'walk', phase: (act.walked + along) / SKY_GAIT.stride, x: p.x, z: p.z, heading: p.heading, amount: pace / SKY_GAIT.speed });
       break;
@@ -1534,11 +1603,7 @@ export function alisonStill(time: number): AlisonDay {
  * round, and where her saucer and her can stand taken again in her frame as she then stands.
  */
 export function alisonBlend(a: AlisonDay, b: AlisonDay, e: number): AlisonDay {
-  const mix = (p: number, q: number) => p + (q - p) * e,
-    out: AlisonDay = { ...a, side: [mix(a.side[0], b.side[0]), mix(a.side[1], b.side[1])] };
-  for (const key of ['phase', 'x', 'z', 'amount', 'seat', 'step', 'lift', 'pour', 'front', 'tail', 'stoop'] as const) out[key] = mix(a[key], b[key]);
-  out.heading = a.heading + angleDiff(b.heading, a.heading) * e;
-  return placesFor(out);
+  return placesFor(blendDay(a, b, e, ['phase', 'x', 'z', 'amount', 'seat', 'step', 'lift', 'pour', 'front', 'tail', 'stoop'], ['side']));
 }
 /**
  * The water from her can `dt` seconds on, as it goes in real time while her day is held or let go
