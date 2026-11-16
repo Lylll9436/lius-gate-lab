@@ -3,6 +3,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { SurfaceKind } from './city-materials';
 import { palette, hash, type TownContext } from './town-shared';
+import { RESIDENCE_LOOK } from './town-residence';
 import type { Kit } from './town-kit';
 import type { Nature } from './town-nature';
 import type { Props } from './town-props';
@@ -32,7 +33,8 @@ import { ellipsoid, roundBox, sculpt } from './town-sculpt';
  * paling down the fall to the foam white of its foot and its lumps; the clouds' muted white (less
  * saturated than the palette's own) over a cooler, darker base; the furniture's pale dressed stone
  * (the villa's); the rocks' greys (the airport armour's) with a little earth, under turf; teak and a
- * darker mahogany; brass, its blackened eyecup and a dark lens; white china with a slate band,
+ * darker mahogany; light oak on dark bronze (the Visiting PhD Residence's timber and frames: the
+ * tropic island's bistro furniture, from tableSet and chairParts); brass, its blackened eyecup and a dark lens; white china with a slate band,
  * scones and a planter's soil; the garden lamps' cast iron (the town's street lamps' own) and the
  * frost of their globes, a touch cooler and brighter than the stone.
  */
@@ -51,6 +53,8 @@ export const SKY_GARDEN_LOOK = {
   turfDark: palette.grassDark,
   teak: palette.wood,
   mahogany: palette.woodDark,
+  oak: RESIDENCE_LOOK.timber,
+  bronze: RESIDENCE_LOOK.bronze,
   brass: palette.brass,
   blackened: '#4a4c4b',
   lens: '#58666d',
@@ -77,6 +81,8 @@ export const SKY_GARDEN_FAMILY: Record<keyof typeof SKY_GARDEN_LOOK, string> = {
   turfDark: palette.grassDark,
   teak: palette.wood,
   mahogany: palette.woodDark,
+  oak: palette.wood,
+  bronze: palette.bronze,
   brass: palette.brass,
   blackened: palette.metal,
   lens: palette.slate,
@@ -365,17 +371,17 @@ export const GARDEN_LAMP = { base: 0.3, shaft: 0.22, cap: 0.49, cup: 0.13, globe
 /** An urn: `height` to its rim on a square plinth `plinth` across; a planted ball of radius `plant.r` sits with its foot at `plant.y`. */
 export const URN = { plinth: 0.44, height: 0.635, plant: { y: 0.585, r: 0.3 } };
 
-type V3 = [number, number, number];
+export type V3 = [number, number, number];
 type Look = keyof typeof SKY_GARDEN_LOOK;
 /** One step of a turned profile: radius r at height y; `sharp` breaks the shading there (an arris). */
-type Turn = { r: number; y: number; sharp?: boolean };
+export type Turn = { r: number; y: number; sharp?: boolean };
 /**
  * A profile swept round the y axis (town-props' turned, copied: its private helpers stay its own):
  * smooth up the profile except at a `sharp` step, and smooth all the way round. Trace a solid's
  * section anticlockwise (out along its foot, up its side, in over its top), so every face looks
  * out; a profile that starts and ends on the axis is closed.
  */
-function turned(profile: Turn[], sides: number) {
+export function turned(profile: Turn[], sides: number) {
   const seg = profile.slice(1).map((q, i) => {
     const dr = q.r - profile[i].r,
       dy = q.y - profile[i].y,
@@ -424,30 +430,30 @@ function turned(profile: Turn[], sides: number) {
   return geometry;
 }
 /** A profile from (radius, height) pairs; a third entry marks an arris. */
-const turns = (points: number[][]): Turn[] => points.map(([r, y, sharp]) => ({ r, y, sharp: !!sharp }));
+export const turns = (points: number[][]): Turn[] => points.map(([r, y, sharp]) => ({ r, y, sharp: !!sharp }));
 /** An ellipsoid of radii r (city-people's blob): a sphere of `seg` segments round, scaled, so its normals are the ellipsoid's own. */
-function blob(r: V3, seg = 12, rows = Math.max(5, Math.round(seg * 0.6))) {
+export function blob(r: V3, seg = 12, rows = Math.max(5, Math.round(seg * 0.6))) {
   return new T.SphereGeometry(1, seg, rows).scale(r[0], r[1], r[2]);
 }
 /** A small smooth blob of 20 triangles (the flower beds' bloom): fine for things a tenth of a unit across. */
-function pebble(r: V3) {
+export function pebble(r: V3) {
   const g = new T.IcosahedronGeometry(1, 0);
   g.setAttribute('normal', g.getAttribute('position').clone());
   g.deleteAttribute('uv');
   return g.scale(r[0], r[1], r[2]);
 }
 const ONE = new T.Vector3(1, 1, 1);
-const placed = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) =>
+export const placed = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) =>
   new T.Matrix4().compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(rx, ry, rz)), ONE);
 const smooth = T.MathUtils.smoothstep,
   lerp = T.MathUtils.lerp;
 
 /** A part's colour: one hex, or a colour for each vertex from its position and normal in the part's own frame. */
-type Tint = string | ((p: T.Vector3, n: T.Vector3, out: T.Color) => void);
+export type Tint = string | ((p: T.Vector3, n: T.Vector3, out: T.Color) => void);
 /** A part of a merged mesh: a geometry (in its own frame), its colour there (its own vertex colours when none is given), and where it goes. */
-type Part = { geometry: T.BufferGeometry; tint?: Tint; matrix?: T.Matrix4 };
+export type Part = { geometry: T.BufferGeometry; tint?: Tint; matrix?: T.Matrix4 };
 /** Parts as one geometry: positions, normals and the colours on the vertices. */
-function fuse(parts: Part[]) {
+export function fuse(parts: Part[]) {
   const c = new T.Color(),
     p = new T.Vector3(),
     n = new T.Vector3();
@@ -474,15 +480,175 @@ function fuse(parts: Part[]) {
 /** A colour between two looks: `a` where f is 0, `b` where it is 1, times `tone`. */
 const shadeA = new T.Color(),
   shadeB = new T.Color();
-function blend(out: T.Color, a: string, b: string, f: number, tone = 1) {
+export function blend(out: T.Color, a: string, b: string, f: number, tone = 1) {
   out.copy(shadeA.set(a)).lerp(shadeB.set(b), T.MathUtils.clamp(f, 0, 1)).multiplyScalar(tone);
 }
 /** A look a shade lighter or darker all over (as separate boards and stones are). */
-const toned =
+export const toned =
   (look: string, tone: number): Tint =>
   (_p, _n, c) => {
     c.set(look).multiplyScalar(tone);
   };
+/**
+ * Parts as one mesh in g, its colours on the vertices; `looks` names the kit's colours it wears
+ * (the checks hold its vertices to them). It casts unless `shadow` is false, and is a `band` (never an
+ * overhang for batch()'s bake) unless told otherwise. The garden kits' one way of making a mesh.
+ */
+export function solidMesh(
+  material: TownContext['material'],
+  g: T.Object3D,
+  parts: Part[],
+  kind: SurfaceKind,
+  name: string,
+  looks: string[],
+  opts: { shadow?: boolean; band?: boolean } = {},
+) {
+  const m = new T.Mesh(fuse(parts), material('#ffffff', kind));
+  m.name = name;
+  m.userData.looks = looks;
+  const shadow = opts.shadow ?? true;
+  m.castShadow = shadow;
+  m.receiveShadow = true;
+  if (!shadow) m.userData.noShadow = true;
+  if (opts.band ?? true) m.userData.band = true;
+  g.add(m);
+  return m;
+}
+
+/**
+ * A garden chair's looks: its seat and its back rail (`seat`), its legs and raked posts (`frame`)
+ * and the frame's surface (timber, or painted metal: then it is a mesh of its own); `ring`, the top
+ * of a foot ring over the floor (none without one), where a seated figure's soles rest.
+ */
+export type ChairLook = { seat: Look; frame: Look; frameKind: SurfaceKind; ring?: number };
+/** The sky island's teak garden chair. */
+export const TEAK_CHAIR: ChairLook = { seat: 'teak', frame: 'teak', frameKind: 'wood' };
+/**
+ * The foot ring's bars: their square section, and how far its front bar's middle stands in front of
+ * the seat's front edge (a sitter's shins hang from knees a little past that edge).
+ */
+export const FOOT_RING = { bar: 0.07, ahead: 0.04 };
+/**
+ * A garden chair's parts, its seat's middle on the origin's upright and its front to +z: four legs,
+ * a thick seat, two raked posts and one broad rail (the seat's look, a shade lighter), and with a
+ * `ring` a foot ring of FOOT_RING bars round the legs, its front bar out in front of the seat. Each
+ * part says whether it is the frame's (the legs, the posts and the ring).
+ */
+export function chairParts(chamfered: Kit['chamfered'], at: T.Matrix4, look: ChairLook = TEAK_CHAIR): (Part & { frame: boolean })[] {
+  const L = SKY_GARDEN_LOOK,
+    C = TEA.chair,
+    x = C.w / 2 - C.leg / 2 - 0.01,
+    z = C.d / 2 - C.leg / 2 - 0.01,
+    under = TEA.seat - C.slab,
+    [r0, r1] = TEA.rail,
+    back = -z - TEA.rake * ((r0 + r1) / 2 - under),
+    seat = L[look.seat],
+    frame = L[look.frame],
+    parts: (Part & { frame: boolean })[] = [{ geometry: new RoundedBoxGeometry(C.w, C.slab, C.d, 1, 0.025), tint: seat, matrix: placed(0, TEA.seat - C.slab / 2, 0), frame: false }];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) parts.push({ geometry: chamfered(C.leg, under + 0.01, C.leg), tint: frame, matrix: placed(sx * x, (under + 0.01) / 2, sz * z), frame: true });
+    parts.push({ geometry: chamfered(C.leg, r1 - under, C.leg), tint: frame, matrix: placed(sx * x, (under + r1) / 2, -z - TEA.rake * ((r1 - under) / 2), -TEA.rake, 0, 0), frame: true });
+  }
+  // The rail lies within the posts' depth, so it stays clear of a sitter's hair.
+  parts.push({ geometry: chamfered(C.w, r1 - r0, 0.07), tint: toned(seat, 1.05), matrix: placed(0, (r0 + r1) / 2, back, -TEA.rake, 0, 0), frame: false });
+  if (look.ring !== undefined) {
+    // Side bars just outside the legs, from the back legs to the front bar; the front bar across
+    // their ends; a back bar between the back legs: all with their tops at the ring's height.
+    const B = FOOT_RING.bar,
+      y = look.ring - B / 2,
+      side = x + C.leg / 2 + B / 2,
+      ahead = C.d / 2 + FOOT_RING.ahead,
+      from = -z - C.leg / 2;
+    for (const sx of [-1, 1]) parts.push({ geometry: chamfered(B, B, ahead + B / 2 - from), tint: frame, matrix: placed(sx * side, y, (from + ahead + B / 2) / 2), frame: true });
+    parts.push({ geometry: chamfered(2 * side - B, B, B), tint: frame, matrix: placed(0, y, ahead), frame: true });
+    parts.push({ geometry: chamfered(2 * x - C.leg, B, B), tint: frame, matrix: placed(0, y, -z), frame: true });
+  }
+  return parts.map((p) => ({ ...p, matrix: at.clone().multiply(p.matrix!) }));
+}
+
+/**
+ * A round table with two chairs facing one another across it: its `name` (the group's, and its
+ * meshes' prefix), its top's `radius` and `top` look (a shade lighter), its pedestal (a turned
+ * `profile` of radius, height and arris up to under the top, in `look` on a `kind` of surface, with
+ * `sides` round), its chairs' looks (chairParts), and whether a tea `set` stands on it.
+ */
+export type TableLook = {
+  name: string;
+  radius: number;
+  top: Look;
+  pedestal: { profile: number[][]; look: Look; kind: SurfaceKind; sides: number };
+  chair: ChairLook;
+  set: boolean;
+};
+/** The sky island's tea table: a turned teak pedestal, teak chairs and a tea set. */
+export const TEA_TABLE: TableLook = {
+  name: 'sky-tea',
+  radius: TEA.radius,
+  top: 'teak',
+  pedestal: { profile: [[0, 0], [0.26, 0, 1], [0.26, 0.04, 1], [0.2, 0.075], [0.09, 0.12, 1], [0.07, 0.22], [0.075, 0.4], [0.1, 0.5], [0.17, 0.565], [0.17, TEA.top - 0.07, 1], [0, TEA.top - 0.07]], look: 'teak', kind: 'wood', sides: 14 },
+  chair: TEAK_CHAIR,
+  set: true,
+};
+/**
+ * A round garden table with two chairs (a TableLook), in chunky timber: the table on the origin (its
+ * top TEA.top up, on its pedestal), a chair either side along x facing it, their seats TEA.seat up
+ * and clear. With a `set`: a teapot, a second cup on its saucer (toward the +x chair; the sitter in
+ * the other holds her own) and a cake stand of scones, in white china with a slate band. The top is
+ * a mesh of its own (an overhang); then a mesh a surface for the pedestal and the chairs, in the
+ * order they are made (the timber's seats and rails, and a painted frame apart from them).
+ * `userData.seats` gives where a sitter's root goes for each chair (x, z and heading; the hips
+ * TEA.setback behind the seat's front edge), the -x chair first.
+ */
+export function tableSet(material: TownContext['material'], chamfered: Kit['chamfered'], look: TableLook = TEA_TABLE) {
+  const L = SKY_GARDEN_LOOK,
+    g = new T.Group();
+  g.name = `${look.name}-table`;
+  const radius = look.radius,
+    front = radius + TEA.gap, // a seat's front edge, from the table's middle
+    mid = front + TEA.chair.d / 2,
+    top = TEA.top;
+  // The top is a mesh of its own: an overhang, so the pedestal under it takes its shade.
+  solidMesh(
+    material,
+    g,
+    [{ geometry: turned(turns([[0, top - 0.08], [radius - 0.04, top - 0.08], [radius, top - 0.065], [radius, top - 0.02], [radius - 0.02, top], [0, top]]), 24), tint: toned(L[look.top], 1.06) }],
+    'wood',
+    `${look.name}-top`,
+    [look.top],
+    { band: false },
+  );
+  const families = new Map<SurfaceKind, { parts: Part[]; looks: Set<Look> }>(),
+    put = (kind: SurfaceKind, part: Part, as: Look) => {
+      const family = families.get(kind) ?? { parts: [], looks: new Set<Look>() };
+      family.parts.push(part);
+      family.looks.add(as);
+      families.set(kind, family);
+    };
+  put(look.pedestal.kind, { geometry: turned(turns(look.pedestal.profile), look.pedestal.sides), tint: L[look.pedestal.look] }, look.pedestal.look);
+  for (const part of [...chairParts(chamfered, placed(-mid, 0, 0, 0, Math.PI / 2, 0), look.chair), ...chairParts(chamfered, placed(mid, 0, 0, 0, -Math.PI / 2, 0), look.chair)])
+    if (part.frame) put(look.chair.frameKind, part, look.chair.frame);
+    else put('wood', part, look.chair.seat);
+  for (const [kind, { parts, looks }] of families) solidMesh(material, g, parts, kind, `${look.name}-${kind === 'wood' ? 'timber' : 'frame'}`, [...looks]);
+  // The tea set. Every piece is one turned form or a fat blob: nothing under 0.07 across.
+  if (look.set) {
+    const banded = (y0: number, y1: number): Tint => (p, _n, c) => blend(c, L.china, L.band, p.y > y0 && p.y < y1 ? 1 : 0),
+      pot = placed(0.02, top, -0.1, 0, 0.6, 0),
+      china: Part[] = [
+        // The teapot: a round body with a lid and a knob, a fat spout and a fat handle.
+        { geometry: turned(turns([[0, 0], [0.06, 0, 1], [0.088, 0.035], [0.094, 0.07], [0.08, 0.108], [0.05, 0.126], [0.05, 0.132, 1], [0.03, 0.142], [0.024, 0.15], [0.03, 0.165], [0.022, 0.18], [0, 0.184]]), 12), tint: banded(0.05, 0.088), matrix: pot },
+        { geometry: new T.CylinderGeometry(0.028, 0.038, 0.11, 10), tint: L.china, matrix: pot.clone().multiply(placed(0.118, 0.095, 0, 0, 0, -0.85)) },
+        { geometry: new T.TorusGeometry(0.046, 0.036, 6, 10, Math.PI), tint: L.china, matrix: pot.clone().multiply(placed(-0.088, 0.086, 0, 0, 0, Math.PI / 2)) },
+        // The second cup on its saucer, one turned piece.
+        { geometry: turned(turns([[0, 0], [0.04, 0, 1], [0.078, 0.014], [0.08, 0.022, 1], [0.05, 0.024, 1], [0.04, 0.03], [0.052, 0.07], [0.056, 0.086, 1], [0.046, 0.086, 1], [0.04, 0.062], [0, 0.058]]), 10), tint: banded(0.062, 0.09), matrix: placed(0.22, top, 0.1) },
+        // The cake stand, one turned piece, and three scones on it.
+        { geometry: turned(turns([[0, 0], [0.06, 0, 1], [0.05, 0.016], [0.024, 0.03], [0.024, 0.055], [0.1, 0.07], [0.118, 0.078, 1], [0.118, 0.092, 1], [0.105, 0.09], [0, 0.088]]), 12), tint: banded(0.074, 0.1), matrix: placed(-0.1, top, 0.17) },
+        ...[0, 1, 2].map((k): Part => ({ geometry: pebble([0.05, 0.045, 0.05]), tint: L.scone, matrix: placed(-0.1 + 0.052 * Math.cos(k * 2.1 + 0.4), top + 0.12, 0.17 + 0.05 * Math.sin(k * 2.1 + 0.4), 0, k * 1.3, 0) })),
+      ];
+    solidMesh(material, g, china, 'stone', `${look.name}-china`, ['china', 'band', 'scone']);
+  }
+  g.userData.seats = [-1, 1].map((s) => ({ x: s * (front + TEA.setback), z: 0, heading: (-s * Math.PI) / 2 }));
+  return g;
+}
 
 /**
  * A soft, matte toy cloud: round lobes blended into one another in a distance grid (town-sculpt),
@@ -571,16 +737,7 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
    * (the checks hold its vertices to them). Stone and timber cast; a `band` is never an overhang.
    */
   function solid(g: T.Object3D, parts: Part[], kind: SurfaceKind, name: string, looks: Look[], opts: { shadow?: boolean; band?: boolean } = {}) {
-    const m = new T.Mesh(fuse(parts), material('#ffffff', kind));
-    m.name = name;
-    m.userData.looks = looks;
-    const shadow = opts.shadow ?? true;
-    m.castShadow = shadow;
-    m.receiveShadow = true;
-    if (!shadow) m.userData.noShadow = true;
-    if (opts.band ?? true) m.userData.band = true;
-    g.add(m);
-    return m;
+    return solidMesh(material, g, parts, kind, name, looks, opts);
   }
   /** A pivot for a moving part: batched on its own, never with what it hangs in. */
   function pivot(g: T.Object3D, name: string) {
@@ -880,74 +1037,12 @@ export function createSkyGarden(ctx: TownContext, kit: Kit, _props: Props, natur
   /* ---------------------------------------------------------------- */
   /* Garden furniture                                                  */
   /* ---------------------------------------------------------------- */
-  /** A garden chair's timber, its seat's middle on the origin's upright and its front to +z: four legs, a thick seat, two raked posts and one broad rail. */
-  function chair(at: T.Matrix4): Part[] {
-    const C = TEA.chair,
-      x = C.w / 2 - C.leg / 2 - 0.01,
-      z = C.d / 2 - C.leg / 2 - 0.01,
-      under = TEA.seat - C.slab,
-      [r0, r1] = TEA.rail,
-      back = -z - TEA.rake * ((r0 + r1) / 2 - under),
-      parts: Part[] = [{ geometry: new RoundedBoxGeometry(C.w, C.slab, C.d, 1, 0.025), tint: L.teak, matrix: placed(0, TEA.seat - C.slab / 2, 0) }];
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) parts.push({ geometry: chamfered(C.leg, under + 0.01, C.leg), tint: L.teak, matrix: placed(sx * x, (under + 0.01) / 2, sz * z) });
-      parts.push({ geometry: chamfered(C.leg, r1 - under, C.leg), tint: L.teak, matrix: placed(sx * x, (under + r1) / 2, -z - TEA.rake * ((r1 - under) / 2), -TEA.rake, 0, 0) });
-    }
-    // The rail lies within the posts' depth, so it stays clear of a sitter's hair.
-    parts.push({ geometry: chamfered(C.w, r1 - r0, 0.07), tint: toned(L.teak, 1.05), matrix: placed(0, (r0 + r1) / 2, back, -TEA.rake, 0, 0) });
-    return parts.map((p) => ({ ...p, matrix: at.clone().multiply(p.matrix!) }));
-  }
   /**
-   * A round garden table with two chairs and a tea set, in chunky teak: the table on the origin
-   * (its top TEA.top up, on a turned pedestal), a chair either side along x facing it, their seats
-   * TEA.seat up and clear. On the table: a teapot, a second cup on its saucer (toward the +x chair;
-   * the sitter in the other holds her own) and a cake stand of scones, in white china with a slate
-   * band. `userData.seats` gives where a sitter's root goes for each chair (x, z and heading; her
-   * hips TEA.setback behind the seat's front edge), the -x chair first.
+   * A round garden table with two chairs and a tea set, in chunky teak (tableSet with the sky
+   * island's TEA_TABLE): `userData.seats` gives where a sitter's root goes for each chair.
    */
   function teaTable() {
-    const g = new T.Group();
-    g.name = 'sky-tea-table';
-    const front = TEA.radius + TEA.gap, // a seat's front edge, from the table's middle
-      mid = front + TEA.chair.d / 2,
-      top = TEA.top;
-    // The top is a mesh of its own: an overhang, so the pedestal under it takes its shade.
-    solid(
-      g,
-      [{ geometry: turned(turns([[0, top - 0.08], [TEA.radius - 0.04, top - 0.08], [TEA.radius, top - 0.065], [TEA.radius, top - 0.02], [TEA.radius - 0.02, top], [0, top]]), 24), tint: toned(L.teak, 1.06) }],
-      'wood',
-      'sky-tea-top',
-      ['teak'],
-      { band: false },
-    );
-    solid(
-      g,
-      [
-        { geometry: turned(turns([[0, 0], [0.26, 0, 1], [0.26, 0.04, 1], [0.2, 0.075], [0.09, 0.12, 1], [0.07, 0.22], [0.075, 0.4], [0.1, 0.5], [0.17, 0.565], [0.17, top - 0.07, 1], [0, top - 0.07]]), 14), tint: L.teak },
-        ...chair(placed(-mid, 0, 0, 0, Math.PI / 2, 0)),
-        ...chair(placed(mid, 0, 0, 0, -Math.PI / 2, 0)),
-      ],
-      'wood',
-      'sky-tea-timber',
-      ['teak'],
-    );
-    // The tea set. Every piece is one turned form or a fat blob: nothing under 0.07 across.
-    const banded = (y0: number, y1: number): Tint => (p, _n, c) => blend(c, L.china, L.band, p.y > y0 && p.y < y1 ? 1 : 0),
-      pot = placed(0.02, top, -0.1, 0, 0.6, 0),
-      china: Part[] = [
-        // The teapot: a round body with a lid and a knob, a fat spout and a fat handle.
-        { geometry: turned(turns([[0, 0], [0.06, 0, 1], [0.088, 0.035], [0.094, 0.07], [0.08, 0.108], [0.05, 0.126], [0.05, 0.132, 1], [0.03, 0.142], [0.024, 0.15], [0.03, 0.165], [0.022, 0.18], [0, 0.184]]), 12), tint: banded(0.05, 0.088), matrix: pot },
-        { geometry: new T.CylinderGeometry(0.028, 0.038, 0.11, 10), tint: L.china, matrix: pot.clone().multiply(placed(0.118, 0.095, 0, 0, 0, -0.85)) },
-        { geometry: new T.TorusGeometry(0.046, 0.036, 6, 10, Math.PI), tint: L.china, matrix: pot.clone().multiply(placed(-0.088, 0.086, 0, 0, 0, Math.PI / 2)) },
-        // The second cup on its saucer, one turned piece.
-        { geometry: turned(turns([[0, 0], [0.04, 0, 1], [0.078, 0.014], [0.08, 0.022, 1], [0.05, 0.024, 1], [0.04, 0.03], [0.052, 0.07], [0.056, 0.086, 1], [0.046, 0.086, 1], [0.04, 0.062], [0, 0.058]]), 10), tint: banded(0.062, 0.09), matrix: placed(0.22, top, 0.1) },
-        // The cake stand, one turned piece, and three scones on it.
-        { geometry: turned(turns([[0, 0], [0.06, 0, 1], [0.05, 0.016], [0.024, 0.03], [0.024, 0.055], [0.1, 0.07], [0.118, 0.078, 1], [0.118, 0.092, 1], [0.105, 0.09], [0, 0.088]]), 12), tint: banded(0.074, 0.1), matrix: placed(-0.1, top, 0.17) },
-        ...[0, 1, 2].map((k): Part => ({ geometry: pebble([0.05, 0.045, 0.05]), tint: L.scone, matrix: placed(-0.1 + 0.052 * Math.cos(k * 2.1 + 0.4), top + 0.12, 0.17 + 0.05 * Math.sin(k * 2.1 + 0.4), 0, k * 1.3, 0) })),
-      ];
-    solid(g, china, 'stone', 'sky-tea-china', ['china', 'band', 'scone']);
-    g.userData.seats = [-1, 1].map((s) => ({ x: s * (front + TEA.setback), z: 0, heading: (-s * Math.PI) / 2 }));
-    return g;
+    return tableSet(material, chamfered);
   }
   /**
    * A brass telescope on a chunky mahogany tripod, looking along +z and down by `tilt`: a stepped
