@@ -147,6 +147,7 @@ export const buildingIds: readonly string[] = [
   'qin-li',
   'visiting-phd',
   'sky-island',
+  'tropic-island',
   'airport',
   'research-studio',
   'city-archive',

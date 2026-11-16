@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import * as T from 'three';
 
-// Build the town in Node and check what a visitor relies on: ten places (eight on the island, the airport on its own, the sky island over the sea), finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
+// Build the town in Node and check what a visitor relies on: eleven places (eight on the island, the airport on its own, the sky island over the sea, the tropic island on it), finite geometry, a sane triangle budget, hover targets, water, the lighthouse beam and night.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
   output = path.join(root, 'work', 'town-check');
 await fs.mkdir(output, { recursive: true });
@@ -56,10 +56,11 @@ const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
 
-assert.equal(new Set(buildings.map((b) => b.id)).size, 10);
-// The Directory's (and the tour's) order: the sky island comes after the residence and the airport
-// after it (they share a bearing, so the tour turns no more for it), before the studio.
-assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'sky-island', 'airport', 'research-studio', 'city-archive']);
+assert.equal(new Set(buildings.map((b) => b.id)).size, 11);
+// The Directory's (and the tour's) order: the sky island comes after the residence, the tropic island
+// after it and the airport after both (the three share a bearing, so the tour turns no more for
+// them), before the studio.
+assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'sky-island', 'tropic-island', 'airport', 'research-studio', 'city-archive']);
 // The People chapter's places: the three homes (the row's own checks below read plan.terraceHomes)
 // and the Visiting PhD Residence at the row's north end.
 assert.deepEqual(plan.chapterSubjects.people, [...plan.terraceHomes, 'visiting-phd']);
@@ -86,6 +87,8 @@ for (const b of buildings) {
 for (const site of plan.siteList) {
   if (site.id === 'airport') assert(plan.onAirport(site.x, site.z, -2) && !plan.onIsland(site.x, site.z), 'The airport is not on its own island.');
   else if (site.id === 'sky-island') assert(plan.onSky(site.x, site.z, -2) && !plan.onIsland(site.x, site.z, -3.3) && !plan.onAirport(site.x, site.z, 5) && site.y === plan.SKY.top, 'The sky island\'s villa is not on its own deck.');
+  // Out on the sea off the south shore, its foot at the town's level (sea level: the island's own land is its land builder's).
+  else if (site.id === 'tropic-island') assert(site.z > 40 && !plan.onIsland(site.x, site.z, -3.3) && !plan.onAirport(site.x, site.z, 5) && !site.y, 'The tropic island\'s building is not out on the sea off the south shore.');
   else assert(plan.onIsland(site.x, site.z, 2) && !site.y, 'Site in the sea: ' + site.id);
   if (site.id !== 'lius-gate')
     for (const [sx, sz] of [
@@ -7940,7 +7943,7 @@ let skyReport = '';
       };
     let least = Infinity;
     for (const [chapter, ids] of Object.entries(subjects)) {
-      if (chapter === 'sky-island') continue;
+      if (chapter === 'sky-island' || chapter === 'tropic-island') continue;
       for (const drift of drifts) {
         const { flat } = axes(plan.chapterBearings[chapter] + drift),
           island = hullOf(shape.map(flat));

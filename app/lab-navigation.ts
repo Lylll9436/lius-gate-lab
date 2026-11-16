@@ -36,16 +36,17 @@ export const readingChapters = [
 ];
 /**
  * Places with a City file of their own but no chapter on the reading page, each with the chapter
- * that hosts it: the sky island, a neighbour of the town, is filed under About (the Town Hall's).
- * A hosted place lights its host's chip in the masthead in City mode, and a reading address for
- * it reads its host chapter; City mode still faces it from its own bearing (facingChapter).
+ * that hosts it: the two neighbour islands, the sky island over the town and the tropic island on
+ * the sea off its south shore, are filed under About (the Town Hall's). A hosted place lights its
+ * host's chip in the masthead in City mode, and a reading address for it reads its host chapter;
+ * City mode still faces it from its own bearing (facingChapter).
  */
-const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall' };
+const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall', 'tropic-island': 'town-hall' };
 /** The chapter that hosts an address's place, if it is a hosted one. */
 const hostOf = (id: ContentId) => HOSTED[id.replace(/^place:/, '') as BuildingId];
 /**
- * The mode a place picked on the model opens in: the mode it was picked in, but a hosted place (the
- * sky island) opens its City file from the reading page too. It has no chapter of its own, so on
+ * The mode a place picked on the model opens in: the mode it was picked in, but a hosted place (a
+ * neighbour island) opens its City file from the reading page too. It has no chapter of its own, so on
  * the page the pick would only scroll to its host chapter.
  */
 export const modeForPick = (mode: BrowseMode, id: ContentId): BrowseMode =>
@@ -266,7 +267,7 @@ export function chapterFor(id: ContentId, today: Date = pageDay) {
  * frames, looked up as that place, else the content's own. A founding member's home has their
  * address as its id ('qin-li'), so once they have left, chapterFor of the bare id would be theirs
  * (Departures) and turn the camera to the airport's bearing for the home they left, empty or with
- * someone new in it. A hosted place (the sky island) has no chapter but has a bearing of its own,
+ * someone new in it. A hosted place (a neighbour island) has no chapter but has a bearing of its own,
  * under its own name: never its host chapter's, which faces the Town Hall.
  */
 export function facingChapter(id: ContentId, today: Date = pageDay) {
@@ -283,7 +284,7 @@ export const readingChapter = (id: ContentId) =>
 /**
  * The reading page's address while `chapter` is under the reading line: the address already
  * shown if it lies in that chapter (a person in People), else the chapter itself. A hosted place
- * (the sky island) is never the reading page's address: its host chapter is, so the reading
+ * (a neighbour island) is never the reading page's address: its host chapter is, so the reading
  * camera frames the chapter's own subject and never the place.
  */
 export const readingContent = (id: ContentId, chapter: ContentId) =>

@@ -10,6 +10,7 @@ import {
   type Town,
 } from './town-build';
 import * as plan from './town-plan';
+import { TROPIC_EXTENT } from './town-tropic';
 import { createCityInk } from './city-ink';
 import { createIslandWater, createSeaShadow, MOON_POSITION } from './city-water';
 import { createStreetLighting } from './city-lighting';
@@ -141,6 +142,18 @@ function elevationAt(low: number) {
 /** How close the camera may zoom: on the town, and on Inspect's lone building. */
 const CITY_MAX_ZOOM = 4,
   STUDY_MAX_ZOOM = 8;
+/**
+ * How far out the camera may zoom (OrbitControls' minZoom, which the overview's fit keeps to as well),
+ * on a frame at least as wide as it is tall (`wide`) and on a taller one (`tall`: a phone held upright,
+ * a portrait tablet). City mode's overview takes in both neighbour islands, the sky island north-west of
+ * the town and the tropic island south of it, so on a wide frame it spans the whole sea between them: it
+ * fits at 0.44 to 0.48 beside the file or not (1280 x 720 the least) at the opening bearing, and the
+ * 1024 px window beside the file, and 1280-1440 px ones beside it at the second and fourth Rotate stops,
+ * go down to this. A tall frame's overview fits at 0.54 or more at every stop, and there the widest zoom
+ * stays where it was: at 0.40 a phone or a portrait tablet zoomed right out would see the plane's last
+ * and first moments in view (its timetable has no slack) in the frame's far corner at two Rotate stops.
+ */
+export const WIDEST = { wide: 0.4, tall: 0.45 };
 /** How long a lost GPU context may take to come back before the town is reported gone. */
 const CONTEXT_GRACE_MS = 4000;
 
@@ -472,7 +485,7 @@ export function skyFit() {
 }
 /**
  * Points round everything of the sky island that can show on screen, for how much of it a frame
- * shows (city-scene's skyOnScreen): its silhouette's marks (`marks`, skyMarks: the rim, the chimneys,
+ * shows (city-scene's islandOnScreen): its silhouette's marks (`marks`, skyMarks: the rim, the chimneys,
  * the tree, the rock's tip and the falls' puffs), the corners of the box round its rim's widest
  * ring in the deck's own frame (the marks keep only sixteen points of the ring), and the corners of
  * a box round each cloud's and floating rock's slot, three times its size out to the sides and twice
@@ -488,6 +501,30 @@ export function skyExtent(marks: T.Vector3[]) {
   for (const f of [...plan.SKY_CLOUDS, ...plan.SKY_ROCKS])
     for (const dx of [-3, 3]) for (const dy of [-2, 2]) for (const dz of [-3, 3]) points.push(new T.Vector3(f.x + dx * f.size, f.y + dy * f.size, f.z + dz * f.size));
   return points;
+}
+/**
+ * The tropic island, a neighbour's island on the sea off the south shore (town-tropic's
+ * TROPIC_EXTENT: the outline of its sand and beach at the water, the tops of its roof and its trees):
+ * its middle on the water, the middle of the box round the extent's points at the water (under half a
+ * unit up), where its pan pocket stands (PAN.tropic).
+ */
+export const TROPIC_MIDDLE = new T.Box3().setFromPoints(TROPIC_EXTENT.filter((p) => p.y < 0.5)).getCenter(new T.Vector3()).setY(0);
+/**
+ * How far the tropic island's shallows reach past its beach: they go and come with it (its land
+ * builder's setShown), so what of it shows on screen, for when it may go (followIslands), is its
+ * extent and the shallows round it: each of the extent's points at the water pushed this much further
+ * out from its middle (tropicSeen). (Its shallows end about 3 past the beach.)
+ */
+export const TROPIC_SHALLOWS = 3.5;
+/** What of the tropic island can show on screen: its extent, and its shallows' outer edge (TROPIC_SHALLOWS). */
+export function tropicSeen(extent: readonly T.Vector3[] = TROPIC_EXTENT, middle = TROPIC_MIDDLE) {
+  return [
+    ...extent,
+    ...extent.filter((p) => p.y < 0.5).map((p) => {
+      const out = new T.Vector3(p.x - middle.x, 0, p.z - middle.z);
+      return out.setLength(out.length() + TROPIC_SHALLOWS).add(middle);
+    }),
+  ];
 }
 /**
  * The sun's shadow when the view is close in on the sky island (skyShadowWanted): its box, round
@@ -931,6 +968,18 @@ export async function createCity(
     // starts below sea level, and a positive near plane would cut the sea off there.
     camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180);
   const { city, models, walkers, lamps, tram, boat, plane, clocks, animated, parkGroup, parkHit, sky: island } = model;
+  // STUB (camera lane, until the merge): the tropic island in the scene as its land builder's object
+  // shows or hides it (town-tropic's, decision 16: its land, and the groups the merge hands it, its
+  // building, garden and figure, with its shallows and foam, all at once). Here an empty group stands in
+  // for all of it (a helper puts a stand-in island in it); the merge hands the land builder's object
+  // over instead. The scene starts with the island hidden, as with the sky island (followIslands).
+  const tropicStandIn = new T.Group();
+  tropicStandIn.name = 'tropic-stand-in';
+  city.add(tropicStandIn);
+  const tropic = { setShown: (shown: boolean) => void (tropicStandIn.visible = shown) };
+  tropic.setShown(false);
+  // Pointer picking leaves the tropic island's building out while the island is hidden (pickAt).
+  const shownWithoutTropic = new Map([...models].filter(([id]) => id !== 'tropic-island'));
   const driftFollowers = animated.map((entry) => entry.object).filter((o) => o.userData.followsDrift);
   // Everything the frame loop turns: Inspect's copy of a building follows these parts of it.
   const movingParts = new Set<T.Object3D>([
@@ -996,23 +1045,29 @@ export async function createCity(
     targetGolden = 0;
   const sun = new T.DirectionalLight('#ffe3bd', 3.8);
   sun.castShadow = true;
-  /**
-   * The town's shadow box, its home focus: the island and the airport's island whole for every sun
-   * and yaw (their farthest corners are 45.7 and 45.0 from this centre), in a map that keeps about
-   * 22 texels a unit, as the old ±34 box at 1536 did. Inspect frames its building in a sharper map
-   * of its own: twice `shadowBase`, as it always was (twice the home map would be 4096).
-   */
-  const SHADOW_HOME = { centre: new T.Vector3(-3.5, 0, -13.5), radius: 46, map: tier === 'low' ? 1536 : 2048 };
   const shadowBase = tier === 'low' ? 1024 : 1536;
+  /**
+   * The town's shadow box, its home focus: the island, the airport's island and the tropic island
+   * whole for every sun and yaw (the smallest circle round them, 61.7 from this centre: the airport's
+   * armour at its north-west corner and the tropic island's beach at its south-east), in a map twice
+   * `shadowBase` (3072, 2048 on the low tier), the size Inspect's and the sky island's boxes take: about
+   * 25 texels a unit (16.5 on the low tier), as sharp as the old box round the island and the airport
+   * alone (centre (-3.5, -13.5), ±46 in 2048 or 1536: 22 and 16.7), and the same map wherever the box
+   * goes, so a hand-over never replaces it. The light stands `reach` back along the key light, far
+   * enough for all of it (in the lowest key light, 40 degrees up, a point 62 out and 10 up lies 54
+   * toward it from the middle; the key's own offset, 41, would leave the box's near side behind the
+   * light), and its far plane `far` out.
+   */
+  const SHADOW_HOME = { centre: new T.Vector3(4, 0, 2.5), radius: 62, reach: 60, far: 110, map: 2 * shadowBase };
   sun.shadow.mapSize.set(SHADOW_HOME.map, SHADOW_HOME.map);
   Object.assign(sun.shadow.camera, {
     left: -SHADOW_HOME.radius,
     right: SHADOW_HOME.radius,
     top: SHADOW_HOME.radius,
     bottom: -SHADOW_HOME.radius,
-    // The depth from the light runs about 1.2 to 76 over the whole box.
+    // The depth from the light runs about 6 to 108 over the whole box.
     near: 0.5,
-    far: 90,
+    far: SHADOW_HOME.far,
   });
   sun.shadow.normalBias = 0.02;
   sun.shadow.bias = -0.0001;
@@ -1027,8 +1082,9 @@ export async function createCity(
   const UP = new T.Vector3(0, 1, 0), keyOffset = new T.Vector3(), lastKey = new T.Vector3(), moonAt = new T.Vector3();
   let shadowDirty = true,
     // How far back along the key light the sun stands from its box's middle: 0 for the key's own offset
-    // (the town's box, the island's own and Inspect's), more for the island's file's wide box (SKY_WIDE).
-    sunBack = 0;
+    // (the sky island's own box and Inspect's), more for the town's (SHADOW_HOME.reach) and the sky
+    // island's file's wide box (SKY_WIDE).
+    sunBack = SHADOW_HOME.reach;
   function placeSun() {
     keyOffset.copy(sunOffset).applyAxisAngle(UP, yaw - Math.PI / 4); // yaw only: idle drift must not swing shadows
     // The moon's glint on the sea turns with it, so no rotate stop faces the moon across the water.
@@ -1065,9 +1121,9 @@ export async function createCity(
   /**
    * The sun's shadow on Inspect's building or the sky island (its centre and reach, and for the
    * island's file's wide box how far back the light stands and its far plane: `depth`), or on the
-   * town (none given).
+   * town (none given: its home box, the light SHADOW_HOME.reach back).
    */
-  function shadowFocus(center?: T.Vector3, radius = SHADOW_HOME.radius, depth = { reach: 0, far: 90 }) {
+  function shadowFocus(center?: T.Vector3, radius = SHADOW_HOME.radius, depth = center ? { reach: 0, far: 90 } : SHADOW_HOME) {
     shadowInspect = !!center;
     const resolution = shadowSizeFor(shadowInspect),
       focus = center || SHADOW_HOME.centre;
@@ -1104,10 +1160,9 @@ export async function createCity(
   controls.enableRotate = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.09;
-  // Far enough out for the whole island and the airport beside the file on a 1024-1280 px wide screen.
-  // The sky island does not change it: only those overviews reach it, as before, and there the sky
-  // island is whole at three Rotate stops and seven eighths in frame at the fourth.
-  controls.minZoom = 0.45;
+  // Far enough out for the whole town and both neighbour islands beside the file (WIDEST: set for the
+  // frame's shape again on every resize).
+  controls.minZoom = WIDEST.wide;
   controls.maxZoom = CITY_MAX_ZOOM;
   /**
    * Panning stops before the view leaves the town for open sea: the subject's ground point (where
@@ -1125,6 +1180,11 @@ export async function createCity(
    * bearing (11.7 beyond it along the line of sight at the town's pitch, 42.6 degrees; 18.7 at its
    * file's own, 30 degrees), and a capsule of `link` back to the town along the line between them,
    * from `from` (30 out, inside the island's disc), so a visitor in its file can pan back to the town.
+   * So has the tropic island, on the sea off the south shore (`tropic`): a disc of `reach` round its
+   * middle (its long half-axis, 12, and 4 more: the airport's deck keeps the same 4), which holds the
+   * ground point of its file at every bearing, and a capsule of `link` back to the town from 30 out
+   * toward it (on the disc's south shore by the harbour). It stands at sea level, at the town's pitch,
+   * so its pocket keeps its reach.
    */
   const PAN = {
     disc: 36,
@@ -1144,6 +1204,12 @@ export async function createCity(
       from: new T.Vector3(plan.SKY.x, 0, plan.SKY.z).setLength(30),
       link: 8,
     },
+    tropic: {
+      centre: TROPIC_MIDDLE.clone(),
+      reach: 16,
+      from: TROPIC_MIDDLE.clone().setLength(30),
+      link: 8,
+    },
     lift: 8,
   };
   const panSubject = new T.Vector3(),
@@ -1155,6 +1221,8 @@ export async function createCity(
     panLine = new T.Line3(PAN.from, PAN.to),
     panOnLink = new T.Vector3(),
     panLink = new T.Line3(PAN.sky.from, PAN.sky.centre),
+    panOnStrip = new T.Vector3(),
+    panStrip = new T.Line3(PAN.tropic.from, PAN.tropic.centre),
     panHeld = new T.Vector3(),
     panAlong = new T.Vector3(),
     // The target as the last frame's limit left it (the frame loop's, right after OrbitControls' update).
@@ -1175,14 +1243,19 @@ export async function createCity(
     panLine.closestPointToPoint(panSubject, true, panOnLine);
     panOnDeck.set(T.MathUtils.clamp(p.x, PAN.deck.x0, PAN.deck.x1), 0, T.MathUtils.clamp(p.z, PAN.deck.z0, PAN.deck.z1));
     panLink.closestPointToPoint(panSubject, true, panOnLink);
+    panStrip.closestPointToPoint(panSubject, true, panOnStrip);
     const disc = Math.hypot(p.x, p.z) - PAN.disc,
       causeway = panSubject.distanceTo(panOnLine) - PAN.causeway,
       deck = panSubject.distanceTo(panOnDeck) - PAN.deck.reach,
       reach = skyReach(low),
       pocket = panSubject.distanceTo(PAN.sky.centre) - reach,
       link = panSubject.distanceTo(panOnLink) - PAN.sky.link,
-      airport = Math.min(causeway, deck);
-    if (disc <= airport && disc <= pocket && disc <= link) return { centre: panOrigin, radius: PAN.disc };
+      south = panSubject.distanceTo(PAN.tropic.centre) - PAN.tropic.reach,
+      strip = panSubject.distanceTo(panOnStrip) - PAN.tropic.link,
+      airport = Math.min(causeway, deck),
+      tropic = Math.min(south, strip);
+    if (disc <= airport && disc <= pocket && disc <= link && disc <= tropic) return { centre: panOrigin, radius: PAN.disc };
+    if (tropic < airport && tropic < Math.min(pocket, link)) return south <= strip ? { centre: PAN.tropic.centre, radius: PAN.tropic.reach } : { centre: panOnStrip, radius: PAN.tropic.link };
     if (Math.min(pocket, link) < airport) return pocket <= link ? { centre: PAN.sky.centre, radius: reach } : { centre: panOnLink, radius: PAN.sky.link };
     return deck <= causeway ? { centre: panOnDeck, radius: PAN.deck.reach } : { centre: panOnLine, radius: PAN.causeway };
   }
@@ -1330,10 +1403,12 @@ export async function createCity(
     frameIndex = 0,
     skyHours = 20,
     paneHours = 20,
-    // The sky island: in view (see skyHidden; from the first frame on, as the frame allows: a frame
+    // The sky island: in view (see islandHidden; from the first frame on, as the frame allows: a frame
     // that hides it never shows it), casting (the sun's shadow frames it) and how much of the sun's
     // shadow shows while its box changes hands (followSky).
     skyShown = false,
+    // The tropic island in view, likewise (followIslands).
+    tropicShown = false,
     skyCast = false,
     // Which box the sun's shadow has while the island casts: its own (SKY_TIGHT) or its file's wide
     // one round it and the land in view (skyWideBox); none while the town has it. And the last wide box
@@ -1453,6 +1528,8 @@ export async function createCity(
   ];
   // The sky island's marks, which City mode's overview (and Plan view's) shows too: the reading
   // page's last shot keeps to the town, as it was (the island is hidden there). And its own frame.
+  // (The tropic island's are TROPIC_EXTENT's points, likewise City mode's only; they frame its file
+  // too, as they stand: the corners of their box would overstate a round island by a third.)
   const SKY_MARKS = skyMarks(),
     SKY_FIT = skyFit();
   /** How far up the line of sight the sky island's framing raises its target from the ground (focusSky). */
@@ -1462,18 +1539,25 @@ export async function createCity(
    * island to its armour's toe (it measures the town's own island by its waterline instead).
    */
   const LAND_MARKS = [new T.Vector3(rockX, 0, rockZ), ...plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z))];
-  /** The reading frames that would show a cut slice of the sky island: the People chapter's places. */
-  const SKY_HIDES = new Set<BuildingId>(plan.chapterSubjects.people);
   /**
-   * What of the sky island can show on screen (skyExtent), and of its pool on the sea: the square on
-   * the water its disc is drawn in (city-water's createSeaShadow, in the pool's own frame). And how
-   * much of it a frame that hides it takes away at once (followSky): only once nothing of it or of its
-   * pool reaches more than `edge` px into the frame, or, with the camera at rest in that frame, once
-   * no more than a cut slice of it is left there (`slice` of the screen box round it).
+   * The reading frames, besides the last shot and the opening view, that would show a cut slice of
+   * each neighbour island (islandHidden): the sky island's are the People chapter's places; the tropic
+   * island has none (every chapter's frame leaves it out of view).
+   */
+  const SKY_HIDES = new Set<BuildingId>(plan.chapterSubjects.people),
+    TROPIC_HIDES = new Set<BuildingId>();
+  /**
+   * What of each neighbour island can show on screen: the sky island's (skyExtent) and, of its pool on
+   * the sea, the square on the water its disc is drawn in (city-water's createSeaShadow, in the pool's
+   * own frame); the tropic island's with its shallows (tropicSeen). And how much of an island a frame
+   * that hides it takes away at once (islandShown): only once nothing of it (or of its pool) reaches
+   * more than `edge` px into the frame, or, with the camera at rest in that frame, once no more than a
+   * cut slice of it is left there (`slice` of the screen box round it).
    */
   const SKY_EXTENT = skyExtent(SKY_MARKS),
     POOL_SQUARE = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => new T.Vector3(x, 0, z)),
-    SKY_LEAVE = { edge: 1, slice: 0.5 };
+    TROPIC_SEEN = tropicSeen(),
+    ISLAND_LEAVE = { edge: 1, slice: 0.5 };
   /**
    * The airport's frame: its island to the armour's toe and the causeway's far half, up to the
    * tower's mast. Fitted like a group (fitGroup) between 0.95 and 2.6: the one-building rule's 1.3
@@ -1563,7 +1647,7 @@ export async function createCity(
    * The whole island in the part of the frame left free: beside a side panel (the frame
    * shift), under a hidden top band (twice the frame drop), below the masthead and above the
    * bottom controls (about 76 px each). Never closer than the plain overview's zoom of 1. In City
-   * mode the sky island is part of it.
+   * mode the two neighbour islands are part of it: the sky island and the tropic island.
    */
   function fitOverview() {
     const back = viewOffset(targetYaw, new T.Vector3(), 0).normalize(),
@@ -1573,7 +1657,7 @@ export async function createCity(
       maxX = -Infinity,
       minY = Infinity,
       maxY = -Infinity;
-    for (const point of cityMode ? islandMarks.concat(SKY_MARKS) : islandMarks) {
+    for (const point of cityMode ? islandMarks.concat(SKY_MARKS, TROPIC_EXTENT) : islandMarks) {
       const sx = point.dot(right),
         sy = point.dot(up);
       minX = Math.min(minX, sx);
@@ -1605,30 +1689,51 @@ export async function createCity(
     // under or right beside the caption's sky chip (16 px in, 166 wide with its longest caption, its
     // foot 102 down; the chip naming the place under the pointer is hidden in City mode). The view
     // moves left, the town right, until the island with its clouds and rocks clears the chip's column
-    // by PANEL_CLEAR, if the room before the file (PANEL_CLEAR from it) or the frame's edge allows;
-    // where it does not, the framing stays as it was. The zoom never changes.
+    // by PANEL_CLEAR at rest and stays off it through the idle drift (which swings it as it turns the
+    // view), if the room before the file (PANEL_CLEAR from it) or the frame's edge allows. Where it does
+    // not (a box as wide as the room beside the file, as at 1180 x 820, with the tropic island at its
+    // foot), the view moves up instead, the town down, as far as the box's foot keeps over the bottom
+    // band (76 px), if that is far enough for the island to clear the column at rest; where neither can,
+    // the framing stays as it was. The zoom never changes.
     if (cityMode) {
       const perUnit = (width * targetZoom) / (camera.right - camera.left),
-        point = new T.Vector3();
-      let left = Infinity,
-        top = -Infinity;
-      for (const mark of SKY_MARKS) {
-        left = Math.min(left, mark.dot(right));
-        top = Math.max(top, mark.dot(up));
-      }
-      // Each cloud and rock as a disc round its slot, as wide as it reaches and as high as it rises
-      // (in units of its size: a cloud 2.55 out and 1.5 up, a rock 1.3 out and 1.2 up).
-      for (const [floats, reach, rise] of [[plan.SKY_CLOUDS, 2.55, 1.5], [plan.SKY_ROCKS, 1.3, 1.2]] as const)
-        for (const float of floats) {
-          point.set(float.x, float.y + rise * float.size, float.z);
-          left = Math.min(left, point.dot(right) - reach * float.size);
-          top = Math.max(top, point.dot(up) + reach * float.size * Math.hypot(up.x, up.z));
+        point = new T.Vector3(),
+        floats = [[plan.SKY_CLOUDS, 2.55, 1.5], [plan.SKY_ROCKS, 1.3, 1.2]] as const,
+        // The island's left edge and top on screen (px from the frame's left and top), the view turned
+        // `turn` about its centre (the idle drift: 0.16 either way at most): each cloud and rock as a disc
+        // round its slot, as wide as it reaches and as high as it rises (in units of its size: a cloud 2.55
+        // out and 1.5 up, a rock 1.3 out and 1.2 up).
+        edgesAt = (turn: number) => {
+          const towardRight = new T.Vector3(Math.cos(targetYaw + turn), 0, -Math.sin(targetYaw + turn)),
+            towardUp = new T.Vector3().crossVectors(viewOffset(targetYaw + turn, new T.Vector3(), 0).normalize(), towardRight);
+          let left = Infinity,
+            top = -Infinity;
+          for (const mark of SKY_MARKS) {
+            left = Math.min(left, mark.dot(towardRight));
+            top = Math.max(top, mark.dot(towardUp));
+          }
+          for (const [slots, reach, rise] of floats)
+            for (const float of slots) {
+              point.set(float.x, float.y + rise * float.size, float.z);
+              left = Math.min(left, point.dot(towardRight) - reach * float.size);
+              top = Math.max(top, point.dot(towardUp) + reach * float.size * Math.hypot(towardUp.x, towardUp.z));
+            }
+          return { left: width / 2 + (left - target.dot(towardRight)) * perUnit, top: height / 2 - (top - target.dot(towardUp)) * perUnit };
+        },
+        // At rest it keeps PANEL_CLEAR from the column, through the drift only off it.
+        states = [{ ...edgesAt(0), margin: PANEL_CLEAR }, ...[-0.16, -0.08, 0.08, 0.16].map((turn) => ({ ...edgesAt(turn), margin: 0 }))],
+        touching = states.filter((e) => e.top < 102 + e.margin && e.left < 182 + e.margin),
+        aside = Math.max(0, ...touching.map((e) => 182 + e.margin - e.left)),
+        down = Math.max(0, ...touching.map((e) => 102 + e.margin - e.top)),
+        room = (frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width) - PANEL_CLEAR - (width / 2 + (maxX - target.dot(right)) * perUnit),
+        under = height - 76 - (height / 2 + (target.dot(up) - minY) * perUnit);
+      if (touching.length) {
+        if (aside <= room) target.addScaledVector(right, -aside / perUnit);
+        else if (!frameDrop && 102 + PANEL_CLEAR - states[0].top <= under) {
+          const by = Math.min(down, under);
+          target.addScaledVector(up, by / perUnit).addScaledVector(back, -(up.y * by) / perUnit / back.y);
         }
-      const centre = target.dot(right),
-        islandTop = height / 2 - (top - target.dot(up)) * perUnit,
-        need = 182 + PANEL_CLEAR - (width / 2 + (left - centre) * perUnit),
-        room = (frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width) - PANEL_CLEAR - (width / 2 + (maxX - centre) * perUnit);
-      if (islandTop < 102 + PANEL_CLEAR && need > 0 && need <= room) target.addScaledVector(right, -need / perUnit);
+      }
     }
     tween = true;
   }
@@ -1643,6 +1748,13 @@ export async function createCity(
     }
     if (focusedIds.length === 1 && focusedIds[0] === 'sky-island') {
       focusSky();
+      return;
+    }
+    // The tropic island's file: the whole island (TROPIC_EXTENT, its outline at the water and the tops
+    // of its roof and trees), fitted like the airport's between 0.95 and 2.6 (City mode only, whose
+    // file passes no panel edge).
+    if (focusedIds.length === 1 && focusedIds[0] === 'tropic-island') {
+      fitGroup(TROPIC_EXTENT, 0.95, 2.6);
       return;
     }
     const roots = focusedIds
@@ -1673,22 +1785,21 @@ export async function createCity(
     tween = true;
   }
   /**
-   * How fitGroup frames a group's bounds, without framing them: the screen's axes from the bearing
-   * the view heads for at `low` of the way down to the sky island's pitch (viewOffset), the bounds'
-   * extent along them, the room beside a panel that starts at `edge`, and the zoom that fits them
-   * between `far` and `near` in the part of the frame left free.
+   * How fitGroup frames a group's bounds (a box, or the points of its silhouette), without framing
+   * them: the screen's axes from the bearing the view heads for at `low` of the way down to the sky
+   * island's pitch (viewOffset), the bounds' extent along them, the room beside a panel that starts at
+   * `edge`, and the zoom that fits them between `far` and `near` in the part of the frame left free.
    */
-  function groupFrame(bounds: T.Box3, far: number, near: number, edge: number, low: number) {
+  function groupFrame(bounds: T.Box3 | readonly T.Vector3[], far: number, near: number, edge: number, low: number) {
     const back = viewOffset(targetYaw, new T.Vector3(), low).normalize(),
       right = new T.Vector3(Math.cos(targetYaw), 0, -Math.sin(targetYaw)),
       up = new T.Vector3().crossVectors(back, right),
-      corner = new T.Vector3();
+      corners = bounds instanceof T.Box3 ? Array.from({ length: 8 }, (_, i) => new T.Vector3(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z)) : bounds;
     let minX = Infinity,
       maxX = -Infinity,
       minY = Infinity,
       maxY = -Infinity;
-    for (let i = 0; i < 8; i++) {
-      corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z);
+    for (const corner of corners) {
       const sx = corner.dot(right),
         sy = corner.dot(up);
       minX = Math.min(minX, sx);
@@ -1718,7 +1829,7 @@ export async function createCity(
    * the frame a side panel, a phone's sheet or bars, the masthead and the controls leave free. A
    * row seen along its length takes less of the frame than the one-building rule (which is blind
    * to the bearing) allows for, and on a phone that crowded the roofs' name tags together. The zoom
-   * stays within `near` and `far` (the airport's island takes 0.95 to 2.6). Beside a panel that
+   * stays within `near` and `far` (the airport's island and the tropic island take 0.95 to 2.6). Beside a panel that
    * starts at `edge` (a share of the width), left of where the frame shift puts the free space's
    * edge, the group is fitted into the space the panel really leaves, PANEL_CLEAR px clear of it
    * and of the frame's left edge, the view's centre moved just as far as it must be: the reading
@@ -1726,7 +1837,7 @@ export async function createCity(
    * a scrollbar), where the shift's 0.21 assumes 52%, and at 1024 x 768 it covered the airport's
    * island's east end by 30 px.
    */
-  function fitGroup(bounds: T.Box3, far = 1.3, near = 3.4, edge = 1, low = 0) {
+  function fitGroup(bounds: T.Box3 | readonly T.Vector3[], far = 1.3, near = 3.4, edge = 1, low = 0) {
     const { back, right, up, minX, maxX, minY, maxY, room, zoom } = groupFrame(bounds, far, near, edge, low);
     targetZoom = zoom;
     // Centre the group's outline (on the ground, as the overview does).
@@ -1842,19 +1953,22 @@ export async function createCity(
   /** A place's root in the town: a building's model, or the sky island's own. */
   const rootOf = (id: BuildingId) => (id === 'sky-island' ? island.root : models.get(id)?.root);
   /**
-   * Whether the sky island is to be hidden. Three of the reading page's frames would show a cut slice
-   * of it under the masthead and the panel: the People chapter's (its row, and each home or the
-   * residence picked from it), the last shot, the whole town once the footer arrives, and the opening
-   * view, whose tall frame on a phone shows a sliver of its rock, puffs and a floating rock along the
-   * very top edge and its shadow on the sea below. The last shot and the opening view hide it only
-   * while the camera holds them as it framed them (overviewFit; reset(): nothing framed, no park, and
-   * autoFocus): a drag, a wheel or pinch zoom (cancel()) or the +/- buttons hand the view to the
-   * visitor, and it shows wherever it is in view (the opening framing leaves it out of a desktop's
-   * frame, but a pan or a zoom out brings it in). It is out of every other reading frame, so the
-   * reading page stays as it was. City mode always shows it. (When it goes and comes: followSky.)
+   * Whether a neighbour island is to be hidden (`hides`: the reading frames, besides the last shot and
+   * the opening view, that would show a cut slice of it). The reading page's last shot (the whole town
+   * once the footer arrives) and the opening view hide both: a phone's tall opening frame shows a sliver
+   * of the sky island's rock, puffs and a floating rock along its very top edge and its shadow on the sea
+   * below, and the tropic island, south of the town, lands in the frame's bottom left, a corner of it
+   * under a desktop's hero copy and tools and half of it under a phone's. They hide them only while the
+   * camera holds them as it framed them (overviewFit; reset(): nothing framed, no park, and autoFocus): a
+   * drag, a wheel or pinch zoom (cancel()) or the +/- buttons hand the view to the visitor, and each
+   * island shows wherever it is in view (the opening framing leaves them out of a desktop's frame but for
+   * that corner, and a pan or a zoom out brings them in). The sky island's `hides` are the People
+   * chapter's frames (its row, and each home or the residence picked from it); every other reading frame
+   * leaves both out of sight, so the reading page stays as it was. City mode always shows them, their own
+   * files among its frames. (When they go and come: islandShown.)
    */
-  function skyHidden() {
-    return !cityMode && !inspect && (overviewFit || (autoFocus && focusedIds.length === 0 && !parkSelected) || (focusedIds.length > 0 && focusedIds.every((id) => SKY_HIDES.has(id))));
+  function islandHidden(hides: ReadonlySet<BuildingId>) {
+    return !cityMode && !inspect && (overviewFit || (autoFocus && focusedIds.length === 0 && !parkSelected) || (focusedIds.length > 0 && focusedIds.every((id) => hides.has(id))));
   }
   const onScreen = new T.Vector3();
   /**
@@ -1862,7 +1976,7 @@ export async function createCity(
    * camera stands: how far the screen box round them reaches into it (px, the lesser of the box's
    * width and height inside it: 0 if it misses it), and what share of that box lies inside it.
    */
-  function skyOnScreen(points: T.Vector3[], matrix?: T.Matrix4) {
+  function islandOnScreen(points: readonly T.Vector3[], matrix?: T.Matrix4) {
     let x0 = Infinity,
       x1 = -Infinity,
       y0 = Infinity,
@@ -1881,28 +1995,60 @@ export async function createCity(
     return { reach: Math.min((across * width) / 2, (down * height) / 2), share: (across * down) / ((x1 - x0) * (y1 - y0)) };
   }
   /**
-   * The sky island through the frame, never seen to go or come where it stands in view: its group is
-   * opaque, so it cannot fade. A frame that hides it (skyHidden) takes it, and its pool on the sea
-   * with it (the frame loop lays the pool with skyShown), only once nothing of either reaches more
-   * than a pixel into the frame (SKY_LEAVE.edge), or once the camera has come to rest in the framing
+   * Whether a neighbour island is in view this frame, from whether it was (`shown`): the one rule both
+   * islands go and come by, never seen to go or come where they stand in view (they are opaque, so they
+   * cannot fade). A frame that hides an island (islandHidden, by its `hides`) takes it, and what goes
+   * with it on the sea (`pool`: the sky island's shadow, `points` in the frame of the object `on`; the
+   * tropic island's shallows are among its own points, `seen`), only once nothing of either reaches more
+   * than a pixel into the frame (ISLAND_LEAVE.edge), or once the camera has come to rest in the framing
    * it chose there (its glide, turn and pitch done: autoFocus, not a view the visitor has taken over)
-   * with no more than a cut slice of it left in the frame (SKY_LEAVE.slice of the screen box round
-   * it: the phone's opening view leaves 35% of it at most through the idle drift, the People chapter
-   * 29% at 1024 x 768). Glided into from a view that shows it (its own file left by the wordmark,
-   * Recentre in a chapter panned to it), it glides out of the frame whole, or its slice goes as the
-   * camera comes to rest; from anywhere else it is already out of view and goes at once; a frame that
-   * holds more of it (a portrait tablet's opening view, the last shot, where it stands whole) keeps it
-   * until it leaves. It comes back as the frame stops hiding it once the glide out has ended (the
-   * frames either side leave it out of view), or at once where nothing of it is in view yet, or where
-   * the view is the visitor's own (a framing neither the camera's nor the park's: the opening view or
-   * the last shot panned or zoomed, which moves under their hand, as before the opening view hid it);
-   * City mode, a change of the whole page, brings it back at once.
-   * And the sun's shadow box changes hands: while the view is close in on the island with the town
-   * next to absent, its own box (SKY_TIGHT: skyShadowWanted); in its own file where the frame shows the
-   * town's land or the airport's as well (two of its four Rotate stops), a wide box round both (skyWide):
-   * there the island casts on itself, everywhere else it casts nothing. The shadows fade out before the
-   * box moves and back in after (a cut under reduced motion), so neither the island's nor the town's
-   * ever pop. While the island's file turns from where it stands
+   * with no more than a cut slice of it left in the frame (ISLAND_LEAVE.slice of the screen box round
+   * it: the phone's opening view leaves 35% of the sky island at most through the idle drift, the People
+   * chapter 29% at 1024 x 768). Glided into from a view that shows it (its own file left by the
+   * wordmark, Recentre in a chapter panned to it), it glides out of the frame whole, or its slice goes as
+   * the camera comes to rest; from anywhere else it is already out of view and goes at once; a frame
+   * that holds more of it (a portrait tablet's opening view, the last shot, where it stands whole) keeps
+   * it until it leaves. It comes back as the frame stops hiding it once the glide out has ended (the
+   * frames either side leave it out of view), or at once where nothing of it is in view yet, or where the
+   * view is the visitor's own (a framing neither the camera's nor the park's: the opening view or the
+   * last shot panned or zoomed, which moves under their hand, as before the opening view hid it); City
+   * mode, a change of the whole page, brings it back at once.
+   */
+  function islandShown(shown: boolean, hides: ReadonlySet<BuildingId>, seen: readonly T.Vector3[], pool?: { points: readonly T.Vector3[]; on: T.Object3D }) {
+    const hiding = islandHidden(hides);
+    if (hiding !== shown) return shown;
+    camera.updateMatrixWorld();
+    pool?.on.updateMatrixWorld();
+    const box = islandOnScreen(seen),
+      gone = Math.max(box.reach, pool ? islandOnScreen(pool.points, pool.on.matrixWorld).reach : 0) <= ISLAND_LEAVE.edge;
+    return hiding
+      ? !gone && !(box.share <= ISLAND_LEAVE.slice && autoFocus && !tween && Math.abs(targetYaw - yaw) <= 0.0001 && Math.abs(aim(camera.zoom) - pitch) <= 0.0001)
+      : gone || !tween || cityMode || !(autoFocus || parkSelected);
+  }
+  /**
+   * Both neighbour islands through the frame (islandShown): the sky island's root, with its pool on the
+   * sea (the frame loop lays the pool with skyShown); and the tropic island through its land builder's
+   * setShown, which shows or hides it whole with its shallows and foam, its shadow (it casts in the
+   * town's box) drawn again in the very frame it goes or comes.
+   */
+  function followIslands() {
+    skyShown = islandShown(skyShown, SKY_HIDES, SKY_EXTENT, { points: POOL_SQUARE, on: seaShadow.mesh });
+    island.root.visible = skyShown;
+    const shown = islandShown(tropicShown, TROPIC_HIDES, TROPIC_SEEN);
+    if (shown !== tropicShown) {
+      tropicShown = shown;
+      tropic.setShown(shown);
+      shadowDirty = true;
+    }
+  }
+  /**
+   * The sun's shadow box changes hands with the sky island: while the view is close in on the island
+   * with the town next to absent, its own box (SKY_TIGHT: skyShadowWanted); in its own file where the
+   * frame shows the town's land or the airport's as well (two of its four Rotate stops), a wide box round
+   * both (skyWide): there the island casts on itself, everywhere else it casts nothing (and only while it
+   * is in view: followIslands). The shadows fade out before the box moves and back in after (a cut under
+   * reduced motion), so neither the island's nor the town's ever pop. While the island's file turns from
+   * where it stands
    * (skyTurn: Rotate, a pan or a zoom since or not, or the file's bearing set again; not the glide that
    * brings the view to it from elsewhere, which hands over as it closes in, nor a press while that glide
    * is under way), the box is decided at the framing the turn heads for (skyAhead), not at the frames it
@@ -1913,17 +2059,6 @@ export async function createCity(
    * island has it never lets it go.
    */
   function followSky(dt: number) {
-    const hiding = skyHidden();
-    if (hiding === skyShown) {
-      camera.updateMatrixWorld();
-      seaShadow.mesh.updateMatrixWorld();
-      const seen = skyOnScreen(SKY_EXTENT),
-        gone = Math.max(seen.reach, skyOnScreen(POOL_SQUARE, seaShadow.mesh.matrixWorld).reach) <= SKY_LEAVE.edge;
-      skyShown = hiding
-        ? !gone && !(seen.share <= SKY_LEAVE.slice && autoFocus && !tween && Math.abs(targetYaw - yaw) <= 0.0001 && Math.abs(aim(camera.zoom) - pitch) <= 0.0001)
-        : gone || !tween || cityMode || !(autoFocus || parkSelected);
-    }
-    island.root.visible = skyShown;
     const cast = (on: boolean) => {
       skyCast = on;
       for (const mesh of skyCasters) mesh.castShadow = on;
@@ -2065,6 +2200,7 @@ export async function createCity(
     camera.updateProjectionMatrix();
     renderer.setSize(Math.max(1, width), Math.max(1, height), false);
     ink.resize(width, height);
+    controls.minZoom = width >= height ? WIDEST.wide : WIDEST.tall;
     inspectionAutoFit = true;
     if (autoFocus) fitFocused();
   }
@@ -2141,9 +2277,9 @@ export async function createCity(
   }
   /**
    * The opening view: the island's centre at zoom 1 from the opening bearing. It is the camera's own
-   * framing (autoFocus) until the visitor pans or zooms it, which is all the sky island's hiding asks
-   * of it (skyHidden); fitted again (a resize, a new frame shift), it frames nothing (fitFocused), and
-   * its panel offset follows by itself (followPanel).
+   * framing (autoFocus) until the visitor pans or zooms it, which is all the neighbour islands' hiding
+   * asks of it (islandHidden); fitted again (a resize, a new frame shift), it frames nothing
+   * (fitFocused), and its panel offset follows by itself (followPanel).
    */
   function reset() {
     exitInspection();
@@ -2213,7 +2349,7 @@ export async function createCity(
     // can sit behind that plane (low on tall frames), so start the ray at the near plane.
     ray.ray.origin.addScaledVector(ray.ray.direction, camera.near);
     ray.far = camera.far - camera.near;
-    return pickTarget(ray, models, parkHit, skyPick);
+    return pickTarget(ray, tropicShown ? models : shownWithoutTropic, parkHit, skyPick);
   }
   function down(e: PointerEvent) {
     clearHover();
@@ -2554,6 +2690,7 @@ export async function createCity(
       hoverSignature = hoverKey;
       updateHover();
     }
+    followIslands();
     followSky(dt);
     animateExtras(dt, now, blend);
     ink.render();
@@ -2994,7 +3131,7 @@ export async function createCity(
       model,
       api,
       frameCost: () => frameCost,
-      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock }, skyShown, skyCast, skyBox: skyBox === SKY_TIGHT ? 'island' : skyBox ? 'wide' : 'town', shadowRadius: sun.shadow.camera.right, shadowFade, pitch }),
+      state: () => ({ inViewport, paused, disposed, frameIndex, night, tween, quality, season, golden, rain, paneClock: { ...paneClock }, skyShown, tropicShown, skyCast, skyBox: skyBox === SKY_TIGHT ? 'island' : skyBox ? 'wide' : 'town', shadowRadius: sun.shadow.camera.right, shadowFade, pitch }),
       /** Advance n frames of ~16.7 ms, updating and rendering regardless of visibility. */
       tick(frames = 1) {
         let t = last || performance.now();

@@ -967,7 +967,8 @@ async function siteOver(name, testCatalog) {
   assert.deepEqual(island.style, { en: 'Red-brick villa', zh: '红砖别墅' });
   assert.deepEqual(island.related, ['town-hall', 'pengyuan-liu'], 'The island’s file goes on to the Town Hall and Pengyuan Liu’s home.');
   assert.deepEqual([at('sky-island'), nav.tourStops.indexOf('sky-island')], [at('visiting-phd') + 1, 6], 'The island is the 7th place in the Directory and the tour.');
-  assert.equal(at('airport'), at('sky-island') + 1);
+  // The tropic island comes right after it, at the same bearing, and the airport after both.
+  assert.deepEqual([at('tropic-island'), at('airport')], [at('sky-island') + 1, at('sky-island') + 2]);
   assert.equal(glyphFor('sky-island'), 'sky', 'The island’s glyph is the cloud.');
   for (const locale of ['en', 'zh']) {
     assert.equal(nav.titleFor('sky-island', locale), island.name[locale]);

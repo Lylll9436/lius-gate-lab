@@ -347,6 +347,10 @@ export const sites: Record<BuildingId, Site> = {
   },
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
+  // On the tropic island, out on the sea off the south shore (the minimal site the land lane and the
+  // camera lane both add; the land lane's takes its place at the merge): its building's footprint,
+  // front due south, at the island's middle.
+  'tropic-island': { id: 'tropic-island', x: 19.5, z: 51, rotation: 0, w: 11, d: 7.2, height: 7.3 },
   // On the airport's island (onAirport, not onIsland): the Departures Hall (x -1.6..2.6, centred on
   // the causeway's axis), its link block (to 3.4) and the control tower (at 3.9, -47.4), front south.
   airport: { id: 'airport', x: 1.6, z: -47.6, rotation: 0, w: 6.6, d: 3.8, height: 7 },
@@ -383,6 +387,9 @@ export const chapterBearings: Record<string, number> = {
   // once more, so again no new bearing: the villa's south front is seen 35 degrees off, turned to
   // the camera's left, the side the key light is on.
   'sky-island': SKY_FILE,
+  // The tropic island's own file (City mode only, as the sky island's): the gate's bearing again, its
+  // building's south front seen 35 degrees off, the town's south coast behind it.
+  'tropic-island': Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -393,6 +400,7 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
   'lius-gate': ['lius-gate'],
   airport: ['airport'],
   'sky-island': ['sky-island'],
+  'tropic-island': ['tropic-island'],
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
@@ -414,13 +422,13 @@ export const cottages: { n: number; x: number; z: number; rotation: number; colo
 ];
 /**
  * Where the planting was first laid out round: the seven sites before the residence (and the
- * airport, out at sea, and the sky island, over it), and every cottage's spot with the north
+ * airport and the tropic island, out at sea, and the sky island, over it), and every cottage's spot with the north
  * cottage's among them. The tree and heather rules keep reading these, and the trees on ground
  * built on since (residencePlot) are dropped afterwards, by id, so new building never moves, adds
  * or re-species another tree (as the paddock's tree was dropped).
  */
 const PLANTED = {
-  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island'),
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island' && s.id !== 'tropic-island'),
   cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
 };
 /**

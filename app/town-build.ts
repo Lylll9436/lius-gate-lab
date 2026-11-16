@@ -289,8 +289,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
 
   const models = new Map<BuildingId, Model>();
   for (const b of buildings) {
-    // The sky island is no model: it is built above, in groups of its own.
-    if (b.model === 'sky') continue;
+    // The sky island is no model: it is built above, in groups of its own. (STUB, camera lane: the
+    // tropic island's building, a model of its own kind, comes with the merge; here none is built,
+    // rather than the terrace house the last branch would put on its site.)
+    if (b.model === 'sky' || b.model === 'tropic') continue;
     const site = plan.sites[b.id];
     const root = new T.Group(),
       shell = new T.Group();

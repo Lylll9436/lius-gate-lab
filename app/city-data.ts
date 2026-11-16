@@ -9,6 +9,7 @@ export type BuildingId =
   | 'qin-li'
   | 'visiting-phd'
   | 'sky-island'
+  | 'tropic-island'
   | 'airport'
   | 'research-studio'
   | 'city-archive';
@@ -26,7 +27,7 @@ export type Building = {
   w: number;
   d: number;
   height: number;
-  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'sky' | 'airport' | 'studio' | 'archive';
+  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'sky' | 'tropic' | 'airport' | 'studio' | 'archive';
   color: string;
   variant?: 'villa' | 'red-tenement' | 'gabled-house';
   sections: { heading: Text; body: Text }[];
@@ -279,6 +280,35 @@ const places: Building[] = [
     height: 8.18,
     model: 'sky',
     color: '#a4452e',
+    sections: [],
+    related: ['town-hall', 'pengyuan-liu'],
+  },
+  // The tropic island: a neighbour's island on the sea off the south shore. Its building is a model
+  // of the town's (model 'tropic'), framed, picked and ringed as the airport's is, its ground in a
+  // group of its own; it has no reading chapter (lab-navigation files it under About). x, z, w, d
+  // and height are its building's site (plan.sites). The minimal place both the land lane and the
+  // camera lane add: the land lane's place and the page lane's copy take its place at the merge.
+  {
+    id: 'tropic-island',
+    name: t('Tropic Island', '热带之岛'),
+    short: t('Tropic Island', '热带之岛'),
+    category: t('OFF THE SOUTH SHORE', '南岸外海上'),
+    summary: t(
+      'A small tropical island on the sea off the south shore, with a white-roofed building among its trees.',
+      '南岸外海上的一座热带小岛，树丛之间立着一栋白色大屋顶的楼。',
+    ),
+    style: t('Tropical campus building', '热带校园建筑'),
+    architecture: t(
+      'One broad flat roof on slender white columns over glazed floors and planted terraces, on a lawn ringed by a sandy beach.',
+      '细长的白色圆柱托起一整片宽大的平屋顶，下面是玻璃楼层和种满植物的露台，四周的草坪外是一圈沙滩。',
+    ),
+    x: 19.5,
+    z: 51,
+    w: 11,
+    d: 7.2,
+    height: 7.3,
+    model: 'tropic',
+    color: '#f2f0ea',
     sections: [],
     related: ['town-hall', 'pengyuan-liu'],
   },
