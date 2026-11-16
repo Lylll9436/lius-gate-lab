@@ -97,43 +97,47 @@ assert.deepEqual(nav.tourStops, [
   'corner-park',
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
-// Eleven stops: the gate, the hall, the three homes, the residence, then the sky island (its file's
-// bearing is the airport's, so the tour turns no more for it), the airport, the studio, the archive
-// and the park.
-assert.equal(nav.tourStops.length, 11);
+// Twelve stops: the gate, the hall, the three homes, the residence, then the sky island and the
+// tropic island (their files' bearing is the airport's, so the tour turns no more for them), the
+// airport, the studio, the archive and the park.
+assert.equal(nav.tourStops.length, 12);
 assert.deepEqual(
   nav.tourStops.slice(5),
-  ['visiting-phd', 'sky-island', 'airport', 'research-studio', 'city-archive', 'corner-park'],
+  ['visiting-phd', 'sky-island', 'tropic-island', 'airport', 'research-studio', 'city-archive', 'corner-park'],
 );
-// The sky island has a City file and a bearing of its own but no reading chapter: its address
-// reads its host chapter, About (the Town Hall's), whose chip it lights in the masthead; City mode
-// faces it from its own bearing; and the reading page never makes it its address, so the reading
-// camera keeps to About's own subject.
-assert.equal(nav.chapterFor('sky-island'), 'town-hall');
-assert.equal(nav.chapterFor('place:sky-island'), 'town-hall');
-assert.equal(nav.facingChapter('sky-island'), 'sky-island');
-assert.equal(nav.facingChapter('place:sky-island'), 'sky-island');
-assert.equal(nav.readingContent('sky-island', 'town-hall'), 'town-hall');
-assert.deepEqual(nav.sceneTarget('sky-island'), { building: 'sky-island' });
-assert.equal(nav.placeFor('sky-island'), 'sky-island');
-assert(!nav.readingChapters.includes('sky-island') && !nav.destinations.includes('sky-island'), 'The sky island has a reading chapter or a masthead chip of its own.');
-// A place picked on the model opens in the mode it was picked in, but the sky island, with no chapter
-// of its own, opens its City file from the reading page too (#city/sky-island), where its pick would
-// only have scrolled to About. pickRoute says where a pick goes: that mode, and the address the
-// place opens.
+// The neighbours' islands (the sky island, the tropic island) have a City file and a bearing of
+// their own but no reading chapter: an island's address reads its host chapter, About (the Town
+// Hall's), whose chip it lights in the masthead; City mode faces it from its own bearing; and the
+// reading page never makes it its address, so the reading camera keeps to About's own subject.
+const hostedIslands = ['sky-island', 'tropic-island'];
+for (const island of hostedIslands) {
+  assert.equal(nav.chapterFor(island), 'town-hall');
+  assert.equal(nav.chapterFor('place:' + island), 'town-hall');
+  assert.equal(nav.facingChapter(island), island);
+  assert.equal(nav.facingChapter('place:' + island), island);
+  assert.equal(nav.readingContent(island, 'town-hall'), 'town-hall');
+  assert.deepEqual(nav.sceneTarget(island), { building: island });
+  assert.equal(nav.placeFor(island), island);
+  assert(!nav.readingChapters.includes(island) && !nav.destinations.includes(island), 'The ' + island + ' has a reading chapter or a masthead chip of its own.');
+  assert.deepEqual(nav.pickRoute('reading', island), ['city', island]);
+}
+// A place picked on the model opens in the mode it was picked in, but an island, with no chapter of
+// its own, opens its City file from the reading page too (#city/sky-island, #city/tropic-island),
+// where its pick would only have scrolled to About. pickRoute says where a pick goes: that mode, and
+// the address the place opens.
 for (const b of buildings) {
+  const hosted = hostedIslands.includes(b.id);
   for (const id of [nav.contentForBuilding(b.id), 'place:' + b.id]) {
     assert.equal(nav.modeForPick('city', id), 'city', 'A pick in the city leaves the city: ' + id);
-    assert.equal(nav.modeForPick('reading', id), b.id === 'sky-island' ? 'city' : 'reading', 'A reading-page pick of ' + id + ' opens the wrong mode.');
+    assert.equal(nav.modeForPick('reading', id), hosted ? 'city' : 'reading', 'A reading-page pick of ' + id + ' opens the wrong mode.');
   }
   for (const mode of ['city', 'reading'])
     assert.deepEqual(
       nav.pickRoute(mode, b.id),
-      [mode === 'reading' && b.id === 'sky-island' ? 'city' : mode, nav.contentForBuilding(b.id)],
+      [mode === 'reading' && hosted ? 'city' : mode, nav.contentForBuilding(b.id)],
       'A pick of ' + b.id + ' on the ' + mode + ' page goes to the wrong mode or address.',
     );
 }
-assert.deepEqual(nav.pickRoute('reading', 'sky-island'), ['city', 'sky-island']);
 // The page sends every pick on the model through pickRoute: createCity's pick callback (its second
 // argument) hands navigate the spread of pickRoute(the page's mode, the place picked). Read from
 // page.tsx's syntax tree, so its formatting (pnpm format wraps the call) changes nothing here.

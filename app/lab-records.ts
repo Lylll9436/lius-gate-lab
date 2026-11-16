@@ -92,19 +92,20 @@ export const noteRecords = catalog.notes
   .sort((a, b) => b.date.localeCompare(a.date) || a.order - b.order);
 /**
  * The neighbours published, in their order: researchers beside the town who are not part of Liu’s
- * Gate, with their groups (Alison Heppenstall and UIA, whose place is the sky island). They are not
- * people: nothing that lists people, members, leavers, residents, homes, People cards, departures
- * or an event's People reads them, nor the supervisor's email, and no address opens one (getRecord
- * does not know them). Their place shows them (neighbourFor): the sky island's City file is hers,
- * and its category names her and her group (city-data's buildingsOn). On the reading page, the
- * chapter that hosts her place (About) ends with her Neighbours card (lab-content's NeighboursCard).
+ * Gate, with their groups (Alison Heppenstall and UIA, whose place is the sky island; Filip Biljecki
+ * and UAL, whose place is the tropic island). They are not people: nothing that lists people,
+ * members, leavers, residents, homes, People cards, departures or an event's People reads them,
+ * nor the supervisor's email, and no address opens one (getRecord does not know them). Their place
+ * shows them (neighbourFor): each island's City file is its neighbour's, and its category names
+ * them and their group (city-data's buildingsOn). On the reading page, the chapter that hosts their
+ * places (About) ends with one Neighbours card for each, in this order (lab-content's NeighboursCard).
  */
 export const neighbourRecords: NeighbourRecord[] = catalog.neighbours
   .filter((n) => n.visibility === 'published')
   .sort((a, b) => a.order - b.order);
 /**
  * The published neighbour a place's file shows, or undefined: the sky island's is Alison
- * Heppenstall. A place has at most one (content-schema checks it).
+ * Heppenstall, the tropic island's Filip Biljecki. A place has at most one (content-schema checks it).
  */
 export function neighbourFor(placeId: BuildingId): NeighbourRecord | undefined {
   return neighbourRecords.find((n) => n.buildingId === placeId);

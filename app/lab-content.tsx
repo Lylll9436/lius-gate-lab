@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowUpRight, ChevronDown, Cloud, Map, PlaneTakeoff } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, Cloud, Map, PlaneTakeoff, TreePalm } from 'lucide-react';
 import { publicAsset } from './public-asset';
 import { buildings, type BuildingId, type Locale } from './city-data';
 import { personPhotos } from './people-photos';
@@ -85,6 +85,7 @@ export type GlyphKind =
   | 'house'
   | 'airport'
   | 'sky'
+  | 'tropic'
   | 'studio'
   | 'archive'
   | 'park'
@@ -95,6 +96,7 @@ export function glyphFor(id: ContentId): GlyphKind {
   if (id === 'town-hall') return 'hall';
   if (id === 'airport') return 'airport';
   if (id === 'sky-island') return 'sky';
+  if (id === 'tropic-island') return 'tropic';
   if (id === 'research-studio') return 'studio';
   if (id === 'city-archive') return 'archive';
   if (id === 'corner-park') return 'park';
@@ -112,7 +114,7 @@ export function PlaceGlyph({
   size?: number;
 }) {
   const k = (
-    ['gate', 'hall', 'house', 'airport', 'sky', 'studio', 'archive', 'park', 'people'].includes(
+    ['gate', 'hall', 'house', 'airport', 'sky', 'tropic', 'studio', 'archive', 'park', 'people'].includes(
       kind,
     )
       ? kind
@@ -140,7 +142,18 @@ export function PlaceGlyph({
         className="place-glyph"
       />
     );
-  const paths: Record<Exclude<GlyphKind, 'airport' | 'sky'>, string> = {
+  // The tropic island's is a palm, from the same set: at 16 px its flat-roofed building would read
+  // as one more studio, and the palm says where it lies.
+  if (k === 'tropic')
+    return (
+      <TreePalm
+        size={size}
+        strokeWidth={1.6}
+        aria-hidden="true"
+        className="place-glyph"
+      />
+    );
+  const paths: Record<Exclude<GlyphKind, 'airport' | 'sky' | 'tropic'>, string> = {
     gate: 'M4 20V10a8 8 0 0 1 16 0v10M2 20h20M8 20v-9a4 4 0 0 1 8 0v9',
     hall: 'M3 21h18M5 21V10h14v11M12 10V4l3 2M9 14h2v7M13 14h2v7M8 7h8',
     house: 'M3 11l9-7 9 7M5 9.5V21h14V9.5M10 21v-6h4v6M14 5V3h2v4',
@@ -510,10 +523,10 @@ const siteHost = (url: string) => {
 };
 
 /**
- * The way out to a neighbour's group's website: the main link off the sky island's file and the
+ * The way out to a neighbour's group's website: the main link off their island's file and their
  * Neighbours card, in the site's primary button with the outbound arrow. `withHost` names the
- * address on it ("UIA website · urban-ai.uk"); read aloud, it names the address and says it opens
- * in a new tab.
+ * address on it ("UIA website · urban-ai.uk", "UAL website · ual.sg"); read aloud, it names the
+ * address and says it opens in a new tab.
  */
 function GroupSiteLink({
   site,
@@ -747,12 +760,13 @@ function ContinueExploring({
 }
 
 /**
- * The sky island's City file while a neighbour's record is published for it (Alison Heppenstall's).
- * Under the file's eyebrow (her name and her group's) and title (the island's): her name again, for
- * screen readers only, then her role and affiliation, her short profile, her group on a flat tint
- * (its name, the way out to its website, what it does and the one tie), her staff page, her full
- * profile folded away as on a person's card, the villa, and the places next to it. No photo of her,
- * nor a monogram in its place: the site shows none.
+ * A neighbour's island's City file while their record is published for it (the sky island's is
+ * Alison Heppenstall's, the tropic island's Filip Biljecki's). Under the file's eyebrow (their name
+ * and their group's) and title (the island's): their name again, for screen readers only, then
+ * their role and affiliation, their short profile, their group on a flat tint (its name, the way
+ * out to its website, what it does and the one tie), their own page, their full profile folded away
+ * as on a person's card, the building, and the places next to it. No photo of them, nor a monogram
+ * in its place: the site shows none.
  */
 function NeighbourFile({
   neighbour,
@@ -770,15 +784,16 @@ function NeighbourFile({
   return (
     <div className="record neighbour-file">
       <p className="neighbour-role">
-        {/* Her name, for a screen reader that starts at the focused title (the island's): only the
-            eyebrow above it names her. Hidden from view as the stage caption's chip is. */}
+        {/* Their name, for a screen reader that starts at the focused title (the island's): only
+            the eyebrow above it names them. Hidden from view as the stage caption's chip is. */}
         <span className="neighbour-name">{`${neighbour.title[locale]}${zh ? '，' : ', '}`}</span>
         <span className="eyebrow">{neighbour.role[locale]}</span>
         <span className="institution">{neighbour.affiliation[locale]}</span>
       </p>
       <p className="record-lead">{neighbour.summary[locale]}</p>
-      {/* The island works as a link to UIA's site: its button comes right under the group's name,
-          on the file's first screen on a laptop, before what the group does and the one tie. */}
+      {/* The island works as a link to its group's site (UIA's, UAL's): its button comes right
+          under the group's name, on the file's first screen on a laptop, before what the group does
+          and the one tie. */}
       <section className="neighbour-group">
         <h3>
           {group.name[locale]} · {group.fullName[locale]}
@@ -817,12 +832,15 @@ function NeighbourFile({
 }
 
 /**
- * The reading page's Neighbours card, at the end of the chapter that hosts a neighbour's place
- * (About, for the sky island), after the chapter's own sections. On a flat tint as the island's
- * file's group: her group in one line (its intro, a sentence of its own in the record, never cut
- * from its summary), the neighbour as one of its leaders, the one tie the sources state, and two
- * ways on: the group's website, and her place in the city. It is that place's reading address
- * (#read/sky-island), so the island's "Read on the page" lands here, its heading taking the focus.
+ * A reading page's Neighbours card, at the end of the chapter that hosts a neighbour's place (About,
+ * for both islands), after the chapter's own sections: one card for each neighbour, in their order.
+ * Its heading says where their place lies (the place's `where`: "Neighbours · Above the town",
+ * "Neighbours · Off the south shore"). On a flat tint as the island's file's group: their group in
+ * one line (its intro, a sentence of its own in the record, never cut from its summary), followed by
+ * the neighbour's place in it (its lead, a sentence of its own too), the one tie the sources state,
+ * and two ways on: the group's website, and their place in the city. It is that place's reading
+ * address (#read/sky-island, #read/tropic-island), so the island's "Read on the page" lands here,
+ * its heading taking the focus.
  */
 function NeighboursCard({
   neighbour,
@@ -835,20 +853,21 @@ function NeighboursCard({
 }) {
   const zh = locale === 'zh',
     group = neighbour.group,
-    place = buildings.find((b) => b.id === neighbour.buildingId);
+    place = buildings.find((b) => b.id === neighbour.buildingId),
+    where = place?.where?.[locale],
+    // One text, so the heading reads as one line ("Neighbours · Above the town").
+    heading = `${zh ? '近邻' : 'Neighbours'}${where ? ` · ${where}` : ''}`;
   return (
     <section className="neighbours" id={`read-${neighbour.buildingId}`}>
       <h3 tabIndex={-1}>
         <PlaceGlyph kind={glyphFor(neighbour.buildingId)} size={15} />
-        {zh ? '近邻 · 小城上空' : 'Neighbours · Above the town'}
+        {heading}
       </h3>
       <p className="neighbours-group">
         {group.name[locale]} · {group.fullName[locale]}
       </p>
       <p>
-        {zh
-          ? `${group.intro.zh}${neighbour.title.zh} 是 ${group.name.zh} 的团队负责人（Group Leader）之一。`
-          : `${group.intro.en} ${neighbour.title.en} is one of its Group Leaders.`}
+        {zh ? `${group.intro.zh}${group.lead.zh}` : `${group.intro.en} ${group.lead.en}`}
       </p>
       <p className="neighbour-tie">{group.connection[locale]}</p>
       <div className="neighbours-actions">
@@ -1388,7 +1407,7 @@ export function LabContent({
   onOpen: (id: ContentId) => void;
   /** Ring a place on the model while something in the content points at it (the board's rows). */
   onHover?: (building: BuildingId | null) => void;
-  /** The reading page: open a place in the city (the Neighbours card's way to the sky island). */
+  /** The reading page: open a place in the city (a Neighbours card's way to its island). */
   onExplore?: (id: ContentId) => void;
   reading?: boolean;
 }) {
@@ -1472,7 +1491,7 @@ export function LabContent({
     return (
       <p>{tr('This record is no longer available.', '这条记录已移除。')}</p>
     );
-  // The sky island's file is its neighbour's while her record is published; with none, it is the
+  // An island's file is its neighbour's while their record is published; with none, it is the
   // island's own, as any other place's.
   const neighbour = neighbourFor(b.id);
   if (neighbour)
@@ -1490,11 +1509,12 @@ export function LabContent({
       b.model === 'residence'
         ? people.filter((p) => p.buildingId === b.id)
         : [],
-    // The reading page's chapter that hosts a neighbour's place (About, the sky island's) ends with
-    // her Neighbours card; the place's City file is her own, and the Town Hall's file has none.
+    // The reading page's chapter that hosts the neighbours' places (About, both islands') ends with
+    // a Neighbours card for each, in their order; each place's City file is its neighbour's own, and
+    // the Town Hall's file has none.
     hosted = reading
-      ? neighbourRecords.find((n) => chapterFor(n.buildingId) === id)
-      : undefined;
+      ? neighbourRecords.filter((n) => chapterFor(n.buildingId) === id)
+      : [];
   return (
     <div className={`record ${person ? 'record-person' : ''}`}>
       {person ? (
@@ -1564,13 +1584,14 @@ export function LabContent({
           </section>
         ),
       )}
-      {hosted && (
+      {hosted.map((neighbour) => (
         <NeighboursCard
-          neighbour={hosted}
+          key={neighbour.id}
+          neighbour={neighbour}
           locale={locale}
           onExplore={onExplore}
         />
-      )}
+      ))}
       <ArchitectureNote locale={locale} building={b} />
       <ContinueExploring building={b} locale={locale} onOpen={onOpen} />
     </div>

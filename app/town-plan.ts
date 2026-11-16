@@ -350,6 +350,10 @@ export const sites: Record<BuildingId, Site> = {
   // On the airport's island (onAirport, not onIsland): the Departures Hall (x -1.6..2.6, centred on
   // the causeway's axis), its link block (to 3.4) and the control tower (at 3.9, -47.4), front south.
   airport: { id: 'airport', x: 1.6, z: -47.6, rotation: 0, w: 6.6, d: 3.8, height: 7 },
+  // On the tropic island off the south shore (its middle at 19.5, 51), SDE4's footprint, front due
+  // south. A stand-in from the page lane, so the place compiles and its copy can be checked: the
+  // land lane's site (and its island) replaces it at the merge.
+  'tropic-island': { id: 'tropic-island', x: 19.5, z: 51, rotation: 0, w: 11, d: 7.2, height: 7.6 },
 };
 export const siteList = Object.values(sites);
 /**
@@ -383,6 +387,8 @@ export const chapterBearings: Record<string, number> = {
   // once more, so again no new bearing: the villa's south front is seen 35 degrees off, turned to
   // the camera's left, the side the key light is on.
   'sky-island': SKY_FILE,
+  // The tropic island's own file (City mode only, as the sky island's): the gate's bearing again.
+  'tropic-island': Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -393,6 +399,7 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
   'lius-gate': ['lius-gate'],
   airport: ['airport'],
   'sky-island': ['sky-island'],
+  'tropic-island': ['tropic-island'],
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
@@ -420,7 +427,7 @@ export const cottages: { n: number; x: number; z: number; rotation: number; colo
  * or re-species another tree (as the paddock's tree was dropped).
  */
 const PLANTED = {
-  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island'),
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island' && s.id !== 'tropic-island'),
   cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
 };
 /**

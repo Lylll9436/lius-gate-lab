@@ -56,10 +56,11 @@ const { fitStudy } = await load('city-inspection');
 const { createStreetLighting } = await load('city-lighting');
 const { createIslandWater } = await load('city-water');
 
-assert.equal(new Set(buildings.map((b) => b.id)).size, 10);
-// The Directory's (and the tour's) order: the sky island comes after the residence and the airport
-// after it (they share a bearing, so the tour turns no more for it), before the studio.
-assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'sky-island', 'airport', 'research-studio', 'city-archive']);
+assert.equal(new Set(buildings.map((b) => b.id)).size, 11);
+// The Directory's (and the tour's) order: the sky island comes after the residence, the tropic
+// island after it and the airport after that (they share a bearing, so the tour turns no more for
+// them), before the studio.
+assert.deepEqual(buildings.map((b) => b.id), ['lius-gate', 'town-hall', 'pengyuan-liu', 'yunlong-liu', 'qin-li', 'visiting-phd', 'sky-island', 'tropic-island', 'airport', 'research-studio', 'city-archive']);
 // The People chapter's places: the three homes (the row's own checks below read plan.terraceHomes)
 // and the Visiting PhD Residence at the row's north end.
 assert.deepEqual(plan.chapterSubjects.people, [...plan.terraceHomes, 'visiting-phd']);
@@ -86,6 +87,9 @@ for (const b of buildings) {
 for (const site of plan.siteList) {
   if (site.id === 'airport') assert(plan.onAirport(site.x, site.z, -2) && !plan.onIsland(site.x, site.z), 'The airport is not on its own island.');
   else if (site.id === 'sky-island') assert(plan.onSky(site.x, site.z, -2) && !plan.onIsland(site.x, site.z, -3.3) && !plan.onAirport(site.x, site.z, 5) && site.y === plan.SKY.top, 'The sky island\'s villa is not on its own deck.');
+  // (A stand-in rule from the page lane, for its stand-in site: the land lane's own rule for the
+  // tropic island's land replaces it at the merge.)
+  else if (site.id === 'tropic-island') assert(!plan.onIsland(site.x, site.z, -3.3) && !plan.onAirport(site.x, site.z, 5) && !site.y, 'The tropic island\'s building is not off the south shore.');
   else assert(plan.onIsland(site.x, site.z, 2) && !site.y, 'Site in the sea: ' + site.id);
   if (site.id !== 'lius-gate')
     for (const [sx, sz] of [
@@ -680,8 +684,9 @@ console.warn = originalWarn;
 console.error = originalError;
 assert.deepEqual(warnings, []);
 const { city, models, walkers, lamps, clocks } = model;
-// Nine models: the sky island is a place of its own (model.sky), not one of the town's models.
-assert.equal(models.size, 9);
+// Ten models: the sky island is a place of its own (model.sky), not one of the town's models; the
+// tropic island's building is one (as the airport's hall is).
+assert.equal(models.size, 10);
 assert(model.sky && !models.has('sky-island'), 'The sky island is built as a model of the town\'s.');
 assert.equal(walkers.length, 7);
 assert.equal(clocks.length, 4, 'The town hall keeps four clock faces.');
@@ -9966,5 +9971,5 @@ let skyReport = '';
   skyReport += `; its villa ${batched.length} meshes and ${Math.round(tris)} triangles, ${late.length} of its ${rooms.length} rooms still lit at 02:30`;
 }
 console.log(
-  `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 11 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, the sky island off the north-west headland: ${skyReport}, and a stand-in for the tropic island's building off the south shore), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

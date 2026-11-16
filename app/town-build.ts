@@ -186,6 +186,21 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     parkHit.add(hit);
   }
 
+  /**
+   * The tropic island's building, a stand-in from the page lane (so the place builds and its copy
+   * can be checked): a low sand pad, SDE4's flat roof on slender white columns over a glazed block
+   * and a champagne end block, in its local frame (front +z). The land lane's island and the SDE4
+   * lane's building replace it at the merge.
+   */
+  function buildTropicStandIn(shell: T.Group) {
+    const pad = kit.cylinder(shell, 0, 0.15, 0, 1, 1, 0.3, palette.sand, 'paint', 40);
+    pad.scale.set(7.4, 1, 5.2);
+    kit.box(shell, 0, 7.12, 0, 11, 0.35, 7.2, palette.white, 'paint');
+    kit.box(shell, 0.6, 3.2, -0.3, 7.6, 5.8, 5, '#9fbcc6', 'paint');
+    kit.box(shell, -4.6, 3.65, 0, 1.8, 6.7, 7.2, '#cbb790', 'paint');
+    for (const x of [-2.4, 0, 2.4, 4.8]) for (const z of [-3.15, 3.15]) kit.cylinder(shell, x, 3.62, z, 0.1, 0.1, 6.65, palette.white, 'paint', 16);
+  }
+
   /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
@@ -306,6 +321,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     else if (b.model === 'archive') buildArchive(shell, site);
     else if (b.model === 'residence') buildResidence(shell, site);
     else if (b.model === 'airport') buildAirport(shell, site);
+    else if (b.model === 'tropic') buildTropicStandIn(shell);
     else buildTerrace(shell, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
     models.set(b.id, { root, shell, fade: [], center: new T.Vector3(site.x, 0, site.z) });
   }
