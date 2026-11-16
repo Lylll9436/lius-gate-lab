@@ -205,6 +205,58 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   assert.deepEqual(selection, [], 'Hidden, the sky island must not open.');
   skyRoot.visible = true;
 }
+// The tropic island: a building model of the town's whose ground answers for it, as addHitBoxes
+// hangs it (an elliptic slab of the island's waterline, no taller than its lawn, on its building's
+// box): the pointer on its lawn or its beach names it and a click opens it; the open sea beside it
+// does not; and hidden (its root not drawn: the scene leaves the island out of the opening view), it
+// answers neither the pointer nor a click. The toy island's own model and label join the town only
+// for this.
+{
+  const at = new T.Vector3(4.6, 0, -1.6),
+    root = new T.Group(),
+    hit = new T.Mesh(new T.BoxGeometry(0.8, 1.4, 0.6), new T.MeshBasicMaterial({ visible: false })),
+    ground = new T.Mesh(new T.CylinderGeometry(1, 1, 0.3, 32).scale(1.6, 1, 1.2), hit.material);
+  root.userData.buildingId = hit.userData.buildingId = ground.userData.buildingId = 'tropic-island';
+  root.position.copy(at);
+  root.add(new T.Mesh(new T.BoxGeometry(0.7, 1.2, 0.5), new T.MeshBasicMaterial()));
+  root.children[0].position.set(0, 0.75, -0.3);
+  hit.position.set(at.x, 0.75, at.z - 0.3);
+  ground.position.set(0, 0.15 - 0.75, 0.3);
+  hit.add(ground);
+  root.updateMatrixWorld(true);
+  hit.updateMatrixWorld(true);
+  const island = { root, hit },
+    label = { b: { id: 'tropic-island' }, element: { offsetWidth: 240, offsetHeight: 70, style: { visibility: 'hidden' } } },
+    town = h.models;
+  h.models = new Map([...town, ['tropic-island', island]]);
+  labels.push(label);
+  const lawn = eventAt(at.clone().add(new T.Vector3(-1.1, 0.3, 0.45))),
+    sea = eventAt(at.clone().add(new T.Vector3(0, 0, 1.9)));
+  h.ray.setFromCamera(new T.Vector2(((lawn.clientX - 42) / 800) * 2 - 1, (-(lawn.clientY - 20) / 500) * 2 + 1), camera);
+  assert(h.ray.intersectObject(root, true).length === 0 && h.ray.intersectObject(hit, true).length > 0, 'The check points at no lawn of the tropic island.');
+  emit('pointermove', lawn);
+  f.updateHover();
+  assert.deepEqual(visible(), ['tropic-island'], 'The tropic island must answer on its lawn.');
+  emit('pointerdown', lawn);
+  emit('pointerup', lawn);
+  assert.deepEqual(selection.splice(0), ['tropic-island'], 'A click on the tropic island\'s lawn must open it.');
+  emit('pointermove', sea);
+  f.updateHover();
+  assert.deepEqual(visible(), [], 'The open sea beside the tropic island must name nothing.');
+  root.visible = false;
+  for (const e of [lawn, eventAt(at.clone().add(new T.Vector3(0, 0.75, -0.3)))]) {
+    emit('pointermove', e);
+    f.updateHover();
+    assert.deepEqual(visible(), [], 'Hidden, the tropic island must name nothing.');
+    emit('pointerdown', e);
+    emit('pointerup', e);
+    assert.deepEqual(selection, [], 'Hidden, the tropic island must not open.');
+  }
+  root.visible = true;
+  labels.pop();
+  h.models = town;
+  hoverPins.push('the tropic island on its own ground (its lawn, not the sea beside it) and not while hidden');
+}
 emit('pointermove', {
   clientX: 43,
   clientY: 21,

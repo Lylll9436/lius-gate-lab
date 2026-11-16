@@ -958,7 +958,7 @@ async function siteOver(name, testCatalog) {
 // out to its website, its address on the button and read aloud, then what it does and the one tie),
 // her staff page, her full profile folded away, the villa, and the places next to it. No photo of
 // her, nor a monogram in its place. It stands in the Directory and the tour after the Visiting PhD
-// Residence and before the airport.
+// Residence and before the tropic island, which comes before the airport.
 {
   const island = buildings.find((b) => b.id === 'sky-island'),
     at = (id) => buildings.findIndex((b) => b.id === id);
@@ -967,7 +967,8 @@ async function siteOver(name, testCatalog) {
   assert.deepEqual(island.style, { en: 'Red-brick villa', zh: '红砖别墅' });
   assert.deepEqual(island.related, ['town-hall', 'pengyuan-liu'], 'The island’s file goes on to the Town Hall and Pengyuan Liu’s home.');
   assert.deepEqual([at('sky-island'), nav.tourStops.indexOf('sky-island')], [at('visiting-phd') + 1, 6], 'The island is the 7th place in the Directory and the tour.');
-  assert.equal(at('airport'), at('sky-island') + 1);
+  assert.equal(at('tropic-island'), at('sky-island') + 1);
+  assert.equal(at('airport'), at('tropic-island') + 1);
   assert.equal(glyphFor('sky-island'), 'sky', 'The island’s glyph is the cloud.');
   for (const locale of ['en', 'zh']) {
     assert.equal(nav.titleFor('sky-island', locale), island.name[locale]);
