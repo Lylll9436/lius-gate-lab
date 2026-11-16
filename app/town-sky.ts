@@ -210,7 +210,7 @@ export const OUTCROP_STONES = [
  * edge); the rest of the stone keeps the rounded block's. The planes cut only a shallow cap of the
  * block, so no face turns over.
  */
-function chisel(geometry: T.BufferGeometry, cuts: [number, number, number, number][]) {
+export function chisel(geometry: T.BufferGeometry, cuts: [number, number, number, number][]) {
   const p = geometry.getAttribute('position'),
     n = geometry.getAttribute('normal'),
     index = geometry.getIndex()!,

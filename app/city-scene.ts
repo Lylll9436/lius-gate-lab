@@ -213,8 +213,12 @@ export const AIRPORT_EXTRAS = [
  * would stand 7 high over all of it, and its slack would reach several units out over the sea.
  * So are the hangar and the windsock: their boxes (AIRPORT_EXTRAS) hang there too. Without them
  * the hangar's west end, which a ray reaches past the deck's edge, and the sock answered nothing.
- * See pickTarget.
+ * The tropic island's ground is part of the tropic island in the same way: an elliptic slab of its
+ * waterline's footprint (plan.TROPIC), from just under the water to TROPIC_HIT.top over it (its
+ * lawn's highest, on the mound, is 0.40), hung on its building's box; pointing at its lawn, its
+ * paths or its beach finds it, the open sea beside it does not. See pickTarget.
  */
+export const TROPIC_HIT = { top: 0.56, below: 0.1, sides: 48 };
 export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) {
   const A = plan.AIRPORT;
   for (const [id, m] of models) {
@@ -238,6 +242,14 @@ export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) 
         extra.userData.buildingId = id;
         hit.add(extra);
       }
+    }
+    if (id === 'tropic-island') {
+      const P = plan.TROPIC,
+        tall = TROPIC_HIT.top + TROPIC_HIT.below,
+        ground = new T.Mesh(new T.CylinderGeometry(1, 1, tall, TROPIC_HIT.sides).scale(P.a, 1, P.b), hit.material);
+      ground.position.set(P.x - centre.x, tall / 2 - TROPIC_HIT.below - centre.y, P.z - centre.z);
+      ground.userData.buildingId = id;
+      hit.add(ground);
     }
     parent.add(hit);
     hit.updateMatrixWorld();
@@ -397,8 +409,9 @@ export function pickTarget(
   sky?: { hit: T.Object3D; root: T.Object3D },
 ): HoverTarget {
   const island = sky?.root.visible ? sky : undefined;
+  // A model whose root is hidden (the tropic island, where the scene leaves it out) answers nothing.
   const boxes = ray.intersectObjects(
-    [...Array.from(models.values(), (m) => m.hit ?? m.root), parkHit, ...(island ? [island.hit] : [])],
+    [...Array.from(models.values()).filter((m) => m.root.visible).map((m) => m.hit ?? m.root), parkHit, ...(island ? [island.hit] : [])],
     true,
   );
   let best: { id: HoverTarget; distance: number } | null = null,

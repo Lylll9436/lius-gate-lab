@@ -83,8 +83,8 @@ function boxBlur(src: Float32Array, dst: Float32Array, alongX: boolean, radius =
 /**
  * Baked ground masks, all from plan data so later layout changes stay in sync.
  * R: ground darkening (footprint pads, canopy and trunk discs, lamp feet, the grass lip by the pavements).
- * G: the shallow-water ring round the coast and the lighthouse rock (and, added in a phase of its
- *    own, the airport's: addAirportShallows).
+ * G: the shallow-water ring round the coast and the lighthouse rock (and, added in phases of their
+ *    own, the airport's and the tropic island's: addAirportShallows, addTropicShallows).
  * B: the mown town lawn (plan.lawnCore). A: terrain height over GROUND_HEIGHT_RANGE.
  */
 export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpec[]) {
@@ -121,8 +121,9 @@ export function buildGroundMasks(trees: plan.TreeSpec[], lampSpecs: plan.LampSpe
 
   // Footprint pads under the island's buildings. Not the airport's: its deck stands clear of the
   // ground, and its grass takes no mask shade (the grid stopped short of it until its shallows).
-  // Nor the sky island's villa: under it is open sea, 10 below its deck.
-  for (const s of plan.siteList) if (!plan.onAirport(s.x, s.z) && !s.y) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
+  // Nor the sky island's villa: under it is open sea, 10 below its deck. Nor the tropic island's,
+  // whose ground is its own (its lawn, like the airport's deck, takes no mask shade).
+  for (const s of plan.siteList) if (!plan.onAirport(s.x, s.z) && !plan.onTropic(s.x, s.z) && !s.y) rect(s.x, s.z, s.w + 0.4, s.d + 0.4, s.rotation, 1, 0.6);
   for (const c of plan.cottages) rect(c.x, c.z, 3.0, 2.6, c.rotation, 1, 0.5);
   const plot = plan.reservedPlot;
   rect(plot.x, plot.z, CRANE_BASE, CRANE_BASE, 0, 0.9, 0.4);
@@ -227,6 +228,62 @@ export function addAirportShallows(texture: T.DataTexture) {
     }
   texture.needsUpdate = true;
 }
+/**
+ * The tropic island's shallows (plan.TROPIC): the town's own turquoise ring round a sandy beach,
+ * `strength` at the waterline (the sea tints by G squared: 1 is the main island's full tint) easing
+ * out to nothing `width` past it; where its rocks stand (plan.tropicRockiness) the airport's
+ * fainter, narrower ring round its stones instead (`rocky`). Measured along the island's rays as its
+ * shore is laid (plan.tropicAt's `shore`), so the ring follows the beach's own tide line.
+ */
+export const TROPIC_SHALLOWS = { strength: 1, width: 3, rocky: { strength: 0.6, width: 1.8 } };
+/**
+ * Bake the tropic island's shallows into the masks' G, max-combined with what is there (the main
+ * island's own ring reaches 7.5 off its coast, short of the island's), only inside the grid (never
+ * its border rows or columns). It returns how to take them away and bring them back: show(false)
+ * writes the region's G as it was before them and show(true) as it is with them, so the island's
+ * shallows go and come with it (town-tropic's setShown) and leave no ring on the sea.
+ */
+export function addTropicShallows(texture: T.DataTexture) {
+  const N = MASK_SIZE,
+    E = MASK_EXTENT,
+    texel = (2 * E) / N,
+    data = texture.image.data as Uint8Array,
+    P = plan.TROPIC,
+    S = TROPIC_SHALLOWS,
+    reach = S.width + 1,
+    cell = (v: number) => Math.floor((v + E) / texel),
+    [i0, i1] = [Math.max(1, cell(P.x - P.a - reach)), Math.min(N - 2, cell(P.x + P.a + reach))],
+    [j0, j1] = [Math.max(1, cell(P.z - P.b - reach)), Math.min(N - 2, cell(P.z + P.b + reach))],
+    width = i1 - i0 + 1,
+    hidden = new Uint8Array(width * (j1 - j0 + 1)),
+    shown = new Uint8Array(hidden.length),
+    at = (i: number, j: number) => (j * N + i) * 4 + 1;
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      const x = -E + (i + 0.5) * texel,
+        z = -E + (j + 0.5) * texel,
+        { bearing, shore } = plan.tropicAt(x, z),
+        rocky = plan.tropicRockiness(bearing),
+        strength = S.strength + (S.rocky.strength - S.strength) * rocky,
+        out = S.width + (S.rocky.width - S.width) * rocky,
+        ring = Math.round(strength * (1 - T.MathUtils.smoothstep(shore, 2.6, P.beach + out)) * 255),
+        k = (j - j0) * width + (i - i0);
+      hidden[k] = data[at(i, j)];
+      shown[k] = Math.max(hidden[k], ring);
+      data[at(i, j)] = shown[k];
+    }
+  texture.needsUpdate = true;
+  return {
+    /** The region's texels (i0..i1 along x, j0..j1 along z). */
+    region: { i0, i1, j0, j1 },
+    show(on: boolean) {
+      const from = on ? shown : hidden;
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) data[at(i, j)] = from[(j - j0) * width + (i - i0)];
+      texture.needsUpdate = true;
+    },
+  };
+}
+export type TropicShallows = ReturnType<typeof addTropicShallows>;
 type RectStamp = (cx: number, cz: number, w: number, d: number, ry: number, strength: number, margin: number) => void;
 type DiscStamp = (cx: number, cz: number, r: number, strength: number, feather: number) => void;
 /** Damp, darker sand under the harbour's beach details (stamped after the blur: each is only a texel or two wide). */
@@ -410,6 +467,36 @@ export function createGround(ctx: TownContext) {
           fi.push(a, c, c + 1, a, c + 1, a + 1);
         }
     }
+    // The tropic island (plan.TROPIC): its tide line and the faint band beyond it, as the town's own
+    // shore has them, through its shore stations (plan.tropicBearings) at the same widths of the
+    // shore profile (plan.tropicShorePoint). Along its rocky stretches the surf breaks round the
+    // stones as the airport's does: its strength wanders, gone here and there for a short stretch.
+    // Its rows come last in the index, from `tropicFoam` on, so the island takes its own foam away
+    // with it when it is hidden (town-tropic's setShown draws the foam only up to there).
+    const tropicFoam = fi.length;
+    {
+      const stations = plan.tropicBearings,
+        m = stations.length;
+      foamBands.forEach((band, b) => {
+        const start = fp.length / 3;
+        stations.forEach((bearing, j) => {
+          const wobble = (0.12 * Math.sin(j * 1.7) + 0.08 * Math.sin(j * 4.3)) * band.wobble,
+            rocky = plan.tropicRockiness(bearing),
+            surf = noise2(j * 0.62 + 5.3 + b * 9.1, 2.3),
+            alpha = band.alpha * (1 - rocky + rocky * T.MathUtils.smoothstep(surf, 0.18, 0.42) * (0.55 + 0.45 * surf));
+          for (const w of [band.from + wobble, band.to + wobble]) {
+            const [x, z] = plan.tropicShorePoint(bearing, w);
+            fp.push(x, WATER + 0.006, z);
+            fc.push(foamColour.r, foamColour.g, foamColour.b, alpha);
+          }
+        });
+        for (let j = 0; j < m; j++) {
+          const a = start + j * 2,
+            c = start + ((j + 1) % m) * 2;
+          fi.push(a, c, c + 1, a, c + 1, a + 1);
+        }
+      });
+    }
     const foamGeometry = new T.BufferGeometry();
     foamGeometry.setAttribute('position', new T.Float32BufferAttribute(fp, 3));
     foamGeometry.setAttribute('color', new T.Float32BufferAttribute(fc, 4));
@@ -426,6 +513,7 @@ export function createGround(ctx: TownContext) {
     foam.name = 'tide-foam';
     foam.renderOrder = 3;
     foam.userData.keepSeparate = true;
+    foam.userData.tropicFoam = tropicFoam;
     land.add(foam);
     animated.push({
       object: foam,
@@ -458,6 +546,7 @@ export function createGround(ctx: TownContext) {
       stone.castShadow = stone.receiveShadow = true;
       land.add(stone);
     }
+    return { foam };
   }
   return { buildTerrain };
 }

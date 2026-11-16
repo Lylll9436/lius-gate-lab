@@ -9,6 +9,7 @@ export type BuildingId =
   | 'qin-li'
   | 'visiting-phd'
   | 'sky-island'
+  | 'tropic-island'
   | 'airport'
   | 'research-studio'
   | 'city-archive';
@@ -26,7 +27,7 @@ export type Building = {
   w: number;
   d: number;
   height: number;
-  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'sky' | 'airport' | 'studio' | 'archive';
+  model: 'gate' | 'hall' | 'tenement' | 'villa' | 'residence' | 'sky' | 'tropic' | 'airport' | 'studio' | 'archive';
   color: string;
   variant?: 'villa' | 'red-tenement' | 'gabled-house';
   sections: { heading: Text; body: Text }[];
@@ -279,6 +280,36 @@ const places: Building[] = [
     height: 8.18,
     model: 'sky',
     color: '#a4452e',
+    sections: [],
+    related: ['town-hall', 'pengyuan-liu'],
+  },
+  // The tropic island: a place of its own on the sea off the south shore. Its building is one of
+  // the town's models (model 'tropic': town-build builds it on the island's own ground, airport-like,
+  // so picking, the ring, framing and night windows are the town's), its root at the island's
+  // middle. It has no reading chapter. x, z, w, d and height are its site's (plan.sites: the island
+  // to its waterline, the roof's top). Its category and summary here are the island's own, for while
+  // no neighbour's record is published for it; while one is, buildingsOn names the neighbour instead.
+  {
+    id: 'tropic-island',
+    name: t('Tropic island', '热带岛'),
+    short: t('Tropic island', '热带岛'),
+    category: t('OFF THE SOUTH SHORE', '南岸外海上'),
+    summary: t(
+      'A small tropical island on the sea off the south shore, its building under one wide, flat roof.',
+      '南岸外海上的一座热带小岛，岛上的建筑撑着一片宽大的平屋顶。',
+    ),
+    style: t('Tropical island', '热带小岛'),
+    architecture: t(
+      'A long, low building under one wide, flat white roof on slender columns, on a lawn with curving paths, ringed by a sandy beach.',
+      '细柱撑起一片宽大的白色平屋顶，下面是一栋长而低的建筑；草坪上有弯曲的小路，四周是沙滩。',
+    ),
+    x: 19.5,
+    z: 51,
+    w: 26,
+    d: 21,
+    height: 7.85,
+    model: 'tropic',
+    color: '#cbb790',
     sections: [],
     related: ['town-hall', 'pengyuan-liu'],
   },

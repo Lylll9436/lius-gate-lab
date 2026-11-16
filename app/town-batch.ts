@@ -66,7 +66,7 @@ function rayBox(q: number[], d: number[], b: T.Box3, limit: number) {
  * dark and a the `wake` at which it comes on in the morning (255 = never). The glass shader
  * reads them against the window clock (city-materials' setWindows).
  */
-export type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'villa' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'cockpit' | 'entrance' | 'unlit' | 'clear';
+export type WindowRole = 'home' | 'residence' | 'civic' | 'studio' | 'villa' | 'campus' | 'kiosk' | 'cab' | 'beacon' | 'dial' | 'vehicle' | 'cockpit' | 'entrance' | 'unlit' | 'clear';
 type Mix = { lit: number; dim: number; cool: number; goes: number; span: [number, number]; risers: number };
 /**
  * Evening share lit (of which dim and cool), share that goes out and over which stretch of `out`, early risers.
@@ -87,6 +87,11 @@ const WINDOW_MIX: Partial<Record<WindowRole, Mix>> = {
   // (09:30 in Beijing). Not one of the town's rooms: check-town's shares and its count of night
   // lamps leave it out.
   villa: { lit: 1, dim: 0.2, cool: 0, goes: 0.5, span: [0.3, 0.9], risers: 0.25 }, // 23:20-02:02
+  // The tropic island's building (its model, batched after every other building): offices, three
+  // in four lit in the evening (a fifth of those dim, cool still an accent), half going out one by
+  // one late, a few on early. A role of its own, as the villa's: not one of the town's rooms in
+  // check-town's shares or its count of night lamps.
+  campus: { lit: 0.75, dim: 0.2, cool: 0.15, goes: 0.5, span: [0.11, 0.78], risers: 0.1 }, // 22:30-01:30
 };
 /** [level, tint, off, wake] for panes that never change (1 = never). */
 const WINDOW_FIXED: Partial<Record<WindowRole, number[]>> = {
