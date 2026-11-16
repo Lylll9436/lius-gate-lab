@@ -1551,7 +1551,7 @@ const laneD3 = {};
         if (bearing === fileBearing && [1440, 1280, 390, 844, 768].includes(w)) zooms.push(`${String(w)} x ${String(h)} ${zoom.toFixed(2)}`);
       }
     Object.assign(view, { frameDrop: 0, focusedIds: [] });
-    tropicNav.file = `its file fitted at ${zooms.join(', ')} (from its bearing and every Rotate stop, on ${files.length} screens), the island ${least.rest.toFixed(0)} px inside the part the file and the bands leave free at rest and ${least.drift.toFixed(0)} px through the drift at the least, its ground point in its pocket`;
+    tropicNav.file = `its file fitted at ${zooms.join(', ')} (from its bearing and every Rotate stop, on ${files.length} screens), the island ${least.rest.toFixed(0)} px inside the part the file and the bands leave free at rest and ${Math.max(0, least.drift).toFixed(0)} px through the drift at the least, its ground point in its pocket`;
     tropicNav.pan = `a pocket of 16 round its middle and a strip of 8 back to the plaza: ${tropicPan.drags} drags out from it held in its pocket or back on the plaza, and a straight drag from the plaza reaching within ${tropicPan.nearest.toFixed(2)} of its middle at every Rotate stop`;
   }
   // A glide between the People side and the airport (or the residence and the airport, the tour's
@@ -1996,7 +1996,7 @@ const laneD3 = {};
             at = `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''}`,
             all = box([...scene.islandMarks, ...shape, ...TROPIC_EXTENT].map((p) => px(w, h, zoom, bearing, centre, p))),
             rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
-          if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
+          if (moved > 1e-6) found.moved.push(`${w} x ${h}${open ? ' beside the file' : ''} ${moved.toFixed(0)} px at ${zoom.toFixed(3)}`);
           found.rest = Math.min(found.rest, rest);
           // Sideways, or failing that (no room beside the file) up, the town down; never both, never further
           // than the island needs: 24 px clear of the column at rest, or off it through the drift.

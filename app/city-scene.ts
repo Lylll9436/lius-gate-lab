@@ -968,15 +968,16 @@ export async function createCity(
     // starts below sea level, and a positive near plane would cut the sea off there.
     camera = new T.OrthographicCamera(-24, 24, 24, -24, -200, 180);
   const { city, models, walkers, lamps, tram, boat, plane, clocks, animated, parkGroup, parkHit, sky: island } = model;
-  // STUB (camera lane, until the merge): the tropic island in the scene as its land builder's object
-  // shows or hides it (town-tropic's, decision 16: its land, and the groups the merge hands it, its
-  // building, garden and figure, with its shallows and foam, all at once). Here an empty group stands in
-  // for all of it (a helper puts a stand-in island in it); the merge hands the land builder's object
-  // over instead. The scene starts with the island hidden, as with the sky island (followIslands).
+  // STUB (camera lane, until the merge): the tropic island as its land builder's object (town-tropic)
+  // shows or hides it, setShown(shown): its land and the groups handed to it, its building, garden and
+  // figure, with its shallows and foam, all at once. Here an empty group stands in for all of it (a
+  // helper puts a stand-in island in it); the merge puts the land builder's object in its place.
   const tropicStandIn = new T.Group();
   tropicStandIn.name = 'tropic-stand-in';
   city.add(tropicStandIn);
-  const tropic = { setShown: (shown: boolean) => void (tropicStandIn.visible = shown) };
+  const tropic: { setShown(shown: boolean): void } = { setShown: (shown) => void (tropicStandIn.visible = shown) };
+  // The island is built shown; the scene starts with it hidden (tropicShown), as with the sky island,
+  // and followIslands only calls setShown when the rule changes its mind, so this call stays.
   tropic.setShown(false);
   // Pointer picking leaves the tropic island's building out while the island is hidden (pickAt).
   const shownWithoutTropic = new Map([...models].filter(([id]) => id !== 'tropic-island'));
