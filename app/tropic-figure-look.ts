@@ -13,8 +13,8 @@ import { ellipsoid, sculpt, strand, type Shape } from './town-sculpt';
  * clean-shaven, no glasses, light skin, a white open-collar shirt with its sleeves rolled to the
  * elbow, tucked into navy chinos with a brown belt, and brown shoes. Every part is one mesh per
  * surface kind with its colours on its vertices, as hers are; features are drawn as flat colour
- * cells whose edges are the triangles' own (the eyes, the open collar's skin, the placket, the
- * buckle), so nothing thin stands free to twinkle.
+ * cells whose edges are the triangles' own (the eyes and brows, the open collar's skin, the placket,
+ * the buckle), so nothing thin stands free to twinkle.
  */
 type Material = (c: string, k?: SurfaceKind) => T.MeshStandardMaterial;
 type V3 = [number, number, number];
@@ -24,8 +24,9 @@ export const FILIP_SCALE = 1.08;
 /**
  * His colours (sRGB), every one at or under the figures' HSV saturation 0.55 (no exception: the
  * hair's brown is 0.53 and keeps that saturation in every shade). The shirt is a calm white a hair
- * cooler than the china, held under clipping at noon by its grade; the chinos a dark navy that
- * anchors it at the overview; the eyes are the residents' dots.
+ * cooler than the china (its brightest pixel under the strongest key light 242, 230, 212: it never
+ * clips); the chinos a dark navy that anchors it at the overview; the eyes the residents' dark
+ * brown and the brows a step deeper than the hair, both drawn on the face.
  */
 export const FILIP_LOOK = {
   hair: '#6e4c34',
