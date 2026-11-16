@@ -22,6 +22,7 @@ for (const name of [
   'city-people',
   'figure-rig',
   'sky-figure',
+  'tropic-figure',
   'city-hover',
   'city-inspection',
   'city-ink',
@@ -10020,6 +10021,485 @@ let skyReport = '';
   assert(count === 1580368 && pin === '8a4162e8', `Alison's day is no longer what it was (${count} numbers, hash ${pin}, pinned 8a4162e8): if that is meant, look at her day again and pin the new hash.`);
   skyReport += `; Alison exactly as she was before her rig was shared (${count.toLocaleString('en-GB')} numbers of her day hashed)`;
 }
+// Filip Biljecki on the tropic island (app/tropic-figure.ts, lane figure): his figure and his day, on
+// the shared rig (figure-rig.ts, Alison's) scaled 1.08 at his root. Until the island is merged he is
+// built here on his own, on the stand-in site (FILIP_SITE: SDE4's desk and café anchors, its columns,
+// stack and fin block, the land's paths, court and podium, the garden's call stretch, as they stand in
+// their lanes, on a stand-in floor) with the stand-in body (filipStandIn, of lane figlook's shape); once
+// it is, these checks are to read the island's own Filip, his site and his body. Alison's bars, his:
+// - he is one entry in the animated list, a pivot of his own (keepSeparate, prebatched), his root
+//   scaled 1.08 all over, and inside it exactly Alison's joints, pivots and hierarchy; 14 meshes and
+//   5,500 triangles at most as built and as batched (each group's own meshes, a batch a kind and a
+//   shadow flag), every colour on him at or under the figures' 0.55, one-sided and opaque;
+// - his day is pure and periodic (the same time the same answer, a period on, and at 10^7 s), time 0
+//   the still pose of his work (seated at the desk, his hands at rest on the keys), exactly the owner's
+//   three activities in order (the desk, the call, coffee, and back to the desk) with the walks between,
+//   his phone in his hand only from the one 'answer' to the other, 140 to 160 s round (never Alison's
+//   127, so the islands never fall into step);
+// - frame by frame through his day and on past its wrap: his root no more than 0.016 a sixtieth of a
+//   second and every part (each mesh's points, every seventh) no more than 0.036 (his own walk at his
+//   size and pace: Alison's 0.015 and 0.025 scaled); no part's motion more than 0.02 off its motion
+//   the frame before (no pop: every change of pose blends; the residents' own walk, whose knee folds
+//   at a kink in each stride, comes to about 0.012); his heading never faster than 2.5 a second
+//   (a walk sets off on a curve: no spin on the spot); his phone shows and goes only wholly inside his
+//   chest (its breast pocket); his cup always shows, and while he is away from it, or has set it down,
+//   it stands exactly in the café table's saucer's well; at the desk, at coffee and on the phone his
+//   arms are never straight (a hand put out of its reach);
+// - his soles: standing and walking, the lower one within 0.005 of the floor drawn under it (up the
+//   ramp, over the paths' edges, across the dome); seated, on his chair's foot ring (FILIP_RING) within
+//   0.005;
+// - his ways: 0.27 (the walkers' clearance) from SDE4's columns, stack and fin block, the court's drum
+//   and his furniture (but the chair or desk he stands beside, at a walk's ends), 1 or more in from the
+//   turf's lip, and onto the podium only by its ramp;
+// - his props never through him: his phone 0.01 clear of all of him but the hand that holds it, as he
+//   answers, calls and walks on the phone; his cup 0.01 clear of his head and hair as he drinks; at the
+//   desk nothing of him in the desk or the laptop; his back and hair ahead of his chair's back;
+// - held (Pause) at a moment every 0.77 s of his day he settles within a second and then never moves,
+//   settling and let go no faster than his day itself moves (as above), raising the frame's `moved` in
+//   every frame he moves; under reduced motion within a quarter of a second, his root no further than
+//   0.25 in all; held from time 0 (reduced motion at load) he never moves; under reduced motion with
+//   Play he goes about his day exactly as it has him.
+let filipReport = '';
+{
+  const F = await load('tropic-figure'),
+    R = await load('figure-rig'),
+    { torsoAt, DEPTH } = await load('city-people'),
+    { createAlison } = await load('sky-figure'),
+    { createCityMaterials } = await load('city-materials'),
+    { animationFrame } = await load('town-shared'),
+    library = createCityMaterials(),
+    parent = new T.Group(),
+    animated = [],
+    { root: him, plan: D, body } = F.placeFilip({ material: library.material, animated }, parent),
+    { joints, props } = body,
+    entry = animated[0],
+    S = F.FILIP_SCALE,
+    site = F.FILIP_SITE,
+    floor = site.floor,
+    frame = 1 / 60,
+    fmt = (n) => n.toFixed(3),
+    meshes = [],
+    tri = (m) => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3,
+    v = new T.Vector3();
+  him.traverse((o) => o.isMesh && meshes.push(o));
+  // His build, his rig and his budget.
+  assert(animated.length === 1 && entry.object === him && him.parent === parent && him.name === 'filip' && him.userData.keepSeparate && him.userData.prebatched, 'Filip is not one entry in the animated list on a pivot of his own.');
+  assert(S === 1.08 && him.scale.x === S && him.scale.y === S && him.scale.z === S, `Filip's root is scaled ${him.scale.toArray()} (1.08 all over).`);
+  {
+    const her = createAlison(library.material),
+      hers = Object.values(her.props),
+      his = Object.values(props),
+      tree = (o, own) => ({ name: o.name, at: o.position.toArray().map((n) => Math.round(n * 1e9)), kids: o.children.filter((c) => !c.isMesh && !own.includes(c)).map((c) => tree(c, own)) });
+    R.atEase(joints);
+    R.atEase(her.joints);
+    assert.deepEqual(tree(him, his).kids, tree(her.root, hers).kids, 'Filip’s joints, pivots and hierarchy are not exactly Alison’s.');
+    for (const [k, name] of ['left', 'right'].entries()) {
+      assert(him.getObjectByName('leg-' + name) === joints.legs[k] && joints.legs[k].getObjectByName('knee') === joints.knees[k], `Filip's ${name} leg is not on the rig's pivots.`);
+      assert(him.getObjectByName('arm-' + name) === joints.arms[k] && joints.arms[k].getObjectByName('elbow') === joints.elbows[k], `Filip's ${name} arm is not on the rig's pivots.`);
+    }
+    entry.update(0, 0, 0);
+  }
+  const triangles = meshes.reduce((n, m) => n + tri(m), 0);
+  let batched = 0;
+  for (const g of [joints.body, ...joints.legs, ...joints.knees, ...joints.arms, ...joints.elbows, ...Object.values(props)]) {
+    const own = g.children.filter((c) => c.isMesh);
+    batched += new Set(own.map((m) => {
+      m.geometry.computeBoundingBox();
+      const s = m.geometry.boundingBox.getSize(v);
+      return `${m.material.userData.surfaceKind}|${Math.max(s.x, s.y, s.z) >= 0.3}`;
+    })).size;
+  }
+  assert(meshes.length <= 14 && batched <= 14 && triangles <= 5500, `Filip is ${meshes.length} meshes (${batched} batched) and ${triangles} triangles: at most 14 and 5,500.`);
+  {
+    const colour = new T.Color();
+    for (const m of meshes) {
+      const kind = m.material.userData.surfaceKind,
+        c = m.geometry.getAttribute('color');
+      assert((kind === 'fabric' || kind === 'paint') && m.material.side === T.FrontSide && !m.material.transparent && m.material.opacity === 1, `Filip's ${m.parent.name}/${m.name} is not an opaque one-sided figure's surface (${kind}).`);
+      assert(c && c.count === m.geometry.getAttribute('position').count, `Filip's ${m.parent.name}/${m.name} has no colours on its vertices.`);
+      for (let k = 0; k < c.count; k++) {
+        colour.fromBufferAttribute(c, k).convertLinearToSRGB();
+        const max = Math.max(colour.r, colour.g, colour.b),
+          s = max ? (max - Math.min(colour.r, colour.g, colour.b)) / max : 0;
+        assert(s <= 0.55 + 1e-4, `Filip's ${m.parent.name}/${m.name} wears a colour louder than the town's figures (${colour.getHexString()}, ${s.toFixed(3)}).`);
+      }
+    }
+  }
+  // His day: pure, periodic, his three activities, time 0 his still work.
+  const P = D.period,
+    acts = D.acts;
+  assert(P >= 140 && P <= 160 && P !== 127, `Filip's day is ${P} s round (140 to 160, never Alison's 127).`);
+  for (let k = 0; k < 400; k++) {
+    const t = (k / 400) * P + 0.0137;
+    assert.deepEqual(D.day(t), D.day(t + P), `Filip's day at ${fmt(t)} s is not what it is a period on.`);
+    assert.deepEqual(D.day(t), D.day(t), `Filip's day at ${fmt(t)} s is not the same twice.`);
+  }
+  {
+    const far = D.day(1e7),
+      near = D.day(1e7 - Math.floor(1e7 / P) * P);
+    for (const key of ['x', 'z', 'heading', 'phase']) assert(Number.isFinite(far[key]) && Math.abs(far[key] - near[key]) < 1e-6, `Filip's day drifts at 10^7 s (${key}).`);
+  }
+  assert.deepEqual(D.day(0), D.still(0), 'Filip at time 0 is not a still pose.');
+  assert(D.day(0).pose === 'desk' && D.day(0).keys === 1 && D.day(0).tap === 0 && D.day(0).back === 0 && D.day(0).pad === 0, 'Filip at time 0 is not at rest at his desk, his hands on the keys.');
+  {
+    const stations = acts.filter((a, i) => !i || a.station !== acts[i - 1].station).map((a) => a.station),
+      answers = acts.filter((a) => a.kind === 'answer'),
+      phoned = acts.filter((a) => a.phone);
+    assert.deepEqual(stations, ['desk', 'walk', 'call', 'walk', 'cafe', 'walk', 'desk'], `Filip's day goes ${stations.join(', ')}.`);
+    assert(acts.filter((a) => a.kind === 'desk').length === 2 && acts.filter((a) => a.kind === 'cafe').length === 1 && acts.filter((a) => a.kind === 'call').length === 1 && answers.length === 2 && answers[0].up && !answers[1].up, 'Filip does not work, call and drink once each, answering and putting his phone away once each.');
+    assert(phoned.length && phoned[0] === acts[acts.indexOf(answers[0]) + 1] && phoned.at(-1) === answers[1], 'Filip has his phone in his hand outside his call.');
+  }
+  // Frame by frame.
+  const shows = (o) => {
+      for (let p = o; p && p !== parent; p = p.parent) if (!p.visible) return false;
+      return true;
+    },
+    // Every seventh point of every mesh of his, in the island's frame (NaN where it does not show).
+    points = meshes.reduce((n, m) => n + Math.ceil(m.geometry.attributes.position.count / 7), 0),
+    sample = () => {
+      parent.updateMatrixWorld(true);
+      const pts = new Float64Array(points * 3),
+        vis = meshes.map(shows);
+      let k = 0;
+      meshes.forEach((m, j) => {
+        const q = m.geometry.attributes.position,
+          e = m.matrixWorld.elements;
+        for (let i = 0; i < q.count; i += 7, k += 3) {
+          if (!vis[j]) {
+            pts[k] = pts[k + 1] = pts[k + 2] = NaN;
+            continue;
+          }
+          const x = q.getX(i),
+            y = q.getY(i),
+            z = q.getZ(i);
+          pts[k] = e[0] * x + e[4] * y + e[8] * z + e[12];
+          pts[k + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+          pts[k + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+        }
+      });
+      return { root: him.position.clone(), pts, vis };
+    },
+    moved = (a, b) => {
+      let most = 0;
+      for (let k = 0; k < a.pts.length; k += 3) {
+        const d = Math.hypot(a.pts[k] - b.pts[k], a.pts[k + 1] - b.pts[k + 1], a.pts[k + 2] - b.pts[k + 2]);
+        if (d > most) most = d;
+      }
+      return { root: a.root.distanceTo(b.root), parts: most };
+    },
+    // (Each shoe's underside: its points below its middle, 0.135 down the shin from the knee.)
+    undersides = joints.knees.map((k) => {
+      const m = k.children.find((c) => c.isMesh),
+        q = m.geometry.attributes.position,
+        idx = [];
+      for (let i = 0; i < q.count; i++) if (q.getY(i) < -0.135) idx.push(i);
+      return { m, idx };
+    }),
+    // How far inside his chest a point is (the residents' torso, which his body is: under 1 inside, in
+    // his body's frame), and the lowest gap of his soles over the floor drawn under them.
+    chest = (p) => {
+      const q = p.clone().applyMatrix4(joints.body.matrixWorld.clone().invert()),
+        r = torsoAt(q.y);
+      return r > 0 ? Math.hypot(q.x / r, q.z / (r * DEPTH)) : Infinity;
+    },
+    phonePoints = () => {
+      const m = props.phone.children.find((c) => c.isMesh),
+        q = m.geometry.attributes.position,
+        out = [];
+      parent.updateMatrixWorld(true);
+      for (let i = 0; i < q.count; i++) out.push(new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld));
+      return out;
+    },
+    soles = () => {
+      parent.updateMatrixWorld(true);
+      let low = Infinity;
+      for (const { m, idx } of undersides)
+        for (const i of idx) {
+          const p = v.fromBufferAttribute(m.geometry.attributes.position, i).applyMatrix4(m.matrixWorld);
+          low = Math.min(low, p.y - floor(p.x, p.z));
+        }
+      return low;
+    },
+    seatedSoles = (day) => {
+      parent.updateMatrixWorld(true);
+      let low = Infinity;
+      for (const k of joints.knees)
+        k.traverse((m) => {
+          if (!m.isMesh) return;
+          const q = m.geometry.attributes.position;
+          for (let i = 0; i < q.count; i++) low = Math.min(low, v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld).y);
+        });
+      const seat = day.station === 'cafe' ? D.seats.cafe : D.seats.desk;
+      return low - floor(seat.x, seat.z) - F.FILIP_RING.height;
+    },
+    saucerAt = new T.Vector3(D.saucer.x, D.saucer.y, D.saucer.z);
+  const worst = { root: 0, parts: 0, pop: 0, turn: 0, reach: 0, away: 0, stand: { low: Infinity, high: -Infinity }, seated: 0, flips: 0 };
+  {
+    let prev = (entry.update(0, 0, 0), sample()),
+      prevDay = D.day(0),
+      prevMotion = null;
+    for (let n = 1; n <= Math.round(P / frame) + 60; n++) {
+      const t = n * frame;
+      entry.update(t, 0, 0);
+      const now = sample(),
+        day = D.day(t),
+        m = moved(now, prev),
+        motion = now.pts.map((p, i) => p - prev.pts[i]);
+      worst.root = Math.max(worst.root, m.root);
+      worst.parts = Math.max(worst.parts, m.parts);
+      assert(m.root <= 0.016 && m.parts <= 0.036, `At ${fmt(t)} s (${prevDay.pose} to ${day.pose}) Filip's root moves ${fmt(m.root)} or a part ${fmt(m.parts)} in a sixtieth of a second.`);
+      if (prevMotion) {
+        let pop = 0;
+        for (let k = 0; k < motion.length; k += 3) {
+          const d = Math.hypot(motion[k] - prevMotion[k], motion[k + 1] - prevMotion[k + 1], motion[k + 2] - prevMotion[k + 2]);
+          if (d > pop) pop = d;
+        }
+        worst.pop = Math.max(worst.pop, pop);
+        assert(pop <= 0.02, `At ${fmt(t)} s (${prevDay.pose} to ${day.pose}) a part of Filip pops (its motion ${fmt(pop)} off the frame before's).`);
+      }
+      const turn = Math.abs(plan.angleDiff(day.heading, prevDay.heading)) / frame;
+      worst.turn = Math.max(worst.turn, turn);
+      assert(turn <= 2.5, `At ${fmt(t)} s Filip turns ${fmt(turn)} a second (${day.pose}).`);
+      // (Where his hands are put on a target: at the desk and at coffee both, on the phone his right.)
+      for (const k of day.pose === 'desk' || day.pose === 'coffee' ? [0, 1] : day.pose === 'call' ? [0] : []) worst.reach = Math.max(worst.reach, R.figureHand(joints, k).distanceTo(joints.arms[k].position));
+      // His props: the phone comes and goes only inside his chest; the cup always shows.
+      meshes.forEach((mesh, i) => {
+        if (now.vis[i] === prev.vis[i]) return;
+        assert(mesh.parent === props.phone, `At ${fmt(t)} s Filip's ${mesh.parent.name} comes or goes.`);
+        worst.flips++;
+        const pts = props.phone.visible ? phonePoints() : (entry.update(t - frame, 0, 0), phonePoints());
+        if (!props.phone.visible || !now.vis[i]) entry.update(t, 0, 0);
+        const deepest = Math.max(...pts.map(chest));
+        assert(deepest < 0.95, `At ${fmt(t)} s Filip's phone ${now.vis[i] ? 'comes' : 'goes'} with some of it out of his chest (${fmt(deepest)}).`);
+      });
+      assert(props.cup.visible, `At ${fmt(t)} s Filip's cup is gone.`);
+      // (Down in its saucer, between his drinks or away, the foot of its axis is the saucer's well: 0.036
+      // over the saucer's foot.)
+      if (day.pose !== 'coffee' || day.phase === 0) {
+        const lug = props.cup.getWorldPosition(new T.Vector3()),
+          q = props.cup.getWorldQuaternion(new T.Quaternion()),
+          foot = new T.Vector3(R.CUP_AXIS * S, -0.037 * S, 0).applyQuaternion(q).add(lug);
+        worst.away = Math.max(worst.away, foot.distanceTo(saucerAt.clone().setY(saucerAt.y + 0.036)));
+      }
+      // His soles (every other frame).
+      const standing = ['walk', 'stand', 'call', 'answer'].includes(day.pose);
+      if (n % 2 === 0 && standing) {
+        const low = soles();
+        worst.stand.low = Math.min(worst.stand.low, low);
+        worst.stand.high = Math.max(worst.stand.high, low);
+      } else if (n % 2 === 0 && (day.pose === 'desk' || day.pose === 'coffee')) worst.seated = Math.max(worst.seated, Math.abs(seatedSoles(day)));
+      prev = now;
+      prevDay = day;
+      prevMotion = motion;
+    }
+    entry.update(0, 0, 0);
+    assert(worst.flips === 2, `Filip's phone comes or goes ${worst.flips} times in a day (once each way).`);
+    assert(worst.away < 1e-6, `Filip's cup strays ${worst.away} from the café table's saucer's well while he is away from it.`);
+    assert(worst.reach < 0.2145, `Filip's arm goes straight (a hand ${fmt(worst.reach)} from its shoulder: out of reach).`);
+    assert(worst.stand.low > -0.005 && worst.stand.high < 0.005, `Standing or walking, Filip's lower sole is ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor drawn under it.`);
+    assert(worst.seated < 0.005, `Seated, Filip's soles are ${fmt(worst.seated)} off his chair's foot ring.`);
+  }
+  // His ways.
+  {
+    const DK = F.FILIP_DESK,
+      CF = F.FILIP_CAFE,
+      CH = F.FILIP_CHAIR,
+      G = F.FILIP_GROUND,
+      chairOf = (s) => (x, z) => {
+        const c = Math.cos(s.facing),
+          sn = Math.sin(s.facing),
+          lx = (x - s.x) * c - (z - s.z) * sn,
+          lz = (x - s.x) * sn + (z - s.z) * c;
+        return Math.max(-CH.width / 2 - lx, lx - CH.width / 2, CH.setback - CH.depth - 0.1 - lz, lz - CH.setback);
+      },
+      guest = { x: site.cafe.x + Math.sin(site.cafe.heading) * (CF.radius + CF.gap + CH.setback), z: site.cafe.z + Math.cos(site.cafe.heading) * (CF.radius + CF.gap + CH.setback), facing: site.cafe.heading + Math.PI },
+      things = [
+        ...site.round.map((c) => ({ name: 'post', d: (x, z) => Math.hypot(x - c.x, z - c.z) - c.r })),
+        ...site.keepOut.map((r) => ({ name: 'wall', d: (x, z) => Math.max(r.x0 - x, x - r.x1, r.z0 - z, z - r.z1) })),
+        { name: 'desk', beside: true, d: (x, z) => Math.max(Math.abs(x - site.desk.x) - DK.width / 2, Math.abs(z - site.desk.z) - DK.depth / 2) },
+        { name: 'table', beside: true, d: (x, z) => Math.hypot(x - site.cafe.x, z - site.cafe.z) - CF.radius },
+        { name: 'desk chair', beside: true, d: chairOf(D.seats.desk) },
+        { name: 'café chair', beside: true, d: chairOf(D.seats.cafe) },
+        { name: 'guest chair', d: chairOf(guest) },
+      ];
+    let clear = Infinity,
+      lip = Infinity,
+      walked = 0;
+    for (const a of acts) {
+      if (a.kind !== 'walk') continue;
+      let last = null;
+      for (let s = 0; s <= a.length; s += 0.02) {
+        const p = plan.samplePolyline(a.line, Math.min(a.length - 1e-9, s), false, true);
+        for (const th of things) {
+          if (th.beside && (s < 0.6 || s > a.length - 0.6)) continue;
+          const d = th.d(p.x, p.z);
+          clear = Math.min(clear, d);
+          assert(d >= 0.27, `Filip walks ${fmt(d)} from ${th.name === 'post' ? 'a column' : th.name === 'wall' ? "SDE4's walls" : 'his ' + th.name} at ${fmt(p.x)}, ${fmt(p.z)}.`);
+        }
+        const q = Math.hypot(p.x / G.turf.a, p.z / G.turf.b),
+          g = Math.hypot(p.x / G.turf.a ** 2, p.z / G.turf.b ** 2) / q;
+        lip = Math.min(lip, (1 - q) / g);
+        const y = floor(p.x, p.z);
+        assert(last === null || Math.abs(y - last) < 0.02, `Filip steps ${fmt(Math.abs(y - last))} up or down at ${fmt(p.x)}, ${fmt(p.z)} (onto the podium only by its ramp).`);
+        last = y;
+      }
+      walked += a.length;
+    }
+    assert(lip >= 1, `Filip walks ${fmt(lip)} from the turf's lip.`);
+    filipReport = `Filip on the tropic island's stand-ins (lane figure; ${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of the columns, walls and furniture and ${fmt(lip)} in from the turf's lip`;
+  }
+  // His props against him.
+  {
+    const near = (pts, meshList, reach = 0.06) => {
+        // The least distance from the points to the meshes' triangles near them.
+        const box = new T.Box3().setFromPoints(pts).expandByScalar(reach),
+          t = new T.Triangle(),
+          c = new T.Vector3();
+        let best = Infinity;
+        for (const m of meshList) {
+          if (!shows(m)) continue;
+          const q = m.geometry.attributes.position,
+            index = m.geometry.index,
+            n = index ? index.count : q.count,
+            a = new T.Vector3(),
+            b = new T.Vector3(),
+            d = new T.Vector3();
+          for (let i = 0; i < n; i += 3) {
+            a.fromBufferAttribute(q, index ? index.getX(i) : i).applyMatrix4(m.matrixWorld);
+            b.fromBufferAttribute(q, index ? index.getX(i + 1) : i + 1).applyMatrix4(m.matrixWorld);
+            d.fromBufferAttribute(q, index ? index.getX(i + 2) : i + 2).applyMatrix4(m.matrixWorld);
+            if (!box.containsPoint(a) && !box.containsPoint(b) && !box.containsPoint(d)) continue;
+            t.set(a, b, d);
+            if (t.getArea() < 1e-12) continue;
+            for (const p of pts) best = Math.min(best, t.closestPointToPoint(p, c).distanceTo(p));
+          }
+        }
+        return best;
+      },
+      own = (g) => g.children.filter((c) => c.isMesh),
+      notPhoneArm = [...own(joints.body), ...[...joints.legs, ...joints.knees].flatMap(own), ...own(joints.arms[1]), ...own(joints.elbows[1])],
+      head = own(joints.body);
+    let phone = Infinity,
+      cup = Infinity;
+    for (const a of acts) {
+      if (!a.phone && a.kind !== 'answer' && a.kind !== 'cafe') continue;
+      for (let t = a.t0 + 0.05; t < a.t1; t += 0.1) {
+        entry.update(t, 0, 0);
+        parent.updateMatrixWorld(true);
+        // (In his hand: on the call, walking with it, and answering once it is out of his pocket.)
+        const day = D.day(t);
+        if (props.phone.visible && (day.pose !== 'answer' || day.phase >= 0.55)) phone = Math.min(phone, near(phonePoints().filter((_, i) => i % 3 === 0), notPhoneArm));
+        if (a.kind === 'cafe') {
+          const m = props.cup.children.find((c) => c.isMesh),
+            q = m.geometry.attributes.position,
+            pts = [];
+          for (let i = 0; i < q.count; i += 2) pts.push(new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld));
+          cup = Math.min(cup, near(pts, head));
+        }
+      }
+    }
+    assert(phone >= 0.01, `Filip's phone comes ${fmt(phone)} from him (0.01 at the least, but the hand that holds it).`);
+    assert(cup >= 0.01, `Filip's cup comes ${fmt(cup)} from his head as he drinks.`);
+    // At the desk and in his chairs, in his seated frame (his root seated over the chair's floor): nothing
+    // of him in the desk's top or the laptop, his back and hair ahead of his chair's back (its rail).
+    const DK = F.FILIP_DESK,
+      CH = F.FILIP_CHAIR,
+      inBox = (p, b) => Math.max(b[0] - p.x, p.x - b[3], b[1] - p.y, p.y - b[4], b[2] - p.z, p.z - b[5]),
+      deskBox = [-DK.across - DK.width / 2, DK.top - DK.thick, DK.near, -DK.across + DK.width / 2, DK.top, DK.near + DK.depth],
+      lapBox = [-DK.laptop.w / 2, DK.top, DK.near + DK.laptop.inset, DK.laptop.w / 2, DK.top + DK.laptop.base, DK.near + DK.laptop.inset + DK.laptop.d],
+      rail = (y) => -(CH.depth / 2 - CH.setback) - 0.16 - Math.tan(CH.rake) * (y - 0.735);
+    let desk = Infinity,
+      back = Infinity;
+    for (const a of acts) {
+      if (a.kind !== 'desk' && a.kind !== 'cafe') continue;
+      for (let t = a.t0 + 0.03; t < a.t1; t += 0.13) {
+        entry.update(t, 0, 0);
+        const day = D.day(t),
+          seat = day.station === 'cafe' ? D.seats.cafe : D.seats.desk,
+          local = new T.Matrix4().makeRotationY(-seat.facing).multiply(new T.Matrix4().makeTranslation(-seat.x, -floor(seat.x, seat.z), -seat.z));
+        parent.updateMatrixWorld(true);
+        for (const m of meshes) {
+          if (!shows(m) || Object.values(props).includes(m.parent)) continue;
+          const q = m.geometry.attributes.position;
+          for (let i = 0; i < q.count; i += 2) {
+            const p = v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld).applyMatrix4(local);
+            if (a.kind === 'desk') desk = Math.min(desk, inBox(p, deskBox), inBox(p, lapBox));
+            if (p.y > CH.rail[0] && p.y < CH.rail[1]) back = Math.min(back, p.z - rail(p.y));
+          }
+        }
+      }
+    }
+    entry.update(0, 0, 0);
+    assert(desk > 0, `At his desk something of Filip is ${fmt(-desk)} into the desk or the laptop.`);
+    assert(back >= 0.01, `Seated, Filip's back or hair is ${fmt(back)} from his chair's back.`);
+    filipReport += `, his phone ${fmt(phone)} clear of him and his cup ${fmt(cup)} clear of his head, nothing of him in his desk or laptop (${fmt(desk)}) and his back ${fmt(back)} ahead of his chair's`;
+  }
+  // Holds.
+  {
+    let n0 = 0;
+    for (const cut of [false, true]) {
+      const w = { rested: 0, at: '', parts: 0, root: 0, travel: 0, unsaid: 0 };
+      for (let t0 = 0.37; t0 < P; t0 += cut ? 1.54 : 0.77) {
+        n0++;
+        entry.update(t0 - 21 * frame, 0, 0);
+        for (let n = 20; n >= 0; n--) entry.update(t0 - n * frame, 0, 0, animationFrame(false, cut, frame));
+        const start = sample();
+        let prev = start,
+          last = 0;
+        for (let n = 1; n <= (cut ? 45 : 120); n++) {
+          const fr = animationFrame(true, cut, frame);
+          entry.update(t0, 0, 0, fr);
+          const now = sample(),
+            m = moved(now, prev);
+          if (m.parts > 1e-9 || m.root > 1e-9) {
+            last = n;
+            if (!fr.moved) w.unsaid++;
+            if (!cut) {
+              w.parts = Math.max(w.parts, m.parts);
+              w.root = Math.max(w.root, m.root);
+            }
+          }
+          prev = now;
+        }
+        w.travel = Math.max(w.travel, prev.root.distanceTo(start.root));
+        if (last > w.rested) Object.assign(w, { rested: last, at: `${fmt(t0)} s (${D.day(t0).pose})` });
+        for (let n = 1; n <= 60; n++) {
+          entry.update(t0 + n * frame, 0, 0, animationFrame(false, cut, frame));
+          const now = sample(),
+            m = moved(now, prev);
+          if (!cut) {
+            w.parts = Math.max(w.parts, m.parts);
+            w.root = Math.max(w.root, m.root);
+          }
+          prev = now;
+        }
+      }
+      assert(w.rested <= (cut ? 15 : 60), `Held at ${w.at}${cut ? ' under reduced motion' : ''}, Filip is still moving ${w.rested} frames in.`);
+      assert(w.unsaid === 0, `Held, Filip moves in ${w.unsaid} frames without raising the frame's moved (his shadow would lag).`);
+      if (cut) assert(w.travel <= 0.25, `Held under reduced motion, Filip's root goes ${fmt(w.travel)}.`);
+      else assert(w.parts <= 0.036 && w.root <= 0.016, `Settling or let go, Filip moves ${fmt(w.parts)} a part or ${fmt(w.root)} his root in a frame.`);
+      filipReport += cut ? ` (within ${(w.rested / 60).toFixed(2)} s under reduced motion)` : `; held at ${n0} moments of his day he settles within ${(w.rested / 60).toFixed(2)} s and then never moves, by ${fmt(w.parts)} a frame at most, his shadow drawn again in every frame he moves`;
+    }
+    // Held from time 0 he never moves; reduced motion with Play: his day.
+    entry.update(0, 0, 0);
+    let prev = sample();
+    for (let n = 0; n < 120; n++) {
+      entry.update(0, 0, 0, animationFrame(true, true, frame));
+      const now = sample();
+      assert(moved(now, prev).parts === 0 && moved(now, prev).root === 0, 'Held from time 0, Filip moves.');
+      prev = now;
+    }
+    entry.update(0, 0, 0);
+    for (let n = 1; n <= Math.round(P / frame); n++) {
+      const t = n * frame;
+      entry.update(t, 0, 0, animationFrame(false, true, frame));
+      const day = D.day(t);
+      if (n % 7 === 0) assert(Math.hypot(him.position.x - day.x, him.position.z - day.z) < 1e-9 && Math.abs(plan.angleDiff(him.rotation.y, day.heading)) < 1e-9, `Under reduced motion with Play, Filip at ${fmt(t)} s is not where his day has him.`);
+    }
+    entry.update(0, 0, 0);
+    filipReport += '; under reduced motion with Play he goes about his day';
+  }
+}
 console.log(
-  `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}; and ${filipReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );

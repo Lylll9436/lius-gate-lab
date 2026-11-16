@@ -156,13 +156,15 @@ export type FilipRect = { x0: number; x1: number; z0: number; z1: number };
  *   over the lawn); his chair stands behind it (FILIP_DESK);
  * - `cafe`: the café table's middle (SDE4's café anchor) and the heading its sitter faces (east-south-
  *   east, his profile to the island's file); his chair stands on the far side of it (FILIP_CAFE);
- * - `call`: the call stretch's middle line (its two ends), along which he paces on the phone: a length
- *   along one side of it, round a U-curve `turn` in radius at its end and back along the other side;
+ * - `call`: the call stretch (its two ends: the garden's), along which he paces on the phone: along a
+ *   line 2·`turn` to its left (toward the building), round a U-curve `turn` in radius at its end and
+ *   back along the stretch itself, and so on;
  * - `ways`: the points his walks go through, their ends left out: `out`, from his desk's side down the
  *   veranda's ramp to the call stretch's far end; `across`, from the call stretch's near end over the
  *   lawn to his café chair's side; `home`, from there back up the ramp to his desk's side;
- * - `keepOut` and `columns`: what stands where he walks (SDE4's columns, its stack and fin block, his
- *   furniture), which the checks keep his ways clear of. Not used to pose him.
+ * - `keepOut` and `round`: what stands where he walks besides his furniture (SDE4's stack and fin
+ *   block; its columns and the court's drum), which the checks keep his ways clear of. Not used to
+ *   pose him.
  */
 export type FilipSite = {
   floor: (x: number, z: number) => number;
@@ -171,7 +173,7 @@ export type FilipSite = {
   call: { ends: [XZ, XZ]; turn: number };
   ways: { out: XZ[]; across: XZ[]; home: XZ[] };
   keepOut?: FilipRect[];
-  columns?: { x: number; z: number; r: number }[];
+  round?: { x: number; z: number; r: number }[];
 };
 /**
  * STAND-IN for the land lane's floor (the site lane's tropicTop and paths, SDE4's podium, deck and
@@ -238,7 +240,7 @@ export const FILIP_SITE: FilipSite = {
     { x0: -5.5, x1: 2.6, z0: -4.9, z1: -0.4 },
     { x0: -5.5, x1: -3.7, z0: -5.9, z1: 1.3 },
   ],
-  columns: [-2.4, 0, 2.4, 4.8].flatMap((x) => [-5.45, 0.85].map((z) => ({ x, z, r: 0.1 }))),
+  round: [...[-2.4, 0, 2.4, 4.8].flatMap((x) => [-5.45, 0.85].map((z) => ({ x, z, r: 0.1 }))), { x: -2.1, z: 2.3, r: 0.38 }],
 };
 
 /* ------------------------------------------------------------------ */
@@ -466,9 +468,24 @@ function twist(j: FilipJoints, yaw: number) {
   j.body.quaternion.premultiply(q);
   for (const arm of j.arms) arm.position.applyQuaternion(q);
 }
+/**
+ * How much lower his cup sits in the café table's saucer than in a saucer of his own: the saucer is
+ * the table's, at the town's size, its well 0.036 up from its foot, where figure-rig's cupOnSaucer
+ * takes a saucer at its holder's size (his root's scale: 1.08).
+ */
+const WELL = 0.036 * (1 - 1 / S);
 /** His cup resting in the café table's saucer, its foot at `at` (his frame), turned `ry` (figure-rig's cupOnSaucer, the table's own saucer). */
 function cupDown(props: FilipProps, at: V3, ry: number) {
-  cupOnSaucer({ cup: props.cup, saucer: tableSaucer }, at, ry);
+  cupOnSaucer({ cup: props.cup, saucer: tableSaucer }, [at[0], at[1] - WELL, at[2]], ry);
+}
+/**
+ * His cup back in the café table's saucer (its foot at `cup`: across and ahead of him in his frame and
+ * its turn, as his day gives them) with his root `y` up (the island's), the saucer's foot `saucerY` up:
+ * where his root stands on his soles rather than at his lift over his floor (walking up the ramp, or
+ * on a path's edge), so his cup stays exactly in its saucer however he stands.
+ */
+export function cupAt(props: FilipProps, cup: [number, number, number, number], y: number, saucerY: number) {
+  cupDown(props, [cup[0], (saucerY - y) / S, cup[2]], cup[3]);
 }
 /**
  * Pose him for `name` at `phase`, from nothing else (as poseAlison does: every joint and prop any pose
@@ -489,8 +506,10 @@ function cupDown(props: FilipProps, at: V3, ry: number) {
  * - 'call': standing, his phone at his ear, his free hand opening before him by `gesture`.
  * - 'coffee': seated at the café table, `phase` through one drink (0 and 1: his hand in his lap, the
  *   cup in its saucer at `cup`), his left hand on the table's edge by `rest`, turned out by `look`.
- * `cup`, wherever he is, shows his cup in the café table's saucer where it stands, unless he holds it.
- * A saucer his body brings stays hidden (the table has its own).
+ * `cup`, wherever he is, shows his cup in the café table's saucer where it stands, unless he holds it
+ * (`resting`, in the answer, says so: whoever stands him with his root other than his lift over his
+ * floor puts it back in the saucer by cupAt). A saucer his body brings stays hidden (the table has
+ * its own).
  */
 export function poseFilip(j: FilipJoints, props: FilipProps, name: FilipPose, phase: number, opts: FilipPoseOptions = {}) {
   const u = ((phase % 1) + 1) % 1,
@@ -519,7 +538,7 @@ export function poseFilip(j: FilipJoints, props: FilipProps, name: FilipPose, ph
   const c = opts.cup;
   if (c && !holding) cupDown(props, [c[0], c[1] - lift, c[2]], c[3]);
   j.root.userData.lift = lift;
-  return { lift };
+  return { lift, resting: !!c && !holding };
 }
 /** His phone at his ear in his right hand (EAR). */
 function atEar(j: FilipJoints, props: FilipProps) {
@@ -878,12 +897,12 @@ export function filipDayOf(site: FilipSite) {
     [sx, sz] = aside(...along(cafe.x, cafe.z, cafe.facing, FILIP_CAFE.saucer[1]), cafe.facing, FILIP_CAFE.saucer[0]),
     saucer = { x: sx, z: sz, y: floor(site.cafe.x, site.cafe.z) + FILIP_CAFE.top, ry: cafe.facing + FILIP_CAFE.turn };
   // The call stretch: its near end (toward the café, where he pockets his phone) and its far end; its
-  // two sides, `r` either side of its middle line (lane(p, 1) on the left of the way from near to far,
-  // lane(p, -1) on its right), which U-curves of radius r join round its ends.
+  // two lines, the stretch itself (lane(p, -1)) and one 2r to its left on the way from near to far
+  // (lane(p, 1): toward the building, away from the turf's lip), which U-curves of radius r join.
   const [near, far] = site.call.ends,
     r = site.call.turn,
     out = bearing(near, far),
-    lane = (p: XZ, side: number): XZ => aside(p[0], p[1], out, side * r),
+    lane = (p: XZ, side: number): XZ => aside(p[0], p[1], out, (side + 1) * r),
     [start, end] = [lane(far, 1), lane(near, 1)];
   const tag = { phone: false },
     days = planDay<FilipAct>(desk.facing, G, () => G.turn),
@@ -903,10 +922,15 @@ export function filipDayOf(site: FilipSite) {
   // ends heading exactly back along the stretch and his pacing starts with no turn of its own.)
   go(seats.deskSide, [...site.ways.out, along(...start, out, 2 * G.radius), along(...start, out, 1e-4), start]);
   // Pacing: back along its left side, round a U-curve onto its right side and along it to the far end;
-  // a moment standing there to listen; round again, and a last length along its left side.
-  days.walk([start, end, ...arc(...end, out + Math.PI, Math.PI, r).slice(1), lane(far, -1)], FILIP_PACE);
+  // a moment standing there to listen; round again, and a last length along its left side. (His pacing
+  // is the call's: its walks are at the call stretch.)
+  const pace = (points: XZ[]) => {
+    days.walk(points, FILIP_PACE);
+    days.acts[days.acts.length - 1].station = 'call';
+  };
+  pace([start, end, ...arc(...end, out + Math.PI, Math.PI, r).slice(1), lane(far, -1)]);
   add(FILIP_CALL.listen, { kind: 'call', station: 'call', x: lane(far, -1)[0], z: lane(far, -1)[1], heading: heading() });
-  days.walk([lane(far, -1), sliver(...lane(far, -1), out), ...arc(...lane(far, -1), out, Math.PI, r).slice(1), end], FILIP_PACE);
+  pace([lane(far, -1), sliver(...lane(far, -1), out), ...arc(...lane(far, -1), out, Math.PI, r).slice(1), end]);
   add(FILIP_CALL.answer, { kind: 'answer', station: 'call', x: end[0], z: end[1], heading: heading(), up: false });
   tag.phone = false;
   // On to the café table, round to his chair's side, and turned to sit.
@@ -1132,9 +1156,11 @@ export function filipClock(body: FilipBody, plan: FilipPlan = FILIP_DAY) {
     settle: (_live, cut) => (cut ? H.reduced : H.settle),
     pose: (day) => {
       // (The day's answer carries poseFilip's options by their own names.)
-      const { lift } = poseFilip(joints, props, day.pose, day.phase, day);
+      const { lift, resting } = poseFilip(joints, props, day.pose, day.phase, day),
+        y = filipHeight(joints, day, lift, plan.floor);
       root.rotation.y = day.heading;
-      root.position.set(day.x, filipHeight(joints, day, lift, plan.floor), day.z);
+      root.position.set(day.x, y, day.z);
+      if (resting) cupAt(props, day.cup, y, plan.saucer.y);
     },
   });
 }
