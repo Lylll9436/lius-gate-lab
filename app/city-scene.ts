@@ -1542,7 +1542,9 @@ export async function createCity(
   /**
    * The reading frames, besides the last shot and the opening view, that would show a cut slice of
    * each neighbour island (islandHidden): the sky island's are the People chapter's places; the tropic
-   * island has none (every chapter's frame leaves it out of view).
+   * island has none (every chapter's frame leaves it out of view, but the Life chapter's on a 3440 px
+   * screen, which sees its trees' tops and a corner of its sand at the reading panel's edge: a corner
+   * of a sea-level island beyond the town, as the airport's at the opening view's top right).
    */
   const SKY_HIDES = new Set<BuildingId>(plan.chapterSubjects.people),
     TROPIC_HIDES = new Set<BuildingId>();
@@ -1679,31 +1681,35 @@ export async function createCity(
       1,
     );
     // Centre the outline, not the plaza, and keep the target on the ground.
-    target
-      .copy(right)
-      .multiplyScalar((minX + maxX) / 2)
-      .addScaledVector(up, (minY + maxY) / 2);
-    target.addScaledVector(back, -target.y / back.y);
-    offsetTarget();
+    const place = () => {
+      target
+        .copy(right)
+        .multiplyScalar((minX + maxX) / 2)
+        .addScaledVector(up, (minY + maxY) / 2);
+      target.addScaledVector(back, -target.y / back.y);
+      offsetTarget();
+    };
+    place();
     // City mode, where the sky island lands at the box's top left (the opening bearing): it stood
     // under or right beside the caption's sky chip (16 px in, 166 wide with its longest caption, its
     // foot 102 down; the chip naming the place under the pointer is hidden in City mode). The view
     // moves left, the town right, until the island with its clouds and rocks clears the chip's column
-    // by PANEL_CLEAR at rest and stays off it through the idle drift (which swings it as it turns the
-    // view), if the room before the file (PANEL_CLEAR from it) or the frame's edge allows. Where it does
-    // not (a box as wide as the room beside the file, as at 1180 x 820, with the tropic island at its
-    // foot), the view moves up instead, the town down, as far as the box's foot keeps over the bottom
-    // band (76 px), if that is far enough for the island to clear the column at rest; where neither can,
-    // the framing stays as it was. The zoom never changes.
+    // by PANEL_CLEAR at rest and stays off it (by a pixel) through the idle drift (which swings it as it
+    // turns the view), if the room before the file (PANEL_CLEAR from it) or the frame's edge allows.
+    // Where it does not (a box as wide as the room beside the file, at 1024 to 1180 px with the file
+    // open, with the tropic island at its foot), the view moves up instead, the town down, as far as the
+    // box's foot keeps over the bottom band (76 px), if that is far enough for the island to clear the
+    // column at rest; where the band left under the box is short of what the drift asks (a box as tall
+    // as the free part, as at 1180 x 820), the view goes out first, just far enough (never past the
+    // widest zoom), and the box is centred again. Where none of it can, the framing stays as it was.
     if (cityMode) {
-      const perUnit = (width * targetZoom) / (camera.right - camera.left),
-        point = new T.Vector3(),
+      const point = new T.Vector3(),
         floats = [[plan.SKY_CLOUDS, 2.55, 1.5], [plan.SKY_ROCKS, 1.3, 1.2]] as const,
         // The island's left edge and top on screen (px from the frame's left and top), the view turned
         // `turn` about its centre (the idle drift: 0.16 either way at most): each cloud and rock as a disc
         // round its slot, as wide as it reaches and as high as it rises (in units of its size: a cloud 2.55
         // out and 1.5 up, a rock 1.3 out and 1.2 up).
-        edgesAt = (turn: number) => {
+        edgesAt = (turn: number, perUnit: number) => {
           const towardRight = new T.Vector3(Math.cos(targetYaw + turn), 0, -Math.sin(targetYaw + turn)),
             towardUp = new T.Vector3().crossVectors(viewOffset(targetYaw + turn, new T.Vector3(), 0).normalize(), towardRight);
           let left = Infinity,
@@ -1720,18 +1726,44 @@ export async function createCity(
             }
           return { left: width / 2 + (left - target.dot(towardRight)) * perUnit, top: height / 2 - (top - target.dot(towardUp)) * perUnit };
         },
-        // At rest it keeps PANEL_CLEAR from the column, through the drift only off it.
-        states = [{ ...edgesAt(0), margin: PANEL_CLEAR }, ...[-0.16, -0.08, 0.08, 0.16].map((turn) => ({ ...edgesAt(turn), margin: 0 }))],
-        touching = states.filter((e) => e.top < 102 + e.margin && e.left < 182 + e.margin),
-        aside = Math.max(0, ...touching.map((e) => 182 + e.margin - e.left)),
-        down = Math.max(0, ...touching.map((e) => 102 + e.margin - e.top)),
-        room = (frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width) - PANEL_CLEAR - (width / 2 + (maxX - target.dot(right)) * perUnit),
-        under = height - 76 - (height / 2 + (target.dot(up) - minY) * perUnit);
-      if (touching.length) {
-        if (aside <= room) target.addScaledVector(right, -aside / perUnit);
-        else if (!frameDrop && 102 + PANEL_CLEAR - states[0].top <= under) {
-          const by = Math.min(down, under);
-          target.addScaledVector(up, by / perUnit).addScaledVector(back, -(up.y * by) / perUnit / back.y);
+        // Where the island and the box stand at the zoom as it is: at rest it keeps PANEL_CLEAR from the
+        // column, through the drift a pixel; how far the view must move aside or down for that, the room
+        // before the file, and the box's foot (px from the frame's top) and the band left under it.
+        measure = () => {
+          const perUnit = (width * targetZoom) / (camera.right - camera.left),
+            states = [{ ...edgesAt(0, perUnit), margin: PANEL_CLEAR }, ...[-0.16, -0.08, 0.08, 0.16].map((turn) => ({ ...edgesAt(turn, perUnit), margin: 1 }))],
+            touching = states.filter((e) => e.top < 102 + e.margin && e.left < 182 + e.margin),
+            foot = height / 2 + (target.dot(up) - minY) * perUnit;
+          return {
+            perUnit,
+            states,
+            touching,
+            foot,
+            aside: Math.max(0, ...touching.map((e) => 182 + e.margin - e.left)),
+            down: Math.max(0, ...touching.map((e) => 102 + e.margin - e.top)),
+            room: (frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width) - PANEL_CLEAR - (width / 2 + (maxX - target.dot(right)) * perUnit),
+            under: height - 76 - foot,
+          };
+        };
+      let m = measure();
+      // Out first, where the view can only move up and the band under the box is short: everything on
+      // screen draws in toward the frame's middle with the zoom, so out by `k` the island's top and the
+      // box's foot leave room for the lift where k (its distance above the middle plus the foot's below
+      // it) is no more than the frame's height less the two bands, the chip's foot and the margin.
+      if (m.touching.length && m.aside > m.room && !frameDrop && m.down > m.under) {
+        const below = m.foot - height / 2,
+          k = Math.min(...m.touching.map((e) => (height - 178 - e.margin) / (height / 2 - e.top + below)));
+        if (k < 1 && targetZoom > controls.minZoom) {
+          targetZoom = Math.max(controls.minZoom, targetZoom * k);
+          place();
+          m = measure();
+        }
+      }
+      if (m.touching.length) {
+        if (m.aside <= m.room) target.addScaledVector(right, -m.aside / m.perUnit);
+        else if (!frameDrop && 102 + PANEL_CLEAR - m.states[0].top <= m.under) {
+          const by = Math.min(m.down, m.under);
+          target.addScaledVector(up, by / m.perUnit).addScaledVector(back, -(up.y * by) / m.perUnit / back.y);
         }
       }
     }
@@ -1752,9 +1784,10 @@ export async function createCity(
     }
     // The tropic island's file: the whole island (TROPIC_EXTENT, its outline at the water and the tops
     // of its roof and trees), fitted like the airport's between 0.95 and 2.6 (City mode only, whose
-    // file passes no panel edge).
+    // file passes no panel edge), and kept in that frame through the idle drift (driftHold).
     if (focusedIds.length === 1 && focusedIds[0] === 'tropic-island') {
       fitGroup(TROPIC_EXTENT, 0.95, 2.6);
+      driftHold(TROPIC_EXTENT, 0.95);
       return;
     }
     const roots = focusedIds
@@ -1858,6 +1891,56 @@ export async function createCity(
       target.addScaledVector(right, (middle - wanted) / perUnit);
     }
     tween = true;
+  }
+  /**
+   * A group fitted by fitGroup (beside no panel edge) kept inside the part of the frame it was fitted
+   * into through the idle drift, which turns the view 0.16 either way about its centre, the panel
+   * offset's point off the group: where the drift would swing it out (a group that fills that part's
+   * height, as the tropic island does on 16:9 screens, slid 37 px under the masthead's band and the
+   * bottom one at 1920 x 1080), the view goes out as far as it must, never past `far`. Each point's
+   * place on screen under a turn is its offset from the group's middle times the zoom, less the panel
+   * offset's turned share (the same at every zoom), so each side of that part bounds the zoom outright.
+   */
+  function driftHold(points: readonly T.Vector3[], far: number) {
+    const { back, right, up, minX, maxX, minY, maxY } = groupFrame(points, far, targetZoom, 1, 0),
+      middle = right
+        .clone()
+        .multiplyScalar((minX + maxX) / 2)
+        .addScaledVector(up, (minY + maxY) / 2);
+    middle.addScaledVector(back, -middle.y / back.y);
+    const perUnit = width / (camera.right - camera.left),
+      shownHeight = Math.max(0.3, 1 - 2 * Math.abs(frameDrop)) * height,
+      half = {
+        x: Math.max(1, Math.min(Math.max(0.3, 1 - 2.5 * Math.abs(frameShift)) * width - 48, width - 2 * PANEL_CLEAR)) / 2,
+        y: Math.max(shownHeight * 0.6, shownHeight - 152) / 2,
+      },
+      // The group's middle on screen (px from the frame's centre), where the panel offset puts it.
+      at = { x: -frameShift * width, y: frameDrop * height },
+      offset = new T.Vector3();
+    let zoom = targetZoom;
+    for (const turn of [-0.16, -0.08, 0.08, 0.16]) {
+      const turnedRight = new T.Vector3(Math.cos(targetYaw + turn), 0, -Math.sin(targetYaw + turn)),
+        turnedUp = new T.Vector3().crossVectors(viewOffset(targetYaw + turn, new T.Vector3(), 0).normalize(), turnedRight),
+        // The panel offset's share of the turned axes (px), at any zoom.
+        shift = { x: -at.x * right.dot(turnedRight) + at.y * up.dot(turnedRight), y: -at.x * right.dot(turnedUp) + at.y * up.dot(turnedUp) };
+      for (const p of points) {
+        offset.subVectors(p, middle);
+        const across = offset.dot(turnedRight) * perUnit,
+          rise = offset.dot(turnedUp) * perUnit,
+          // On screen at `zoom`: x = across * zoom - shift.x, y = -(rise * zoom) + shift.y (down), both from
+          // the frame's centre, inside the part left free round the middle: at.x +- half.x, at.y +- half.y.
+          room = [
+            [across, across > 0 ? at.x + half.x + shift.x : -(at.x - half.x + shift.x)],
+            [rise, rise > 0 ? -(at.y - half.y - shift.y) : at.y + half.y - shift.y],
+          ];
+        for (const [reach, space] of room) if (Math.abs(reach) > 1e-9 && space > 0) zoom = Math.min(zoom, space / Math.abs(reach));
+      }
+    }
+    if (zoom < targetZoom - 1e-9) {
+      targetZoom = Math.max(far, zoom);
+      target.copy(middle);
+      offsetTarget();
+    }
   }
   /**
    * The sky island's own frame, at its own pitch (SKY_PITCH: the camera comes down to it as the
