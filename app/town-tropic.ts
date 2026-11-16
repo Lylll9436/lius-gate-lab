@@ -65,20 +65,25 @@ export const TROPIC_ROCKS = {
   ] as { t: number; n: number; half: [number, number, number]; detail: number; cuts: [number, number, number, number][] }[],
 };
 /**
- * What of the tropic island can be on screen, as world points (decision 16's TROPIC_EXTENT): at the
- * water's level a ring round its waterline as far out as anything of it reaches (`sea`: its beach's
- * shelf under the water, 4.31 past the waterline, and its shallows, 3; 32 points, so the ring's
- * chords keep outside it), a ring 0.7 past the waterline 4.6 up (the crowns of its trees and palms,
- * which lean out over the beach), and its roof's four corners over the solar panels. A frame that shows none of these shows nothing of the
- * island, its foam and shallows included.
+ * What of the tropic island can be on screen, as world points (decision 16's TROPIC_EXTENT): a ring
+ * round its waterline as far out as anything of it reaches (`sea`: its beach's shelf under the
+ * water, 4.31 past the waterline, and its shallows, 3; 32 points, so the ring's chords keep outside
+ * it), once at the water's level (its shallows and its foam) and once at the shelf's floor
+ * (`floor`, the shore profile's foot under the water, seen through it from a low camera); a ring 0.7
+ * past the waterline 4.6 up (the crowns of its trees and palms, which lean out over the beach); and
+ * its roof's four corners over the solar panels. Everything of the island, its foam and shallows
+ * included, lies inside these points' hull, so their box on screen (as the scene measures the sky
+ * island's: skyOnScreen) holds all of it from any side and pitch; a frame that box misses shows
+ * nothing of it.
  */
-export const TROPIC_REACH = { sea: 4.6, crowns: 0.7, crown: 4.6, points: 32 };
+export const TROPIC_REACH = { sea: 4.6, floor: SHORE_PROFILE[SHORE_PROFILE.length - 1].height, crowns: 0.7, crown: 4.6, points: 32 };
 export const TROPIC_EXTENT: T.Vector3[] = (() => {
   const B = plan.TROPIC_BUILDING,
     P = plan.TROPIC,
     R = TROPIC_REACH;
   return [
     ...plan.tropicOutline(R.sea, R.points).map((p) => new T.Vector3(p.x, WATER, p.z)),
+    ...plan.tropicOutline(R.sea, R.points).map((p) => new T.Vector3(p.x, R.floor, p.z)),
     ...plan.tropicOutline(R.crowns, R.points).map((p) => new T.Vector3(p.x, R.crown, p.z)),
     ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => new T.Vector3(P.x + B.x + sx * B.hw, B.top, P.z + B.z + sz * B.hd))),
   ];
@@ -96,6 +101,12 @@ export type TropicIsland = {
   land: T.Group;
   /** The groups setShown takes with the island's own ground. */
   join: (...groups: T.Object3D[]) => void;
+  /**
+   * Every group setShown takes: its ground first, then each one joined (its building's model root,
+   * and after the merge its garden and its figure). check-town holds them together to the island's
+   * caps and inside TROPIC_EXTENT.
+   */
+  groups: () => readonly T.Object3D[];
   setShown: (shown: boolean) => void;
   shown: () => boolean;
 };
@@ -494,6 +505,7 @@ export function createTropicIsland(ctx: TownContext) {
           g.visible = shown;
         }
       },
+      groups: () => groups,
       setShown(on) {
         if (on === shown) return;
         shown = on;

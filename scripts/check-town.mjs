@@ -10140,9 +10140,13 @@ let tropicReport = '';
     assert(o.receiveShadow, 'A mesh of the tropic island\'s ground takes no shadow.');
   });
   assert(landMeshes <= 4 && landTriangles <= 10000 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
+  // (The island is every group setShown takes: its ground first, then its building's model root and
+  // whatever else is joined to it, counted once each.)
+  const parts = tropic.groups();
+  assert(parts[0] === land && parts.includes(hall.root) && new Set(parts).size === parts.length, 'The tropic island does not take its ground and its building with it.');
   let islandMeshes = 0,
     islandTriangles = 0;
-  for (const g of [land, hall.root])
+  for (const g of parts)
     g.traverse((o) => {
       if (!o.isMesh) return;
       islandMeshes++;
@@ -10276,9 +10280,48 @@ let tropicReport = '';
   }
 
   /* ---------------- TROPIC_EXTENT bounds what of it can be on screen ---------------- */
-  // Every point of its ground (its shelf under the water too) and its building lies inside the ring the
-  // extent draws at the water's level and under its highest point; that ring holds its shallows too.
+  // Every point of its ground (its shelf under the water too), its building and whatever is joined to
+  // it lies inside the ring the extent draws at the water's level and under its highest point; that
+  // ring holds its shallows too. And the box the scene measures on screen round the extent's points
+  // (as skyOnScreen does the sky island's) holds all of it, its tide line included, from every side
+  // and at every pitch from low to straight down: the camera projects orthographically, so a point's
+  // place on screen is its dot with the screen's right and up.
   {
+    const seen = [];
+    for (const g of parts) each(g, (p) => seen.push(p.x, p.y, p.z));
+    {
+      const fp = foam.geometry.attributes.position;
+      for (let i = fp.count - 2 * 2 * plan.TROPIC_SAMPLES; i < fp.count; i++) {
+        v.fromBufferAttribute(fp, i).applyMatrix4(foam.matrixWorld);
+        assert(plan.tropicDistance(v.x, v.z) < TROPIC_SHALLOWS.width + 1, 'The foam\'s last rows are not the tropic island\'s tide line.');
+        seen.push(v.x, v.y, v.z);
+      }
+    }
+    let missed = 0,
+      views = 0;
+    for (let k = 0; k < 24; k++)
+      for (const pitch of [0.4, 0.52, 0.744, 1.0, 1.35, Math.PI / 2]) {
+        const b = (k * Math.PI) / 12,
+          d = new T.Vector3(Math.sin(b) * Math.cos(pitch), Math.sin(pitch), Math.cos(b) * Math.cos(pitch)),
+          right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
+          up = new T.Vector3().crossVectors(d, right),
+          box = [Infinity, -Infinity, Infinity, -Infinity];
+        for (const e of TROPIC_EXTENT) {
+          const x = e.dot(right),
+            y = e.dot(up);
+          box[0] = Math.min(box[0], x);
+          box[1] = Math.max(box[1], x);
+          box[2] = Math.min(box[2], y);
+          box[3] = Math.max(box[3], y);
+        }
+        for (let i = 0; i < seen.length; i += 3) {
+          const x = seen[i] * right.x + seen[i + 2] * right.z,
+            y = seen[i] * up.x + seen[i + 1] * up.y + seen[i + 2] * up.z;
+          if (x < box[0] - 1e-6 || x > box[1] + 1e-6 || y < box[2] - 1e-6 || y > box[3] + 1e-6) missed++;
+        }
+        views++;
+      }
+    assert.equal(missed, 0, `TROPIC_EXTENT's box on screen misses ${missed} points of the tropic island over ${views} views.`);
     const waterRing = TROPIC_EXTENT.filter((p) => p.y === WATER).map((p) => [p.x, p.z]),
       top = Math.max(...TROPIC_EXTENT.map((p) => p.y)),
       within = ([x, z]) => {
@@ -10292,7 +10335,7 @@ let tropicReport = '';
       };
     let outside = 0,
       highest = -Infinity;
-    for (const g of [land, hall.root])
+    for (const g of parts)
       each(g, (p) => {
         if (!within([p.x, p.z])) outside++;
         highest = Math.max(highest, p.y);
