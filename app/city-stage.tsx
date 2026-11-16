@@ -175,8 +175,9 @@ export function CityStage({
       )}
       <div className="map-labels">
         {buildings.map((item) => {
-          // The airport and the sky island stand in no district: their labels end at their category.
-          // Each name carries its place's glyph, as in the Directory (the sky island's is a cloud).
+          // The airport and the two islands stand in no district: their labels end at their category.
+          // Each name carries its place's glyph, as in the Directory (the sky island's is a cloud,
+          // the tropic island's a palm).
           const district = districts.find((d) => d.buildings.includes(item.id));
           return (
             <div

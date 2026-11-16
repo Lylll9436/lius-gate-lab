@@ -458,8 +458,8 @@ export default function Home() {
           ? null
           : createCity(
               mount.current,
-              // A place picked on the model opens in the mode it was picked in; the sky island,
-              // which has no chapter, opens its City file from the reading page too (pickRoute).
+              // A place picked on the model opens in the mode it was picked in; the two islands,
+              // which have no chapter, open their City files from the reading page too (pickRoute).
               (id) => navigateRef.current(...pickRoute(viewRef.current.mode, id)),
               () => navigateRef.current(viewRef.current.mode, 'corner-park'),
               {
