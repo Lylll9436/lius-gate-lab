@@ -10153,8 +10153,9 @@ let skyReport = '';
     for (const name of varyings(s.vertexShader)) assert(!new RegExp('\\b' + name + '\\b').test(s.fragmentShader) || fv.has(name), `${m.material.name}: ${name} read but not declared`);
   }
   assert(batched.length <= 12 && tris <= 30000, `SDE4 costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
-  // (About three times its build at the limits' pace when this was written: 34 ms.)
-  inTime('SDE4\'s build', sde4Time, 100);
+  // (About three times its build at the limits' pace when this was written: 34 ms on a quiet
+  // machine, 57 ms with eleven other lanes' checks running beside it.)
+  inTime('SDE4\'s build', sde4Time, 120);
   // Its night.
   const own = windows.filter((p) => p.place === 'tropic-island'),
     panes = parts.filter((m) => m.material.userData.surfaceKind === 'glass' && m.userData.window !== SDE4_RAILS),
