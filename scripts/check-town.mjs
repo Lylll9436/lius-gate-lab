@@ -9970,10 +9970,11 @@ let skyReport = '';
 // into a group in the island's frame (the island's centre, decision 2: world 19.5, 0, 51; +z south;
 // y the sea's datum), as the merge does:
 // - its parts: each has a surface kind; nothing is two-sided, transparent or cut out; its colours are
-//   SDE4_LOOK's, none louder than its palette family (SDE4_FAMILY); its planting is the town's
-//   clipped shrubs (one white material, painted greens no louder than the hedge's), the same in
-//   every season (the island is evergreen, decision 12); every joined piece but the glass is 0.07
-//   across or more every way (thinner ones twinkle as the view moves);
+//   SDE4_LOOK's, none louder than its palette family (SDE4_FAMILY); its planting (leafy clump
+//   masses from the trees' crown kit and paddle-leaf fans) is the town's white foliage with its
+//   greens painted on, none louder than the hedge's, the same in every season (the island is
+//   evergreen, decision 12); every joined piece but the glass is 0.07 across or more every way
+//   (thinner ones twinkle as the view moves);
 // - its size (decision 2, design.md 2.2): the parasol with the end block about 11 by 7.2 in plan, the
 //   membrane about 7.3 over the podium and nothing over 7.8; all of it inside the footprint and
 //   under the height it hands back, nothing under the podium's foot; its middle low enough for the
@@ -9982,7 +9983,9 @@ let skyReport = '';
 //   (0.24 across or more) from the podium to the soffit, each with its base and capital, standing
 //   clear of every plate; the dark soffit band under the white rim, 0.25 deep or more and set back
 //   from it by a hair; rows of solar modules on the roof; bold champagne fins down the end block's
-//   west face; plates that step back as they rise;
+//   west face; plates that step back as they rise; its planting one mesh of leaves over leafy
+//   clumps (a hundred pieces or more, 9,000 triangles at most), 0.15 or more off the top floor's
+//   glass and the slab over it;
 // - its anchors: the desk on the veranda's deck, clear of the columns, the planters and the glass,
 //   facing south; the entrance at the lobby's doors; the café beside the court, off the podium and
 //   its step and ramp, before the end block;
@@ -10119,6 +10122,20 @@ let skyReport = '';
     const [g0, g1, g2] = SDE4.glass;
     assert(SDE4.plates[0].front >= SDE4.plates[1].front && SDE4.plates[1].front > SDE4.plates[2].front && g2.front < g1.front && g2.east < g1.east, 'SDE4\'s plates do not step back as they rise.');
     assert(g0.front < SDE4.plates[0].front - 0.5, 'SDE4\'s ground floor stands out under its first slab: no undercroft.');
+    // Its planting (design.md 2.6): one mesh of leaves over leafy clumps (a hundred and more pieces,
+    // never a file of balls), within its share of the budget, and 0.15 or more off the top floor's
+    // glass and under the slab over it.
+    const planting = named('sde4-planting'),
+      grown = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(A.x + x0, A.y + y0, A.z + z0), new T.Vector3(A.x + x1, A.y + y1, A.z + z1)).expandByScalar(0.15),
+      p3 = SDE4.plates[2],
+      [, , [l2, l2top]] = SDE4.storeys,
+      near = [grown(SDE4.west, l2, g2.back, g2.east, l2top, g2.front), grown(SDE4.west, p3.y0, p3.back, p3.east, p3.y1, p3.front)],
+      q = planting.geometry.attributes.position,
+      m4 = toIsland.clone().multiply(planting.matrixWorld),
+      leaves = pieces(planting).length,
+      plantingTris = (planting.geometry.index?.count ?? q.count) / 3;
+    assert(planting.material.userData.surfaceKind === 'foliage' && leaves >= 100 && plantingTris <= 9000, `SDE4's planting is ${leaves} pieces and ${plantingTris} triangles.`);
+    for (let i = 0; i < q.count; i++) assert(!near.some((b) => b.containsPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4))), `SDE4's planting crowds the top floor's glass or its slab at ${fmt(v)}.`);
   }
   // Its anchors.
   {
@@ -10127,12 +10144,12 @@ let skyReport = '';
       C = SDE4.columns,
       planters = parts.filter((m) => m.name === 'sde4-planter').map((m) => new T.Box3().setFromObject(m).applyMatrix4(toIsland)).filter((b) => b.max.y < A.y + 0.6),
       glassEast = A.x + SDE4.glass[0].east;
-    assert(d.x > A.x + V.x0 + 0.8 && d.x < A.x + V.x1 - 0.8 && d.z > A.z + V.z0 + 0.8 && d.z < A.z + V.z1 - 0.8 && Math.abs(d.y - A.y) < 1e-9 && d.facing === 0 && d.x - glassEast >= 1, `The desk at ${d.x.toFixed(2)}, ${d.z.toFixed(2)} is not on the veranda's deck, facing south.`);
+    assert(d.x > A.x + V.x0 + 0.8 && d.x < A.x + V.x1 - 0.8 && d.z > A.z + V.z0 + 0.8 && d.z < A.z + V.z1 - 0.8 && Math.abs(d.y - A.y) < 1e-9 && d.heading === 0 && d.x - glassEast >= 1, `The desk at ${d.x.toFixed(2)}, ${d.z.toFixed(2)} is not on the veranda's deck, facing south.`);
     for (const x of C.x) for (const s of [-1, 1]) assert(Math.hypot(d.x - (A.x + x), d.z - (A.z + s * C.z)) >= 1.2, 'The desk stands by a column.');
     assert(planters.length === 2 && planters.every((b) => b.distanceToPoint(new T.Vector3(d.x, b.min.y, d.z)) >= 0.8), 'The desk is crowded by the veranda\'s planters.');
     const doors = parts.filter((m) => m.userData.window === SDE4_ENTRANCE),
       front = doors.filter((m) => Math.abs(m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).z - out.entrance.z) < 1e-3);
-    assert(front.length >= 2 && Math.abs(front.reduce((s, m) => s + m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).x, 0) / front.length - out.entrance.x) < 0.05 && out.entrance.facing === 0, 'The entrance anchor is not at the lobby\'s doors.');
+    assert(front.length >= 2 && Math.abs(front.reduce((s, m) => s + m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).x, 0) / front.length - out.entrance.x) < 0.05 && out.entrance.heading === 0, 'The entrance anchor is not at the lobby\'s doors.');
     const cafe = out.cafe;
     assert(cafe.z >= out.footprint.z1 + 0.8 && cafe.x >= A.x + B.x0 - 0.6 && cafe.x <= A.x + B.x1 + 0.6 && Math.abs(cafe.y - (A.y - SDE4.lift)) < 1e-9, `The café at ${cafe.x.toFixed(2)}, ${cafe.z.toFixed(2)} is not before the end block, off the podium.`);
   }
@@ -10153,7 +10170,9 @@ let skyReport = '';
     for (const name of varyings(s.vertexShader)) assert(!new RegExp('\\b' + name + '\\b').test(s.fragmentShader) || fv.has(name), `${m.material.name}: ${name} read but not declared`);
   }
   assert(batched.length <= 12 && tris <= 30000, `SDE4 costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
-  // (About three times its build at the limits' pace when this was written: 34 ms.)
+  // (About three times its build at the limits' pace when this was written: 34 ms. Since its
+  // planting turned from clipped balls to leaves it takes 24 ms at that pace, and 51 ms in a run
+  // with the machine at a load of 30.)
   inTime('SDE4\'s build', sde4Time, 100);
   // Its night.
   const own = windows.filter((p) => p.place === 'tropic-island'),

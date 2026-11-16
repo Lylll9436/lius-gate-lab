@@ -220,7 +220,7 @@ function cullHidden(built: BuiltClump[]) {
  * than the valleys between them. Up-facing tops lean to the look's warm `top`, the underside to
  * its cool `under`.
  */
-function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, core: T.Vector3, seed: number, opts: { floor?: number; valley?: number; lift?: number; gain?: number; crease?: number; inner?: number } = {}) {
+export function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, core: T.Vector3, seed: number, opts: { floor?: number; valley?: number; lift?: number; gain?: number; crease?: number; inner?: number } = {}) {
   const top = new T.Color(look.top), under = new T.Color(look.under), a = new T.Color(look.tones[0]), b = new T.Color(look.tones[1] ?? look.tones[0]),
     c = new T.Color(), base = new T.Color(), toCore = new T.Vector3(), floor = opts.floor ?? 0.5, valley = opts.valley ?? 0.8, lift = opts.lift ?? 0.38, crease = opts.crease ?? 0.26, inner = opts.inner ?? 0.3,
     heights = built.map(({ clump }) => clump.y), lo = Math.min(...heights), hi = Math.max(...heights),
@@ -254,7 +254,7 @@ function paintCrown(built: BuiltClump[], look: Look, y0: number, y1: number, cor
  * instead of a cluster of separate balls, each with its own lit side and dark rim. `weight` 0
  * keeps each clump's own shading, 1 the crown's alone.
  */
-function softenNormals(built: BuiltClump[], centre: T.Vector3, squash: number, weight: number) {
+export function softenNormals(built: BuiltClump[], centre: T.Vector3, squash: number, weight: number) {
   const k = 1 / (squash * squash);
   for (const { geo } of built) {
     const P = geo.getAttribute('position').array as Float32Array, n = geo.getAttribute('normal'), N = n.array as Float32Array;
@@ -270,7 +270,7 @@ function softenNormals(built: BuiltClump[], centre: T.Vector3, squash: number, w
   }
 }
 /** Build, cull and merge a crown's clumps; returns the geometry and its top (tree space). */
-function crown(clumps: Clump[]) {
+export function crown(clumps: Clump[]) {
   const built = clumps.map(clumpGeometry);
   cullHidden(built);
   let top = -Infinity;
@@ -281,7 +281,7 @@ function crown(clumps: Clump[]) {
   return { built, top };
 }
 /** Merge built clumps (after painting) into one geometry; each is lifted by `dy` first. */
-function mergeCrown(built: BuiltClump[], dy = 0) {
+export function mergeCrown(built: BuiltClump[], dy = 0) {
   const geo = mergeGeometries(built.map(({ geo }) => (dy ? geo.translate(0, dy, 0) : geo)))!;
   built.forEach(({ geo }) => geo.dispose());
   return geo;
