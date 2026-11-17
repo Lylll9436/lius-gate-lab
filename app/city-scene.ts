@@ -215,7 +215,7 @@ export const AIRPORT_EXTRAS = [
  * the hangar's west end, which a ray reaches past the deck's edge, and the sock answered nothing.
  * The tropic island's ground is part of the tropic island in the same way: a slab of its
  * waterline's own outline (tropicSlab: `sides` points evenly along it), from just under the water to
- * TROPIC_HIT.top over it (its lawn's highest, on the mound, is 0.40), hung on its building's box;
+ * TROPIC_HIT.top over it (its lawn's highest, on the mound, is 0.43), hung on its building's box;
  * pointing at its lawn, its paths or its beach finds it, the open sea beside it does not. See
  * pickTarget.
  */

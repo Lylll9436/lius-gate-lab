@@ -382,7 +382,8 @@ function rays(f: (bearing: number) => number, steps = 2048) {
 /**
  * How far out from the tropic island's middle its waterline lies on a bearing: its ellipse's radius
  * there, its wobble and its features' swells (TROPIC_COAST; tabulated by `rays`). One value on every
- * ray: the island is star-shaped about its middle, so every ray from there crosses its waterline once.
+ * ray: seen from its middle no stretch of its shore lies behind another, so every ray from there
+ * crosses its waterline once.
  */
 export const tropicReach = rays((bearing) => {
   let r = 1 / Math.hypot(Math.sin(bearing) / TROPIC.a, Math.cos(bearing) / TROPIC.b) + tropicWobble(bearing);
