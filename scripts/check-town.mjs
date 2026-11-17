@@ -11978,8 +11978,8 @@ let tropicReport = '';
 // height handed back). It builds into a group in the island's frame (its model's root: the island's
 // middle, plan.sites['tropic-island']; +z south; y the sea's datum), as the town does:
 // - its parts: each has a surface kind; nothing is two-sided, transparent or cut out; its colours are
-//   SDE4_LOOK's, none louder than its palette family (SDE4_FAMILY); its planting (leafy clump
-//   masses from the trees' crown kit and paddle-leaf fans) is the town's white foliage with its
+//   SDE4_LOOK's, none louder than its palette family (SDE4_FAMILY); its planting (leafy plants of
+//   broad and lance blades and paddle-leaf fans) is the town's white foliage with its
 //   greens painted on, none louder than the hedge's, the same in every season (the island is
 //   evergreen, decision 12); every joined piece but the glass is 0.07 across or more every way
 //   (thinner ones twinkle as the view moves);
@@ -11988,7 +11988,7 @@ let tropicReport = '';
 //   building's parts, cartooned: see the checks below, each with its negative tests); all of it inside
 //   the footprint and under the height it hands back, nothing under the podium's foot; its middle low
 //   enough for the models' framing (under 7) and its top under their 14; its planting one mesh of
-//   leaves over leafy clumps (a hundred pieces or more, 7,000 triangles at most), 0.15 or more off the
+//   leaves (a hundred pieces or more, 7,000 triangles at most), 0.15 or more off the
 //   roof box's glass and under the soffit;
 // - its anchors: the desk on the veranda's deck, clear of the columns, the planters and the glass,
 //   facing south, under the open portico (the soffit 2.5 times Filip's height over him); the entrance at the lobby's doors; the café beside the court, off the podium and
@@ -12208,6 +12208,55 @@ let tropicReport = '';
       if (!(white.some((p) => p.s.x >= (st.x1 - st.x0) * 0.9 && p.s.y >= q1.y1 - q0.y1 && p.c.z > A.z + st.z0) && stone.some((p) => Math.abs(p.s.x - (st.x1 - st.x0)) < 0.05 && Math.abs(p.b.max.y - (A.y + q1.y1)) < 1e-3 && Math.abs(p.b.min.y - (A.y + q0.y1)) < 1e-3))) bad.push('no open stair between its terraces');
       const rails = list.filter((m) => m.userData.window === SDE4_RAILS).map(box);
       if (!(rails.length >= 6 && rails.every((b) => b.max.y - b.min.y >= 0.3 && b.max.y - b.min.y <= 0.45))) bad.push(`${rails.length} balustrades`);
+      // Its entrance, legible from the town's camera at the end of the bay walk's axis: a white canopy
+      // blade over the doors (0.07 thick or more) standing 0.15 or more out past the first slab's face,
+      // a shadow gap (0.01 or more) under the slab, clear of the column shafts either side by 0.07 or
+      // more (never buried under the slab, as the first take's was); the doors' leaves 1.2 tall or more
+      // (the town draws its doors big); their frame (the jambs and the meeting stile, each the doors'
+      // height) the soffit's dark bronze: a dark portal in the pale front.
+      {
+        const E = S.entrance,
+          slab = S.plates[0],
+          canopy = named(list, 'sde4-entrance'),
+          cb = canopy && box(canopy),
+          plan = cb && new T.Box2(new T.Vector2(cb.min.x, cb.min.z), new T.Vector2(cb.max.x, cb.max.z));
+        if (!(cb && hex(canopy.material.color) === hex(SDE4_LOOK.paint) && cb.max.y - cb.min.y >= 0.07 - 1e-3 && cb.max.z >= A.z + slab.front + 0.15 - 1e-3 && cb.max.y <= A.y + slab.y0 - 0.01 + 1e-3 && C.x.every((x) => plan.distanceToPoint(new T.Vector2(A.x + x, A.z + C.z)) >= C.r + 0.07 - 1e-3)))
+          bad.push('an entrance canopy hidden under the first slab or against a column');
+        const leaves = list.filter((m) => m.userData.window === SDE4_ENTRANCE).map(box).filter((b) => Math.abs(b.min.z - (A.z + E.z)) < 1e-3 && Math.abs(b.max.z - (A.z + E.z)) < 1e-3 && b.max.y - b.min.y > 0.8),
+          head = Math.max(...leaves.map((b) => b.max.y - A.y));
+        if (!(leaves.length >= 2 && head >= 1.2)) bad.push(`entrance doors ${head.toFixed(2)} tall`);
+        const undersides = named(list, 'sde4-undersides'),
+          portal = undersides ? pieces(undersides).filter((p) => Math.abs(p.c.z - (A.z + E.z)) < 0.1 && p.b.min.x >= A.x + E.x0 - 0.1 && p.b.max.x <= A.x + E.x1 + 0.1 && p.s.y >= head - 0.05) : [];
+        if (!(undersides && hex(undersides.material.color) === hex(SDE4_LOOK.soffit) && portal.length >= 3)) bad.push('no dark portal round the entrance doors');
+      }
+      // Its north face, never one flat curtain wall: every slab's back 0.3 or more out of the glass (a
+      // platform edge with its shadow line), and planting where the north stops see it: leaves hanging
+      // past the roof terrace's back edge under its rail's top, in two places 1.5 or more apart, and
+      // leaves on the second slab's north ledge. And nothing planted where no camera of the app sees
+      // it: no leaf on the roof terrace south of its glazed box's front (under the soffit, 1.4 or more
+      // behind the roof's edge at the town's pitch).
+      {
+        const glassBack = Math.min(...S.glass.map((g) => g.back)),
+          slabs = list.filter((m) => m.name === 'sde4-plate').map(box);
+        if (!(slabs.length >= S.plates.length && slabs.every((b) => b.min.z <= A.z + glassBack - 0.3 + 1e-3))) bad.push('north slab edges flush with the glass');
+        const [, p2, p3] = S.plates,
+          hang = [],
+          ledge = [],
+          unseen = [];
+        for (const m of list.filter((m) => m.material.userData.surfaceKind === 'foliage')) {
+          const q = m.geometry.attributes.position,
+            m4 = to.clone().multiply(m.matrixWorld);
+          for (let i = 0; i < q.count; i++) {
+            v.fromBufferAttribute(q, i).applyMatrix4(m4);
+            if (v.z < A.z + p3.back && v.y < A.y + p3.y1 + 0.52 && v.y > A.y + p2.y1 + 0.6) hang.push(v.x);
+            if (v.z < A.z + S.glass[1].back && v.y > A.y + p2.y1 && v.y < A.y + p2.y1 + 1) ledge.push(v.x);
+            if (v.y > A.y + p3.y1 + 0.05 && v.z > A.z + S.box.z1) unseen.push(fmt(v));
+          }
+        }
+        if (!(hang.length >= 20 && Math.max(...hang) - Math.min(...hang) >= 1.5)) bad.push('no planting spilling down the north face from the roof terrace');
+        if (ledge.length < 50) bad.push('no planting on the north ledge');
+        if (unseen.length) bad.push(`unseen planting on the roof terrace under the soffit (${unseen[0]})`);
+      }
       const groups = new Map();
       for (const m of list.filter((m) => m.material.userData.surfaceKind === 'glass' && m.userData.window === SDE4_WINDOWS)) {
         const b = box(m),
@@ -12238,6 +12287,13 @@ let tropicReport = '';
       ['the old 0.04 joints', (S) => (S.fin.joint = 0.04), readOf],
       ['blank solar slabs', (S) => (S.roof.panels = 1), readOf],
       ['joints as notches in each fin', (S) => (S.fin.band = 0), readOf],
+      ['the first take\'s canopy buried under the first slab', (S) => Object.assign(S.entrance.canopy, { y1: S.plates[0].y0 + 0.02, z1: S.plates[0].front - 0.15 }), readOf],
+      ['a canopy against a column', (S) => Object.assign(S.entrance.canopy, { x0: S.entrance.canopy.x0 - 0.1 }), readOf],
+      ['the old 1.12 doors', (S) => (S.entrance.door = 1.12), readOf],
+      ['the old pale door frames', (S) => (S.entrance.frame = 'bar'), readOf],
+      ['the old 0.2 north slab edges', (S) => S.plates.forEach((q) => (q.back = -2.2)), readOf],
+      ['no north planter on the roof terrace', (S) => (S.north = []), readOf],
+      ['no planter on the north ledge', (S) => (S.ledge = []), readOf],
     ];
     for (const [what, change, check] of variants) {
       const saved = structuredClone(SDE4);
@@ -12254,8 +12310,20 @@ let tropicReport = '';
         restore(SDE4, saved);
       }
     }
+    // (And planting put back on the roof terrace under the soffit, where no camera sees it, fails them.)
+    const planting = named(parts, 'sde4-planting'),
+      ghost = planting.clone();
+    ghost.position.z += 2.6;
+    planting.parent.add(ghost);
+    group.updateMatrixWorld(true);
+    try {
+      assert(readOf(SDE4, [...parts, ghost], group).some((b) => b.startsWith('unseen planting')), 'SDE4 with planting on its roof terrace under the soffit passes its checks.');
+    } finally {
+      ghost.removeFromParent();
+      group.updateMatrixWorld(true);
+    }
   }
-  // Its planting (design.md 2.6): one mesh of leaves over leafy clumps (a hundred and more pieces,
+  // Its planting (design.md 2.6): one mesh of leaves (a hundred and more pieces,
   // never a file of balls), within its share of the budget (7,000 triangles at most: the facade's
   // detail was paid for out of the old 8,130), and 0.15 or more off the roof box's glass and under the
   // soffit.
