@@ -1506,9 +1506,10 @@ const laneD3 = {};
   // its own bearing and every Rotate stop (each refits it, as the airport's file does): the whole
   // island (TROPIC_EXTENT) fitted like a group between 0.95 and 2.6, inside the part of the frame the
   // file and the page's bands leave free at rest and through the idle drift, and its ground point in its
-  // own pocket, within 4 of its middle (its natural coast is fuller on the east-south-east, and the
-  // box's top, its roof 8.1 up, shifts the framed ground point toward the camera from some stops) and
-  // unclamped, so a glide's end is never pulled back.
+  // own pocket, within 3.5 of its middle (3.14 at the most, at 1024 x 768 at the second Rotate stop: its
+  // natural coast is fuller on the east-south-east, and the extent's highest points, its roof's and its
+  // trees' tops, shift the framed ground point toward the camera from some stops) and unclamped, so a
+  // glide's end is never pulled back.
   {
     const project = (w, h, zoom, bearing, centre, p) => {
         const per = (h * zoom) / Math.max(53, (76 * h) / w),
@@ -1539,7 +1540,7 @@ const laneD3 = {};
           subject = centre.clone().sub(view.shiftApplied),
           at = `The tropic island's file at ${String(w)} x ${String(h)} at bearing ${bearing.toFixed(2)}`;
         assert(zoom >= 0.95 - 1e-9 && zoom <= 2.6 + 1e-9, `${at} fits at ${zoom.toFixed(3)}.`);
-        assert(region(subject.x, subject.z).radius === scene.PAN.tropic.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9) && Math.hypot(subject.x - tropicAt[0], subject.z - tropicAt[1]) < 4, `${at} frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pocket or off its middle.`);
+        assert(region(subject.x, subject.z).radius === scene.PAN.tropic.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9) && Math.hypot(subject.x - tropicAt[0], subject.z - tropicAt[1]) < 3.5, `${at} frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pocket or off its middle.`);
         for (const d of [-0.16, -0.08, 0, 0.08, 0.16]) {
           const [x0, y0, x1, y1] = boxOf(TROPIC_EXTENT.map((p) => project(w, h, zoom, bearing + d, centre, p))),
             margin = Math.min(x0 - free[0], y0 - free[1], free[2] - x1, free[3] - y1);
@@ -1847,7 +1848,8 @@ const laneD3 = {};
     // 0.465 at 1440 x 900 (main's fit with the sky island alone: 0.591, 0.580 beside the file), 0.442 at
     // 1280 x 720, 0.453 at 1280 x 800, 0.449 at 1366 x 768, 0.461 at 1536 x 864, 0.479 at 1680 x 1050,
     // 0.481 at 1920 x 1080, 0.60 of the last shot's at every desktop size with the file hidden (a hair
-    // under, 0.5999, with the island's own coast and its building's top at 8.1: 0.59 at the least). At the
+    // under at 1024 x 768, 0.59992: the natural coast's extent, which sets the box's foot; 0.599 at the
+    // least). At the
     // other stops the islands lie at either side, and the fit keeps more than two thirds of the last
     // shot's or sits at the widest zoom (beside the file at 1024 to 1440 wide at the second and fourth
     // stops, which would want 0.22 to 0.40). At rest the town (the island, the lighthouse's rock and the
@@ -1857,9 +1859,10 @@ const laneD3 = {};
     // 1024 and 1180 wide at the second and fourth stops: there it is the one cut, by the frame's edge or
     // the file, reported in the summary; the review found the airport's armour and the sky island cut
     // there when the whole box was centred). Beside the file what stands whole keeps PANEL_CLEAR from it
-    // at rest, and 18.5 px or more through the drift (20 round the stand-in island; the island's own, its
-    // coast fuller and its building 8.1 up, brings the sky island 19 px from the file at 1280 x 800 at
-    // the second stop at the drift's far end) (at 1024 x 768 at those two stops, where the town and
+    // at rest, and 18.5 px or more through the drift (20 round the stand-in island; with the island's own,
+    // its natural coast's extent widening the box the overview fits, the binding case is the sky island
+    // at 1280 x 800 at the second stop at the drift's far end, 18.97 px from the file) (at 1024 x 768 at
+    // those two stops, where the town and
     // the sky island fill the room beside it at rest, 8 px or more). Through the idle drift nine tenths of
     // each island stay in the frame up to 1920 wide, four fifths on the widest screens (at the drift's
     // extreme the sky island's chimneys slide up past the top edge, under the masthead's band, at 3440 x
@@ -1931,7 +1934,7 @@ const laneD3 = {};
           const { zoom, centre } = overviewAt(w, h, shift, bearing, true),
             right = w - (open ? 476 : 0),
             clamped = Math.abs(zoom - widestOf(w, h)) < 1e-9;
-          assert(r <= 1 + 1e-9 && (clamped || r > (bearing === Math.PI / 4 ? 0.59 : 0.68) - 1e-9), `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} keeps ${r.toFixed(3)} of the last shot's zoom.`);
+          assert(r <= 1 + 1e-9 && (clamped || r > (bearing === Math.PI / 4 ? 0.599 : 0.68) - 1e-9), `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} keeps ${r.toFixed(3)} of the last shot's zoom.`);
           // The floats inside the overview's box: adding them changes nothing.
           scene.SKY_MARKS.push(...floats);
           const withFloats = overviewAt(w, h, shift, bearing, true);
@@ -4170,12 +4173,12 @@ const laneD3 = {};
       settle();
       run.cancel();
       // (Seen whole with its shelf and shallows, TROPIC_SEEN's box is a little wider than About's frame at
-      // 1440 x 900: panned right onto it, about seven tenths of that box is in view.)
-      for (let f = 0; f < 400 && tropicIsland().share < 0.65; f++) {
+      // 1440 x 900: panned right onto it, 0.717 of that box is in view at the most; 0.7 asked.)
+      for (let f = 0; f < 400 && tropicIsland().share < 0.7; f++) {
         dragToward(tropicMiddle.x, tropicMiddle.z, 0.5);
         step();
       }
-      assert(sky.tropicShown && tropicIsland().share >= 0.65, `Panned to the tropic island in the About chapter, the check cannot bring it into view (${(tropicIsland().share * 100).toFixed(0)}% of it).`);
+      assert(sky.tropicShown && tropicIsland().share >= 0.7, `Panned to the tropic island in the About chapter, the check cannot bring it into view (${(tropicIsland().share * 100).toFixed(0)}% of it).`);
       hero(true);
       watch('Recentre in About panned to the tropic island, at 1440 x 900');
       keepsAtRest('the opening view by Recentre from About panned to it at 1440 x 900');
@@ -4284,8 +4287,8 @@ const laneD3 = {};
               // (The 3440 px Life frame: its sand, where it is in the frame at all, at the panel's edge or right
               // of it, under the panel: its waterline itself, not the polygon round it that TROPIC_EXTENT draws
               // over its bays. Its natural coast's south-east brings the edge of its beach out from under the
-              // panel along the frame's very foot through the drift, 3 px high at most: within 6 px of the foot,
-              // or no more than PANEL_CLEAR out from under the panel.)
+              // panel along the frame's very foot through the drift, 3 px high at most (2.7, drifted 0.02): within
+              // 6 px of the foot, or no more than PANEL_CLEAR out from under the panel (15.9 px at rest).)
               const [x0, y0] = box(plan.tropicOutline(0, 480).map((p) => px(w, h, view.targetZoom, bearing + d, view.target, new T.Vector3(p.x, -0.028, p.z)))),
                 panel = edgeOf(w) * w;
               assert(y0 >= h - 6 || x0 >= panel - 24, `The reading page's Life chapter at ${w} x ${h}, drifted ${d.toFixed(2)}, shows the tropic island's sand ${(panel - x0).toFixed(0)} px left of the reading panel and ${(h - y0).toFixed(0)} px up from the frame's foot.`);
