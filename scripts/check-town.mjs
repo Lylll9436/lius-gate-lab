@@ -5322,7 +5322,10 @@ function crossingEdges(X, Y) {
 //   hair brown (every shade's hue 15 to 40 degrees, its value under 0.55); FILIP_LOOK's shirt white,
 //   its chinos navy, its belt, shoes and brows brown.
 // - Thickness: every joined piece of him and his props is 0.07 or more across every way (in his own
-//   frame, so 0.0756 on the island), but his nose (a resident's, a 0.04 bump sunk in his face).
+//   frame, so 0.0756 on the island), but his nose (a resident's, a 0.04 bump sunk in his face). His
+//   collar is the one other exception, passed by its box round his neck: its section is a soft roll
+//   0.021 thick lying on his shirt, half of it sunk in it, in the shirt's own white, so it reads as a
+//   fold of the shirt and has no edge against anything darker to twinkle on.
 // - His head is his own (FILIP_HEAD), not the residents' nearly round HEAD, which read too full on
 //   him (the owner, 2026-11-16: his face a little longer, less fat): 8 to 12% taller and 5 to 8%
 //   narrower than HEAD, taller than it is wide (by 15% or more), its lower half narrowing faster
