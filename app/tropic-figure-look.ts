@@ -93,11 +93,14 @@ const BELT = { foot: 0.316, head: 0.388, proud: 0.008, buckle: 0.022 };
  * Features drawn on the head, each a cell between its rows (heights, bottom to top) either side of
  * the face: at each row, how far out its middle is (x) and its half-width there. His eyes are small
  * rounded ovals; his brows soft bars a little fuller at their inner ends, their outer ends tapering
- * down, so the face reads friendly, not stern. They are drawn as on a resident's head (HEAD); each
+ * down in a gentle droop (the inner end square from the second row to the top, the lower edge sloping
+ * down outward to a small tip on the lowest row, 0.009 under the inner end's middle, the upper edge
+ * curving down to it), so the face reads friendly, not stern, and the brow does not read raised at its
+ * outer end from the town's high camera. They are drawn as on a resident's head (HEAD); each
  * feature's middle is carried onto his by onFilip, its size kept (rows and half-widths about it).
  */
 const EYES = { rows: [0.759, 0.7655, 0.7785, 0.785], x: [0.052, 0.052, 0.052, 0.052], half: [0.006, 0.0102, 0.0102, 0.006] },
-  BROWS = { rows: [0.8025, 0.8085, 0.8138], x: [0.0535, 0.0528, 0.0498], half: [0.0185, 0.0198, 0.0128] };
+  BROWS = { rows: [0.7995, 0.8025, 0.8085, 0.8138], x: [0.0695, 0.0525, 0.0485, 0.047], half: [0.002, 0.0175, 0.0155, 0.01] };
 /**
  * His head, his own: the residents' HEAD is nearly a ball (0.15 by 0.148 by 0.142), and on him it
  * read too round and full (the owner, 2026-11-16). His is a smooth egg a little longer and leaner,
@@ -773,7 +776,8 @@ function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: numb
  * The hairline round his head (on a resident's head, HEAD, as the hair is sculpted; see hair()): its
  * height at each azimuth (0 straight ahead, + round to his left, +x), as [azimuth, height] for one
  * side, mirrored, but over the forehead, where the side parting lifts it on his left and the swept
- * fringe lowers it on his right. Close over the ears, down to the nape behind, where it is drawn a
+ * fringe lowers it on his right (only so far: his right brow shows 0.005 or more under it from in
+ * front at the town's 42-degree pitch, as the left does). Close over the ears, down to the nape behind, where it is drawn a
  * little higher (0.699) than it ends, so that carried onto his longer head it ends about 0.69 up,
  * as it did on HEAD, and his nape still shows; the sideburns are added on their own.
  */
@@ -785,7 +789,7 @@ const HAIRLINE: [number, number][] = [
   [-1.38, 0.8],
   [-1.15, 0.818],
   [-0.85, 0.834],
-  [-0.42, 0.838],
+  [-0.42, 0.843],
   [0, 0.846],
   [0.42, 0.858],
   [0.85, 0.838],
