@@ -26,11 +26,13 @@ export const TROPIC_LOOK = {
   granite: ['#958f84', '#8b867d', '#9e978a', '#7d7871', '#706c66'],
 };
 /**
- * The grid the land's paving is cut on (town-tropic's paths): `cell` square, and `fine` where an edge
- * curves (the distance at a cell's middle `bend` or more off its corners' mean) or the kerb changes
- * stone, so an arc's chords stay within a few millimetres.
+ * The grid the land's paving is cut on (town-tropic's paths): `cell` square, each cell an edge passes
+ * through halved and halved again down to `fine` where the edge bends (a distance at the cell's middle
+ * or an edge's middle `bend` or more off the corners' blend), so a straight edge is exact, an arc's
+ * chord lies within about 3 mm of it, and the creases where a walk meets the plaza's rim or the seat
+ * (where the distances' max and min fold) within about 3 cm (the kerb's inner line about 5 cm).
  */
-const PAVING_GRID = { cell: 0.2, fine: 0.05, bend: 0.002 };
+const PAVING_GRID = { cell: 0.2, fine: 0.05, bend: 0.008 };
 /**
  * The rocks on the shore: clusters of the armour's chiselled boulders (town-sky-garden's boulder,
  * town-sky's chisel) on the two rocky stretches (plan.TROPIC_ROCKY): three round the tip and along the
@@ -208,6 +210,7 @@ export function createTropicIsland(ctx: TownContext) {
     const e = 0.05;
     return new T.Vector3(plan.tropicTop(x - e, z) - plan.tropicTop(x + e, z), 2 * e, plan.tropicTop(x, z - e) - plan.tropicTop(x, z + e)).normalize();
   }
+  const UP = new T.Vector3(0, 1, 0);
   /**
    * A flat surface laid on the lawn, from triangles in world x, z (any winding: each is turned to
    * face up), each one flat colour and `lift` over the lawn; every vertex stands on the lawn and takes
@@ -217,12 +220,18 @@ export function createTropicIsland(ctx: TownContext) {
     const pos: number[] = [],
       nor: number[] = [],
       col: number[] = [],
-      // The lawn's height and normal at each point, worked out once (a point is shared by several triangles).
-      seen = new Map<string, [number, T.Vector3]>(),
+      // The lawn's height and normal at each point, worked out once (a point is shared by several
+      // triangles; keyed to 1e-5 by number: the island's x and z are under 70, so the key is exact).
+      // On the level terrace (the pad's height there) the normal is straight up: the terrace is level
+      // for 0.6 round everything paved on it, and level-flat where it eases.
+      seen = new Map<number, [number, T.Vector3]>(),
       lawnAt = (x: number, z: number) => {
-        const key = `${Math.round(x * 1e5)},${Math.round(z * 1e5)}`;
+        const key = Math.round(x * 1e5) * 1e8 + Math.round(z * 1e5);
         let at = seen.get(key);
-        if (!at) seen.set(key, (at = [plan.tropicTop(x, z), lawnNormal(x, z)]));
+        if (!at) {
+          const y = plan.tropicTop(x, z);
+          seen.set(key, (at = [y, Math.abs(y - P.pad) < 1e-9 ? UP : lawnNormal(x, z)]));
+        }
         return at;
       };
     return {
@@ -233,6 +242,24 @@ export function createTropicIsland(ctx: TownContext) {
           const [y, n] = lawnAt(x, z);
           pos.push(x, y + lift, z);
           n.toArray(nor, nor.length);
+          col.push(tone.r, tone.g, tone.b);
+        }
+      },
+      /**
+       * An upright face from a to b (world x, z), from `low` to `high` over the lawn, its front facing
+       * `normal` (x, z), shaded as the lawn's surface is there (so it reads as the slab's own edge, one
+       * tone with its top, never a dark line).
+       */
+      face(a: plan.XZ, b: plan.XZ, low: number, high: number, normal: plan.XZ, tone: T.Color) {
+        const [ya] = lawnAt(a[0], a[1]),
+          [yb] = lawnAt(b[0], b[1]),
+          // (Wound so its front faces `normal`.)
+          turn = (b[0] - a[0]) * normal[1] - (b[1] - a[1]) * normal[0],
+          [p, q, yp, yq] = turn > 0 ? [a, b, ya, yb] : [b, a, yb, ya],
+          quad: [number, number, number][] = [[p[0], yp + low, p[1]], [q[0], yq + low, q[1]], [q[0], yq + high, q[1]], [p[0], yp + low, p[1]], [q[0], yq + high, q[1]], [p[0], yp + high, p[1]]];
+        for (const v of quad) {
+          pos.push(...v);
+          lawnAt(v[0], v[2])[1].toArray(nor, nor.length);
           col.push(tone.r, tone.g, tone.b);
         }
       },
@@ -354,42 +381,54 @@ export function createTropicIsland(ctx: TownContext) {
    * grey granite on the main line, the light kerb on the tree walk and the seat), so a kerb runs on
    * through every junction round its fillet, and none runs along the podium or the plaza's rim. Each
    * band is its own flat colour (an edge is geometry, never a line); plain stone, no joints drawn.
-   * Cut from the paving's distances on a grid (PAVING_GRID: `cell`, and `fine` where an edge curves or
-   * the kerb changes stone), each cell's two triangles clipped along the edges, which lie where the
-   * distances cross nought (exact on a straight edge, a chord a few millimetres off an arc).
+   * Cut from the paving's distances on a grid (PAVING_GRID): each `cell` an edge passes through is
+   * halved, and halved again down to `fine`, only where the edge bends there; each leaf is laid as its
+   * own outline with its neighbours' corners on its sides (so no crack opens where a fine leaf meets a
+   * coarse one), cut into triangles and clipped along the edges, which lie where the distances cross
+   * nought (exact on a straight edge; see PAVING_GRID for the rest). Where the paving runs onto the
+   * plaza's rim (0.01, over its stone) its edge is closed by a riser down to the lawn, in its own
+   * colour and facing the plaza, so no lawn shows under it from across the plaza.
    */
   function paths(g: T.Object3D) {
     const W = plan.TROPIC_PATHS,
+      Q = plan.TROPIC_PLAZA,
       G = PAVING_GRID,
       pave = new T.Color(L.paving),
       main = new T.Color(L.kerbMain),
       light = new T.Color(L.kerb),
       surface = draped(),
-      split = W.east - 0.1;
+      n = Math.round(G.cell / G.fine);
     // A vertex: its place in the island's frame and the paving's distances there (paving, union, split line).
     type V = [number, number, number, number, number];
-    // (Every grid point lies on the fine grid: each is worked out once.)
+    // (Every point lies on the fine lattice, (i, j) in fines: each is worked out once.)
     const known = new Map<number, V>(),
-      vertex = (x: number, z: number): V => {
-        const key = Math.round(x / G.fine) * 100003 + Math.round(z / G.fine);
+      vertex = (i: number, j: number): V => {
+        const key = i * 100003 + j;
         let v = known.get(key);
         if (!v) {
-          const p = plan.tropicPaving(x, z);
-          known.set(key, (v = [x, z, p.paving, p.union, x - split]));
+          const x = i * G.fine,
+            z = j * G.fine,
+            p = plan.tropicPaving(x, z);
+          known.set(key, (v = [x, z, p.paving, p.union, x - W.split]));
         }
         return v;
       };
     /** The part of a convex polygon where field k is at most `at` (or more, `above`), the field linear along its edges. */
     const clip = (poly: V[], k: number, at: number, above = false): V[] => {
-      const out: V[] = [],
-        side = (v: V) => (above ? v[k] - at > 0 : v[k] - at <= 0);
+      const side = (v: V) => (above ? v[k] - at > 0 : v[k] - at <= 0);
+      // (Wholly on one side: all of it, or none.)
+      let kept = 0;
+      for (const v of poly) if (side(v)) kept++;
+      if (kept === poly.length) return poly;
+      if (!kept) return [];
+      const out: V[] = [];
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i],
           b = poly[(i + 1) % poly.length];
         if (side(a)) out.push(a);
         if (side(a) !== side(b)) {
           const f = (at - a[k]) / (b[k] - a[k]);
-          out.push(a.map((q, j) => q + (b[j] - q) * f) as V);
+          out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f, a[4] + (b[4] - a[4]) * f]);
         }
       }
       return out;
@@ -397,7 +436,8 @@ export function createTropicIsland(ctx: TownContext) {
     const emit = (poly: V[], tone: T.Color) => {
       for (let i = 1; i + 1 < poly.length; i++) surface.triangle([P.x + poly[0][0], P.z + poly[0][1]], [P.x + poly[i][0], P.z + poly[i][1]], [P.x + poly[i + 1][0], P.z + poly[i + 1][1]], tone, W.lift);
     };
-    const triangle = (t: V[]) => {
+    /** A triangle (or any convex piece no edge crosses twice) clipped to the paving, its kerb bands and their stones. */
+    const piece = (t: V[]) => {
       const paved = clip(t, 2, 0);
       if (paved.length < 3) return;
       for (const [east, kerb, edge] of [[false, W.main.kerb, main], [true, W.tree.kerb, light]] as const) {
@@ -407,39 +447,89 @@ export function createTropicIsland(ctx: TownContext) {
         emit(clip(part, 3, -kerb, true), edge);
       }
     };
-    /** A cell's two triangles, split along the diagonal the paving's distance changes least over. */
-    const cell = ([a, b, d, e]: V[]) => {
-      if (Math.abs(a[2] - d[2]) <= Math.abs(b[2] - e[2])) {
-        triangle([a, b, d]);
-        triangle([a, d, e]);
-      } else {
-        triangle([a, b, e]);
-        triangle([b, d, e]);
-      }
-    };
+    // The quadtree's leaves, (i, j) their north-west corner and `size` their side, in fines; and the
+    // lattice points that are any leaf's corner.
+    const leaves: [number, number, number][] = [],
+      corners = new Set<number>(),
+      // The edges a cell can hold: the paving's edge and the kerb's inner line (main and tree).
+      levels: [number, number][] = [[2, 0], [3, -W.main.kerb], [3, -W.tree.kerb]],
+      /** Whether a contour can pass through the cell (a distance moves no faster than 1). */
+      near = (m: V, size: number) => levels.some(([k, at]) => Math.abs(m[k] - at) < size * G.fine * 0.71),
+      /** Whether a field bends in the cell: at its middle or an edge's middle off its corners' blend. */
+      bent = (i: number, j: number, size: number) => {
+        const h = size / 2,
+          c = [vertex(i, j), vertex(i + size, j), vertex(i + size, j + size), vertex(i, j + size)];
+        return [2, 3].some((k) => {
+          const mid = (a: number, b: number) => (c[a][k] + c[b][k]) / 2;
+          return (
+            Math.abs(vertex(i + h, j + h)[k] - (mid(0, 1) + mid(2, 3)) / 2) > G.bend ||
+            Math.abs(vertex(i + h, j)[k] - mid(0, 1)) > G.bend ||
+            Math.abs(vertex(i + size, j + h)[k] - mid(1, 2)) > G.bend ||
+            Math.abs(vertex(i + h, j + size)[k] - mid(2, 3)) > G.bend ||
+            Math.abs(vertex(i, j + h)[k] - mid(3, 0)) > G.bend
+          );
+        });
+      },
+      split = (i: number, j: number, size: number) => {
+        const h = size / 2,
+          m = vertex(i + h, j + h);
+        // (Wholly off the paving: nothing.)
+        if (m[2] > size * G.fine * 0.71) return;
+        if (size > 1 && near(m, size) && bent(i, j, size)) {
+          for (const [di, dj] of [[0, 0], [h, 0], [h, h], [0, h]]) split(i + di, j + dj, h);
+          return;
+        }
+        leaves.push([i, j, size]);
+        for (const [di, dj] of [[0, 0], [size, 0], [size, size], [0, size]]) corners.add((i + di) * 100003 + j + dj);
+      };
     const F = W.forecourt,
       C = W.cafe,
-      box = { x0: Math.min(C.x0, W.bay.x - W.bay.width) - 0.4, x1: W.seat.x + W.seat.r + 0.4, z0: Math.min(F.z0, W.seat.z - W.seat.r) - 0.4, z1: W.bay.end + 0.3 };
-    for (let x = box.x0; x < box.x1; x += G.cell)
-      for (let z = box.z0; z < box.z1; z += G.cell) {
-        const c = [vertex(x, z), vertex(x + G.cell, z), vertex(x + G.cell, z + G.cell), vertex(x, z + G.cell)],
-          m = vertex(x + G.cell / 2, z + G.cell / 2);
-        if ([...c, m].every((v) => v[2] > G.cell)) continue;
-        if ([...c, m].every((v) => v[2] < -G.cell && v[3] < -W.main.kerb - G.cell)) {
-          cell(c);
-          continue;
-        }
-        // Curved here (the middle off the corners' mean), or the kerb's stone changes: fine cells.
-        const bent = (k: number) => Math.abs(m[k] - (c[0][k] + c[1][k] + c[2][k] + c[3][k]) / 4) > G.bend,
-          n = bent(2) || bent(3) || [...c, m].some((v) => Math.abs(v[4]) < G.cell) ? Math.round(G.cell / G.fine) : 1;
-        const s = G.cell / n;
-        for (let i = 0; i < n; i++)
-          for (let j = 0; j < n; j++) {
-            const xa = x + i * s,
-              za = z + j * s;
-            cell(n === 1 ? c : [vertex(xa, za), vertex(xa + s, za), vertex(xa + s, za + s), vertex(xa, za + s)]);
-          }
+      box = { x0: Math.min(C.x0, W.bay.x - W.bay.width) - 0.4, x1: W.seat.x + W.seat.r + 0.4, z0: Math.min(F.z0, W.seat.z - W.seat.r) - 0.4, z1: W.bay.end + 0.3 },
+      [i0, j0] = [Math.floor(box.x0 / G.cell) * n, Math.floor(box.z0 / G.cell) * n];
+    for (let i = i0; i * G.fine < box.x1; i += n) for (let j = j0; j * G.fine < box.z1; j += n) split(i, j, n);
+    for (const [i, j, size] of leaves) {
+      // Its outline, round from its north-west corner, with any finer neighbour's corners on its sides.
+      const ring: V[] = [];
+      for (const [ai, aj, di, dj] of [[i, j, 1, 0], [i + size, j, 0, 1], [i + size, j + size, -1, 0], [i, j + size, 0, -1]]) {
+        ring.push(vertex(ai, aj));
+        for (let k = 1; k < size; k++) if (corners.has((ai + di * k) * 100003 + aj + dj * k)) ring.push(vertex(ai + di * k, aj + dj * k));
       }
+      if (ring.length === 4) {
+        // Two triangles, split along the diagonal the paving's distance changes least over.
+        const [a, b, d, e] = ring;
+        if (Math.abs(a[2] - d[2]) <= Math.abs(b[2] - e[2])) {
+          piece([a, b, d]);
+          piece([a, d, e]);
+        } else {
+          piece([a, b, e]);
+          piece([b, d, e]);
+        }
+        continue;
+      }
+      // (More: wholly on one side of every edge it is one convex piece; else a fan about its middle.)
+      const same = (k: number, at: number) => ring.every((v) => v[k] <= at) || ring.every((v) => v[k] > at);
+      if (levels.every(([k, at]) => same(k, at)) && same(4, 0)) piece(ring);
+      else {
+        const m = vertex(i + size / 2, j + size / 2);
+        for (let k = 0; k < ring.length; k++) piece([m, ring[k], ring[(k + 1) % ring.length]]);
+      }
+    }
+    // The riser where the paving runs onto the plaza's rim: on every stretch of the rim the walks meet
+    // (paved just outside it), at the paving's edge there, from its surface down to the lawn.
+    {
+      const steps = Math.ceil((Math.PI * 2 * Q.r) / G.fine),
+        r = Q.r - 0.01,
+        at = (a: number): plan.XZ => [Q.x + Math.cos(a) * r, Q.z + Math.sin(a) * r];
+      for (let k = 0; k < steps; k++) {
+        const a0 = (k / steps) * Math.PI * 2,
+          a1 = ((k + 1) / steps) * Math.PI * 2,
+          am = (a0 + a1) / 2,
+          out = plan.tropicPaving(Q.x + Math.cos(am) * (Q.r + 0.02), Q.z + Math.sin(am) * (Q.r + 0.02));
+        if (out.paving > 0) continue;
+        const [p, q] = [at(a0), at(a1)];
+        surface.face([P.x + p[0], P.z + p[1]], [P.x + q[0], P.z + q[1]], 0, W.lift, [-Math.cos(am), -Math.sin(am)], out.union > -out.kerb ? (Q.x + Math.cos(am) * r > W.split ? light : main) : pave);
+      }
+    }
     solid(g, surface.geometry(), '#ffffff', 'stone', { shadow: false, ground: true, name: 'tropic-paths' });
   }
 

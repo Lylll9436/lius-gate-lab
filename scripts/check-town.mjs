@@ -6917,7 +6917,7 @@ let tropicGardenWalks = '';
   }
   // The stations: the café's table on SDE4's café anchor, its seats 1.2 or more in from the turf's
   // edge, the café off the plaza; the desk's middle on SDE4's desk anchor on the veranda, its set the
-  // walkers' clearance off the deck's planters; the sitters facing south and east-south-east.
+  // walkers' clearance off the deck's planters; the sitters facing south and south-east.
   {
     const { desk, cafe } = stations,
       V = B.veranda;
@@ -7023,7 +7023,7 @@ let tropicGardenWalks = '';
   // head, chest and hips along both sides of the call stretch) sees the camera past the garden, unless
   // SDE4's mass (its stand-in boxes) already hides him there; from the file itself, always. And the
   // garden leaves 70% of the glazed front (the stack's south face) in view at every stop that sees it.
-  const sight = { glass: Infinity };
+  const sight = { glass: Infinity, ways: 0 };
   {
     // (Only the planting can hide him: his own chair is behind him and the laptop's lid in front of him.)
     const ray = new T.Raycaster(),
@@ -7075,9 +7075,53 @@ let tropicGardenWalks = '';
       }
     }
     assert(!hidden.length, `The garden hides Filip: ${hidden.slice(0, 6).join('; ')}${hidden.length > 6 ? ` and ${hidden.length - 6} more` : ''}.`);
+    // And on his ways, from the island's file itself: every half second of his day that he walks (to
+    // and from the desk, the call, the café), five points of him (0.35 to 0.95 over his floor) toward
+    // the camera past the garden; never more than a second (two samples running) with under a fifth of
+    // him in sight. (The big rain tree's crown lies over the veranda's east strip: his ways there keep
+    // west, by the desk.) Refused on his old ways down that strip.
+    {
+      const { FILIP_DAY, filipFloor } = await load('tropic-figure'),
+        back = new T.Vector3(Math.sin(G.file) * 38, 35, Math.cos(G.file) * 38).normalize(),
+        seen = ([x, z]) => {
+          let open = 0;
+          for (const dy of [0.35, 0.5, 0.65, 0.8, 0.95]) {
+            ray.set(new T.Vector3(island.x + x, filipFloor(x, z) + dy, island.z + z), back);
+            if (!ray.intersectObjects(targets, false).length) open++;
+          }
+          return open / 5;
+        },
+        /** The longest run of samples with under a fifth of him in sight, and where it starts. */
+        longestHidden = (points) => {
+          let run = 0,
+            worst = { run: 0, at: null };
+          for (const p of points) {
+            run = seen(p) < 0.2 ? run + 1 : 0;
+            if (run > worst.run) worst = { run, at: p };
+          }
+          return worst;
+        },
+        walking = [];
+      for (let t = 0; t < FILIP_DAY.period; t += 0.5) {
+        const d = FILIP_DAY.day(t);
+        if (d.pose === 'walk') walking.push([d.x, d.z]);
+        else if (walking.length && walking.at(-1) !== null) walking.push(null);
+      }
+      // (Each walk's samples on their own: a run never joins two walks.)
+      const walks = walking.reduce((all, p) => (p === null ? all.push([]) : all.at(-1).push(p), all), [[]]).filter((w) => w.length),
+        worst = walks.map(longestHidden).reduce((a, b) => (b.run > a.run ? b : a), { run: 0, at: null });
+      assert(worst.run <= 2, `From the island's file the garden hides Filip for ${worst.run * 0.5} s on his way, from ${worst.at?.map((v) => v.toFixed(2)).join(', ')}.`);
+      sight.ways = worst.run * 0.5;
+      // (His old ways down the veranda's east strip: out by x 5.05, home by x 5.15, half a second apart.)
+      const strip = (x, z0, z1) => {
+        const n = Math.round(Math.abs(z1 - z0) / 0.26);
+        return Array.from({ length: n + 1 }, (_, k) => [x, z0 + ((z1 - z0) * k) / n]);
+      };
+      assert(longestHidden(strip(5.15, -1.3, -2.6)).run > 2 || longestHidden(strip(5.05, -1.85, -1.0)).run > 2, 'The ways\' sight rule does not refuse his old ways down the veranda\'s east strip.');
+    }
   }
   console.log(
-    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops and the seat and its bench from the file, at least ${Math.round(100 * sight.glass)}% of the glazed front in view${tropicGardenWalks}.`,
+    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops and on his ways from the file (under a fifth of him in sight for ${sight.ways} s at most), and the seat and its bench from the file, at least ${Math.round(100 * sight.glass)}% of the glazed front in view${tropicGardenWalks}.`,
   );
 }
 // The street and pier lamps (town-props' lamp), Glasgow cast-iron lamp standards, built alone: one
@@ -11375,24 +11419,33 @@ let tropicReport = '';
       tropicReport += `; its walks ${least.toFixed(2)} in from the turf's edge at least`;
     }
     // Filleted: where an arm's lawn edge meets the plaza's rim, or the tree walk's north edge meets the
-    // forecourt's end, the corner is paved (the fillet's arc runs between the two edges), in this plan
-    // and refused in a copy with its fillets taken out.
+    // forecourt's end, the corner is paved as deep as a fillet of the designed radius (0.3) makes it, to
+    // within a tenth of that radius (the union there no shallower than a 0.27 fillet leaves it), in this
+    // plan and refused in copies with their fillets taken out or cut to 0.25.
     const corners = (S) => {
       const out = [],
         rim = (z) => [Q.x + Math.sqrt(Q.r ** 2 - (z - Q.z) ** 2), z],
         rimW = (z) => [Q.x - Math.sqrt(Q.r ** 2 - (z - Q.z) ** 2), z],
         rimS = (x) => [x, Q.z + Math.sqrt(Q.r ** 2 - (x - Q.x) ** 2)];
       out.push(['the forecourt\'s south edge at the plaza', rim(S.forecourt.z1)]);
-      if (S.cafe.form === 'rect') out.push(['the café terrace\'s south edge at the plaza', rimW(S.cafe.z1)]);
+      out.push(['the café terrace\'s south edge at the plaza', rimW(S.cafe.z1)]);
       out.push(['the bay walk\'s west edge at the plaza', rimS(S.bay.x - S.bay.width / 2)], ['the bay walk\'s east edge at the plaza', rimS(S.bay.x + S.bay.width / 2)]);
       out.push(['the tree walk\'s north edge at the forecourt\'s end', [S.east, S.tree.line - S.tree.width / 2]]);
       return out;
     };
-    const unfilleted = (S) => corners(S).filter(([, [x, z]]) => plan.tropicPaving(x, z, S).union > -0.02).map(([name]) => name);
-    assert.deepEqual(unfilleted(W), [], `A junction of the walks is not filleted: ${unfilleted(W).join(', ')}.`);
+    const FILLET = 0.3,
+      unfilleted = (S) => {
+        const least = { ...S, main: { ...S.main, fillet: 0.9 * FILLET } };
+        return corners(S)
+          .filter(([, [x, z]]) => plan.tropicPaving(x, z, S).union > plan.tropicPaving(x, z, least).union + 1e-9)
+          .map(([name]) => name);
+      };
+    assert.deepEqual(unfilleted(W), [], `A junction of the walks is not filleted R ${FILLET}: ${unfilleted(W).join(', ')}.`);
     {
-      const bare = { ...W, main: { ...W.main, fillet: 0 } };
+      const bare = { ...W, main: { ...W.main, fillet: 0 } },
+        tight = { ...W, main: { ...W.main, fillet: 0.25 } };
       assert(unfilleted(bare).length >= 4, 'The walks\' fillet rule does not refuse a plan without fillets.');
+      assert(unfilleted(tight).length >= 4, 'The walks\' fillet rule does not refuse fillets of 0.25.');
     }
     // No two paved shapes touching at a point, and no strip of lawn narrower than 0.4 between two paved
     // shapes or between the paving and the podium: a lawn point is in such a strip when the paving (or
@@ -11464,8 +11517,9 @@ let tropicReport = '';
       assert(turn >= 1.2, `His pacing turns come ${turn.toFixed(2)} in from the turf's lip.`);
     }
     // tropicFloor, what the figure stands on: on each walk's middle line its lift over the lawn, the
-    // lawn half a step off the paving's edge, and the lawn (the garden's paving's own floor aside)
-    // inside the plaza (but its outer `ease`, where the walks' step down eases) and the podium.
+    // lawn half a step off the paving's edge and under the podium, and inside the plaza (but its outer
+    // `ease`, where the walks' step down onto it eases) its stone, TROPIC_PLAZA.lift over the lawn
+    // (the garden lays the plaza's rings at that lift: its checks).
     {
       const lawnOnly = (x, z) => Math.abs(plan.tropicFloor(x, z) - plan.tropicTop(x, z)) < 1e-9;
       for (const [name, line] of Object.entries(L))
@@ -11483,12 +11537,33 @@ let tropicReport = '';
         }
       assert(beside > 500, 'The floor beside the walks was hardly sampled.');
       // (Where a walk meets the plaza's rim his step down onto the plaza's stone eases over the plaza's
-      // outer `ease`, as onto the lawn.)
-      for (let a = 0; a < Math.PI * 2; a += 0.3) for (const r of [0, 0.8, Q.r - plan.TROPIC_FLOOR.ease - 0.02]) assert(lawnOnly(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r), 'The floor in the plaza is a walk\'s.');
+      // outer `ease`, and never below the stone; at the rim off the walks, the lawn.)
+      const onStone = (x, z, floor = plan.tropicFloor) => Math.abs(floor(x, z) - plan.tropicTop(x, z) - Q.lift) < 1e-9;
+      assert(Q.lift > 0.005 && Q.lift < W.lift, 'The plaza\'s stone does not lie between the lawn and the walks.');
+      for (let a = 0; a < Math.PI * 2; a += 0.3) for (const r of [0, 0.8, Q.r - plan.TROPIC_FLOOR.ease - 0.02]) assert(onStone(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r), `The floor in the plaza is not its stone at bearing ${a.toFixed(1)}, ${r.toFixed(2)} out.`);
+      // (Refused: the floor the walks' alone, which sank him 0.012 into the stone.)
+      const walksOnly = (x, z) => plan.pathFloor(plan.tropicTop(x, z), plan.tropicWalkInside(x, z), W.lift, plan.TROPIC_FLOOR.ease);
+      assert(!onStone(P.x + Q.x, P.z + Q.z + 0.8, walksOnly), 'The plaza\'s floor rule does not refuse a floor that sinks him into its stone.');
       assert(lawnOnly(P.x + B.x, P.z + B.z), 'The floor under the building is a walk\'s.');
     }
-    // The ramp's foot lands on the forecourt: inside its paving, clear of its south edge.
-    assert(plan.tropicPaving((B.ramp.x0 + B.ramp.x1) / 2, B.z + B.hd + B.ramp.run).paving <= -Fc.clear + 1e-9, 'The veranda\'s ramp does not land on the forecourt.');
+    // The plan's ramp (TROPIC_BUILDING.ramp, which the forecourt and the walks are solved from) is
+    // SDE4's own (sde4Plan's, in the island's frame): its sides, its run and its top at the podium's
+    // face; refused on a copy whose ramp is 0.1 off. And SDE4's ramp's foot lands on the forecourt:
+    // inside its paving, clear of its south edge.
+    {
+      const { sde4Plan: sde4PlanOf } = await load('town-sde4'),
+        R = sde4PlanOf().ramp,
+        rampFaults = (Bd) =>
+          [
+            Math.abs(R.x0 - Bd.ramp.x0) < 1e-9 || 'its west side',
+            Math.abs(R.x1 - Bd.ramp.x1) < 1e-9 || 'its east side',
+            Math.abs(R.foot.z - R.top.z - Bd.ramp.run) < 1e-9 || 'its run',
+            Math.abs(R.top.z - (Bd.z + Bd.hd)) < 1e-9 || 'its top at the podium\'s face',
+          ].filter((f) => f !== true);
+      assert.deepEqual(rampFaults(B), [], `TROPIC_BUILDING.ramp is not SDE4's ramp: ${rampFaults(B).join(', ')}.`);
+      assert(rampFaults({ ...B, ramp: { ...B.ramp, x0: B.ramp.x0 + 0.1 } }).length > 0, 'The ramp rule does not refuse a plan whose ramp is off SDE4\'s.');
+      assert(plan.tropicPaving((R.x0 + R.x1) / 2, R.foot.z).paving <= -Fc.clear + 1e-9, 'The veranda\'s ramp does not land on the forecourt.');
+    }
   }
 
   /* ---------------- its rocks ---------------- */
@@ -12434,8 +12509,8 @@ let tropicReport = '';
 // (figure-rig.ts, Alison's) scaled 1.08 at his root, built here on his own as the town places him
 // (placeFilip's defaults: the island's site, FILIP_SITE, its floor the land's lawn and walks and SDE4's
 // podium, deck and ramp, its solids SDE4's columns, pads and what stands on its podium (the stack, the
-// lobby, the fin block, the veranda's planters with their planting's reach, the court's step) and the
-// plaza's drum, its turf the land's own; and his own body, tropic-figure-look's createFilip with his
+// lobby, the fin block, the veranda's planters with their planting's reach, the court's step; the
+// plaza's medallion is flush), its turf the land's own; and his own body, tropic-figure-look's createFilip with his
 // face), and the town's own Filip held to him. Alison's bars, his:
 // - he is one entry in the animated list, a pivot of his own (keepSeparate, prebatched), his root
 //   scaled 1.08 all over, and inside it exactly Alison's joints, pivots and hierarchy; 14 meshes and
@@ -12459,7 +12534,7 @@ let tropicReport = '';
 // - his soles: standing and walking, the lower one within 0.005 of the floor drawn under it (up the
 //   ramp, over the paths' edges, across the dome); seated, on his chair's foot ring (FILIP_RING) within
 //   0.005;
-// - his ways: his root 0.27 (the walkers' clearance) in plan from every solid (SDE4's, the court's drum)
+// - his ways: his root 0.27 (the walkers' clearance) in plan from every solid (SDE4's)
 //   and his furniture (but the chair or desk he stands beside, at a walk's ends), 1.2 or more in from
 //   the turf's lip (site.inland), off the building wholly on the paving (the land's walks or the
 //   plaza, 0.1 in from the lawn), onto the podium only by its ramp, and never an edge under his feet (the

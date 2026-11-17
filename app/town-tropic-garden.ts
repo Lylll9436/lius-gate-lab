@@ -37,8 +37,8 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * materials are white), so each surface family batches as one mesh: foliage (the crowns, fronds, leaves
  * and shrubs, casting), the small foliage that casts nothing (the ferns, the frangipani's flowers and
  * the desk's plant), bark (trunks, limbs and coconuts), timber (the oak tops, seats and rails) and paint
- * (the bronze frames, the laptop, the café's saucer and the desk plant's pot); and the plaza's stone
- * (its drum) and paving (flush, casting nothing). Filip's own props (his phone and his cup) are his
+ * (the bronze frames, the laptop, the café's saucer and the desk plant's pot); and the plaza's paving
+ * (flush, casting nothing, its medallion in it) and its steps' stone where it has steps. Filip's own props (his phone and his cup) are his
  * body's (tropic-figure-look's filipProps); the café's saucer is the figure rig's china (figure-rig).
  */
 
@@ -51,7 +51,7 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * green paddle leaves and cream flowers with a yellow heart; the shrubs in the hedge greens (a little
  * calmer than the hedge's own, so their blends stay inside its family), the fans a cooler, darker
  * green; a plaza of its own in the pale and grey granite (the kerb's and the residence's gravel) round
- * a dark granite drum (the airport's rubble) with a paler top ring; the furniture's light oak on dark
+ * a flush medallion of dark granite (the airport's rubble) with a paler ring; the furniture's light oak on dark
  * bronze (the residence's); the laptop's aluminium, its keyboard a shade darker and its screen's inner
  * face dark; the café's china white with a warm grey band, and coffee; the desk plant's pale stone
  * pot.
@@ -233,18 +233,22 @@ export const SHRUB_BED = { spacing: 0.6, fillet: 0.1, grid: 0.1, single: 0.075, 
 /**
  * A round plaza of the garden's own (design 1.6), built only where the land builds no court of its own
  * (TropicSite.plaza): `radius` across, in rings `rings` wide each from the outside in (pale and grey
- * granite by turns, the outermost pale with a flush `kerb` a shade lighter into the lawn), lying `lift`
- * over the ground it is draped on with a `skirt` into it; at its middle a low dark granite drum (`drum`:
- * its radius, height and the width of its paler top ring); at its north edge two broad shallow steps up
- * to the podium (`step`: each riser, tread and how far the nosing's pale band reaches back).
+ * granite by turns, the outermost pale with a flush `kerb` a shade lighter into the lawn; the innermost
+ * `inner` plus its width out, run in to the medallion), lying `lift`
+ * over the ground it is draped on with a `skirt` into it; at its middle a flush medallion (`medallion`:
+ * a dark granite disc `r` round, its outer `ring` a paler granite; laid in the rings at their own lift,
+ * clear of the entrance step's nosing, nothing standing proud: people walk over it); at its north edge
+ * two broad shallow steps up to the podium (`step`: each riser, tread and how far the nosing's pale
+ * band reaches back).
  */
 export const GARDEN_PLAZA = {
   radius: 1.7,
   rings: [0.33, 0.33, 0.33, 0.33],
   kerb: 0.08,
-  lift: 0.012,
+  lift: plan.TROPIC_PLAZA.lift,
   skirt: 0.07,
-  drum: { r: 0.38, h: 0.08, ring: 0.08 },
+  medallion: { r: 0.24, ring: 0.06 },
+  inner: 0.36,
   step: { rise: 0.06, tread: 0.26, nosing: 0.07 },
 };
 /**
@@ -1130,11 +1134,11 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
   /**
    * A round plaza (GARDEN_PLAZA), its middle on the origin, draped on `ground` (its own frame's ground
    * height at x, z) `lift` over it with a skirt into the lawn: its rings as flat strips of pale and grey
-   * granite by turns (the outermost pale, with a flush kerb a shade lighter), and the low dark granite
-   * drum at its middle with a paler top ring. With `steps` (the podium's front edge as a z in the
+   * granite by turns (the outermost pale, with a flush kerb a shade lighter), the innermost grey ring
+   * running in to the flush medallion at its middle (a dark disc and its paler ring). With `steps` (the podium's front edge as a z in the
    * plaza's frame, north of its middle, and the podium's top over the plaza's middle), two broad shallow
    * steps rise across the plaza's chord there, their nosings in the pale granite. The rings are paving
-   * (a ground surface, flush, casting nothing); the drum and the steps stone. Only for an island whose
+   * (a ground surface, flush, casting nothing), the medallion with them; the steps stone. Only for an island whose
    * land builds no court of its own: the tropic island's land does (lane site's court).
    */
   function plaza(ground: (x: number, z: number) => number, steps?: { front: number; top: number }) {
@@ -1142,24 +1146,40 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       g = new T.Group();
     g.name = 'tropic-plaza';
     const sides = 72,
-      // Ring edges from the drum out, each with its colour.
+      // Ring edges from the medallion out, each with its colour (the innermost grey ring widened in to it).
       edges: { r: number; c: string; k: number }[] = [],
       pos: number[] = [],
       col: number[] = [],
       index: number[] = [],
       base = ground(0, 0) + P.lift;
-    let r = P.drum.r - 0.02;
+    const M = P.medallion;
+    edges.push({ r: 0, c: L.drum, k: 1 }, { r: M.r - M.ring, c: L.drumTop, k: 1 });
+    let r = M.r;
     const radii = [...P.rings].reverse();
     radii.forEach((w, i) => {
       const pale = (radii.length - 1 - i) % 2 === 0;
       edges.push({ r, c: pale ? L.granitePale : L.graniteGrey, k: 1 });
-      r += w;
+      // (The innermost ring runs in to the medallion; its outer edge stays at `inner` and its width.)
+      r = (i ? r : P.inner) + w;
     });
     edges.push({ r: P.radius - P.kerb, c: L.granitePale, k: 1.06 });
     const y = (x: number, z: number) => Math.max(ground(x, z) + P.lift, base - 0.03);
     // Each strip from one edge out to the next, its own colour; a skirt down from the outer edge.
     const strip = (r0: number, r1: number, colour: string, k: number) => {
       const c = tone.set(colour).multiplyScalar(k).clone();
+      if (r0 === 0) {
+        // (The medallion's disc: a fan about its middle.)
+        pos.push(0, y(0, 0), 0);
+        col.push(c.r, c.g, c.b);
+        const mid = pos.length / 3 - 1;
+        for (let s = 0; s <= sides; s++) {
+          const a = (s / sides) * Math.PI * 2;
+          pos.push(Math.cos(a) * r1, y(Math.cos(a) * r1, Math.sin(a) * r1), Math.sin(a) * r1);
+          col.push(c.r, c.g, c.b);
+          if (s) index.push(mid, pos.length / 3 - 1, pos.length / 3 - 2);
+        }
+        return;
+      }
       for (let s = 0; s < sides; s++) {
         const a0 = (s / sides) * Math.PI * 2,
           a1 = ((s + 1) / sides) * Math.PI * 2,
@@ -1201,12 +1221,8 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
     rings.setAttribute('color', new T.Float32BufferAttribute(col, 3));
     rings.setIndex(index);
     rings.computeVertexNormals();
-    mesh(g, rings, 'paving', 'tropic-plaza-rings', ['granitePale', 'graniteGrey'], { shadow: false, ground: true });
-    // The drum, standing on the plaza's middle.
-    const D = P.drum,
-      foot = y(0, 0) - 0.02,
-      drum = turned(turns([[0, foot], [D.r, foot, 1], [D.r, foot + D.h + 0.02 - 0.012], [D.r - 0.012, foot + D.h + 0.02, 1], [D.r - D.ring, foot + D.h + 0.02, 1], [D.r - D.ring, foot + D.h + 0.005, 1], [0, foot + D.h + 0.005]]), 36);
-    const stone: Part[] = [{ geometry: drum, tint: ((p: T.Vector3, n: T.Vector3, c: T.Color) => void c.set(n.y > 0.5 && Math.hypot(p.x, p.z) > D.r - D.ring - 0.005 ? L.drumTop : L.drum)) as Tint }];
+    mesh(g, rings, 'paving', 'tropic-plaza-rings', ['granitePale', 'graniteGrey', 'drum', 'drumTop'], { shadow: false, ground: true });
+    const stone: Part[] = [];
     if (steps) {
       const S = P.step;
       for (let k = 0; k < 2; k++) {
@@ -1219,7 +1235,7 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
         stone.push({ geometry: chamfered(2 * half, tall, S.tread + 0.02), tint: ((p: T.Vector3, n: T.Vector3, c: T.Color) => void c.set(n.y > 0.5 && p.z > S.tread / 2 - S.nosing ? L.granitePale : p.y > tall / 2 - 0.005 ? L.graniteGrey : L.granitePale)) as Tint, matrix: placed(0, low + tall / 2, z) });
       }
     }
-    solidMesh(material, g, stone, 'stone', 'tropic-plaza-stone', ['drum', 'drumTop', 'granitePale', 'graniteGrey']);
+    if (stone.length) solidMesh(material, g, stone, 'stone', 'tropic-plaza-stone', ['granitePale', 'graniteGrey']);
     return g;
   }
 
@@ -1589,11 +1605,11 @@ export const TROPIC_GARDEN = {
   },
   rainTrees: [
     { size: 'big' as RainTreeSize, x: 8.45, z: -1.2, ry: 1.1, seed: 3 },
-    { size: 'small' as RainTreeSize, x: -7.8, z: 1.25, ry: 0.3, seed: 5 },
+    { size: 'small' as RainTreeSize, x: -8.4, z: 1.5, ry: 0.3, seed: 5 },
   ],
   palms: [
     { bearing: 1.0, shore: 1.0, height: 3.6, lean: 0.27, seed: 1 },
-    { bearing: 0.17, shore: 1.0, height: 3.15, lean: 0.22, seed: 2 },
+    { bearing: 0.35, shore: 1.0, height: 3.15, lean: 0.22, seed: 2 },
     { bearing: 1.32, shore: 1.1, height: 3.85, lean: 0.24, seed: 3 },
     { bearing: -0.42, shore: 1.0, height: 3.35, lean: 0.26, seed: 4 },
   ],
