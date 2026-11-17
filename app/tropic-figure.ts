@@ -432,13 +432,17 @@ const COFFEE = { lean: 0.2, lounge: 0.1, reach: [0.012, 0, 0.035] as V3, sit: -0
  */
 const DRINK = { grip: 0.6 / 4.6, up: 1.5 / 4.6, tip: 1.8 / 4.6, untip: 2.8 / 4.6, down: 3.1 / 4.6, back: 4.0 / 4.6 };
 /**
- * His phone at his ear, in his frame: its middle `gap` off the outside of his right ear (or the hair
- * over it), its face to the ear, `ahead` of the ear's middle and `down` below it; held in his right
- * hand with only its lower quarter in the mitten (its middle `grip` along his forearm from the hand's
- * centre, the rig's elbow frame: its long side along the forearm, its flat faces across its fold), the
- * elbow out and down (`bend`). filipFaceTargets solves where his hand goes for it on his own face.
+ * His phone at his ear, in his frame (the rig's units, his root unscaled), as a phone is held: its
+ * inner face flat to the side of his head `gap` off the outside of his right ear (the outermost point
+ * of his head there: 0.011 in the town's units), its long side tipped `tilt` from upright about the
+ * across axis so its upper end lies over the ear (the ear's middle `over` above the phone's middle
+ * along it) and its lower end leans forward and down toward the corner of his mouth; his right hand
+ * holding its lower half (the hand's centre `grip` down the phone from its middle and `side` out from
+ * it, so the mitten wraps the phone's back rather than pressing on his cheek), the elbow out, down and
+ * forward (`bend`), and the wrist turning the phone from the forearm's line into its own
+ * (filipFaceTargets solves the hand's place and the wrist's turn on his own face; design.md 3.4).
  */
-const EAR = { gap: 0.02, ahead: 0.022, down: 0.004, bend: [-0.7, -0.6, 0.3] as V3, grip: [0, -FORE - 0.07, 0] as V3 };
+const EAR = { gap: 0.011 / S, tilt: (38 * Math.PI) / 180, over: 0.022, grip: 0.034, side: 0.012, bend: [-0.5, -0.6, 0.9] as V3 };
 /** His cup's middle as he drinks, from his mouth (FilipFace.mouth): the cup's rim stops 0.02 short of his lips. */
 const LIPS: V3 = [0, -0.019, 0.081];
 /**
@@ -476,8 +480,12 @@ const GESTURE = { hand: [0.13, 0.47, 0.18] as V3, bend: [0.85, -0.45, -0.25] as 
  * be: none is drawn): tropic-figure-look's FILIP_FACE carries these (with more) for his head.
  */
 export type FilipFace = { ears: [V3, V3]; mouth: V3 };
-/** Where his poses bring things to his face (his frame, the rig's units): his right hand's centre with his phone at his ear, and his cup's middle at his lips. */
-export type FilipFaceTargets = { ear: V3; lips: V3 };
+/**
+ * Where his poses bring things to his face (his frame, the rig's units): his right hand's centre with
+ * his phone at his ear (`ear`) and the wrist's turn there (`wrist`: the phone's turn in the forearm's
+ * frame, as a quaternion), and his cup's middle at his lips.
+ */
+export type FilipFaceTargets = { ear: V3; wrist: [number, number, number, number]; lips: V3 };
 const elbowFrame = new T.Matrix4(),
   pocketAt = new T.Vector3(),
   pocketTurn = new T.Quaternion(),
@@ -489,6 +497,7 @@ const elbowFrame = new T.Matrix4(),
   // pocket upright, its face (+z) to his chest; before him as he looks at it, its long side tipped `tilt`
   // from upright toward the front, its face up and back toward his eyes.
   pocketGrip = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), Math.PI),
+  wristTurn = new T.Quaternion(),
   glanceTurn = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), Math.PI + POCKET.glance.tilt),
   // (cupOnSaucer places a saucer with the cup; the café table carries its own, so this one is never seen.)
   tableSaucer = new T.Object3D();
@@ -508,16 +517,25 @@ function bareRig(): FigureJoints {
   atEase(j);
   return j;
 }
-/** The phone's middle in his right hand (EAR.grip), as the arm is posed: in the root's frame. */
-function gripAt(j: FigureJoints, out: T.Vector3) {
+/**
+ * His phone in his right hand as he holds it to his ear, the arm as posed (in the root's frame): its
+ * turn the forearm's (the rig's elbow frame: its long side along the forearm, its flat faces across its
+ * fold) turned by the wrist (`wrist`, FilipFaceTargets), and its middle EAR.grip up it from the hand's
+ * centre and EAR.side in toward it. Sets `phone`'s place and turn.
+ */
+function gripAt(j: FigureJoints, wrist: T.Quaternion, phone: T.Object3D) {
   j.arms[0].updateMatrix();
   j.elbows[0].updateMatrix();
-  return out.set(...EAR.grip).applyMatrix4(elbowFrame.multiplyMatrices(j.arms[0].matrix, j.elbows[0].matrix));
+  elbowFrame.multiplyMatrices(j.arms[0].matrix, j.elbows[0].matrix);
+  phone.quaternion.setFromRotationMatrix(elbowFrame).multiply(wrist);
+  figureHand(j, 0, phone.position).add(one.set(0, -EAR.grip, EAR.side).applyQuaternion(phone.quaternion));
 }
 /**
- * Where his poses bring things to his face, for a body (its face, FilipBody.face): his
- * phone's middle EAR.gap off the outermost point of his head (ear or hair) by his right ear, and the
- * hand's centre that puts it there, solved on a bare rig; his cup's middle LIPS from his mouth.
+ * Where his poses bring things to his face, for a body (its face, FilipBody.face): his phone at his
+ * right ear as EAR has it (its inner face EAR.gap off the outermost point of his head by the ear, the
+ * ear or the hair over it, whichever stands further out; its long side tipped EAR.tilt toward his
+ * mouth), the hand's centre that holds it there and the wrist's turn from the forearm into the phone's,
+ * solved on a bare rig; his cup's middle LIPS from his mouth.
  */
 export function filipFaceTargets(body: FilipBody): FilipFaceTargets {
   const face = body.face,
@@ -535,27 +553,32 @@ export function filipFaceTargets(body: FilipBody): FilipFaceTargets {
       if (Math.abs(v.y - ey) < 0.03 && Math.abs(v.z - ez) < 0.035 && v.x < out) out = v.x;
     }
   });
-  const phone = new T.Vector3(out - EAR.gap - PHONE.thick / 2, ey - EAR.down, ez + EAR.ahead),
-    j = bareRig(),
-    hand = phone.clone().add(new T.Vector3(0, -0.07, 0)),
-    at = new T.Vector3();
-  for (let k = 0; k < 8; k++) {
-    reach(j, 0, [hand.x, hand.y, hand.z], EAR.bend);
-    hand.add(phone.clone().sub(gripAt(j, at)));
-  }
-  return { ear: [hand.x, hand.y, hand.z], lips: [face.mouth[0] + LIPS[0], face.mouth[1] + LIPS[1], face.mouth[2] + LIPS[2]] };
+  // The phone's turn: its face (+z) to the side of his head, its +y (toward his hand) down the tipped
+  // long side, forward toward his mouth; and its middle, the ear's middle EAR.over up that long side.
+  const down = new T.Vector3(0, -Math.cos(EAR.tilt), Math.sin(EAR.tilt)),
+    across = new T.Vector3(1, 0, 0),
+    turn = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(new T.Vector3().crossVectors(down, across), down, across)),
+    phone = new T.Vector3(out - EAR.gap - PHONE.thick / 2, ey, ez).addScaledVector(down, EAR.over),
+    // The hand's centre on its lower half, out from it; the arm to it; the wrist's turn the rest.
+    hand = phone.clone().add(new T.Vector3(0, EAR.grip, -EAR.side).applyQuaternion(turn)),
+    j = bareRig();
+  reach(j, 0, [hand.x, hand.y, hand.z], EAR.bend);
+  j.arms[0].updateMatrix();
+  j.elbows[0].updateMatrix();
+  const forearm = new T.Quaternion().setFromRotationMatrix(elbowFrame.multiplyMatrices(j.arms[0].matrix, j.elbows[0].matrix)),
+    wrist = forearm.invert().multiply(turn);
+  return { ear: [hand.x, hand.y, hand.z], wrist: [wrist.x, wrist.y, wrist.z, wrist.w], lips: [face.mouth[0] + LIPS[0], face.mouth[1] + LIPS[1], face.mouth[2] + LIPS[2]] };
 }
 /**
  * His phone in his right hand as posed now: `glance` of the way from his grip at the ear (EAR.grip,
  * along his forearm) to held up before his chest to look at (POCKET.glance), and `taken` of the way out
  * of his breast pocket (POCKET.at, carried by his body as it leans) into his hand.
  */
-function phoneInHand(j: FilipJoints, props: FilipProps, taken = 1, glance = 0) {
+function phoneInHand(j: FilipJoints, props: FilipProps, face: FilipFaceTargets, taken = 1, glance = 0) {
   const phone = props.phone,
     G = POCKET.glance;
   phone.visible = true;
-  gripAt(j, phone.position);
-  phone.quaternion.setFromRotationMatrix(elbowFrame);
+  gripAt(j, wristTurn.set(...face.wrist), phone);
   if (glance > 0) {
     // Held up to look at: its middle `up` along its tipped long side from the hand's centre.
     const held = figureHand(j, 0, handAt).add(one.set(0, Math.cos(G.tilt), Math.sin(G.tilt)).multiplyScalar(G.up));
@@ -640,16 +663,16 @@ export function poseFilip(j: FilipJoints, props: FilipProps, name: FilipPose, ph
     if (opts.phone) {
       // (Answering as he sets off: his right arm from its swing.)
       const answer = unit(opts.answer, 1);
-      if (answer < 1) answering(j, props, answer, face.ear, armState(j, 0));
-      else atEar(j, props, face.ear);
+      if (answer < 1) answering(j, props, answer, face, armState(j, 0));
+      else atEar(j, props, face);
       gesturing(j, unit(opts.gesture));
     }
   } else if (name === 'sit') handsInLap(j);
   else if (name === 'rise') lift = rising(j, p, opts.seat);
   else if (name === 'desk') atDesk(j, phase, unit(opts.keys, 1), unit(opts.back), unit(opts.pad), unit(opts.tap), opts.sway ?? 0);
-  else if (name === 'answer') answering(j, props, p, face.ear);
+  else if (name === 'answer') answering(j, props, p, face);
   else if (name === 'call') {
-    atEar(j, props, face.ear);
+    atEar(j, props, face);
     gesturing(j, unit(opts.gesture));
   } else if (name === 'coffee') holding = drinking(j, props, p, lift, unit(opts.rest), unit(opts.look), face.lips, opts.cup);
   // His cup in the café table's saucer, unless he holds it.
@@ -658,10 +681,10 @@ export function poseFilip(j: FilipJoints, props: FilipProps, name: FilipPose, ph
   j.root.userData.lift = lift;
   return { lift, resting: !!c && !holding };
 }
-/** His phone at his ear in his right hand (EAR, his hand at `ear`). */
-function atEar(j: FilipJoints, props: FilipProps, ear: V3) {
-  reach(j, 0, ear, EAR.bend);
-  phoneInHand(j, props);
+/** His phone at his ear in his right hand (EAR, his hand at `face.ear`, his wrist turned by `face.wrist`). */
+function atEar(j: FilipJoints, props: FilipProps, face: FilipFaceTargets) {
+  reach(j, 0, face.ear, EAR.bend);
+  phoneInHand(j, props, face);
 }
 /** His free (left) hand opening before him, `g` of the way from where the pose left it (at ease, or swinging as he walks). */
 function gesturing(j: FilipJoints, g: number) {
@@ -678,9 +701,10 @@ function gesturing(j: FilipJoints, g: number) {
  * and phone go up and out on a curve to his ear (his hand at `ear`), the phone turning from his look into
  * his grip, his elbow coming out and down (1: 'call'). Back from 1 to 0, he puts it away.
  */
-function answering(j: FilipJoints, props: FilipProps, p: number, ear: V3, from: ArmState = AT_EASE[0]) {
+function answering(j: FilipJoints, props: FilipProps, p: number, face: FilipFaceTargets, from: ArmState = AT_EASE[0]) {
   const P = POCKET,
-    G = P.glance;
+    G = P.glance,
+    ear = face.ear;
   if (p < P.look) {
     // Up to the pocket (eased from where the arm was), then out before his chest with the phone.
     const out = smooth(p, P.show, P.taken),
@@ -688,7 +712,7 @@ function answering(j: FilipJoints, props: FilipProps, p: number, ear: V3, from: 
       ahead = smooth(out, 0, P.forward);
     reach(j, 0, [mix(P.hand[0], G.hand[0], out), mix(P.hand[1], G.hand[1], up), mix(P.hand[2], G.hand[2], ahead)], mixV(P.bend, G.bend, out));
     if (p < P.reach) easeArm(j, 0, from, armState(j, 0), smooth(p, 0, P.reach));
-    if (p >= P.show) phoneInHand(j, props, out, out);
+    if (p >= P.show) phoneInHand(j, props, face, out, out);
     return;
   }
   // From before his chest, up and out by `via`, to his ear.
@@ -697,7 +721,7 @@ function answering(j: FilipJoints, props: FilipProps, p: number, ear: V3, from: 
     via = [G.hand, P.via, ear],
     at = [0, 1, 2].map((i) => w[0] * via[0][i] + w[1] * via[1][i] + w[2] * via[2][i]) as V3;
   reach(j, 0, e >= 1 ? ear : at, e >= 1 ? EAR.bend : mixV(G.bend, EAR.bend, e));
-  phoneInHand(j, props, 1, 1 - e);
+  phoneInHand(j, props, face, 1, 1 - e);
 }
 /**
  * At the desk (DESK): his lean and his hands. `t` the seconds of his work, `keys` his hands from his

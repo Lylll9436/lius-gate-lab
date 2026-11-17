@@ -644,7 +644,8 @@ const FACE_EYES = carried(EYES),
   FACE_BROWS = carried(BROWS);
 /**
  * Where things are on his face, in his own frame (his root unscaled): each eye's middle on his face,
- * each ear's middle, the nose's middle; the crown (his skull's top, under the hair); his mouth, where
+ * each ear's middle and its half-sizes (`earSize`: the ear's blob, most of it sunk in his head), the
+ * nose's middle; the crown (his skull's top, under the hair); his mouth, where
  * a mouth would be (none is drawn: on his face's midline, half way from the nose's underside down to
  * where his chin meets his shoulders); and that height (`chin`). For the poses that bring something
  * to his face (the phone to his ear, the cup to his mouth).
@@ -661,6 +662,7 @@ export const FILIP_FACE = (() => {
   return {
     eyes: [-1, 1].map((s) => [s * eyeX, eyeY, headFront(s * eyeX, eyeY)]) as [V3, V3],
     ears: [-1, 1].map((s) => [s * ear[0], ear[1], ear[2]]) as [V3, V3],
+    earSize: EAR.r,
     nose,
     mouth: [0, mouthY, headFront(0, mouthY)] as V3,
     crown: FILIP_HEAD.y + FILIP_HEAD.up,

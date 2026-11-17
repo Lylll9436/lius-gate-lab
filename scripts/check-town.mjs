@@ -12473,8 +12473,13 @@ let tropicReport = '';
 //   on the desk, the laptop or the table's top (into none of them) and the rest of him (his forearms
 //   and belly) 0.01 or more from them; getting up and sitting down (the rig's rise, as Alison's: it
 //   slides him through his chair) measured and reported, not held;
-// - his props never through him: his phone 0.01 clear of all of him but the hand that holds it, as he
-//   answers, calls and walks on the phone; his cup 0.01 clear of his head and hair as he drinks; his
+// - his props never through him: his phone 0.005 clear of all of him but the hand that holds it, and
+//   that hand 0.005 clear of his skin and hair, as he answers, calls and walks on the phone; at his ear
+//   (the call, standing and pacing, and walking with it) the phone held as a phone is (design.md 3.4,
+//   the lead's change of 2026-11-17): its face 0.008 to 0.015 off his ear's outer surface, its long side
+//   25 to 40 degrees from upright, its lower end forward and down toward his mouth, its upper half over
+//   his ear and his hand on its lower half (and the rule refuses the old upright pose, 0.027 off his
+//   ear and 9.9 degrees from upright); his cup 0.01 clear of his head and hair as he drinks; his
 //   back and hair ahead of his chair's back;
 // - held (Pause) at a moment every 0.77 s of his day he settles within a second and then never moves,
 //   settling and let go no faster than his day itself moves (as above), raising the frame's `moved` in
@@ -12887,9 +12892,82 @@ let filipReport = '';
       },
       own = (g) => g.children.filter((c) => c.isMesh),
       notPhoneArm = [...own(joints.body), ...[...joints.legs, ...joints.knees].flatMap(own), ...own(joints.arms[1]), ...own(joints.elbows[1])],
-      head = own(joints.body);
+      head = own(joints.body),
+      // His skin and hair (the head's mesh with his face, nose and ears, and his hair), and the hand that
+      // holds the phone (its forearm's group: the forearm and the mitten).
+      skinAndHair = own(joints.body).filter((m) => m.material.userData.surfaceKind === 'paint' || m.name === 'filip-hair'),
+      phoneHand = own(joints.elbows[0]),
+      pointsOf = (list, every = 1) => {
+        const out = [];
+        for (const m of list) {
+          const q = m.geometry.attributes.position;
+          for (let i = 0; i < q.count; i += every) out.push(new T.Vector3().fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld));
+        }
+        return out;
+      },
+      // His right ear (FILIP_FACE: its middle and the half-sizes of its blob, in his body's frame): the
+      // head mesh's triangles wholly on the ear's blob, as a mesh of their own for `near`.
+      { FILIP_FACE: FACE, FILIP_PHONE: PH } = await load('tropic-figure-look'),
+      earMesh = (() => {
+        const m = skinAndHair.find((k) => k.material.userData.surfaceKind === 'paint'),
+          q = m.geometry.attributes.position,
+          index = m.geometry.index,
+          n = index ? index.count : q.count,
+          [ex, ey, ez] = FACE.ears[0],
+          [rx, ry, rz] = FACE.earSize,
+          on = (i) => {
+            v.fromBufferAttribute(q, i);
+            return ((v.x - ex) / rx) ** 2 + ((v.y - ey) / ry) ** 2 + ((v.z - ez) / rz) ** 2 <= 1.03;
+          },
+          kept = [];
+        for (let i = 0; i < n; i += 3) {
+          const c = [0, 1, 2].map((k) => (index ? index.getX(i + k) : i + k));
+          if (c.every(on)) for (const k of c) kept.push(q.getX(k), q.getY(k), q.getZ(k));
+        }
+        const g = new T.BufferGeometry().setAttribute('position', new T.BufferAttribute(new Float32Array(kept), 3)),
+          ear = new T.Mesh(g, m.material);
+        m.parent.add(ear);
+        ear.visible = m.visible;
+        return ear;
+      })(),
+      phoneMesh = props.phone.children.find((c) => c.isMesh),
+      /**
+       * How his phone is held at his ear (design.md 3.4), as posed now: everything wrong with it, as
+       * sentences (none when it is right). Its inner face 0.008 to 0.015 from his ear's outer surface;
+       * nothing of the phone or the hand that holds it within 0.005 of his skin or hair; its long side
+       * tipped 25 to 40 degrees from upright with its lower end forward and down (toward his mouth: in
+       * his side view within 25 degrees of the line from the phone's middle to his mouth), its upper
+       * half over his ear (the ear's middle, seen through the phone's face, inside its upper half) and
+       * the hand's centre on its lower half.
+       */
+      earFaults = () => {
+        parent.updateMatrixWorld(true);
+        const faults = [],
+          ear = Math.min(near(phonePoints(), [earMesh], 0.03), near(pointsOf([earMesh]), [phoneMesh], 0.03)),
+          skin = Math.min(near(phonePoints(), skinAndHair, 0.03), near(pointsOf(phoneHand, 2), skinAndHair, 0.03), near(pointsOf(skinAndHair, 3), [phoneMesh, ...phoneHand], 0.03)),
+          toBody = joints.body.matrixWorld.clone().invert(),
+          q = new T.Quaternion(),
+          middle = new T.Vector3();
+        phoneMesh.matrixWorld.clone().premultiply(toBody).decompose(middle, q, new T.Vector3());
+        const along = new T.Vector3(0, 1, 0).applyQuaternion(q),
+          tilt = T.MathUtils.radToDeg(Math.acos(Math.min(1, Math.abs(along.y)))),
+          mouth = new T.Vector3(...FACE.mouth),
+          side = T.MathUtils.radToDeg(Math.abs(Math.atan2(along.z, -along.y) - Math.atan2(mouth.z - middle.z, middle.y - mouth.y))),
+          toPhone = phoneMesh.matrixWorld.clone().invert(),
+          earAt = new T.Vector3(...FACE.ears[0]).applyMatrix4(joints.body.matrixWorld).applyMatrix4(toPhone),
+          hand = R.figureHand(joints, 0).applyMatrix4(him.matrixWorld).applyMatrix4(toPhone);
+        if (ear < 0.008 || ear > 0.015) faults.push(`its face ${fmt(ear)} off his ear (0.008 to 0.015)`);
+        if (skin < 0.005) faults.push(`it or his hand ${fmt(skin)} from his skin or hair (0.005 at the least)`);
+        if (tilt < 25 || tilt > 40 || along.y > 0 || along.z < 0) faults.push(`its long side ${tilt.toFixed(1)} degrees from upright, its lower end ${along.z < 0 ? 'back' : 'forward'} (25 to 40, forward and down)`);
+        if (side > 25) faults.push(`its lower end ${side.toFixed(1)} degrees off the line to his mouth in his side view (25 at most)`);
+        if (Math.abs(earAt.x) > PH[0] / 2 - 0.005 || earAt.y > 0 || earAt.y < -PH[1] / 2) faults.push(`his ear's middle ${fmt(earAt.x)} across and ${fmt(earAt.y)} along it (inside its upper half)`);
+        if (Math.abs(hand.x) > PH[0] / 2 || hand.y < 0 || hand.y > PH[1] / 2) faults.push(`his hand's centre ${fmt(hand.x)} across and ${fmt(hand.y)} along it (on its lower half)`);
+        return { faults, ear, skin, tilt, side };
+      };
     let phone = Infinity,
-      cup = Infinity;
+      cup = Infinity,
+      calls = 0;
+    const atEar = { ear: [Infinity, -Infinity], skin: Infinity, tilt: [Infinity, -Infinity], side: 0 };
     for (const a of acts) {
       if (!a.phone && a.kind !== 'answer' && a.kind !== 'cafe') continue;
       for (let t = a.t0 + 0.05; t < a.t1; t += 0.1) {
@@ -12899,7 +12977,17 @@ let filipReport = '';
         // out of his pocket.)
         const day = D.day(t),
           out = day.pose === 'answer' ? day.phase >= 0.55 : day.pose !== 'walk' || day.answer >= 0.55;
-        if (props.phone.visible && out) phone = Math.min(phone, near(phonePoints().filter((_, i) => i % 3 === 0), notPhoneArm));
+        if (props.phone.visible && out) phone = Math.min(phone, near(phonePoints().filter((_, i) => i % 3 === 0), notPhoneArm), near(pointsOf(phoneHand, 2), skinAndHair));
+        // At his ear (the call, standing and pacing, and walking with it once answered): held as a phone is.
+        if (day.pose === 'call' || (day.pose === 'walk' && day.phone && day.answer >= 1)) {
+          const m = earFaults();
+          assert.deepEqual(m.faults, [], `At ${fmt(t)} s (${day.pose}) Filip's phone is not held to his ear: ${m.faults.join('; ')}.`);
+          atEar.ear = [Math.min(atEar.ear[0], m.ear), Math.max(atEar.ear[1], m.ear)];
+          atEar.skin = Math.min(atEar.skin, m.skin);
+          atEar.tilt = [Math.min(atEar.tilt[0], m.tilt), Math.max(atEar.tilt[1], m.tilt)];
+          atEar.side = Math.max(atEar.side, m.side);
+          calls++;
+        }
         if (a.kind === 'cafe') {
           const m = props.cup.children.find((c) => c.isMesh),
             q = m.geometry.attributes.position,
@@ -12909,7 +12997,25 @@ let filipReport = '';
         }
       }
     }
-    assert(phone >= 0.01, `Filip's phone comes ${fmt(phone)} from him (0.01 at the least, but the hand that holds it).`);
+    assert(phone >= 0.005, `Filip's phone comes ${fmt(phone)} from him (0.005 at the least, but the hand that holds it), or the hand that holds it as close to his skin or hair.`);
+    assert(calls > 100, `Filip's phone was measured at his ear at only ${calls} moments.`);
+    // The rule refuses the phone as it was held before (2026-11-17, take b): upright beside his head
+    // along his forearm, 0.027 off his ear and 9.9 degrees from upright (its place and turn in his root's
+    // frame, as measured then).
+    {
+      const call = acts.find((a) => a.kind === 'call');
+      entry.update((call.t0 + call.t1) / 2, 0, 0);
+      const was = { at: props.phone.position.clone(), turn: props.phone.quaternion.clone() };
+      props.phone.position.set(-0.21253, 0.74004, 0.01614);
+      props.phone.quaternion.set(0.826505, -0.038703, 0.556296, 0.076984).normalize();
+      const upright = earFaults().faults;
+      assert(upright.some((f) => f.includes('off his ear')) && upright.some((f) => f.includes('from upright')), `The rule for the phone at his ear lets the old upright pose pass (${upright.join('; ') || 'no fault'}).`);
+      props.phone.position.copy(was.at);
+      props.phone.quaternion.copy(was.turn);
+      assert.deepEqual(earFaults().faults, [], 'Filip\'s phone at his ear does not pass once put back.');
+    }
+    earMesh.removeFromParent();
+    earMesh.geometry.dispose();
     assert(cup >= 0.01, `Filip's cup comes ${fmt(cup)} from his head as he drinks.`);
     // In his chairs, in his seated frame (his root seated over the chair's floor): his back and hair
     // ahead of his chair's back (its rail).
@@ -12937,7 +13043,7 @@ let filipReport = '';
     }
     entry.update(0, 0, 0);
     assert(back >= 0.01, `Seated, Filip's back or hair is ${fmt(back)} from his chair's back.`);
-    filipReport += `, his phone ${fmt(phone)} clear of him and his cup ${fmt(cup)} clear of his head, and his back ${fmt(back)} ahead of his chair's`;
+    filipReport += `, his phone ${fmt(phone)} clear of him; at his ear its face ${fmt(atEar.ear[0])} to ${fmt(atEar.ear[1])} off his ear, it and his hand ${fmt(atEar.skin)} from his skin and hair, its long side ${atEar.tilt[0].toFixed(1)} to ${atEar.tilt[1].toFixed(1)} degrees from upright and ${atEar.side.toFixed(1)} off the line to his mouth; his cup ${fmt(cup)} clear of his head, and his back ${fmt(back)} ahead of his chair's`;
   }
   // Holds.
   {
