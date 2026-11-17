@@ -931,6 +931,20 @@ for (const b of buildings) {
   for (const { en } of texts)
     assert(!/[\u3400-\u9fff]/.test(en), 'English place text contains Chinese: ' + en);
 }
+// The tropic island's About this building describes SDE4 as rebuilt (one thin roof, a screen of fins
+// at each end), never the first model's massing again: no "huge" roof, no solid block at one end.
+{
+  const { en, zh } = buildings.find((b) => b.id === 'tropic-island').architecture;
+  for (const [word, text] of [
+    ['one end', en],
+    ['solid block', en],
+    ['huge', en],
+    ['\u4e00\u7aef', zh],
+    ['\u5b9e\u5899\u4f53\u5757', zh],
+    ['\u5de8\u5927', zh],
+  ])
+    assert(!text.toLowerCase().includes(word), 'The tropic island\u2019s About this building describes the old SDE4 again ("' + word + '"): ' + text);
+}
 // One role label for the PhD members; only the supervisor differs (owner's decision), and the
 // visiting PhD researchers who stay in the Visiting PhD Residence, whose label says so.
 const roleFor = (p) =>

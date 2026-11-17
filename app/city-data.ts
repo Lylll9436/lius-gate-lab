@@ -294,7 +294,9 @@ const places: Building[] = [
   // island is (no reading chapter: lab-navigation files it under About), but a model of the town's
   // like the airport's hall (model 'tropic': its building, after SDE4 at NUS, stands on an island
   // of its own, its model's root at the island's middle). x, z, w, d and height are its site's
-  // (plan.sites: the box about the island's middle that holds its waterline, and its building's top).
+  // (plan.sites: the box about the island's middle that holds its waterline, and its building's top,
+  // TROPIC_BUILDING.top), typed out here so the reading page need not load the plan: check-town
+  // holds them to the site.
   // Its category and summary are the island's own, for while no neighbour's record is published for it; while one
   // is (Filip Biljecki's), buildingsOn names him and his group instead, and its file is his
   // (lab-content's NeighbourFile). `where` heads his Neighbours card in About.
@@ -309,14 +311,14 @@ const places: Building[] = [
     ),
     style: t('Tropical campus building', '热带校园建筑'),
     architecture: t(
-      'Modelled on SDE4 at the National University of Singapore: one huge flat roof, dark underneath and laid with solar panels on top, floats over the building on very slender white round columns. Under it, glazed floors step back in planted terraces, and one end is a solid block clad in champagne vertical fins. Around it are a lawn, rain trees, palms and a sandy beach.',
-      '原型是新加坡国立大学的 SDE4：一整片巨大的平屋顶，底面深色、顶上铺着太阳能板，由一根根极细的白色圆柱托着，浮在整栋楼上方。屋顶下，玻璃幕墙的楼层逐层退台，露台上种着绿植；楼的一端是一整块覆着香槟色竖向格栅的实墙体块。四周是草坪、雨树、棕榈和沙滩。',
+      'Modelled on SDE4 at the National University of Singapore: one thin flat roof, dark underneath and laid with solar panels on top, floats over the whole building and sails out over the south front as a tall portico on very slender white round columns. Under it, glazed storeys stand back behind terraces with glass rails, up to a planted terrace open under the roof; an open straight stair climbs the front, and a screen of champagne vertical fins closes each end. Around it are a lawn, rain trees, palms and a sandy beach.',
+      '原型是新加坡国立大学的 SDE4：一片薄薄的平屋顶，底面深色、顶上铺着太阳能板，浮在整栋楼上方，并在南面挑出成高高的柱廊，由一排极细的白色圆柱托着。屋顶下，玻璃楼层退在装着玻璃栏板的露台后面，最上面是向屋顶下敞开、种着绿植的露台；一道敞开的直跑楼梯沿正面爬升，楼的两端各有一面香槟色竖向格栅。四周是草坪、雨树、棕榈和沙滩。',
     ),
     x: 19.5,
     z: 51,
     w: 27.5,
     d: 23.36,
-    height: 8.1,
+    height: 6.9,
     model: 'tropic',
     color: '#cbb790',
     sections: [],

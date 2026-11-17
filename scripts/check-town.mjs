@@ -11114,6 +11114,7 @@ let tropicReport = '';
     assert(Math.abs(site.w - 2 * Math.max(P.x - span.x0, span.x1 - P.x)) < 1e-9 && Math.abs(site.d - 2 * Math.max(P.z - span.z0, span.z1 - P.z)) < 1e-9, 'The tropic island\'s site is not the box about its middle that holds its waterline.');
     const listed = buildings.find((b) => b.id === 'tropic-island');
     assert(Math.abs(listed.w - site.w) < 0.006 && Math.abs(listed.d - site.d) < 0.006, `The tropic island's place (${listed.w} by ${listed.d}) is not its site's (${site.w.toFixed(2)} by ${site.d.toFixed(2)}).`);
+    assert(site.height === plan.TROPIC_BUILDING.top && listed.height === site.height, `The tropic island's place stands ${listed.height} tall, not its site's ${site.height} (TROPIC_BUILDING.top ${plan.TROPIC_BUILDING.top}).`);
     let inside = 0,
       outside = 0,
       convex = Infinity,
