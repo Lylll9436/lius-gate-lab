@@ -1,5 +1,5 @@
 import * as T from 'three';
-import type { SurfaceKind } from './city-materials';
+import { LAWN_TINT, WASH_PEAK, type SurfaceKind } from './city-materials';
 import * as plan from './town-plan';
 import { palette, hash, noise2, WATER, type TownContext } from './town-shared';
 import { SHORE_PROFILE, addTropicShallows, shoreHeight } from './town-ground';
@@ -82,6 +82,188 @@ export const TROPIC_ROCKS = {
   /** How far each cluster turns the template's layout about its middle (radians, either way by its seed), so no two clusters are copies. */
   turn: 0.8,
 };
+/**
+ * The tropic island's low garden lamps (the garden builds them: town-tropic-garden's tropicLamps) and
+ * their pools of light at night, in the island's frame. Every lamp stands on the lawn beside the
+ * paving, `off` out from the paving's edge (its outer kerb), never on it: Filip's ways run on the
+ * paving. Their places are worked out from the walks' plan (plan.TROPIC_PLAZA and TROPIC_PATHS), so
+ * they follow it wherever it moves (tropicLampSpots). `pool`: the pools (tropicLampPools), as the sky
+ * island's are (town-sky's SKY_POOL): out to `r` from each lamp's foot, `strength` at its middle,
+ * `lift` over the lawn, laid on a grid of `cell`. (No lamp at the landing: the bay walk is short, and
+ * one there stood about a unit from the mouth's pair, crowding the axis rather than marking it.)
+ */
+export const TROPIC_LAMPS = { off: 0.44, pool: { r: 0.9, strength: 0.38, lift: 0.006, cell: 0.26 } };
+/** Where the wash's up scallop has faded out (city-materials' WASH_SHAPE.upFade[1], as town-sky's POOL_EDGE). */
+const POOL_EDGE = 0.85;
+/**
+ * The lamps' feet in the island's frame, each named:
+ * - `mouth west` and `mouth east`: a pair flanking the bay walk where it leaves the plaza, `off` out
+ *   from its edges, as near the plaza as keeps their pools off its granite (the pools are laid on the
+ *   land's lawn and paving only: the plaza's rim is a pool's radius from each);
+ * - `cafe`: off the café terrace's outer (south-west) corner, out along the corner's diagonal;
+ * - `seat`: off the seat's round where the tree walk arrives, opposite the bench, turned round the
+ *   round from the walk's line toward the south (the open lawn) to the first place `off` clear of
+ *   the paving.
+ */
+export function tropicLampSpots() {
+  const W = plan.TROPIC_PATHS,
+    Q = plan.TROPIC_PLAZA,
+    L = TROPIC_LAMPS,
+    C = W.cafe,
+    side = W.bay.width / 2 + L.off,
+    mouth = Q.z + Math.sqrt((Q.r + L.pool.r) ** 2 - side ** 2),
+    k = C.corner + L.off,
+    seat = (() => {
+      const [vx, vz] = [-W.tree.ahead[0], -W.tree.ahead[1]],
+        out = W.seat.r + L.off,
+        // (Turning this way swings straight back down the walk, -ahead, toward +z.)
+        s = Math.sign(vx) || 1;
+      for (let a = 0; a <= Math.PI; a += 0.01) {
+        const dx = vx * Math.cos(a) - s * vz * Math.sin(a),
+          dz = s * vx * Math.sin(a) + vz * Math.cos(a),
+          x = W.seat.x + dx * out,
+          z = W.seat.z + dz * out;
+        if (plan.tropicPaving(x, z).union >= L.off - 1e-6) return { x, z };
+      }
+      return { x: W.seat.x, z: W.seat.z + out };
+    })();
+  return [
+    { name: 'mouth west', x: W.bay.x - side, z: mouth },
+    { name: 'mouth east', x: W.bay.x + side, z: mouth },
+    { name: 'cafe', x: C.x0 + C.corner - k * Math.SQRT1_2, z: C.z1 - C.corner + k * Math.SQRT1_2 },
+    { name: 'seat', ...seat },
+  ];
+}
+/**
+ * The lamps' pools (TROPIC_LAMPS.pool) on the island's ground as tropicGround laid it, as the sky
+ * island's are (town-sky's lampPools: the town's wall wash at the night's level, warm from each lamp's
+ * foot out, fading to nothing at the pool's edge; nothing glows, nothing is see-through):
+ * - on the paving (`paving`, the land's walks as laid, a stone surface the wash already reaches),
+ *   each vertex takes the nearer lamp's wash in an aWash of its own (faded to nothing past a pool's
+ *   edge): no triangle is added and by day the paving is exactly itself;
+ * - on the lawn (`lawn`, as laid; its grass shader takes no wash), a mesh laid over it `lift` up, on
+ *   a grid of the pool's `cell` round each lamp, each vertex where the lawn as built has it (its
+ *   height, normal and colour read off the lawn's own triangle there) in the colour the lawn shows by
+ *   day (the grass map's grain and the lawn tint, city-materials' LAWN_TINT), carrying the nearer
+ *   lamp's wash. Under the paving and the plaza it lies hidden; off the lawn (the beach) none is laid.
+ * `lamps` are the lamps' feet, world x, z. Returns the lawn's pool geometry (world space) and how many
+ * of the paving's vertices took a wash.
+ */
+export function tropicLampPools(material: TownContext['material'], lawn: T.Mesh, paving: T.Mesh[], lamps: [number, number][]) {
+  const P = TROPIC_LAMPS.pool,
+    map = material('#ffffff', 'grass').map,
+    image = map?.image as { data: Uint8Array; width: number; height: number } | undefined,
+    lut = Float32Array.from({ length: 256 }, (_, v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)),
+    grain = (x: number, z: number) => {
+      if (!image || !map) return 1;
+      const W = image.width,
+        H = image.height,
+        u = x * map.repeat.x * W - 0.5,
+        v = z * map.repeat.y * H - 0.5,
+        i = Math.floor(u),
+        j = Math.floor(v),
+        fu = u - i,
+        fv = v - j,
+        at = (a: number, b: number) => lut[image.data[((((b % H) + H) % H) * W + (((a % W) + W) % W)) * 4]];
+      return (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
+    },
+    near = (x: number, z: number) => Math.min(...lamps.map(([lx, lz]) => Math.hypot(x - lx, z - lz))),
+    washAt = (d: number) => [P.strength, 0, WASH_PEAK + (POOL_EDGE - WASH_PEAK) * Math.min(1, d / P.r), -1];
+  // The paving: a wash on its own vertices near a lamp.
+  let washed = 0;
+  for (const m of paving) {
+    m.updateMatrixWorld(true);
+    const p = m.geometry.getAttribute('position'),
+      out = new Float32Array(p.count * 4),
+      q = new T.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      // Every vertex carries the wash (past the pool's edge it is at the edge, where it has faded
+      // to nothing), so a triangle that reaches into a pool fades smoothly across, never to a peak.
+      q.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      const d = near(q.x, q.z);
+      out.set(washAt(d), i * 4);
+      if (d < P.r) washed++;
+    }
+    m.geometry.setAttribute('aWash', new T.BufferAttribute(out, 4));
+  }
+  // The lawn as laid: its triangles near a lamp, in world space, to read heights, normals and colours off.
+  lawn.updateMatrixWorld(true);
+  const g = lawn.geometry,
+    p = g.getAttribute('position'),
+    n = g.getAttribute('normal'),
+    k = g.getAttribute('color'),
+    index = g.getIndex(),
+    count = index ? index.count : p.count,
+    id = (i: number) => (index ? index.getX(i) : i),
+    reach = P.r + P.cell,
+    tris: { v: number[]; a: T.Vector3; b: T.Vector3; c: T.Vector3 }[] = [];
+  for (let t = 0; t < count; t += 3) {
+    const v = [id(t), id(t + 1), id(t + 2)],
+      [a, b, c] = v.map((i) => new T.Vector3().fromBufferAttribute(p, i).applyMatrix4(lawn.matrixWorld)),
+      x0 = Math.min(a.x, b.x, c.x),
+      x1 = Math.max(a.x, b.x, c.x),
+      z0 = Math.min(a.z, b.z, c.z),
+      z1 = Math.max(a.z, b.z, c.z);
+    if (lamps.some(([lx, lz]) => Math.hypot(Math.max(x0 - lx, 0, lx - x1), Math.max(z0 - lz, 0, lz - z1)) < reach)) tris.push({ v, a, b, c });
+  }
+  const normal = new T.Vector3(),
+    q = new T.Vector3(),
+    /** The lawn as laid at (x, z): its height, normal and day colour (null off it). */
+    sample = (x: number, z: number) => {
+      for (const { v, a, b, c } of tris) {
+        const det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z),
+          u = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / det,
+          w = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / det,
+          r = 1 - u - w;
+        if (u < -1e-7 || w < -1e-7 || r < -1e-7) continue;
+        const f = [u, w, r];
+        normal.set(0, 0, 0);
+        v.forEach((i, j) => normal.addScaledVector(q.fromBufferAttribute(n, i), f[j]));
+        normal.transformDirection(lawn.matrixWorld);
+        const tone = [0, 1, 2].map((ch) => v.reduce((sum, i, j) => sum + k.getComponent(i, ch) * f[j], 0) * grain(x, z) * LAWN_TINT[ch]);
+        return { y: a.y * u + b.y * w + c.y * r, n: normal.toArray(), c: tone };
+      }
+      return null;
+    };
+  const pos: number[] = [],
+    nor: number[] = [],
+    col: number[] = [],
+    wash: number[] = [],
+    cell = P.cell,
+    grid = new Map<string, (NonNullable<ReturnType<typeof sample>> & { x: number; z: number; d: number }) | null>(),
+    vertex = (i: number, j: number) => {
+      const key = i + ',' + j;
+      if (!grid.has(key)) {
+        const x = i * cell,
+          z = j * cell,
+          at = sample(x, z);
+        grid.set(key, at && { ...at, x, z, d: near(x, z) });
+      }
+      return grid.get(key) ?? null;
+    };
+  const seen = new Set<string>();
+  for (const [lx, lz] of lamps)
+    for (let i = Math.floor((lx - reach) / cell); i <= Math.ceil((lx + reach) / cell); i++)
+      for (let j = Math.floor((lz - reach) / cell); j <= Math.ceil((lz + reach) / cell); j++) {
+        if (seen.has(i + ',' + j)) continue;
+        seen.add(i + ',' + j);
+        for (const tri of [[vertex(i, j), vertex(i, j + 1), vertex(i + 1, j)], [vertex(i + 1, j), vertex(i, j + 1), vertex(i + 1, j + 1)]]) {
+          if (tri.some((t) => !t) || Math.min(...tri.map((t) => t!.d)) > P.r) continue;
+          for (const t of tri) {
+            pos.push(t!.x, t!.y + P.lift, t!.z);
+            nor.push(...t!.n);
+            col.push(...t!.c);
+            wash.push(...washAt(t!.d));
+          }
+        }
+      }
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+  geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+  geometry.setAttribute('aWash', new T.Float32BufferAttribute(wash, 4));
+  return { geometry, washed };
+}
 /**
  * How far the tropic island's two bounds reach, as rings of `points` round its waterline (32, so a
  * ring's sides include the four axes):

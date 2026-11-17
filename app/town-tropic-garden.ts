@@ -7,14 +7,14 @@ import { palette, hash, sstep, mix, type TownContext } from './town-shared';
 import * as plan from './town-plan';
 import { saucerPieces, type ChinaLook } from './figure-rig';
 import { sde4Plan, type Sde4Plan } from './town-sde4';
-import { tropicGroundAt } from './town-tropic';
+import { tropicGroundAt, tropicLampPools, tropicLampSpots } from './town-tropic';
 import { FILIP_CAFE, FILIP_CHAIR, FILIP_DESK, FILIP_SITE } from './tropic-figure';
 import type { Kit } from './town-kit';
 import { crown, mergeCrown, noise3, paintCrown, trunkTube, type Look as CrownLook } from './town-nature';
 import { ellipsoid, roundBox, sculpt } from './town-sculpt';
 import { RESIDENCE_LOOK } from './town-residence';
 import { AIRPORT_LOOK } from './town-airport';
-import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, type ChairLook, type Part, type TableLook, type Tint } from './town-sky-garden';
+import { GARDEN_LAMP, TEA, blob, chairParts, fuse, placed, solidMesh, tableSet, toned, turned, turns, type ChairLook, type Part, type TableLook, type Tint } from './town-sky-garden';
 
 /*
  * The tropic island's garden (Filip Biljecki's island, off the south shore): its planting, the round
@@ -53,8 +53,9 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * green; a plaza of its own in the pale and grey granite (the kerb's and the residence's gravel) round
  * a dark granite drum (the airport's rubble) with a paler top ring; the furniture's light oak on dark
  * bronze (the residence's); the laptop's aluminium, its keyboard a shade darker and its screen's inner
- * face dark; the café's china white with a warm grey band, and coffee; the desk plant's pale stone
- * pot.
+ * face dark; the café's china white with a warm grey band, coffee and a baked pastry; the desk plant's pale stone
+ * pot; the garden lamps' pale stone plinths, posts in SDE4's white (its columns') under a cap and cup
+ * in the champagne brass of its fins, and their frosted globes.
  */
 export const TROPIC_GARDEN_LOOK = {
   rainBody: '#6b9440',
@@ -93,7 +94,12 @@ export const TROPIC_GARDEN_LOOK = {
   china: palette.white,
   chinaBand: '#a59d92',
   coffee: '#5e4230',
+  pastry: '#d4b588',
   pot: RESIDENCE_LOOK.stone,
+  lampStone: RESIDENCE_LOOK.stone,
+  lampPost: palette.white,
+  lampBrass: RESIDENCE_LOOK.brass,
+  frost: palette.white,
 };
 /** Each colour's palette family: the colour may be no more saturated than it (check-town). */
 export const TROPIC_GARDEN_FAMILY: Record<keyof typeof TROPIC_GARDEN_LOOK, string> = {
@@ -133,7 +139,12 @@ export const TROPIC_GARDEN_FAMILY: Record<keyof typeof TROPIC_GARDEN_LOOK, strin
   china: palette.white,
   chinaBand: palette.kerb,
   coffee: palette.woodDark,
+  pastry: palette.blonde,
   pot: palette.kerb,
+  lampStone: palette.kerb,
+  lampPost: palette.white,
+  lampBrass: palette.brass,
+  frost: palette.white,
 };
 type Look = keyof typeof TROPIC_GARDEN_LOOK;
 const L = TROPIC_GARDEN_LOOK;
@@ -300,6 +311,25 @@ export const CAFE_TABLE: TableLook = {
  * the cup from it.
  */
 export const CAFE_SAUCER = { ahead: FILIP_CAFE.saucer[1], right: -FILIP_CAFE.saucer[0] };
+/**
+ * The café table laid as Alison's tea table is (its china's family): a small round plate in the
+ * café's china, `r` round and `h` from foot to rim (as chunky as its saucer; its well `well` up), with one chunky baked pastry
+ * on it (a soft blob, half sizes `pastry`), on the table's far half across from his saucer: `left` to
+ * his left of it and `ahead` further from him, clear of the way his right hand takes the cup from the
+ * saucer to his mouth.
+ */
+export const CAFE_PLATE = { r: 0.06, h: 0.07, well: 0.04, pastry: [0.046, 0.036, 0.04] as [number, number, number], left: 0.15, ahead: 0.1 };
+/**
+ * The island's low garden lamps (town-tropic's tropicLampSpots says where; TROPIC_LAMPS): the sky
+ * island's garden lamp (town-sky-garden's GARDEN_LAMP's measures: a frosted globe on a cup, on a short
+ * post on a pale stone plinth), lighter, and in SDE4's own colours rather than the town's dark cast
+ * iron (which read as black pawns beside its white columns): a white post, its cap and its cup in the
+ * fins' champagne brass, its plinth and cap `base` square (narrower than the sky's, so a post beside
+ * the bay walk keeps the walkers' 0.27 off Filip's call), the cup turned on `cup` sides (one mesh with
+ * the posts and plinths), its globe `globe` round on `segments` (width and height), a little smaller
+ * than the sky's for the same reason.
+ */
+export const TROPIC_LAMP = { base: 0.24, cup: 6, globe: 0.115, segments: [10, 6] as [number, number] };
 /**
  * The walks' timber (plan.TROPIC_PATHS: the landing and the seat), light oak, boards drawn broad by a
  * quiet tonal step (`tones`, by turns), never by gaps:
@@ -611,7 +641,7 @@ function leafyMass(lobes: Lobe[], o: { fillet: number; grid: number; floor: numb
 /* The garden kit                                                      */
 /* ------------------------------------------------------------------ */
 export function createTropicGarden(ctx: TownContext, kit: Kit) {
-  const { material } = ctx;
+  const { material, lamps } = ctx;
   const { chamfered } = kit;
 
   /** One mesh of geometries carrying their own colours, in g: it casts unless `shadow` is false. */
@@ -1273,10 +1303,11 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
   /**
    * The café set: the round bistro table (CAFE_TABLE: an oak top on a dark-bronze pedestal, two bistro
    * chairs with foot rings, no parasol) with a saucer standing on it in front of the -x chair, a little
-   * to its sitter's right (CAFE_SAUCER); the saucer is batched with the frame. `userData.seats` (the
-   * sitter's root for each chair, SITTER.setback behind its front edge, the -x chair first, then the +x
-   * one) and `userData.saucer` (the saucer's foot on the table) are in the set's frame, whose middle is
-   * the table's.
+   * to its sitter's right (CAFE_SAUCER), and a plate with a pastry across from it (CAFE_PLATE); the
+   * china is batched with the frame. `userData.seats` (the sitter's root for each chair,
+   * SITTER.setback behind its front edge, the -x chair first, then the +x one), `userData.saucer` (the
+   * saucer's foot on the table) and `userData.plate` (the plate's) are in the set's frame, whose middle
+   * is the table's.
    */
   function cafeSet() {
     const g = tableSet(material, chamfered, CAFE_TABLE),
@@ -1284,14 +1315,22 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       back = CAFE_TABLE.radius + TEA.gap + SITTER.setback,
       // The sitter faces +x from the -x chair, so his right is the set's +z.
       at: V3 = [-back + CAFE_SAUCER.ahead, TEA.top, CAFE_SAUCER.right],
-      dish = mergeGeometries(saucerPieces(CHINA).map((p) => p.applyMatrix4(placed(...at))))!;
+      dish = mergeGeometries(saucerPieces(CHINA).map((p) => p.applyMatrix4(placed(...at))))!,
+      Pl = CAFE_PLATE,
+      plateAt: V3 = [at[0] + Pl.ahead, TEA.top, at[2] - Pl.left],
+      plate = fuse([
+        { geometry: turned(turns([[0, 0], [Pl.r * 0.6, 0, 1], [Pl.r * 0.78, Pl.well * 0.7], [Pl.r, Pl.h - 0.006, 1], [Pl.r - 0.005, Pl.h, 1], [Pl.r * 0.72, Pl.well, 1], [0, Pl.well]]), 12), tint: ((p: T.Vector3, _n: T.Vector3, c: T.Color) => void c.set(p.y > Pl.h - 0.014 && Math.hypot(p.x, p.z) > Pl.r - 0.012 ? L.chinaBand : L.china)) as Tint, matrix: placed(...plateAt) },
+        { geometry: blob(Pl.pastry, 10, 6), tint: ((p: T.Vector3, _n: T.Vector3, c: T.Color) => void c.set(L.pastry).multiplyScalar(0.86 + 0.18 * T.MathUtils.smoothstep(p.y, -Pl.pastry[1], Pl.pastry[1]))) as Tint, matrix: placed(plateAt[0], plateAt[1] + Pl.well + Pl.pastry[1] * 0.8, plateAt[2], 0, 0.6, 0) },
+      ]);
     const old = frame.geometry;
-    frame.geometry = mergeGeometries([old, dish])!;
+    frame.geometry = mergeGeometries([old, dish, plate])!;
     old.dispose();
     dish.dispose();
-    frame.userData.looks = [...frame.userData.looks, 'china', 'chinaBand'];
+    plate.dispose();
+    frame.userData.looks = [...frame.userData.looks, 'china', 'chinaBand', 'pastry'];
     g.userData.seats = [-1, 1].map((s) => ({ x: s * back, z: 0, heading: (-s * Math.PI) / 2 }));
     g.userData.saucer = at;
+    g.userData.plate = plateAt;
     return g;
   }
   /**
@@ -1405,6 +1444,49 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
    * island's frame): the desk's seat and keys, the café's seat and saucer (and the guest chair's seat),
    * and the call stretch the layout keeps clear.
    */
+  /** One glass for the island's globes (the kit's lamp glass, frosted): the frame loop lights them with the town's lamps. */
+  let globeGlass: T.MeshStandardMaterial | null = null;
+  /**
+   * The island's garden lamps (TROPIC_LAMP, GARDEN_LAMP's measures) at `spots` (each its foot, in g's
+   * frame, on `ground`): the plinths, posts, caps and cups one stone mesh (casting; batched with the
+   * garden's stone), the globes one mesh of the lamps' own glass, never batched, lit at night through
+   * ctx.lamps as every lamp of the town is. Each plinth runs on 0.04 below its foot.
+   */
+  function tropicLamps(spots: { x: number; z: number }[], ground: (x: number, z: number) => number) {
+    const G = GARDEN_LAMP,
+      g = new T.Group();
+    g.name = 'tropic-lamps';
+    const stone: Part[] = [],
+      globes: T.BufferGeometry[] = [],
+      cup = turned(turns([[0, 0], [0.07, 0, 1], [0.07, 0.03], [0.05, 0.055], [0.05, 0.075], [0.095, 0.11], [0.095, G.cup, 1], [0, G.cup]]), TROPIC_LAMP.cup),
+      centre = G.cap + G.cup + TROPIC_LAMP.globe - 0.03;
+    for (const { x, z } of spots) {
+      const y = ground(x, z);
+      stone.push(
+        { geometry: chamfered(TROPIC_LAMP.base, 0.12, TROPIC_LAMP.base), tint: L.lampStone, matrix: placed(x, y + 0.02, z) },
+        { geometry: chamfered(G.shaft, G.cap - 0.14, G.shaft), tint: toned(L.lampPost, 0.93), matrix: placed(x, y + G.cap / 2, z) },
+        { geometry: chamfered(TROPIC_LAMP.base, 0.08, TROPIC_LAMP.base), tint: L.lampBrass, matrix: placed(x, y + G.cap - 0.04, z) },
+        { geometry: cup.clone(), tint: L.lampBrass, matrix: placed(x, y + G.cap, z) },
+      );
+      globes.push(new T.SphereGeometry(TROPIC_LAMP.globe, ...TROPIC_LAMP.segments).deleteAttribute('uv').translate(x, y + centre, z));
+    }
+    cup.dispose();
+    solidMesh(material, g, stone, 'stone', 'tropic-lamp-posts', ['lampStone', 'lampPost', 'lampBrass']);
+    if (!globeGlass) {
+      globeGlass = kit.lampGlass();
+      globeGlass.color.set(L.frost);
+    }
+    const glass = new T.Mesh(mergeGeometries(globes)!, globeGlass);
+    globes.forEach((q) => q.dispose());
+    glass.name = 'tropic-lamp-globes';
+    glass.castShadow = false;
+    glass.userData.noShadow = true;
+    glass.userData.looks = ['frost'];
+    g.add(glass);
+    lamps.push(glass);
+    return g;
+  }
+
   function tropicGarden(g: T.Object3D, site: TropicSite) {
     const G = TROPIC_GARDEN,
       B = site.building ?? G.building,
@@ -1452,6 +1534,19 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
     // The desk on the veranda: its middle on SDE4's desk anchor, on the deck.
     const anchor = site.desk ?? { ...B.desk, y: ground(B.desk.x, B.desk.z) + B.podium.top },
       desk = stand(deskSet(), anchor.x, anchor.z, anchor.heading, anchor.y);
+    // The garden lamps beside the walks (town-tropic's tropicLampSpots, from the walks' plan), and
+    // their pools on the land's lawn and paving as it was laid (site.land; town-tropic's
+    // tropicLampPools): the lawn's one mesh in the garden's frame (flat ground, casting nothing, going
+    // and coming with the island as the garden does), the paving's a wash on its own vertices.
+    const spots = tropicLampSpots();
+    g.add(tropicLamps(spots, ground));
+    const P = plan.TROPIC,
+      lawn = site.land?.getObjectByName('tropic-lawn'),
+      paving = site.land?.getObjectByName('tropic-paths');
+    if (lawn instanceof T.Mesh) {
+      const pools = tropicLampPools(material, lawn, paving instanceof T.Mesh ? [paving] : [], spots.map((s) => [s.x + P.x, s.z + P.z]));
+      mesh(g, pools.geometry.translate(-P.x, 0, -P.z), 'bark', 'tropic-lamp-pools', [], { shadow: false, ground: true }).userData.washed = pools.washed;
+    }
     g.updateMatrixWorld(true);
     const world = (o: T.Object3D, [x, y, z]: V3) => new T.Vector3(x, y, z).applyMatrix4(new T.Matrix4().copy(g.matrixWorld).invert().multiply(o.matrixWorld)),
       seatOf = (o: T.Object3D, s: { x: number; z: number; heading: number }) => {
@@ -1462,6 +1557,7 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       desk: { seat: seatOf(desk, desk.userData.seat), keys: world(desk, desk.userData.keys).toArray(), floor: anchor.y },
       cafe: { seat: seatOf(cafe, cafe.userData.seats[0]), guest: seatOf(cafe, cafe.userData.seats[1]), saucer: world(cafe, cafe.userData.saucer).toArray(), floor: cafeFloor },
       call: G.walks.call.map(([x, z]) => ({ x, y: ground(x, z), z })),
+      lamps: spots,
       skipped,
     };
   }
@@ -1515,6 +1611,8 @@ export type TropicSite = {
   cafe?: { x: number; z: number; heading: number };
   building?: TropicBuilding;
   plaza?: { x: number; z: number; steps?: { front: number; top: number } };
+  /** The island's ground as tropicGround laid it (its lawn and paving meshes, by name), where the lamps' pools are laid. */
+  land?: T.Object3D;
 };
 
 /**
@@ -1547,7 +1645,7 @@ export function tropicBuilding(p: Sde4Plan): TropicBuilding {
  * handed back: its plan), and the round plaza on the land's level terrace (plan.TROPIC_PLAZA), with no
  * steps of its own (SDE4 has its step down to it).
  */
-export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
+export function tropicGardenSite(sde4: Sde4Plan, land?: T.Object3D): TropicSite {
   const P = plan.TROPIC;
   return {
     ground: (x, z) => tropicGroundAt(x + P.x, z + P.z),
@@ -1555,6 +1653,7 @@ export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
     cafe: { x: sde4.cafe.x, z: sde4.cafe.z, heading: sde4.cafe.heading },
     building: tropicBuilding(sde4),
     plaza: { x: plan.TROPIC_PLAZA.x, z: plan.TROPIC_PLAZA.z },
+    land,
   };
 }
 
@@ -1622,7 +1721,7 @@ export const TROPIC_GARDEN = {
     // Inside the tree walk's arc, along the podium's east face.
     { line: [[6.5, -0.55], [6.55, 0.95]], width: 0.62, height: 0.56, seed: 3, leaves: { toward: 0, spread: 0.6 } },
     // Along the back: one foundation bed the building's length, its fan inside it.
-    { line: [[-3.05, -4.46], [2.35, -4.4]], width: 1.0, height: 0.62, seed: 4, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
+    { line: [[-3.05, -4.72], [2.35, -4.66]], width: 1.0, height: 0.62, seed: 4, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
     // Along the fin block's west face.
     { line: [[-4.1, -3.15], [-4.05, -1.05]], width: 0.68, height: 0.6, seed: 6, leaves: { toward: Math.PI, spread: 0.7 } },
     // At the palms' and the big rain tree's feet.
@@ -1638,7 +1737,7 @@ export const TROPIC_GARDEN = {
   fans: [
     { x: -4.2, z: 1.22, height: 0.9, ry: 0.1, seed: 1 },
     { x: 6.55, z: 0.25, height: 0.95, ry: -0.2, seed: 2 },
-    { x: -0.95, z: -4.45, height: 1.05, ry: 0.05, seed: 3 },
+    { x: -0.95, z: -4.62, height: 1.05, ry: 0.05, seed: 3 },
     { x: 2.65, z: -9.05, height: 1.1, ry: 0.1, seed: 5 },
     { x: -4.1, z: -2.05, height: 1.0, ry: 1.5, seed: 4 },
   ],
