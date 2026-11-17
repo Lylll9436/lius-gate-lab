@@ -1130,14 +1130,14 @@ export async function createCity(
   sun.castShadow = true;
   const shadowBase = tier === 'low' ? 1024 : 1536;
   /**
-   * The town's shadow box, its home focus (TOWN_SHADOW): the island, the airport's island and the
-   * tropic island whole for every sun and yaw (the smallest circle round them, its rim at the airport's
-   * armour's north-west corner and a unit past the tropic island's south-east beach, and half a unit
-   * more: 62.7 round (4.48, 2.86) as the camera lane's stub lays the tropic island out), in a map twice
-   * `shadowBase` (3072, 2048 on the low tier), the size Inspect's and the sky island's boxes take: 24.5
-   * texels a unit, sharper than the old box round the island and the airport alone (centre (-3.5,
-   * -13.5), ±46 in 2048: 22.3), and on the low tier 16.3, a fiftieth softer than its old 16.7 (±46 in
-   * 1536); and the same map wherever the box goes, so a hand-over never replaces it. The light stands
+   * The town's shadow box, its home focus (TOWN_SHADOW, worked out from the plan when the page loads):
+   * the island, the airport's island and the tropic island whole for every sun and yaw (the smallest
+   * circle round them, its rim at the airport's armour's north-west corner and a unit past the tropic
+   * island's south-east beach, and half a unit more: 62.95 round (5.04, 2.94) with the island's natural
+   * coast), in a map twice `shadowBase` (3072, 2048 on the low tier), the size Inspect's and the sky
+   * island's boxes take: 24.4 texels a unit, sharper than the old box round the island and the
+   * airport alone (centre (-3.5, -13.5), ±46 in 2048: 22.3), and on the low tier 16.3, a fiftieth
+   * softer than its old 16.7 (±46 in 1536); and the same map wherever the box goes, so a hand-over never replaces it. The light stands
    * `reach` back along the key light (60: the key's own offset, 41, would leave the box's near side
    * behind the light) and its far plane is `far` out (110).
    */
