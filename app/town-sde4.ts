@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { SurfaceKind } from './city-materials';
 import { palette, hash, sstep, type TownContext } from './town-shared';
-import { TROPIC_PATHS } from './town-plan';
+import { TROPIC, TROPIC_BUILDING, TROPIC_PATHS } from './town-plan';
 import { RESIDENCE_LOOK } from './town-residence';
 import type { WindowRole } from './town-batch';
 import type { Kit } from './town-kit';
@@ -85,8 +85,9 @@ export const SDE4_GREENS = {
  * Measures in the building's own frame: x east, z south (the front faces +z), y 0 the podium's top,
  * the podium centred on the origin.
  * - `at`: where it stands on the island, in the island's frame (origin at the island's centre, x
- *   east, z south, y up from the sea's datum, as the airport's land): its podium's middle (x, z) and
- *   its top (y): 0.38, the land's level terrace (plan.TROPIC.pad, 0.26) and `lift`. The lawn round
+ *   east, z south, y up from the sea's datum, as the airport's land): its podium's middle (x, z), the
+ *   plan's (plan.TROPIC_BUILDING), and its top (y): 0.38, the land's level terrace (plan.TROPIC.pad,
+ *   0.26) and `lift`. The podium's half-sizes are the plan's too (TROPIC_BUILDING.hw, hd). The lawn round
  *   the podium is to stand about `lift` under its top. (The rebuild took the old plan's length off
  *   its west end and its depth off its north side, so the veranda, the desk, the ramp and the
  *   podium's south edge stand where they stood on the island.)
@@ -128,10 +129,11 @@ export const SDE4_GREENS = {
  *   canopy's foot (its doors 1.1 tall, life-size to Filip); `veranda`: the open east bay's deck;
  *   `desk`, `cafe`: the anchors handed to the garden and the figure (see Sde4Build).
  */
+const LIFT = 0.12;
 export const SDE4 = {
-  at: { x: 1.2, y: 0.38, z: -1.1 },
-  lift: 0.12,
-  podium: { x0: -4.7, x1: 4.7, z0: -2.8, z1: 2.8, kerb: 0.3, foot: -0.6 },
+  at: { x: TROPIC_BUILDING.x, y: TROPIC.pad + LIFT, z: TROPIC_BUILDING.z },
+  lift: LIFT,
+  podium: { x0: -TROPIC_BUILDING.hw, x1: TROPIC_BUILDING.hw, z0: -TROPIC_BUILDING.hd, z1: TROPIC_BUILDING.hd, kerb: 0.3, foot: -0.6 },
   steps: { x0: -3.3, x1: -1.8, run: 0.34, rise: 0.06 },
   ramp: { x0: 2.05, x1: 2.95, run: 0.72, drop: 0.12 },
   roof: { x0: -4.3, x1: 4.3, z0: -2.4, z1: 2.4, soffit: 6.02, rim: 6.1, top: 6.3, parapet: 6.38, width: 0.16, corner: 0.12, margin: 0.26, rows: 3, deep: 1.2, panels: 5, seam: 0.14, frame: 0.09, gutter: 0.1 },

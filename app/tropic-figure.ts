@@ -19,6 +19,7 @@ import {
   putAway,
   reach,
   rising,
+  SAUCER_WELL,
   SEAT,
   seated,
   smooth,
@@ -35,6 +36,7 @@ import {
 import { angleDiff, blendDay, planDay, samplePolyline, smoothstep, TROPIC, TROPIC_PATHS, TROPIC_PLAZA, tropicFloor, tropicInland, walkProgress, type DayGait, type XZ } from './town-plan';
 import type { TownContext } from './town-shared';
 import { sde4Plan } from './town-sde4';
+import { TEA } from './town-sky-garden';
 import { createFilip, FILIP_FACE, FILIP_PHONE, FILIP_SCALE, type FilipJoints, type FilipProps } from './tropic-figure-look';
 
 /*
@@ -57,7 +59,10 @@ import { createFilip, FILIP_FACE, FILIP_PHONE, FILIP_SCALE, type FilipJoints, ty
  *   tropic island: its lawn, walks and coast) and on SDE4's plan (town-sde4's sde4Plan);
  * - his furniture, which the garden builds to his measures (FILIP_DESK, FILIP_CAFE, FILIP_CHAIR and
  *   FILIP_RING: where his hands, his belly, his knees, his cup and his soles go; filipFurniture has it
- *   as solids for the checks).
+ *   as solids for the checks). These are the furniture's one source: town-tropic-garden makes its
+ *   DESK, LAPTOP, SITTER, CAFE_TABLE and CAFE_SAUCER from them, and they take the town's seat and
+ *   table (town-sky-garden's TEA) for what they share with it; check-town holds the built seats, keys
+ *   and saucer to where his day puts him.
  */
 
 /* ------------------------------------------------------------------ */
@@ -73,7 +78,7 @@ const S = FILIP_SCALE;
 /* ------------------------------------------------------------------ */
 /**
  * The veranda desk as he sits at it (the town's units, from his root seated, +z the way he faces):
- * its `top` over the floor his chair stands on (the tea table's 0.665: the town's seat 0.44 and
+ * its `top` over the floor his chair stands on (the tea table's TEA.top, 0.665: the town's seat 0.44 and
  * 0.225), its `near` edge ahead of his root (his belly clears it by 0.01 leaning in to type), its
  * `width` and `depth` and its top's `thick`ness. Its middle is `across` to his right, so he sits at its
  * east end, with the laptop square in front of him and the free end of the desk (its potted plant)
@@ -85,7 +90,7 @@ const S = FILIP_SCALE;
  * in front of him, its near edge `inset` behind the desk's; his hands rest on its keys `keys` from
  * the laptop's near edge, and his right hand strokes its trackpad `pad` from it.
  */
-export const FILIP_DESK = { top: 0.665, near: 0.185, width: 0.9, depth: 0.5, thick: 0.07, across: 0.15, leave: 0.15, knees: 0.12, legs: 0.19, laptop: { inset: 0.015, w: 0.3, d: 0.21, base: 0.07, open: (105 * Math.PI) / 180 }, keys: 0.06, pad: 0.045 };
+export const FILIP_DESK = { top: TEA.top, near: 0.185, width: 0.9, depth: 0.5, thick: 0.07, across: 0.15, leave: 0.15, knees: 0.12, legs: 0.19, laptop: { inset: 0.015, w: 0.3, d: 0.21, base: 0.07, open: (105 * Math.PI) / 180 }, keys: 0.06, pad: 0.045 };
 /**
  * The café table (a round bistro table on one pedestal; no parasol: the rain tree is its shade) as he
  * sits at it: its `top` over its floor, its `radius`, its edge `gap` ahead of his chair's seat (so its
@@ -93,7 +98,7 @@ export const FILIP_DESK = { top: 0.665, near: 0.185, width: 0.9, depth: 0.5, thi
  * on its top (it is the table's: the garden batches it with the table) at `saucer`: across (x, to
  * his left) and ahead of his root (z), turned `turn` from the way he faces.
  */
-export const FILIP_CAFE = { top: 0.665, radius: 0.34, gap: 0.1, saucer: [-0.07, 0.29] as XZ, turn: 0 };
+export const FILIP_CAFE = { top: TEA.top, radius: 0.34, gap: TEA.gap, saucer: [-0.07, 0.29] as XZ, turn: 0 };
 /**
  * His chairs (the desk's and the café's: the town's seat, oak on dark bronze): the seat's `height`
  * over their floor, its `width` and `depth`, the back's rail from `rail[0]` to `rail[1]` up, leaning
@@ -101,7 +106,7 @@ export const FILIP_CAFE = { top: 0.665, radius: 0.34, gap: 0.1, saucer: [-0.07, 
  * scaled with him). Each has a foot ring at the height his soles hang at seated (FILIP_RING), so his
  * feet rest on it (the town's seat leaves a figure's soles 0.3 off the floor).
  */
-export const FILIP_CHAIR = { height: SEAT, width: 0.44, depth: 0.42, rail: [0.63, 0.84] as [number, number], rake: 0.1, setback: 0.09 * S };
+export const FILIP_CHAIR = { height: SEAT, width: TEA.chair.w, depth: TEA.chair.d, rail: TEA.rail, rake: TEA.rake, setback: TEA.setback * S };
 const knee0 = new T.Matrix4(),
   shoe0 = new T.Vector3();
 /** The middle of leg k's shoe in the root's frame, as the leg and knee are posed (their matrices up to date). */
@@ -580,10 +585,10 @@ function twist(j: FilipJoints, yaw: number) {
 }
 /**
  * How much lower his cup sits in the café table's saucer than in a saucer of his own: the saucer is
- * the table's, at the town's size, its well 0.036 up from its foot, where figure-rig's cupOnSaucer
+ * the table's, at the town's size, its well SAUCER_WELL up from its foot, where figure-rig's cupOnSaucer
  * takes a saucer at its holder's size (his root's scale: 1.08).
  */
-const WELL = 0.036 * (1 - 1 / S);
+const WELL = SAUCER_WELL * (1 - 1 / S);
 /** His cup resting in the café table's saucer, its foot at `at` (his frame), turned `ry` (figure-rig's cupOnSaucer, the table's own saucer). */
 function cupDown(props: FilipProps, at: V3, ry: number) {
   cupOnSaucer({ cup: props.cup, saucer: tableSaucer }, [at[0], at[1] - WELL, at[2]], ry);
@@ -1302,10 +1307,6 @@ export function filipFurniture(plan: FilipPlan): FilipSolid[] {
 export const FILIP_DAY = filipDayOf(FILIP_SITE);
 /** Filip at time `time` of his day on the island (FILIP_DAY.day). */
 export const filipDay = FILIP_DAY.day;
-/** The still pose he settles into, on the island (FILIP_DAY.still). */
-export const filipStill = FILIP_DAY.still;
-/** Part of the way from one of his moments to another, on the island (FILIP_DAY.blend). */
-export const filipBlend = FILIP_DAY.blend;
 
 /* ------------------------------------------------------------------ */
 /* On the island                                                       */

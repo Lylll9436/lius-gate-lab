@@ -6417,9 +6417,11 @@ let tropicGardenWalks = '';
 //   (no notch where a lobe is missing; the bay draws in no deeper than its own depth); every limb's tip
 //   inside the canopy; the palms within their height and leaning out; the frangipani's flowers a
 //   mesh that casts nothing; the furniture at the town's seat and table heights and to Filip's measures
-//   (lane figure's: where his root sits at the desk and the café, the laptop square in front of him with
-//   its lid leaning back, nothing where his knees go, the saucer to his right), the bistro chairs' foot
-//   rings where seated soles rest; the props' frames as the figure lanes hold them;
+//   (tropic-figure's FILIP_DESK, FILIP_CAFE and FILIP_CHAIR, from which the garden's measures are made:
+//   where his root sits at the desk and the café, the laptop square in front of him with its lid leaning
+//   back, nothing where his knees go, the saucer to his right; the seats, keys and saucer the garden
+//   builds where his day sits him, types and sets his cup), the bistro chairs' foot rings where seated
+//   soles rest; the props' frames as the figure holds them;
 // - the budget: the whole garden in at most 10 meshes and 45,000 triangles once batched, on the solids'
 //   one program, its build and batch in time;
 // - the layout: no shrub left out for standing on SDE4; the trees, shrub beds and fans on the lawn,
@@ -6637,7 +6639,7 @@ let tropicGardenWalks = '';
     assert(box.max.y > 1.75 && box.max.y < 2.3 && !flowers.castShadow && yellow > 10 && cream > yellow && heart.r > heart.b, `The frangipani is ${box.max.y.toFixed(2)} high, or its flowers cast or are not cream with a yellow heart (${cream} cream, ${yellow} yellow).`);
     assert(pieces(flowers).length >= 15, 'The frangipani has fewer than three clusters of five flowers.');
   }
-  // The furniture, to Filip's measures (lane figure's FILIP_CHAIR, FILIP_DESK and FILIP_CAFE): the
+  // The furniture, to Filip's measures (tropic-figure's FILIP_CHAIR, FILIP_DESK and FILIP_CAFE): the
   // bistro chair's seat at the town's seat height and its foot ring's top at BISTRO_CHAIR.ring, its front
   // bar out in front of the seat; the café's top at TEA.top, his root SITTER.setback behind his chair's
   // front edge, the saucer on the table ahead of him and to his right; the desk's top at TEA.top, his
@@ -6678,7 +6680,7 @@ let tropicGardenWalks = '';
     assert(Math.abs(chair.max.z - seat.z - SITTER.setback) < 1e-3 && Math.abs((chair.max.x + chair.min.x) / 2 - seat.x) < 1e-3, `The desk's chair's front edge (${chair.max.z.toFixed(3)}) is not ${SITTER.setback.toFixed(4)} ahead of its sitter's root.`);
     assert(Math.abs(lx - seat.x) < 1e-9 && Math.abs(lz - LAPTOP.d / 2 - (-DESK.d / 2 + DESK.inset)) < 1e-9 && keys.y > TEA.top + LAPTOP.base - 0.01 && keys.z - seat.z > 0.2 && keys.z - seat.z < 0.35, `The laptop is not square in front of the desk's sitter within reach (${fmt(keys)}).`);
     // Nothing of the desk's frame where his knees go: under the top within 0.12 of its near edge and
-    // 0.19 of his middle across (lane figure's FILIP_DESK.knees and .legs).
+    // 0.19 of his middle across (FILIP_DESK.knees and .legs).
     each(frame, (p) => assert(!(p.z < -DESK.d / 2 + 0.12 && p.z > -DESK.d / 2 - 0.02 && Math.abs(p.x - seat.x) < 0.19 && p.y > 0.4 && p.y < TEA.top - DESK.slab - 0.001), `The desk's frame is in its sitter's way at ${fmt(p)}.`));
     const rings = pieces(frame).filter((p) => Math.abs(p.box.max.y - BISTRO_CHAIR.ring) < 1e-6 && p.box.max.y - p.box.min.y < 0.08);
     assert.equal(rings.length, 2, 'The desk\'s chair has no foot ring.');
@@ -6728,6 +6730,44 @@ let tropicGardenWalks = '';
     assert(m.material.side !== T.DoubleSide && !m.material.transparent, `The tropic garden's ${m.material.name} batch is two-sided or transparent.`);
   }
   assert(!stations.skipped.length, `The tropic garden leaves out what would stand on SDE4: ${stations.skipped.join('; ')}.`);
+  // The furniture the garden builds is where Filip's day uses it, so the two can never drift apart:
+  // his seat at the desk and at the café (his root, and the way he faces) are the chairs' sitters',
+  // the saucer his day sets his cup in is the one standing on the café table, and seated at his work
+  // (time 0) both his hands rest over the laptop's keyboard, within its field and just over its keys.
+  // (The measures are one source, tropic-figure's FILIP_DESK, FILIP_CAFE and FILIP_CHAIR, with the
+  // town's TEA for the seat and the table; this holds what is built to what he does.)
+  {
+    const F = await load('tropic-figure'),
+      R = await load('figure-rig'),
+      { createCityMaterials } = await load('city-materials'),
+      day = F.FILIP_DAY,
+      turn = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))),
+      fmt3 = (n) => n.toFixed(4);
+    assert(F.FILIP_CHAIR.height === TEA.seat && F.FILIP_DESK.top === TEA.top && F.FILIP_CAFE.top === TEA.top, `Filip sits at ${F.FILIP_CHAIR.height} and works at ${F.FILIP_DESK.top} and ${F.FILIP_CAFE.top}, not the town's seat and table (${TEA.seat}, ${TEA.top}).`);
+    for (const [name, built, his] of [
+      ['desk', stations.desk.seat, day.seats.desk],
+      ['café', stations.cafe.seat, day.seats.cafe],
+    ])
+      assert(Math.hypot(built.x - his.x, built.z - his.z) < 1e-6 && turn(built.heading, his.facing) < 1e-6, `Filip's seat at the ${name} (${fmt3(his.x)}, ${fmt3(his.z)}, facing ${fmt3(his.facing)}) is not its chair's (${fmt3(built.x)}, ${fmt3(built.z)}, facing ${fmt3(built.heading)}).`);
+    const [sx, sy, sz] = stations.cafe.saucer;
+    assert(Math.hypot(sx - day.saucer.x, sz - day.saucer.z) < 1e-6 && Math.abs(sy - day.saucer.y) < 1e-6, `Filip sets his cup in a saucer at (${fmt3(day.saucer.x)}, ${fmt3(day.saucer.y)}, ${fmt3(day.saucer.z)}), not the café table's at (${[sx, sy, sz].map(fmt3).join(', ')}).`);
+    const animated = [],
+      island0 = new T.Group(),
+      { root: him, body } = F.placeFilip({ material: createCityMaterials().material, animated }, island0);
+    animated[0].update(0, 0, 0);
+    island0.updateMatrixWorld(true);
+    const keys = new T.Vector3(...stations.desk.keys),
+      h = day.seats.desk.facing,
+      ahead = new T.Vector3(Math.sin(h), 0, Math.cos(h)),
+      side = new T.Vector3(Math.cos(h), 0, -Math.sin(h)),
+      field = { across: (LAPTOP.w - 0.05) / 2, deep: (LAPTOP.d * 0.5) / 2 };
+    for (const k of [0, 1]) {
+      const hand = R.figureHand(body.joints, k).applyMatrix4(him.matrixWorld),
+        off = hand.clone().sub(keys);
+      assert(Math.abs(off.dot(side)) < field.across - 0.03 && Math.abs(off.dot(ahead)) < field.deep && off.y > 0.02 && off.y < 0.08, `At his work Filip's ${k ? 'right' : 'left'} hand is ${fmt3(off.dot(side))} across, ${fmt3(off.dot(ahead))} ahead and ${fmt3(off.y)} over the laptop's keys: not on its keyboard.`);
+    }
+    him.traverse((m) => m.isMesh && m.geometry.dispose());
+  }
   {
     const winter = fresh('winter'),
       g = new T.Group();
@@ -12005,6 +12045,12 @@ let tropicReport = '';
     B = SDE4.block,
     P = SDE4.podium,
     parts = meshesOf(group);
+  // Where it stands is the plan's: its podium's middle and half-sizes TROPIC_BUILDING's, its top the
+  // island's level terrace (TROPIC.pad) and its lift, so a change of plan moves it with the land.
+  assert(
+    A.x === plan.TROPIC_BUILDING.x && A.z === plan.TROPIC_BUILDING.z && A.y === plan.TROPIC.pad + SDE4.lift && P.x1 === plan.TROPIC_BUILDING.hw && P.x0 === -plan.TROPIC_BUILDING.hw && P.z1 === plan.TROPIC_BUILDING.hd && P.z0 === -plan.TROPIC_BUILDING.hd,
+    `SDE4 stands at ${A.x}, ${A.y}, ${A.z} on a podium ${P.x0}..${P.x1} by ${P.z0}..${P.z1}, not where the plan puts it (TROPIC_BUILDING, TROPIC.pad + lift).`,
+  );
   /** Each run of joined faces in a mesh (faces sharing a corner), as its box in the island's frame. */
   const pieces = (m) => {
     const q = m.geometry.attributes.position,
@@ -12330,7 +12376,7 @@ let tropicReport = '';
   }
   console.log(`SDE4 checks passed: ${parts.length} parts inside its ${(out.footprint.x1 - out.footprint.x0).toFixed(1)} x ${(out.footprint.z1 - out.footprint.z0).toFixed(1)} footprint, ${(out.height - A.y).toFixed(2)} over its podium, batched into ${batched.length} meshes and ${Math.round(tris)} triangles, built in ${Math.round(sde4Time.paced)} ms at the limits' pace; ${evening.length} of its ${rooms.length} rooms lit at 20:00 and ${late.length} at 01:36, its lobby lit all night.`);
 }
-// Alison is as she was before her rig was shared (lane figure: her joints, solves, china and the
+// Alison is as she was before her rig was shared (her joints, solves, china and the
 // poses every figure has went to figure-rig.ts, her day's planner and blend and her floor to
 // town-plan's planDay, blendDay and pathFloor, and town-sky's alison() onto figure-rig's clock):
 // every joint and prop of hers (each object's place, turn and size and whether it shows) and her

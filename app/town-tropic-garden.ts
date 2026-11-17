@@ -8,7 +8,7 @@ import * as plan from './town-plan';
 import { saucerPieces, type ChinaLook } from './figure-rig';
 import { sde4Plan, type Sde4Plan } from './town-sde4';
 import { tropicGroundAt } from './town-tropic';
-import { FILIP_SITE } from './tropic-figure';
+import { FILIP_CAFE, FILIP_CHAIR, FILIP_DESK, FILIP_SITE } from './tropic-figure';
 import type { Kit } from './town-kit';
 import { crown, mergeCrown, noise3, paintCrown, trunkTube, type Look as CrownLook } from './town-nature';
 import { ellipsoid, roundBox, sculpt } from './town-sculpt';
@@ -248,13 +248,13 @@ export const GARDEN_PLAZA = {
   step: { rise: 0.06, tread: 0.26, nosing: 0.07 },
 };
 /**
- * Filip as the furniture seats him (lane figure's FILIP_CHAIR, FILIP_DESK and FILIP_CAFE, the measures
- * that lane asks the garden to build to): his root seated `setback` behind his chair's front edge (the
- * sky figure's 0.09, scaled with him by 1.08).
+ * Filip as the furniture seats him (tropic-figure's FILIP_CHAIR, FILIP_DESK and FILIP_CAFE are the
+ * furniture's one source: what the garden builds to his measures is made from them below): his root
+ * seated `setback` behind his chair's front edge (the tea table's sitter's, scaled with him by 1.08).
  */
-export const SITTER = { setback: 0.09 * 1.08 };
+export const SITTER = { setback: FILIP_CHAIR.setback };
 /**
- * The veranda desk: a light oak top `w` by `d`, `slab` thick, its top at the tea table's height
+ * The veranda desk (FILIP_DESK's): a light oak top `w` by `d`, `slab` thick, its top at the tea table's height
  * (TEA.top, so every seated solve of the sky island's figure holds), on four `leg` dark-bronze legs
  * with a `rail` under the top on its front and its ends (none on the sitter's side, where the knees
  * go). Its sitter faces it from its -z side: his root `near` behind its near edge and `across` to the
@@ -263,9 +263,9 @@ export const SITTER = { setback: 0.09 * 1.08 };
  * (LAPTOP) stands square in front of him, its near edge `inset` behind the desk's; the potted plant
  * (`plant`: the pot's radius and height, and the leafy clump's radius) on the desk's far -x corner.
  */
-export const DESK = { w: 0.9, d: 0.5, slab: 0.07, leg: 0.07, rail: 0.07, near: 0.185, across: 0.15, inset: 0.015, plant: { pot: 0.065, height: 0.09, leaves: 0.11 } };
-/** The chunky toy laptop: base `w` by `d`, `base` thick, its lid as large and `lid` thick, opened `open` from the base (leaning back, away from its user). */
-export const LAPTOP = { w: 0.3, d: 0.21, base: 0.07, lid: 0.07, open: (105 * Math.PI) / 180 };
+export const DESK = { w: FILIP_DESK.width, d: FILIP_DESK.depth, slab: FILIP_DESK.thick, leg: 0.07, rail: 0.07, near: FILIP_DESK.near, across: FILIP_DESK.across, inset: FILIP_DESK.laptop.inset, plant: { pot: 0.065, height: 0.09, leaves: 0.11 } };
+/** The chunky toy laptop (FILIP_DESK.laptop): base `w` by `d`, `base` thick, its lid as large and `lid` thick, opened `open` from the base (leaning back, away from its user). */
+export const LAPTOP = { w: FILIP_DESK.laptop.w, d: FILIP_DESK.laptop.d, base: FILIP_DESK.laptop.base, lid: 0.07, open: FILIP_DESK.laptop.open };
 /**
  * The bistro chair (the desk's and the café's): the town's 0.44 seat in oak on a dark-bronze frame,
  * with a foot ring whose top is `ring` over the floor, where a seated figure's soles rest (the
@@ -273,7 +273,7 @@ export const LAPTOP = { w: 0.3, d: 0.21, base: 0.07, lid: 0.07, open: (105 * Mat
  */
 export const BISTRO_CHAIR: ChairLook = { seat: 'oak', frame: 'bronze', frameKind: 'paint', ring: 0.3 };
 /**
- * The café's round bistro table: an oak top 0.34 in radius at TEA.top on one dark-bronze pedestal on
+ * The café's round bistro table: an oak top FILIP_CAFE.radius (0.34) in radius at TEA.top on one dark-bronze pedestal on
  * a round foot, two bistro chairs opposite one another (their fronts TEA.gap off its edge), no tea set.
  * No parasol: from the file's camera, 42 degrees up, a parasol over a seated figure hides him. It
  * stands at the rim of the small rain tree's shade (TROPIC_GARDEN), as near as keeps him in sight from
@@ -281,7 +281,7 @@ export const BISTRO_CHAIR: ChairLook = { seat: 'oak', frame: 'bronze', frameKind
  */
 export const CAFE_TABLE: TableLook = {
   name: 'tropic-cafe',
-  radius: 0.34,
+  radius: FILIP_CAFE.radius,
   top: 'oak',
   pedestal: { profile: [[0, 0], [0.2, 0, 1], [0.2, 0.022, 1], [0.16, 0.046], [0.07, 0.072], [0.045, 0.1, 1], [0.04, 0.16], [0.04, TEA.top - 0.12], [0.06, TEA.top - 0.096, 1], [0.12, TEA.top - 0.08, 1], [0, TEA.top - 0.08]], look: 'bronze', kind: 'paint', sides: 16 },
   chair: BISTRO_CHAIR,
@@ -289,9 +289,10 @@ export const CAFE_TABLE: TableLook = {
 };
 /**
  * Where the café's saucer stands on its table: `ahead` of its sitter's root (in the -x chair) and
- * `right` to his right (lane figure's FILIP_CAFE.saucer), where his right hand takes the cup from it.
+ * `right` to his right (FILIP_CAFE.saucer: across to his left, and ahead), where his right hand takes
+ * the cup from it.
  */
-export const CAFE_SAUCER = { ahead: 0.29, right: 0.07 };
+export const CAFE_SAUCER = { ahead: FILIP_CAFE.saucer[1], right: -FILIP_CAFE.saucer[0] };
 /**
  * The walks' timber (plan.TROPIC_PATHS: the landing and the seat), light oak, boards drawn broad by a
  * quiet tonal step (`tones`, by turns), never by gaps:

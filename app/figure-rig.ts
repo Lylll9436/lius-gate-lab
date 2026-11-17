@@ -369,30 +369,32 @@ export function rising(j: FigureJoints, p: number, seat?: number) {
 export const CUP_AXIS = 0.058;
 /** A cup's colours: the china, the band at its rim and what is in it. */
 export type ChinaLook = { china: string; band: string; drink: string };
+/** How far a cup's foot stands under its handle (the cup's origin). */
+export const CUP_FOOT = 0.037;
+/** How far a saucer's well (where a cup's foot rests) stands over the saucer's foot. */
+export const SAUCER_WELL = 0.036;
 /**
  * A cup, its handle (a lug 0.074 across) at the origin on its -x side, its axis CUP_AXIS along +x:
- * a turned bowl 0.104 across with the drink inside and a band at its rim, its foot 0.037 under the
- * origin. Two pieces, for one 'paint' mesh.
+ * a turned bowl 0.104 across with the drink inside and a band at its rim, its foot CUP_FOOT under
+ * the origin. Two pieces, for one 'paint' mesh.
  */
 export function cupPieces(look: ChinaLook) {
   const ring = (p: T.Vector3) => Math.hypot(p.x - CUP_AXIS, p.z);
   return [
-    paint(lathe([[0, -0.037], [0.034, -0.037], [0.049, 0.014], [0.052, 0.037], [0.046, 0.039], [0.041, 0.024], [0, 0.024]], 9).translate(CUP_AXIS, 0, 0), (p) =>
+    paint(lathe([[0, -CUP_FOOT], [0.034, -CUP_FOOT], [0.049, 0.014], [0.052, 0.037], [0.046, 0.039], [0.041, 0.024], [0, 0.024]], 9).translate(CUP_AXIS, 0, 0), (p) =>
       p.y < 0.0245 && p.y > 0.02 && ring(p) < 0.0415 ? look.drink : p.y > 0.024 && ring(p) > 0.0485 ? look.band : look.china,
     ),
     paint(blob([0.037, 0.037, 0.037], [0, 0, 0], 8), look.china),
   ];
 }
-/** A saucer, its foot at the origin: a dish 0.15 across, 0.07 from foot to rim, with a well for the cup (0.036 up) and a band at its rim. */
+/** A saucer, its foot at the origin: a dish 0.15 across, 0.07 from foot to rim, with a well for the cup (SAUCER_WELL up) and a band at its rim. */
 export function saucerPieces(look: Omit<ChinaLook, 'drink'>) {
   return [
-    paint(lathe([[0, 0], [0.04, 0], [0.06, 0.03], [0.075, 0.064], [0.071, 0.07], [0.056, 0.044], [0.044, 0.036], [0, 0.036]], 9), (p) =>
+    paint(lathe([[0, 0], [0.04, 0], [0.06, 0.03], [0.075, 0.064], [0.071, 0.07], [0.056, 0.044], [0.044, SAUCER_WELL], [0, SAUCER_WELL]], 9), (p) =>
       p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? look.band : look.china,
     ),
   ];
 }
-/** Where the cup's foot sits in its saucer's well, over the saucer's foot (the well, 0.036, and the cup's foot, 0.037, under its handle). */
-export const CUP_REST = 0.036 + 0.037;
 const tmp = new T.Vector3();
 /**
  * A cup resting in its saucer's well (its handle back and to the figure's -x, as its -x hand holds
@@ -405,7 +407,8 @@ export function cupOnSaucer(props: { cup: T.Object3D; saucer: T.Object3D }, at: 
   saucer.rotation.set(0, ry, 0);
   cup.rotation.set(0, ry - 0.5, 0, 'YXZ');
   const lug = tmp.set(-CUP_AXIS, 0, 0).applyQuaternion(cup.quaternion);
-  cup.position.set(at[0] + lug.x, at[1] + 0.036 + 0.037 + lug.y, at[2] + lug.z);
+  // Its handle over the saucer's well by the cup's foot (added in this order: Alison's frames are pinned).
+  cup.position.set(at[0] + lug.x, at[1] + SAUCER_WELL + CUP_FOOT + lug.y, at[2] + lug.z);
 }
 
 /* ------------------------------------------------------------------ */

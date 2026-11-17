@@ -5,6 +5,7 @@ import {
   AT_EASE,
   atEase,
   CUP_AXIS,
+  CUP_FOOT,
   cupOnSaucer,
   cupPieces,
   easeArm,
@@ -25,6 +26,7 @@ import {
   reach,
   rising,
   saucerPieces,
+  SAUCER_WELL,
   SEAT,
   seated,
   shown,
@@ -1094,7 +1096,7 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
     const { cup, saucer } = props,
       S = SIP.saucer,
       lifted = smooth(u, 0.12, 0.4) - smooth(u, 0.6, 0.88),
-      rest: V3 = [S[0], S[1] + 0.036 + 0.037, S[2]],
+      rest: V3 = [S[0], S[1] + SAUCER_WELL + CUP_FOOT, S[2]],
       lips = leaned(SIP.lips, SIP.lean),
       at = (i: number) => T.MathUtils.lerp(rest[i], lips[i], lifted) + (i === 2 ? 0.03 * Math.sin(Math.PI * lifted) : 0);
     lean(j, SIP.lean, SIP.reach);
