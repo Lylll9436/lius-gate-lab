@@ -10762,6 +10762,236 @@ let tropicReport = '';
     tropicReport = `the tropic island off the south shore (its ground ${landMeshes} meshes and ${landTriangles} triangles, the island ${islandMeshes} and ${islandTriangles} so far; ${coast.toFixed(1)} of open water from the town's waterline, the lighthouse beam ${beamGap.toFixed(1)} clear, the boat ${gaps.boat.toFixed(1)}, the gulls ${gaps.gulls.toFixed(1)}, the balloon ${gaps.balloon.toFixed(1)}, the plane ${gaps.plane.toFixed(1)}${tropicReport}; its phases ${paced.map(([n, t]) => `${n} ${Math.round(t.paced)}`).join(', ')} ms at the limits' pace)`;
   }
 }
+// SDE4 (town-sde4's buildSde4), the tropic island's building, built here on its own: the island and
+// its place join the town at the merge, which then holds the town's own copy to this one. It builds
+// into a group in the island's frame (the island's centre, decision 2: world 19.5, 0, 51; +z south;
+// y the sea's datum), as the merge does:
+// - its parts: each has a surface kind; nothing is two-sided, transparent or cut out; its colours are
+//   SDE4_LOOK's, none louder than its palette family (SDE4_FAMILY); its planting (leafy clump
+//   masses from the trees' crown kit and paddle-leaf fans) is the town's white foliage with its
+//   greens painted on, none louder than the hedge's, the same in every season (the island is
+//   evergreen, decision 12); every joined piece but the glass is 0.07 across or more every way
+//   (thinner ones twinkle as the view moves);
+// - its size (decision 2, design.md 2.2): the parasol with the end block about 11 by 7.2 in plan, the
+//   membrane about 7.3 over the podium and nothing over 7.8; all of it inside the footprint and
+//   under the height it hands back, nothing under the podium's foot; its middle low enough for the
+//   models' framing (under 7) and its top under their 14;
+// - its read (decision 14, never a bigger Visiting PhD Residence): eight slender white round columns
+//   (0.24 across or more) from the podium to the soffit, each with its base and capital, standing
+//   clear of every plate; the dark soffit band under the white rim, 0.25 deep or more and set back
+//   from it by a hair; rows of solar modules on the roof; bold champagne fins down the end block's
+//   west face; plates that step back as they rise; its planting one mesh of leaves over leafy
+//   clumps (a hundred pieces or more, 9,000 triangles at most), 0.15 or more off the top floor's
+//   glass and the slab over it;
+// - its anchors: the desk on the veranda's deck, clear of the columns, the planters and the glass,
+//   facing south; the entrance at the lobby's doors; the café beside the court, off the podium and
+//   its step and ramp, before the end block;
+// - batched as the merge batches it, at most 12 meshes and 30,000 triangles (decision 13), on the
+//   town's own programs (no new one), cutting no holes, every varying it reads declared;
+// - its night: a light a pane, in the 'campus' role, but the lobby's doors (one light, the fixed
+//   'entrance': warm and never out) and the balustrades ('clear', never lit); about three in four
+//   lit at 20:00, cool only an accent, about half of those going out one at a time between 22:30
+//   and 01:30, the rest lit till morning.
+{
+  const { createSde4, SDE4, SDE4_LOOK, SDE4_FAMILY, SDE4_WINDOWS, SDE4_ENTRANCE, SDE4_RAILS } = await load('town-sde4'),
+    { palette } = await load('town-shared'),
+    { createProps } = await load('town-props'),
+    { createNature } = await load('town-nature'),
+    { createKit } = await load('town-kit'),
+    { createBatch } = await load('town-batch'),
+    { createCityMaterials } = await load('city-materials'),
+    ISLAND = new T.Vector3(19.5, 0, 51);
+  const make = (season) => {
+      const library = createCityMaterials(),
+        ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
+        group = new T.Group();
+      group.position.copy(ISLAND);
+      group.updateMatrixWorld(true);
+      return { ctx, kit: createKit(ctx), group };
+    },
+    build = ({ ctx, kit, group }) => {
+      const out = createSde4(ctx, kit, createProps(ctx, kit), createNature(ctx, kit)).buildSde4(group);
+      group.updateMatrixWorld(true);
+      return { ctx, group, out };
+    },
+    // (Timed builds, above: each run from a context of its own; the checks below take the first.)
+    sde4Time = timeBuild(() => make('summer'), build),
+    { ctx, group, out } = sde4Time.built,
+    toIsland = group.matrixWorld.clone().invert(),
+    v = new T.Vector3(),
+    hex = (c) => '#' + new T.Color(c).getHexString(),
+    looks = new Map(Object.entries(SDE4_LOOK).map(([k, c]) => [hex(c), k])),
+    meshesOf = (g) => {
+      const list = [];
+      g.traverse((o) => o.isMesh && list.push(o));
+      return list;
+    },
+    fmt = (p) => p.toArray().map((n) => n.toFixed(2)).join(', '),
+    A = SDE4.at,
+    R = SDE4.roof,
+    B = SDE4.block,
+    P = SDE4.podium,
+    parts = meshesOf(group);
+  /** Each run of joined faces in a mesh (faces sharing a corner), as its box in the island's frame. */
+  const pieces = (m) => {
+    const q = m.geometry.attributes.position,
+      index = m.geometry.index,
+      key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+      parent = new Map(),
+      find = (k) => {
+        while (parent.get(k) !== k) {
+          parent.set(k, parent.get(parent.get(k)));
+          k = parent.get(k);
+        }
+        return k;
+      },
+      corner = (t, j) => (index ? index.getX(t * 3 + j) : t * 3 + j),
+      m4 = toIsland.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let t = 0; t < (index ? index.count : q.count) / 3; t++) for (const j of [1, 2]) parent.set(find(key(corner(t, j))), find(key(corner(t, 0))));
+    const boxes = new Map();
+    for (let i = 0; i < q.count; i++) {
+      const r = find(key(i));
+      if (!boxes.has(r)) boxes.set(r, new T.Box3());
+      boxes.get(r).expandByPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4));
+    }
+    return [...boxes.values()].map((b) => ({ b, s: b.getSize(new T.Vector3()), c: b.getCenter(new T.Vector3()) }));
+  };
+  assert(parts.length > 40, `SDE4 is only ${parts.length} parts.`);
+  const foliage = [],
+    hedge = hsv(palette.hedge).s;
+  for (const m of parts) {
+    const kind = m.material.userData.surfaceKind,
+      colour = hex(m.material.color),
+      what = `SDE4's ${m.name || kind + ' ' + colour}`;
+    assert(kind, `${what} has no surface kind.`);
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest, `${what} is two-sided, transparent or cut out.`);
+    if (kind === 'foliage') {
+      const c = m.geometry.getAttribute('color'),
+        tone = new T.Color();
+      assert(colour === '#ffffff' && c, `${what} is not the town's painted shrubs.`);
+      for (let i = 0; i < c.count; i++) assert(hsv('#' + tone.setRGB(Math.min(1, c.getX(i)), Math.min(1, c.getY(i)), Math.min(1, c.getZ(i))).getHexString()).s <= hedge + 0.03, `${what} is louder than the hedge's green.`);
+      foliage.push(m);
+    } else {
+      const look = looks.get(colour);
+      assert(look, `${what} is not one of SDE4_LOOK's colours.`);
+      assert(hsv(colour).s <= hsv(hex(SDE4_FAMILY[look])).s + 1e-3, `${what} is louder than its family (${look}: ${hex(SDE4_FAMILY[look])}).`);
+    }
+    const p = m.geometry.attributes.position,
+      m4 = toIsland.clone().multiply(m.matrixWorld),
+      F0 = out.footprint;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m4);
+      assert(v.x >= F0.x0 - 1e-4 && v.x <= F0.x1 + 1e-4 && v.z >= F0.z0 - 1e-4 && v.z <= F0.z1 + 1e-4 && v.y <= out.height + 1e-4 && v.y >= A.y + P.foot - 1e-4, `${what} leaves SDE4's footprint or height at ${fmt(v)}.`);
+    }
+    if (kind === 'glass') continue;
+    for (const { s, c } of pieces(m)) assert(Math.min(s.x, s.y, s.z) >= 0.07 - 1e-3, `${what} has a piece ${fmt(s)} at ${fmt(c)}.`);
+  }
+  // Evergreen: built in winter, its planting (and all else) is the summer's.
+  {
+    const winter = build(make('winter')),
+      theirs = meshesOf(winter.group).filter((m) => m.material.userData.surfaceKind === 'foliage');
+    assert(theirs.length === foliage.length && theirs.every((m, i) => m.geometry.getAttribute('color').array.every((x, j) => x === foliage[i].geometry.getAttribute('color').array[j])), 'SDE4\'s planting changes with the season.');
+  }
+  // Its size, and the models' framing rules (the town's island at sea level: its y is the world's).
+  assert(Math.abs(R.x1 - B.x0 - 11) <= 0.2 && Math.abs(R.z1 - R.z0 - 7.2) <= 0.2 && B.z0 === R.z0 && B.z1 === R.z1, `SDE4's parasol is ${(R.x1 - B.x0).toFixed(2)} by ${(R.z1 - R.z0).toFixed(2)}.`);
+  assert(Math.abs(R.top - 7.3) <= 0.1 && out.height - A.y <= 7.8 && out.height - A.y > R.parapet, `SDE4 stands ${(out.height - A.y).toFixed(2)} over its podium, its roof ${R.top}.`);
+  assert((A.y + P.foot + out.height) / 2 < 7 && out.height < 14 && out.podium === A.y, `SDE4's box (${(A.y + P.foot).toFixed(2)} to ${out.height.toFixed(2)}) is too tall for the models' framing.`);
+  assert(out.roof.x0 === A.x + B.x0 && out.roof.x1 === A.x + R.x1 && out.roof.z0 === A.z + R.z0 && out.roof.z1 === A.z + R.z1, 'SDE4 hands back a roof that is not its own.');
+  // Its read (decision 14).
+  {
+    const named = (name) => parts.find((m) => m.name === name),
+      white = pieces(named('sde4-white')),
+      C = SDE4.columns,
+      shafts = white.filter((p) => p.s.y > 5),
+      soffit = named('sde4-soffit'),
+      sb = new T.Box3().setFromObject(soffit).applyMatrix4(group.matrixWorld.clone().invert()),
+      plates = SDE4.plates.map((q) => new T.Box2(new T.Vector2(A.x + SDE4.west, A.z + q.back), new T.Vector2(A.x + q.east, A.z + q.front)));
+    assert.equal(shafts.length, 8, `SDE4 has ${shafts.length} columns, not eight.`);
+    for (const { b, s, c } of shafts) {
+      assert(Math.min(s.x, s.z) >= 0.24 - 1e-3 && Math.max(s.x, s.z) <= 0.3 && b.min.y <= A.y + 0.1 && b.max.y >= A.y + R.soffit - 0.2, `A column at ${fmt(c)} is ${fmt(s)}, not a slender column from the podium to the soffit.`);
+      assert(white.some((p) => p.s.x >= s.x + 0.12 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && p.b.min.y < A.y + 0.1) && white.some((p) => p.s.x >= s.x + 0.12 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && Math.abs(p.b.max.y - (A.y + R.soffit)) < 0.01), `The column at ${fmt(c)} lacks its base or its capital.`);
+      for (const q of plates) assert(q.distanceToPoint(new T.Vector2(c.x, c.z)) >= C.r + 0.1, `The column at ${fmt(c)} stands against a plate.`);
+    }
+    assert(hex(soffit.material.color) === hex(SDE4_LOOK.soffit) && Math.abs(sb.min.y - (A.y + R.soffit)) < 1e-3 && R.rim - R.soffit >= 0.25 && sb.max.z >= A.z + R.z1 - 0.05 && sb.max.z < A.z + R.z1 && sb.max.x >= A.x + R.x1 - 0.05 && sb.max.x < A.x + R.x1, 'SDE4\'s dark soffit band does not run under its white rim.');
+    assert(pieces(named('sde4-solar')).filter((p) => p.s.x > 0.8 && p.s.z > 0.7).length >= 40, 'SDE4\'s roof lacks its solar rows.');
+    assert(pieces(named('sde4-fins')).filter((p) => p.b.min.x <= A.x + B.x0 + 1e-3 && p.s.y > 1.5).length >= 40, 'SDE4\'s end block lacks its fins down the west face.');
+    const [g0, g1, g2] = SDE4.glass;
+    assert(SDE4.plates[0].front >= SDE4.plates[1].front && SDE4.plates[1].front > SDE4.plates[2].front && g2.front < g1.front && g2.east < g1.east, 'SDE4\'s plates do not step back as they rise.');
+    assert(g0.front < SDE4.plates[0].front - 0.5, 'SDE4\'s ground floor stands out under its first slab: no undercroft.');
+    // Its planting (design.md 2.6): one mesh of leaves over leafy clumps (a hundred and more pieces,
+    // never a file of balls), within its share of the budget, and 0.15 or more off the top floor's
+    // glass and under the slab over it.
+    const planting = named('sde4-planting'),
+      grown = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(A.x + x0, A.y + y0, A.z + z0), new T.Vector3(A.x + x1, A.y + y1, A.z + z1)).expandByScalar(0.15),
+      p3 = SDE4.plates[2],
+      [, , [l2, l2top]] = SDE4.storeys,
+      near = [grown(SDE4.west, l2, g2.back, g2.east, l2top, g2.front), grown(SDE4.west, p3.y0, p3.back, p3.east, p3.y1, p3.front)],
+      q = planting.geometry.attributes.position,
+      m4 = toIsland.clone().multiply(planting.matrixWorld),
+      leaves = pieces(planting).length,
+      plantingTris = (planting.geometry.index?.count ?? q.count) / 3;
+    assert(planting.material.userData.surfaceKind === 'foliage' && leaves >= 100 && plantingTris <= 9000, `SDE4's planting is ${leaves} pieces and ${plantingTris} triangles.`);
+    for (let i = 0; i < q.count; i++) assert(!near.some((b) => b.containsPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4))), `SDE4's planting crowds the top floor's glass or its slab at ${fmt(v)}.`);
+  }
+  // Its anchors.
+  {
+    const V = SDE4.veranda,
+      d = out.desk,
+      C = SDE4.columns,
+      planters = parts.filter((m) => m.name === 'sde4-planter').map((m) => new T.Box3().setFromObject(m).applyMatrix4(toIsland)).filter((b) => b.max.y < A.y + 0.6),
+      glassEast = A.x + SDE4.glass[0].east;
+    assert(d.x > A.x + V.x0 + 0.8 && d.x < A.x + V.x1 - 0.8 && d.z > A.z + V.z0 + 0.8 && d.z < A.z + V.z1 - 0.8 && Math.abs(d.y - A.y) < 1e-9 && d.heading === 0 && d.x - glassEast >= 1, `The desk at ${d.x.toFixed(2)}, ${d.z.toFixed(2)} is not on the veranda's deck, facing south.`);
+    for (const x of C.x) for (const s of [-1, 1]) assert(Math.hypot(d.x - (A.x + x), d.z - (A.z + s * C.z)) >= 1.2, 'The desk stands by a column.');
+    assert(planters.length === 2 && planters.every((b) => b.distanceToPoint(new T.Vector3(d.x, b.min.y, d.z)) >= 0.8), 'The desk is crowded by the veranda\'s planters.');
+    const doors = parts.filter((m) => m.userData.window === SDE4_ENTRANCE),
+      front = doors.filter((m) => Math.abs(m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).z - out.entrance.z) < 1e-3);
+    assert(front.length >= 2 && Math.abs(front.reduce((s, m) => s + m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).x, 0) / front.length - out.entrance.x) < 0.05 && out.entrance.heading === 0, 'The entrance anchor is not at the lobby\'s doors.');
+    const cafe = out.cafe;
+    assert(cafe.z >= out.footprint.z1 + 0.8 && cafe.x >= A.x + B.x0 - 0.6 && cafe.x <= A.x + B.x1 + 0.6 && Math.abs(cafe.y - (A.y - SDE4.lift)) < 1e-9, `The café at ${cafe.x.toFixed(2)}, ${cafe.z.toFixed(2)} is not before the end block, off the podium.`);
+  }
+  // Batched, as the merge batches it (its contact shade from the lawn round the podium).
+  const { batch, windows } = createBatch(ctx);
+  batch(group, { place: 'tropic-island', floor: () => A.y - SDE4.lift });
+  const batched = meshesOf(group),
+    townPrograms = new Set();
+  city.traverse((o) => o.isMesh && townPrograms.add(o.material.customProgramCacheKey?.() ?? ''));
+  let tris = 0;
+  for (const m of batched) {
+    tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
+    assert(townPrograms.has(m.material.customProgramCacheKey()), `SDE4's ${m.material.name} batch brings a program of its own.`);
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent, `SDE4's ${m.material.name} batch is two-sided or transparent.`);
+    const s = patchedShader(m.material),
+      fv = varyings(s.fragmentShader);
+    assert(!s.fragmentShader.includes('discard'), `SDE4's ${m.material.name} batch cuts holes.`);
+    for (const name of varyings(s.vertexShader)) assert(!new RegExp('\\b' + name + '\\b').test(s.fragmentShader) || fv.has(name), `${m.material.name}: ${name} read but not declared`);
+  }
+  assert(batched.length <= 12 && tris <= 30000, `SDE4 costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
+  // (About three times its build at the limits' pace when this was written: 34 ms. Since its
+  // planting turned from clipped balls to leaves it takes 24 ms at that pace, and 51 ms in a run
+  // with the machine at a load of 30.)
+  inTime('SDE4\'s build', sde4Time, 100);
+  // Its night.
+  const own = windows.filter((p) => p.place === 'tropic-island'),
+    panes = parts.filter((m) => m.material.userData.surfaceKind === 'glass' && m.userData.window !== SDE4_RAILS),
+    groups = new Set(panes.map((m) => m.userData.windowGroup)),
+    level = (p, h) => windowLevel(p.light, windowClock(h)),
+    entrance = own.filter((p) => p.role === SDE4_ENTRANCE),
+    rooms = own.filter((p) => p.role === SDE4_WINDOWS),
+    rails = own.filter((p) => p.role === SDE4_RAILS);
+  assert(SDE4_WINDOWS === 'campus' && SDE4_ENTRANCE === 'entrance' && SDE4_RAILS === 'clear' && !groups.has(undefined), 'SDE4\'s panes are not each a light in its own role.');
+  assert(entrance.length === 1 && rooms.length === groups.size - 1 && rooms.length >= 30 && own.length === rooms.length + 1 + rails.length, `SDE4 has ${rooms.length} rooms, ${entrance.length} lobby lights and ${rails.length} balustrades for ${groups.size} lights.`);
+  for (const h of [20, 23, 2.5, 4, 5.4]) assert(level(entrance[0], h) > 0.5 && Math.round(entrance[0].light[1] * 255) <= 128, `SDE4's lobby is dark or cool at ${h}.`);
+  assert(rails.length >= 4 && rails.every((p) => [20, 23, 2.5].every((h) => level(p, h) === 0)), 'An SDE4 balustrade lights up.');
+  const evening = rooms.filter((p) => level(p, 20) > 0.1),
+    cool = evening.filter((p) => Math.round(p.light[1] * 255) === 255),
+    offs = evening.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255),
+    late = evening.filter((p) => level(p, 1.6) > 0.1);
+  assert(evening.length >= 0.6 * rooms.length && evening.length <= 0.9 * rooms.length && cool.length <= 0.25 * evening.length, `${evening.length} of SDE4's ${rooms.length} rooms are lit at 20:00, ${cool.length} of them cool.`);
+  assert(evening.every((p) => level(p, 22.4) > 0.1) && offs.every((b) => b >= Math.floor(0.11 * 255) && b <= Math.ceil(0.78 * 255)), 'An SDE4 room goes out before 22:30 or after 01:30.');
+  assert(offs.length >= 0.3 * evening.length && offs.length <= 0.7 * evening.length && new Set(offs).size === offs.length && late.length === evening.length - offs.length && late.every((p) => level(p, 5.4) > 0.1), `${offs.length} of SDE4's ${evening.length} lit rooms go out in the night, not about half one at a time.`);
+  console.log(`SDE4 checks passed: ${parts.length} parts inside its ${(out.footprint.x1 - out.footprint.x0).toFixed(1)} x ${(out.footprint.z1 - out.footprint.z0).toFixed(1)} footprint, ${(out.height - A.y).toFixed(2)} over its podium, batched into ${batched.length} meshes and ${Math.round(tris)} triangles, built in ${Math.round(sde4Time.paced)} ms at the limits' pace; ${evening.length} of its ${rooms.length} rooms lit at 20:00 and ${late.length} at 01:36, its lobby lit all night.`);
+}
 console.log(
   `Town checks passed: ${buildings.length} sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, the sky island off the north-west headland: ${skyReport}, and ${tropicReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
