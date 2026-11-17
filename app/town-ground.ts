@@ -237,6 +237,15 @@ export function addAirportShallows(texture: T.DataTexture) {
  */
 export const TROPIC_SHALLOWS = { strength: 1, width: 3, rocky: { strength: 0.6, width: 1.8 } };
 /**
+ * The tropic island's tide line wobbles as the town's does along its shore, two waves out and in:
+ * the town's (0.12 sin 1.7i + 0.08 sin 4.3i at its stations, i, 0.897 apart) are waves of 3.3 and,
+ * as its stations draw the second, 2.8 along the shore. Its own stations stand 0.661 apart, so by
+ * the station the same waves would come a quarter shorter and sharper; so they are counted along
+ * its waterline instead, `waves` whole waves the way round (74.0), so the line closes where it
+ * starts: 22 of 3.4 and 26 of 2.8 (the second's sign as the town's stations draw it).
+ */
+export const TROPIC_TIDE = { waves: [[0.12, 22], [-0.08, 26]] as [number, number][] };
+/**
  * Bake the tropic island's shallows into the masks' G, max-combined with what is there (the main
  * island's own ring reaches 7.5 off its coast, short of the island's), only inside the grid (never
  * its border rows or columns). It returns how to take them away and bring them back: show(false)
@@ -469,18 +478,30 @@ export function createGround(ctx: TownContext) {
     }
     // The tropic island (plan.TROPIC): its tide line and the faint band beyond it, as the town's own
     // shore has them, through its shore stations (plan.tropicBearings) at the same widths of the
-    // shore profile (plan.tropicShorePoint). Along its rocky stretches the surf breaks round the
-    // stones as the airport's does: its strength wanders, gone here and there for a short stretch.
+    // shore profile (plan.tropicShorePoint), wobbling as the town's tide line does along the shore
+    // (TROPIC_TIDE: by the way round, not by the station, whose stations stand closer). Along its
+    // rocky stretches the surf breaks round the stones as the airport's does: its strength wanders,
+    // gone here and there for a short stretch.
     // Its rows come last in the index, from `tropicFoam` on, so the island takes its own foam away
     // with it when it is hidden (town-tropic's setShown draws the foam only up to there).
     const tropicFoam = fi.length;
     {
       const stations = plan.tropicBearings,
-        m = stations.length;
+        m = stations.length,
+        tide = TROPIC_TIDE,
+        // How far round the waterline each station is (from the first), and the whole way round.
+        along = [0];
+      for (let j = 1; j <= m; j++) {
+        const [ax, az] = plan.tropicShorePoint(stations[j - 1], plan.TROPIC.beach),
+          [bx, bz] = plan.tropicShorePoint(stations[j % m], plan.TROPIC.beach);
+        along.push(along[j - 1] + Math.hypot(bx - ax, bz - az));
+      }
+      const round = along[m];
       foamBands.forEach((band, b) => {
         const start = fp.length / 3;
         stations.forEach((bearing, j) => {
-          const wobble = (0.12 * Math.sin(j * 1.7) + 0.08 * Math.sin(j * 4.3)) * band.wobble,
+          const u = (along[j] / round) * Math.PI * 2,
+            wobble = tide.waves.reduce((sum, [amplitude, waves]) => sum + amplitude * Math.sin(u * waves), 0) * band.wobble,
             rocky = plan.tropicRockiness(bearing),
             surf = noise2(j * 0.62 + 5.3 + b * 9.1, 2.3),
             alpha = band.alpha * (1 - rocky + rocky * T.MathUtils.smoothstep(surf, 0.18, 0.42) * (0.55 + 0.45 * surf));

@@ -5,44 +5,39 @@ import { palette, hash, noise2, WATER, type TownContext } from './town-shared';
 import { SHORE_PROFILE, addTropicShallows, shoreHeight } from './town-ground';
 import { boulder } from './town-sky-garden';
 import { chisel } from './town-sky';
-import { AIRPORT_LOOK } from './town-airport';
 import { RESIDENCE_LOOK } from './town-residence';
 
 /**
  * The tropic island's ground (plan.TROPIC; the island's own section of town-plan has its outline,
- * lawn, terrace, paths and shore): built in a group of its own, `tropicLand`, as the airport's is,
+ * lawn, terrace, walks and shore): built in a group of its own, `tropicLand`, as the airport's is,
  * never in the land's batch. Its colours, each no more saturated than its palette family: the
  * town's own two lawn greens (the main island's and the airport deck's), the residence's pale
- * concrete for the paths and the court's field with their flush kerbs a shade lighter, the court's
- * rings in the kerb's pale granite and the residence's grey granite round a dark granite drum (the
- * airport's rubble), and the granite of its rocks: the airport armour's greys warmed a step
- * (Singapore's granite reads warm grey), two of five dark.
+ * concrete for the walks with their flush kerbs a shade lighter, and the granite of its rocks: the
+ * airport armour's greys warmed a step (Singapore's granite reads warm grey), two of five dark. (The
+ * round plaza before the building's door is the garden's: town-tropic-garden.)
  */
 export const TROPIC_LOOK = {
   lawn: ['#98b74a', '#aac757'],
   paving: RESIDENCE_LOOK.paving,
   kerb: '#e3dac6',
-  court: [palette.kerb, RESIDENCE_LOOK.gravel],
-  drum: AIRPORT_LOOK.rubble,
-  drumRing: '#8f8e86',
   granite: ['#958f84', '#8b867d', '#9e978a', '#7d7871', '#706c66'],
 };
 /**
- * The round court's rings, out from its middle (plan.TROPIC_PLAZA): the dark granite drum's radius,
- * then each ring's outer radius and its stone (0 the kerb's pale granite, 1 the grey), every ring at
- * least 0.22 across, the outermost pale; then the flush kerb into the lawn, a shade lighter, out to
- * the court's edge. The court lies `rise` over the terrace (over the paths' ends, which it covers);
- * the drum stands `drum` over the court.
+ * How far apart the points along the island's walks stand (town-tropic's paths): `step`, and
+ * `fine` over the first `mouth` of the call walk, where it leaves the front walk, so its kerbs start
+ * within that of the front walk's edge.
  */
-export const TROPIC_COURT = { centre: 0.38, rings: [[0.7, 1], [1.02, 0], [1.34, 1], [1.62, 0]] as [number, number][], rise: 0.045, drum: 0.08, segments: 48 };
+const WALK_STEP = { step: 0.25, fine: 0.05, mouth: 0.9 };
 /**
  * The rocks on the shore (plan.TROPIC_ROCKY): clusters of the armour's chiselled boulders
  * (town-sky-garden's boulder, town-sky's chisel) along the rocky stretches, each placed by the
  * bearing it stands on and how far out on the shore profile its middle is (`at`: 0 the turf's
  * edge, plan.TROPIC.beach the waterline), with its stones' offsets in its own frame (t along the
- * shore, n out to sea), sizes (half sizes, unit-free: `size` scales them) and seeds; and two lone
- * boulders on the sand, as the town's own beach has. Each stone is sunk a third of its height,
- * damp-darkened below the waterline as the armour is, lighter where it faces the sky.
+ * shore, spread `spread` along it; n out to sea), sizes (half sizes, unit-free: `size` scales them)
+ * and seeds; between the north clusters, a low ledge each (`ledges`: one long flat stone, `ledge` its
+ * half sizes), so the north edge reads as one low outcrop broken into blocks, not piles on sand; and
+ * two lone boulders on the sand, as the town's own beach has. Each stone is sunk a third of its
+ * height, damp-darkened below the waterline as the armour is, lighter where it faces the sky.
  */
 export const TROPIC_ROCKS = {
   clusters: [
@@ -52,6 +47,13 @@ export const TROPIC_ROCKS = {
     { bearing: Math.PI + 0.62, at: 2.2, size: 0.85, seed: 29 },
     { bearing: -0.8, at: 2.2, size: 1.1, seed: 41 },
   ],
+  spread: 1.35,
+  ledges: [
+    { bearing: Math.PI - 0.5, at: 1.75, size: 1.05, seed: 71 },
+    { bearing: Math.PI - 0.05, at: 1.85, size: 1.15, seed: 79 },
+    { bearing: Math.PI + 0.4, at: 1.8, size: 1.0, seed: 83 },
+  ],
+  ledge: { half: [0.62, 0.17, 0.34] as [number, number, number], cuts: [[0, 1, 0.1, 0.62]] as [number, number, number, number][] },
   lone: [
     { bearing: 0.42, at: 1.3, size: 0.42, seed: 53 },
     { bearing: 1.95, at: 1.6, size: 0.36, seed: 61 },
@@ -65,27 +67,62 @@ export const TROPIC_ROCKS = {
   ] as { t: number; n: number; half: [number, number, number]; detail: number; cuts: [number, number, number, number][] }[],
 };
 /**
- * What of the tropic island can be on screen, as world points (decision 16's TROPIC_EXTENT): a ring
- * round its waterline as far out as anything of it reaches (`sea`: its beach's shelf under the
- * water, 4.31 past the waterline, and its shallows, 3; 32 points, so the ring's chords keep outside
- * it), once at the water's level (its shallows and its foam) and once at the shelf's floor
- * (`floor`, the shore profile's foot under the water, seen through it from a low camera); a ring 0.7
- * past the waterline 4.6 up (the crowns of its trees and palms, which lean out over the beach); and
- * its roof's four corners over the solar panels. Everything of the island, its foam and shallows
- * included, lies inside these points' hull, so their box on screen (as the scene measures the sky
- * island's: skyOnScreen) holds all of it from any side and pitch; a frame that box misses shows
- * nothing of it.
+ * How far the tropic island's two bounds reach, as rings of `points` round its waterline (32, so a
+ * ring's points span its ellipse's axes exactly):
+ * - TROPIC_EXTENT's: its waterline at the water's level, and over it a ring as high as any of its
+ *   crowns rise (`crown`: the rain trees' umbrellas and the palms' crowns, the palms leaning out over
+ *   the beach, every one inside the waterline);
+ * - TROPIC_SEEN's, on the sea round it as well: a ring `sea` past the waterline (its beach's shelf
+ *   under the water reaches 4.31 past it, its shallows 3, its foam less; the stones that stand in the
+ *   water a few tenths) at the water's level and again at the shelf's floor (`floor`, the shore
+ *   profile's foot, seen through the water from a low camera); and its crowns' ring `crowns` past the
+ *   waterline (a palm that leans further out than planned still stays inside it).
  */
-export const TROPIC_REACH = { sea: 4.6, floor: SHORE_PROFILE[SHORE_PROFILE.length - 1].height, crowns: 0.7, crown: 4.6, points: 32 };
-export const TROPIC_EXTENT: T.Vector3[] = (() => {
+export const TROPIC_REACH = { sea: 4.6, floor: SHORE_PROFILE[SHORE_PROFILE.length - 1].height, crown: 4.6, crowns: 0.7, points: 32 };
+/** The building's corners at its top, over its whole footprint (TROPIC_BUILDING: the podium's plan, the roof's 11 by 7.2 inside it). */
+const ROOF_CORNERS = (() => {
   const B = plan.TROPIC_BUILDING,
+    P = plan.TROPIC;
+  return [-1, 1].flatMap((sx) => [-1, 1].map((sz) => new T.Vector3(P.x + B.x + sx * B.hw, B.top, P.z + B.z + sz * B.hd)));
+})();
+/**
+ * The tropic island as the camera frames it (decision 16's TROPIC_EXTENT), world points: its outline
+ * at the water (its waterline, the sand ellipse with its beach: x 6.5 to 32.5, z 40.5 to 61.5, as the
+ * corners of a polygon round it whose sides touch it, so the polygon spans exactly that and nothing
+ * of the waterline lies outside it, its corners at most 0.07 out), the tops of its trees (that ring
+ * again, TROPIC_REACH.crown up) and of its building (its corners at its top, 7.85 up). Everything of
+ * the island that stands on it, at or over the water and inside its waterline, lies inside these
+ * points' hull, so their box on screen holds it from any side and pitch (check-town). What lies on
+ * the sea round it (its shelf under the water, its shallows, its foam, the feet of the stones that
+ * stand in the water) is not in it: that is TROPIC_SEEN's.
+ */
+export const TROPIC_EXTENT: T.Vector3[] = (() => {
+  const R = TROPIC_REACH,
     P = plan.TROPIC,
-    R = TROPIC_REACH;
+    out = 1 / Math.cos(Math.PI / R.points),
+    ring = Array.from({ length: R.points }, (_, k) => {
+      const u = ((k + 0.5) / R.points) * Math.PI * 2;
+      return { x: P.x + P.a * Math.cos(u) * out, z: P.z + P.b * Math.sin(u) * out };
+    });
+  return [...ring.map((p) => new T.Vector3(p.x, WATER, p.z)), ...ring.map((p) => new T.Vector3(p.x, R.crown, p.z)), ...ROOF_CORNERS.map((p) => p.clone())];
+})();
+/**
+ * Everything of the tropic island that can show on screen, world points: TROPIC_EXTENT, and the sea
+ * round it that goes and comes with it (TROPIC_REACH: rings past its waterline at the water's level
+ * and at its shelf's floor, and its crowns' ring past it). Everything of the island, its shelf, foam
+ * and shallows included, lies inside these points' hull, so their box on screen (as the scene
+ * measures the sky island's: skyOnScreen) holds all of it from any side and pitch (check-town): a
+ * frame that box misses shows nothing of it. The scene's rule for when the island may go measures
+ * this (decision 4: never taken away while any of it is in view); its framings use TROPIC_EXTENT.
+ */
+export const TROPIC_SEEN: T.Vector3[] = (() => {
+  const R = TROPIC_REACH,
+    sea = plan.tropicOutline(R.sea, R.points);
   return [
-    ...plan.tropicOutline(R.sea, R.points).map((p) => new T.Vector3(p.x, WATER, p.z)),
-    ...plan.tropicOutline(R.sea, R.points).map((p) => new T.Vector3(p.x, R.floor, p.z)),
+    ...TROPIC_EXTENT.map((p) => p.clone()),
+    ...sea.map((p) => new T.Vector3(p.x, WATER, p.z)),
+    ...sea.map((p) => new T.Vector3(p.x, R.floor, p.z)),
     ...plan.tropicOutline(R.crowns, R.points).map((p) => new T.Vector3(p.x, R.crown, p.z)),
-    ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => new T.Vector3(P.x + B.x + sx * B.hw, B.top, P.z + B.z + sz * B.hd))),
   ];
 })();
 /**
@@ -104,7 +141,7 @@ export type TropicIsland = {
   /**
    * Every group setShown takes: its ground first, then each one joined (its building's model root,
    * and after the merge its garden and its figure). check-town holds them together to the island's
-   * caps and inside TROPIC_EXTENT.
+   * caps, inside TROPIC_SEEN, and what of them stands on the island inside TROPIC_EXTENT.
    */
   groups: () => readonly T.Object3D[];
   setShown: (shown: boolean) => void;
@@ -127,22 +164,22 @@ export function createTropicIsland(ctx: TownContext) {
     g.add(m);
     return m;
   }
-  /** The lawn's own normal at a world point (plan.tropicTop's), so the lawn, the paths and the court shade as one ground. */
+  /** The lawn's own normal at a world point (plan.tropicTop's), so the lawn and the walks shade as one ground. */
   function lawnNormal(x: number, z: number) {
     const e = 0.05;
     return new T.Vector3(plan.tropicTop(x - e, z) - plan.tropicTop(x + e, z), 2 * e, plan.tropicTop(x, z - e) - plan.tropicTop(x, z + e)).normalize();
   }
   /**
-   * A flat surface laid on the lawn `lift` over it, from triangles in world x, z (any winding: each
-   * is turned to face up), each one flat colour; every vertex stands on the lawn and takes its
-   * normal.
+   * A flat surface laid on the lawn, from triangles in world x, z (any winding: each is turned to
+   * face up), each one flat colour and `lift` over the lawn; every vertex stands on the lawn and takes
+   * its normal.
    */
-  function draped(lift: number) {
+  function draped() {
     const pos: number[] = [],
       nor: number[] = [],
       col: number[] = [];
     return {
-      triangle(a: plan.XZ, b: plan.XZ, c: plan.XZ, tone: T.Color) {
+      triangle(a: plan.XZ, b: plan.XZ, c: plan.XZ, tone: T.Color, lift: number) {
         const turn = (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]);
         if (Math.abs(turn) < 1e-9) return;
         for (const [x, z] of turn > 0 ? [a, b, c] : [a, c, b]) {
@@ -259,30 +296,55 @@ export function createTropicIsland(ctx: TownContext) {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Paths and the court                                               */
+  /* The walks                                                         */
   /* ---------------------------------------------------------------- */
   /**
-   * The two paths (plan.TROPIC_PATHS), laid on the lawn: pale concrete with a flush kerb a shade
-   * lighter along both edges and round both ends, each band its own flat colour (the kerb is
-   * geometry, never a line). Plain stone, no joints drawn: the town's paving draws its flags
-   * square to the world, and they would cross a curving path at a slant.
+   * The three walks (plan.TROPIC_PATHS, along their lines, plan.TROPIC_PATH_LINES), laid on the lawn:
+   * pale concrete with a flush kerb a shade lighter along both edges, each band its own flat colour
+   * (the kerb is geometry, never a line). Plain stone, no joints drawn: the town's paving draws its
+   * flags square to the world, and they would cross a curving walk at a slant. The south and front
+   * walks start at the plaza's rim, their first edge fitted to it (the garden's paving covers the
+   * plaza); the call walk starts on the front walk's middle line, a hair over it and all paving
+   * where it lies on it, so the front walk's kerb is gone across its mouth and its own kerbs start at
+   * the front walk's edge. Each walk's far end is round. Points along a walk stand WALK_STEP apart.
    */
   function paths(g: T.Object3D) {
     const W = plan.TROPIC_PATHS,
+      Q = plan.TROPIC_PLAZA,
+      [qx, qz] = [P.x + Q.x, P.z + Q.z],
       half = W.width / 2,
       inner = half - W.kerb,
       pave = new T.Color(L.paving),
       kerb = new T.Color(L.kerb),
-      surface = draped(W.lift);
-    const along = (points: plan.XZ[]): plan.XZ[] => {
-      const curve = new T.CatmullRomCurve3(points.map(([x, z]) => new T.Vector3(P.x + x, 0, P.z + z)), false, 'centripetal');
-      return curve.getSpacedPoints(Math.ceil(curve.getLength() / 0.25)).map((v): plan.XZ => [v.x, v.z]);
+      surface = draped();
+    /** Points along a fine line at the distances from its start that `at` lists (its length given), its end last. */
+    const resample = (line: plan.XZ[], at: (length: number) => number[]): plan.XZ[] => {
+      const lengths = [0];
+      for (let i = 1; i < line.length; i++) lengths.push(lengths[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
+      let i = 0;
+      return at(lengths[lengths.length - 1]).map((d): plan.XZ => {
+        while (i + 2 < lengths.length && lengths[i + 1] < d) i++;
+        const f = Math.min(1, Math.max(0, (d - lengths[i]) / (lengths[i + 1] - lengths[i] || 1)));
+        return [line[i][0] + (line[i + 1][0] - line[i][0]) * f, line[i][1] + (line[i + 1][1] - line[i][1]) * f];
+      });
     };
-    const quad = (a: plan.XZ, b: plan.XZ, c: plan.XZ, d: plan.XZ, tone: T.Color) => {
-      surface.triangle(a, b, c, tone);
-      surface.triangle(a, c, d, tone);
+    /** Distances `step` apart (evenly, to the end), `fine` apart up to `from` first. */
+    const spaced = (from: number, fine: number) => (length: number) => {
+      const out: number[] = [];
+      for (let d = 0; d < from - 1e-9; d += fine) out.push(d);
+      const n = Math.max(1, Math.ceil((length - from) / WALK_STEP.step));
+      for (let k = 0; k <= n; k++) out.push(from + ((length - from) * k) / n);
+      return out;
     };
-    const ribbon = (line: plan.XZ[]) => {
+    const quad = (a: plan.XZ, b: plan.XZ, c: plan.XZ, d: plan.XZ, tone: T.Color, lift: number) => {
+      surface.triangle(a, b, c, tone, lift);
+      surface.triangle(a, c, d, tone, lift);
+    };
+    /**
+     * One walk along `line`, `lift` over the lawn: its first edge fitted to the plaza's rim (`rim`) or
+     * cut square; its kerbs painted as paving wherever they lie on another walk (`on`).
+     */
+    const ribbon = (line: plan.XZ[], lift: number, rim: boolean, on?: (x: number, z: number) => boolean) => {
       /** The line's unit direction at point i. */
       const dir = (i: number): plan.XZ => {
         const a = line[Math.max(0, i - 1)],
@@ -290,123 +352,55 @@ export function createTropicIsland(ctx: TownContext) {
           l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
         return [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
       };
-      /** Point i moved `o` across the line (to its right, looking along it). */
+      /** Point i moved `o` across the line (to its right, looking along it); at the start of a walk from the plaza, slid along it onto the rim. */
       const across = (i: number, o: number): plan.XZ => {
-        const [dx, dz] = dir(i);
-        return [line[i][0] - dz * o, line[i][1] + dx * o];
-      };
-      for (let i = 0; i + 1 < line.length; i++) {
-        quad(across(i, -half), across(i, -inner), across(i + 1, -inner), across(i + 1, -half), kerb);
-        quad(across(i, -inner), across(i, inner), across(i + 1, inner), across(i + 1, -inner), pave);
-        quad(across(i, inner), across(i, half), across(i + 1, half), across(i + 1, inner), kerb);
-      }
-      // Round ends: half a disc of concrete beyond each end, its kerb round it.
-      for (const [i, away] of [[0, -1], [line.length - 1, 1]] as const) {
         const [dx, dz] = dir(i),
-          [cx, cz] = line[i],
-          steps = 8,
-          arc = (k: number, r: number): plan.XZ => {
-            const a = -Math.PI / 2 + (k / steps) * Math.PI,
-              u = Math.cos(a) * away,
-              v = Math.sin(a);
-            return [cx + (dx * u - dz * v) * r, cz + (dz * u + dx * v) * r];
-          };
-        for (let k = 0; k < steps; k++) {
-          surface.triangle([cx, cz], arc(k, inner), arc(k + 1, inner), pave);
-          quad(arc(k, inner), arc(k, half), arc(k + 1, half), arc(k + 1, inner), kerb);
+          x = line[i][0] - dz * o,
+          z = line[i][1] + dx * o;
+        if (i || !rim) return [x, z];
+        // |p + t d - c| = r, the root nearest nought (the middle of the edge is on the rim already).
+        const px = x - qx,
+          pz = z - qz,
+          b = px * dx + pz * dz,
+          t = -b + Math.sqrt(Math.max(0, b * b - (px * px + pz * pz - Q.r * Q.r)));
+        return [x + dx * t, z + dz * t];
+      };
+      const bands: [number, number, T.Color][] = [
+        [-half, -inner, kerb],
+        [-inner, inner, pave],
+        [inner, half, kerb],
+      ];
+      for (let i = 0; i + 1 < line.length; i++)
+        for (const [o0, o1, tone] of bands) {
+          const a = across(i, o0),
+            b = across(i, o1),
+            c = across(i + 1, o1),
+            d = across(i + 1, o0),
+            lying = on?.((a[0] + b[0] + c[0] + d[0]) / 4, (a[1] + b[1] + c[1] + d[1]) / 4);
+          quad(a, b, c, d, lying ? pave : tone, lift);
         }
+      // Its far end round: half a disc of concrete beyond it, its kerb round it.
+      const last = line.length - 1,
+        [dx, dz] = dir(last),
+        [cx, cz] = line[last],
+        steps = 8,
+        arc = (k: number, r: number): plan.XZ => {
+          const a = -Math.PI / 2 + (k / steps) * Math.PI,
+            u = Math.cos(a),
+            v = Math.sin(a);
+          return [cx + (dx * u - dz * v) * r, cz + (dz * u + dx * v) * r];
+        };
+      for (let k = 0; k < steps; k++) {
+        surface.triangle([cx, cz], arc(k, inner), arc(k + 1, inner), pave, lift);
+        quad(arc(k, inner), arc(k, half), arc(k + 1, half), arc(k + 1, inner), kerb, lift);
       }
     };
-    ribbon(along(W.south));
-    ribbon(along(W.front));
+    const lines = plan.TROPIC_PATH_LINES,
+      even = spaced(0, WALK_STEP.step);
+    ribbon(resample(lines.south, even), W.lift, true);
+    ribbon(resample(lines.front, even), W.lift, true);
+    ribbon(resample(lines.call, spaced(WALK_STEP.mouth, WALK_STEP.fine)), W.branch, false, (x, z) => plan.tropicWalkInside('front', x, z) > 0);
     solid(g, surface.geometry(), '#ffffff', 'stone', { shadow: false, ground: true, name: 'tropic-paths' });
-  }
-  /**
-   * The round court before the entrance (plan.TROPIC_PLAZA, the photo's circular paving): on the
-   * level terrace, its rings of pale and grey granite as flat geometry (TROPIC_COURT), the flush
-   * kerb round them and a short skirt down into the terrace, so its edge never shows a gap; at its
-   * middle a low drum of dark granite with a paler ring round its top. No water, nothing lit.
-   */
-  function court(g: T.Object3D) {
-    const C = TROPIC_COURT,
-      Q = plan.TROPIC_PLAZA,
-      cx = P.x + Q.x,
-      cz = P.z + Q.z,
-      top = P.pad + C.rise,
-      tones = [...L.court.map((t) => new T.Color(t)), new T.Color(L.kerb)],
-      pos: number[] = [],
-      col: number[] = [],
-      n = C.segments,
-      at = (k: number, r: number, y: number) => [cx + Math.cos((k / n) * Math.PI * 2) * r, y, cz + Math.sin((k / n) * Math.PI * 2) * r];
-    const tri = (a: number[], b: number[], c: number[], tone: T.Color) => {
-      pos.push(...a, ...b, ...c);
-      for (let k = 0; k < 3; k++) col.push(tone.r, tone.g, tone.b);
-    };
-    const band = (r0: number, r1: number, tone: T.Color) => {
-      for (let k = 0; k < n; k++) {
-        const a = at(k, r0, top),
-          b = at(k + 1, r0, top),
-          c = at(k + 1, r1, top),
-          d = at(k, r1, top);
-        // The angle runs from +x toward +z (clockwise seen from above), so (a, b, c) faces up.
-        tri(a, b, c, tone);
-        tri(a, c, d, tone);
-      }
-    };
-    let r = C.centre;
-    for (const [outer, stone] of C.rings) {
-      band(r, outer, tones[stone]);
-      r = outer;
-    }
-    band(r, Q.r, tones[2]);
-    // The skirt: the kerb's outer face down into the terrace.
-    for (let k = 0; k < n; k++) {
-      const a = at(k, Q.r, top),
-        b = at(k + 1, Q.r, top),
-        c = at(k + 1, Q.r, P.pad - 0.06),
-        d = at(k, Q.r, P.pad - 0.06);
-      tri(a, b, c, tones[2]);
-      tri(a, c, d, tones[2]);
-    }
-    const geometry = new T.BufferGeometry();
-    geometry.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
-    geometry.computeVertexNormals();
-    solid(g, geometry, '#ffffff', 'stone', { shadow: false, ground: true, name: 'tropic-court' });
-    // The drum: dark granite turned from its profile (radius, height over the court), its top ring paler.
-    const dark = new T.Color(L.drum),
-      pale = new T.Color(L.drumRing),
-      profile: [number, number, T.Color][] = [
-        [C.centre, -0.02, dark],
-        [C.centre, C.drum - 0.02, dark],
-        [C.centre - 0.02, C.drum, pale],
-        [C.centre - 0.09, C.drum, pale],
-        [C.centre - 0.09, C.drum, dark],
-        [0, C.drum, dark],
-      ],
-      sides = 28,
-      dp: number[] = [],
-      dc: number[] = [];
-    for (let k = 0; k < sides; k++)
-      for (let j = 0; j + 1 < profile.length; j++) {
-        const [r0, y0, t0] = profile[j],
-          [r1, y1, t1] = profile[j + 1];
-        if (r0 === r1 && y0 === y1) continue;
-        const p = (rr: number, yy: number, kk: number) => [cx + Math.cos((kk / sides) * Math.PI * 2) * rr, top + yy, cz + Math.sin((kk / sides) * Math.PI * 2) * rr];
-        const quad = [p(r0, y0, k), p(r0, y0, k + 1), p(r1, y1, k + 1), p(r1, y1, k)],
-          tone = j === 2 ? pale : t0 === t1 ? t0 : dark;
-        // Outward and up: the profile runs from the foot up and in, so (a, d, c) and (a, c, b) face
-        // out; at the middle (r1 nought) only the second is a triangle.
-        for (const [a, b, c] of r1 > 0 ? [[quad[0], quad[3], quad[2]], [quad[0], quad[2], quad[1]]] : [[quad[0], quad[2], quad[1]]]) {
-          dp.push(...a, ...b, ...c);
-          for (let i = 0; i < 3; i++) dc.push(tone.r, tone.g, tone.b);
-        }
-      }
-    const drum = new T.BufferGeometry();
-    drum.setAttribute('position', new T.Float32BufferAttribute(dp, 3));
-    drum.setAttribute('color', new T.Float32BufferAttribute(dc, 3));
-    drum.computeVertexNormals();
-    solid(g, drum, '#ffffff', 'stone', { name: 'tropic-court-drum' });
   }
 
   /* ---------------------------------------------------------------- */
@@ -424,7 +418,8 @@ export function createTropicIsland(ctx: TownContext) {
       parts: T.BufferGeometry[] = [],
       c = new T.Color(),
       step = T.MathUtils.smoothstep;
-    const stone = (bearing: number, at: number, t: number, n: number, half: [number, number, number], detail: number, cuts: [number, number, number, number][], seed: number) => {
+    /** A stone (its turn about the upright random, or `along` the shore's line give or take a little). */
+    const stone = (bearing: number, at: number, t: number, n: number, half: [number, number, number], detail: number, cuts: [number, number, number, number][], seed: number, along = false) => {
       // The ray's frame at the stone: out to sea (n) and along the shore (t), clockwise seen from above.
       const ox = Math.sin(bearing),
         oz = Math.cos(bearing),
@@ -435,7 +430,7 @@ export function createTropicIsland(ctx: TownContext) {
         ground = width <= 0 ? plan.tropicTop(x, z) : shoreHeight(width),
         squash = new T.Vector3(...half),
         shape = chisel(boulder(seed, 0.45 + 0.25 * hash(seed * 1.7), detail), cuts),
-        turn = new T.Euler(0.22 * (hash(seed * 3.1) - 0.5), Math.atan2(ox, oz) + hash(seed * 5.7) * Math.PI * 2, 0.22 * (hash(seed * 7.9) - 0.5), 'YXZ'),
+        turn = new T.Euler(0.22 * (hash(seed * 3.1) - 0.5), Math.atan2(ox, oz) + (along ? 0.3 * (hash(seed * 5.7) - 0.5) : hash(seed * 5.7) * Math.PI * 2), 0.22 * (hash(seed * 7.9) - 0.5), 'YXZ'),
         plain = shape.applyMatrix4(new T.Matrix4().compose(new T.Vector3(x, ground + half[1] / 3, z), new T.Quaternion().setFromEuler(turn), squash)).toNonIndexed(),
         p = plain.getAttribute('position'),
         nrm = plain.getAttribute('normal'),
@@ -456,8 +451,9 @@ export function createTropicIsland(ctx: TownContext) {
         const seed = cl.seed * 13 + k * 7,
           mirror = hash(cl.seed * 2.9) < 0.5 ? -1 : 1,
           grow = 0.85 + 0.3 * hash(seed * 1.3);
-        stone(cl.bearing, cl.at, s.t * cl.size * mirror, s.n * cl.size, s.half.map((h) => h * cl.size * grow) as [number, number, number], s.detail, s.cuts, seed);
+        stone(cl.bearing, cl.at, s.t * cl.size * R.spread * mirror, s.n * cl.size, s.half.map((h) => h * cl.size * grow) as [number, number, number], s.detail, s.cuts, seed);
       });
+    for (const l of R.ledges) stone(l.bearing, l.at, 0, 0, R.ledge.half.map((h) => h * l.size) as [number, number, number], 1, R.ledge.cuts, l.seed, true);
     for (const b of R.lone) stone(b.bearing, b.at, 0, 0, [b.size * 1.35, b.size * 0.7, b.size * 1.05], 2, [], b.seed);
     const geometry = new T.BufferGeometry(),
       merged = parts.reduce((n, q) => n + q.getAttribute('position').count, 0),
@@ -482,8 +478,8 @@ export function createTropicIsland(ctx: TownContext) {
   /* The island                                                        */
   /* ---------------------------------------------------------------- */
   /**
-   * The island's ground into `land` (its own group, in world space): the lawn, the beach, the paths,
-   * the court and the rocks; then its shallows into the ground masks (`masks`, max-combined with the
+   * The island's ground into `land` (its own group, in world space): the lawn, the beach, the walks
+   * and the rocks; then its shallows into the ground masks (`masks`, max-combined with the
    * town's, town-ground's addTropicShallows), with its foam already in the town's foam mesh (`foam`,
    * its rows from userData.tropicFoam on). Returns the island (TropicIsland), shown.
    */
@@ -491,7 +487,6 @@ export function createTropicIsland(ctx: TownContext) {
     lawn(land);
     shore(land);
     paths(land);
-    court(land);
     rocks(land);
     const shallows = addTropicShallows(sea.masks),
       foamRows = sea.foam.userData.tropicFoam as number,

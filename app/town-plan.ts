@@ -302,7 +302,7 @@ export const SKY_VILLA = {
  * waterline where it is sand (the town's own shore profile, town-ground's SHORE_PROFILE, meets the
  * sea that far out) and `rocky` where its rocks stand (TROPIC_ROCKY). Its lawn is a gentle dome,
  * level with the turf's lip at its edge and `dome` over it in the middle; the building and the
- * round court before its door stand on a level terrace `pad` up (tropicTop).
+ * round plaza before its door stand on a level terrace `pad` up (tropicTop).
  */
 export const TROPIC = { x: 19.5, z: 51, a: 13, b: 10.5, beach: 2.89, rocky: 1.15, dome: 0.32, pad: 0.26 };
 /**
@@ -1716,9 +1716,10 @@ export function onTropic(x: number, z: number, margin = 0) {
 }
 /**
  * The level terrace the building stands on, in the island's own frame: its podium
- * (TROPIC_BUILDING) and the round court before its door (TROPIC_PLAZA), each grown by `grow`, at
- * TROPIC.pad; the lawn eases into it over `ease`. The court is paved in rings, at `r` (the photo's
- * circular paving, town-tropic's court), its north third under the roof's front edge.
+ * (TROPIC_BUILDING) and the round plaza before its door (TROPIC_PLAZA, `r` round its middle), each
+ * grown by `grow`, at TROPIC.pad; the lawn eases into it over `ease`. The land lays no paving on the
+ * plaza: the garden builds it (town-tropic-garden's plaza, the photo's circular paving, its north
+ * third under the roof's front edge), lying on this level ground, and the walks start at its rim.
  */
 export const TROPIC_PAD = { grow: 0.6, ease: 1.4 };
 export const TROPIC_PLAZA = { x: -2.1, z: 2.3, r: 1.7 };
@@ -1755,19 +1756,82 @@ export function tropicTop(x: number, z: number) {
   return dome + mound + (TROPIC.pad - dome - mound) * terrace;
 }
 /**
- * The tropic island's two paths, in its own frame: the south walk, from the court's south-east edge
- * in a long S over the south lawn to the east lawn, and the front walk, from the court's east edge
- * along the building's front to the foot of the veranda's ramp. Pale concrete `width` across with
- * round ends and a flush kerb `kerb` wide a shade lighter, `lift` over the lawn: centripetal
- * Catmull-Rom curves through the points (town-tropic's paths), their ends under the court's paving.
+ * The tropic island's walks (design 1.3), in its own frame, as centripetal Catmull-Rom curves
+ * through the points (town-tropic's paths draws them): pale concrete `width` across with a flush kerb
+ * `kerb` wide a shade lighter, `lift` over the lawn.
+ * - `south` (design's walk a): from the plaza's south-east rim in a long S, south and then west over
+ *   the south lawn, past the café's spot on its south side and round the mound's south-east foot,
+ *   toward the beach at the south-west point;
+ * - `front` (walk b): from the plaza's east rim along the building's front to the foot of the
+ *   veranda's ramp;
+ * - `call` (walk b's branch to the south-east lawn): it leaves the front walk at the front walk's own
+ *   second point, south-east, and turns onto the call stretch (`stretch`, its last 1.6: straight,
+ *   running east-west, between its last three points), where he paces on the phone. It lies `branch`
+ *   over the lawn, a hair over the front walk, so where it leaves it its paving lies on the front
+ *   walk's and its kerbs start at the front walk's edge.
+ * The walks that start at the plaza start at its rim (TROPIC_PLAZA.r), their first point inside it:
+ * the garden's paving covers the plaza. The others' ends are round.
  */
 export const TROPIC_PATHS = {
   width: 0.56,
   kerb: 0.08,
   lift: 0.03,
-  south: [[-1.75, 3.35], [-0.6, 5.0], [1.3, 5.5], [3.4, 5.1], [5.4, 4.3], [7.1, 3.7], [8.0, 3.4]] as XZ[],
-  front: [[-0.85, 2.55], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
+  branch: 0.036,
+  south: [[-1.25, 3.55], [-0.75, 4.75], [-1.35, 5.75], [-2.8, 6.15], [-4.2, 6.05], [-5.2, 6.6], [-5.6, 7.3]] as XZ[],
+  front: [[-0.6, 2.6], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
+  call: [[1.0, 2.75], [1.6, 3.55], [2.2, 4.6], [2.9, 5.3], [3.5, 5.3], [4.3, 5.3], [5.1, 5.3]] as XZ[],
+  stretch: [[3.5, 5.3], [5.1, 5.3]] as [XZ, XZ],
 };
+/**
+ * Each walk's middle line in the world, fine polylines (a few hundredths between points) through the
+ * same curves, from where it starts on the plaza's rim (the south and front walks; the call walk from
+ * its first point, on the front walk's line) to its end.
+ */
+export const TROPIC_PATH_LINES = (() => {
+  const Q = TROPIC_PLAZA,
+    line = (points: XZ[], fromRim: boolean) => {
+      const fine = Array.from({ length: 401 }, (_, k): XZ => {
+        const [x, z] = centripetal(points, k / 400);
+        return [TROPIC.x + x, TROPIC.z + z];
+      });
+      if (!fromRim) return fine;
+      const outside = (p: XZ) => Math.hypot(p[0] - TROPIC.x - Q.x, p[1] - TROPIC.z - Q.z) - Q.r,
+        k = fine.findIndex((p) => outside(p) >= 0),
+        [a, b] = [fine[k - 1], fine[k]],
+        f = -outside(a) / (outside(b) - outside(a));
+      return [[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f] as XZ, ...fine.slice(k)];
+    };
+  return { south: line(TROPIC_PATHS.south, true), front: line(TROPIC_PATHS.front, true), call: line(TROPIC_PATHS.call, false) };
+})();
+/**
+ * The ground drawn at a world point of the tropic island, what a figure stands on: the lawn
+ * (tropicTop), or a walk where it is on one (its lift over the lawn; the call walk's where it lies
+ * over the front walk), each step up eased over `ease` of the lawn outside the walk's edge, as on the
+ * sky island (skyFloor). A walk is cut square where it starts (at the plaza's rim, or on the front
+ * walk's line) and round where it ends, as drawn. (The plaza's paving and the building's podium, deck
+ * and ramp are their builders' own floors.)
+ */
+export const TROPIC_FLOOR = { ease: 0.15 };
+export function tropicFloor(x: number, z: number) {
+  const W = TROPIC_PATHS,
+    step = (inside: number) => {
+      const u = Math.min(1, Math.max(0, 1 + inside / TROPIC_FLOOR.ease));
+      return u * u * (3 - 2 * u);
+    },
+    walks = Math.max(tropicWalkInside('south', x, z), tropicWalkInside('front', x, z));
+  return tropicTop(x, z) + Math.max(W.lift * step(walks), W.branch * step(tropicWalkInside('call', x, z)));
+}
+/**
+ * How far a world point is inside one of the tropic island's walks (TROPIC_PATH_LINES), negative
+ * outside: cut square where the walk starts (nothing behind its first point counts), round where it
+ * ends, as town-tropic draws it.
+ */
+export function tropicWalkInside(walk: keyof typeof TROPIC_PATH_LINES, x: number, z: number) {
+  const line = TROPIC_PATH_LINES[walk],
+    [a, b] = line;
+  if ((x - a[0]) * (b[0] - a[0]) + (z - a[1]) * (b[1] - a[1]) < 0) return -Infinity;
+  return TROPIC_PATHS.width / 2 - polylineDistance(line, x, z);
+}
 
 /* ------------------------------------------------------------------ */
 /* Harbour                                                             */

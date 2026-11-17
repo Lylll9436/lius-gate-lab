@@ -33,7 +33,7 @@ export { palette } from './town-shared';
 export { treeLook, heatherLook } from './town-nature';
 export { MASK_EXTENT, MASK_SIZE, AIRPORT_SHALLOWS, addAirportShallows, buildGroundMasks } from './town-ground';
 export { BALLOON, followDrift } from './town-movers';
-export { TROPIC_EXTENT, type TropicIsland } from './town-tropic';
+export { TROPIC_EXTENT, TROPIC_SEEN, type TropicIsland } from './town-tropic';
 
 /**
  * The town itself: terrain, streets, ten buildings, trees, street furniture, the harbour, the
@@ -64,7 +64,7 @@ export { TROPIC_EXTENT, type TropicIsland } from './town-tropic';
  * - town-sky-garden.ts: the sky island's garden kit (its short falls and their cloud puffs, clouds,
  *   floating rocks, tea table, telescope, garden lamps and urns), which town-sky places;
  * - town-sky-villa.ts: the red-brick villa on the sky island (its shell, `sky.shell`);
- * - town-tropic.ts: the tropic island off the south shore (its lawn, beach, paths, court and rocks,
+ * - town-tropic.ts: the tropic island off the south shore (its lawn, beach, walks and rocks,
  *   in its own group, `tropicLand`, its shallows in the ground masks and its tide line in the
  *   shore's foam; setShown takes the whole island away and brings it back) and the stand-in for its
  *   building, a model (model 'tropic') whose root stands at the island's middle;
@@ -296,7 +296,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   yield 'sky ground';
   skyIsland.skyUnderside(sky.rock);
   yield 'sky rock';
-  // The tropic island's ground (its lawn, beach, paths, court and rocks), its shallows baked into the
+  // The tropic island's ground (its lawn, beach, walks and rocks), its shallows baked into the
   // masks' G as it is built (its tide line is in the shore's foam already); its building is a model,
   // built with the town's below and joined to it there.
   const tropic = tropicIsland.tropicGround(tropicLand, { foam, masks: groundMasks });

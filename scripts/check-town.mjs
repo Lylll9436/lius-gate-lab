@@ -1335,10 +1335,10 @@ for (const [x, z] of [
   ray.set(new T.Vector3(x, 1, z), new T.Vector3(0, -1, 0));
   assert.equal(ray.intersectObject(city, true)[0]?.object, water.mesh, 'Open sea expected at ' + x + ',' + z);
 }
-// The ground masks reach past the airport's island (town-shared's MASK_EXTENT) on the grid they
-// always had: the same 0.34375-unit texels on the same centres (the 256 over +-44, 48 more each
-// way), so the main island's masks read exactly as before, and the ground and the sea both read them
-// over that extent. In a phase of its own, a faint narrow ring of shallows round the airport's armour
+// The ground masks reach past the airport's island and the tropic island (town-shared's MASK_EXTENT)
+// on the grid they always had: the same 0.34375-unit texels on the same centres (the 256 over +-44,
+// 72 more each way: 48 for the airport's, 24 more for the tropic island's), so the main island's
+// masks read exactly as before, and the ground and the sea both read them over that extent. In a phase of its own, a faint narrow ring of shallows round the airport's armour
 // and down the causeway's flanks: a third or so of the island's full tint at the stones' toe (the sea
 // tints by G squared), all but gone 1.5 out and gone by 2.2; never on the grid's border (its clamped
 // edge would carry it out over the whole sea); and no mask shade on the airport's deck, forecourt or
@@ -9975,16 +9975,17 @@ let skyReport = '';
 // The tropic island (plan.TROPIC): a neighbour's island on the sea off the south shore, its ground
 // built and batched in a group and phases of its own (town-tropic), its building one of the town's
 // models with its root at the island's middle, its shallows in the ground masks and its tide line
-// in the shore's foam. Its spot and its shore's maths; its lawn, terrace, court, paths and rocks;
-// its groups, phases and budgets; its shallows and the grown masks; setShown, which takes all of it
-// away and brings it back exactly; TROPIC_EXTENT; the pointer; its building's slot and its night
-// lights; and its clearances from the town's shore and from everything that moves. (check-navigation
-// holds its framings; its building, garden and figure have their own checks.)
+// in the shore's foam. Its spot and its shore's maths; its lawn, terrace, walks and floor; its rocks;
+// its groups, phases and budgets; its shallows, its tide line and the grown masks; setShown, which
+// takes all of it away and brings it back exactly; TROPIC_EXTENT and TROPIC_SEEN; the pointer; its
+// building's slot and its night lights; and its clearances from the town's shore and from everything
+// that moves. (check-navigation holds its framings; its building, garden and figure have their own
+// checks.)
 let tropicReport = '';
 {
   const { WATER, MASK_EXTENT, MASK_SIZE, palette } = await load('town-shared'),
-    { SHORE_PROFILE, TROPIC_SHALLOWS } = await load('town-ground'),
-    { TROPIC_LOOK, TROPIC_EXTENT, TROPIC_COURT } = await load('town-tropic'),
+    { SHORE_PROFILE, TROPIC_SHALLOWS, TROPIC_TIDE } = await load('town-ground'),
+    { TROPIC_LOOK, TROPIC_EXTENT, TROPIC_SEEN, TROPIC_REACH } = await load('town-tropic'),
     { TROPIC_HIT } = await load('city-scene'),
     P = plan.TROPIC,
     B = plan.TROPIC_BUILDING,
@@ -10050,7 +10051,7 @@ let tropicReport = '';
     for (const s of plan.TROPIC_ROCKY) assert(Math.abs(plan.tropicBeach(s.bearing) - P.rocky) < 1e-9 && Math.abs(plan.tropicBeach(s.bearing + s.half + s.ease + 0.01) - P.beach) < 1e-9, 'A rocky stretch is not rocky, or does not ease back to the sand.');
   }
 
-  /* ---------------- the lawn, the terrace, the court and the paths ---------------- */
+  /* ---------------- the lawn, the terrace, the walks and the floor ---------------- */
   {
     // The lawn meets the beach at its lip: tropicTop is nought at the turf's edge and beyond it.
     for (const bearing of plan.tropicBearings) {
@@ -10058,8 +10059,9 @@ let tropicReport = '';
         [ox, oz] = plan.tropicShorePoint(bearing, 1.5);
       assert(Math.abs(plan.tropicTop(x, z)) < 1e-6 && plan.tropicTop(ox, oz) === 0, `The lawn does not meet the beach at its lip at bearing ${bearing.toFixed(2)}.`);
     }
-    // The terrace is level at TROPIC.pad over the podium and the court, and round them (grown by its own
-    // `grow`) wherever that is not yet drawn down to the turf's lip (the podium's back corners).
+    // The terrace is level at TROPIC.pad over the podium and the plaza (the garden's paving lies on it),
+    // and round them (grown by its own `grow`) wherever that is not yet drawn down to the turf's lip (the
+    // podium's back corners).
     const G = plan.TROPIC_PAD;
     for (let x = B.x - B.hw - G.grow; x <= B.x + B.hw + G.grow + 1e-9; x += 0.25)
       for (let z = B.z - B.hd - G.grow; z <= B.z + B.hd + G.grow + 1e-9; z += 0.25) {
@@ -10067,11 +10069,11 @@ let tropicReport = '';
         if (within || plan.tropicAt(P.x + x, P.z + z).lawn < 0.86) assert(Math.abs(plan.tropicTop(P.x + x, P.z + z) - P.pad) < 1e-9, `The terrace is not level under the building at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
       }
     for (let a = 0; a < Math.PI * 2; a += 0.2)
-      for (const r of [0, Q.r / 2, Q.r + G.grow]) assert(Math.abs(plan.tropicTop(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r) - P.pad) < 1e-9, 'The court\'s ground is not level.');
+      for (const r of [0, Q.r / 2, Q.r + G.grow]) assert(Math.abs(plan.tropicTop(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r) - P.pad) < 1e-9, 'The plaza\'s ground is not level.');
     // The podium stands well on the lawn, with turf behind it at its back corners (at most 0.88 of the
-    // way to the turf's edge, about 1.5 of lawn), the court too.
+    // way to the turf's edge, about 1.5 of lawn), the plaza too.
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) assert(plan.tropicAt(P.x + B.x + sx * B.hw, P.z + B.z + sz * B.hd).lawn <= 0.88, 'The building\'s podium stands at the lawn\'s edge.');
-    for (let a = 0; a < Math.PI * 2; a += 0.2) assert(plan.tropicAt(P.x + Q.x + Math.cos(a) * Q.r, P.z + Q.z + Math.sin(a) * Q.r).lawn <= 0.7, 'The court reaches the lawn\'s edge.');
+    for (let a = 0; a < Math.PI * 2; a += 0.2) assert(plan.tropicAt(P.x + Q.x + Math.cos(a) * Q.r, P.z + Q.z + Math.sin(a) * Q.r).lawn <= 0.7, 'The plaza reaches the lawn\'s edge.');
     // A gentle dome and one soft mound, nowhere steep: 1:5 at most on the mound (no one on it stands
     // visibly tilted) and 1:3 or so at most anywhere on the lawn (the terrace's bank behind the
     // building's back corners, where the lawn falls to its lip by the rocks, is the steepest: 0.31).
@@ -10091,20 +10093,69 @@ let tropicReport = '';
       }
     assert(mound <= 0.2 && steepest <= 0.32, `The tropic island's lawn is too steep (${steepest.toFixed(2)}; on its mound ${mound.toFixed(2)}).`);
     assert(crest <= P.dome + M.h + 1e-9 && crest < TROPIC_HIT.top - 0.03, `The lawn stands ${crest.toFixed(2)} high, over its dome and mound or its pointer slab.`);
-    // The court: rings each 0.22 across at least, the outermost pale, its kerb lighter, all at the
-    // court's level over the terrace; the paths on the lawn, their edges 0.4 in from the turf's edge,
-    // each starting under the court's paving (which lies over them).
-    const radii = [TROPIC_COURT.centre, ...TROPIC_COURT.rings.map(([r]) => r)];
-    for (let k = 1; k < radii.length; k++) assert(radii[k] - radii[k - 1] >= 0.22 - 1e-9, 'A ring of the court is narrower than 0.22.');
-    assert(TROPIC_COURT.rings.at(-1)[1] === 0 && Q.r - radii.at(-1) >= 0.07 && TROPIC_COURT.rise > W.lift, 'The court\'s outer ring is not pale with a kerb round it, or it lies under the paths.');
-    const curve = (points) => new T.CatmullRomCurve3(points.map(([x, z]) => new T.Vector3(P.x + x, 0, P.z + z)), false, 'centripetal');
-    for (const [name, points] of [['south', W.south], ['front', W.front]]) {
-      const c = curve(points),
-        line = c.getSpacedPoints(200);
-      for (const p of line)
+    // The walks (design 1.3): each on the lawn, its edges 0.4 in from the turf's edge or more. The south
+    // and front walks start on the plaza's rim and nothing of them lies inside it (the garden paves it);
+    // the call walk starts on the front walk's middle line and leaves it, and ends in its call stretch:
+    // its last 1.6, straight and running east-west, 1 in from the turf's lip or more (his stations' rule).
+    // The south walk keeps clear of the other two (no crossing but the call walk's mouth on the front
+    // walk), and passes round the mound's foot, outside it.
+    const L = plan.TROPIC_PATH_LINES,
+      half = W.width / 2,
+      plaza = ([x, z]) => Math.hypot(x - P.x - Q.x, z - P.z - Q.z),
+      distanceTo = (line, x, z) => plan.distanceToPolyline([x, z], line);
+    for (const [name, line] of Object.entries(L)) {
+      assert(line.length > 100, `The ${name} walk's line is coarse.`);
+      for (const [x, z] of line)
         for (let a = 0; a < Math.PI * 2; a += Math.PI / 6)
-          assert(plan.tropicAt(p.x + Math.cos(a) * (W.width / 2 + 0.4), p.z + Math.sin(a) * (W.width / 2 + 0.4)).lawn < 1, `The ${name} walk runs within 0.4 of the lawn's edge at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}.`);
-      assert(Math.hypot(line[0].x - P.x - Q.x, line[0].z - P.z - Q.z) < Q.r - W.width / 2, `The ${name} walk does not start under the court.`);
+          assert(plan.tropicAt(x + Math.cos(a) * (half + 0.4), z + Math.sin(a) * (half + 0.4)).lawn < 1, `The ${name} walk runs within 0.4 of the lawn's edge at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+    }
+    for (const name of ['south', 'front']) {
+      assert(Math.abs(plaza(L[name][0]) - Q.r) < 1e-6 && L[name].every((p) => plaza(p) >= Q.r - 1e-6), `The ${name} walk does not start on the plaza's rim, or runs into the plaza.`);
+      assert(plan.tropicWalkInside(name, P.x + Q.x, P.z + Q.z) === -Infinity, `The ${name} walk reaches into the plaza.`);
+    }
+    {
+      const [x0, z0] = L.call[0],
+        [sa, sb] = W.stretch.map(([x, z]) => [P.x + x, P.z + z]),
+        on = L.call.filter(([x]) => x >= sa[0] - 1e-9 && x <= sb[0] + 1e-9);
+      assert(distanceTo(L.front, x0, z0) < 0.01 && W.call[0].every((v, k) => v === W.front[1][k]), 'The call walk does not leave the front walk from its line.');
+      assert(L.call.some(([x, z]) => distanceTo(L.front, x, z) > W.width + 0.5), 'The call walk never leaves the front walk.');
+      assert(Math.abs(sb[0] - sa[0] - 1.6) < 1e-9 && sa[1] === sb[1] && on.length > 10 && on.every(([, z]) => Math.abs(z - sa[1]) < 0.005), 'The call stretch is not a straight 1.6 running east-west.');
+      assert(L.call.at(-1).every((v, k) => Math.abs(v - sb[k]) < 1e-9) && W.call.slice(-3).every(([, z]) => z === W.stretch[0][1]) && W.call.at(-4)[1] === W.stretch[0][1], 'The call walk does not end in its stretch.');
+      for (const [x, z] of [sa, sb])
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) assert(plan.tropicAt(x + Math.cos(a), z + Math.sin(a)).lawn < 1, 'The call stretch is within 1 of the turf\'s lip.');
+      let gap = Infinity;
+      for (const [x, z] of L.south) gap = Math.min(gap, distanceTo(L.front, x, z), distanceTo(L.call, x, z));
+      assert(gap >= W.width + 0.3, `The south walk comes within ${(gap - W.width).toFixed(2)} of the other walks.`);
+      const mound = Math.min(...L.south.map(([x, z]) => Math.hypot(x - P.x - M.x, z - P.z - M.z)));
+      assert(mound >= M.r - 0.4 && mound <= M.r + 1.2, `The south walk does not pass round the mound's foot (${mound.toFixed(2)} from its middle).`);
+    }
+    // tropicFloor, what the figure stands on: on a walk's middle line its lift over the lawn (the call
+    // walk's where it lies on the front walk), the lawn half a step off a walk's edge, and the lawn (the
+    // garden's paving's own floor aside) inside the plaza and the podium.
+    {
+      const lawnOnly = (x, z) => Math.abs(plan.tropicFloor(x, z) - plan.tropicTop(x, z)) < 1e-9;
+      for (const [name, line] of Object.entries(L))
+        for (let k = 2; k < line.length - 2; k += 7) {
+          const [x, z] = line[k],
+            // (Where the call walk lies on the front walk, its surface is the floor there, for both.)
+            under = name === 'call' ? plan.tropicWalkInside('front', x, z) > -0.2 : name === 'front' && plan.tropicWalkInside('call', x, z) > -0.2;
+          if (under) continue;
+          assert(Math.abs(plan.tropicFloor(x, z) - plan.tropicTop(x, z) - (name === 'call' ? W.branch : W.lift)) < 1e-9, `The floor on the ${name} walk at ${x.toFixed(2)}, ${z.toFixed(2)} is not its surface.`);
+          const [ax, az] = line[k - 1],
+            [bx, bz] = line[k + 1],
+            l = Math.hypot(bx - ax, bz - az),
+            nx = -(bz - az) / l,
+            nz = (bx - ax) / l;
+          for (const side of [-1, 1]) {
+            const ox = x + nx * side * (half + plan.TROPIC_FLOOR.ease + 0.02),
+              oz = z + nz * side * (half + plan.TROPIC_FLOOR.ease + 0.02);
+            if (Object.keys(L).every((other) => plan.tropicWalkInside(other, ox, oz) < -plan.TROPIC_FLOOR.ease)) assert(lawnOnly(ox, oz), `The floor beside the ${name} walk is not the lawn at ${ox.toFixed(2)}, ${oz.toFixed(2)}.`);
+          }
+        }
+      const [jx, jz] = L.call[Math.floor(L.call.length * 0.02)];
+      assert(Math.abs(plan.tropicFloor(jx, jz) - plan.tropicTop(jx, jz) - W.branch) < 1e-9, 'The floor where the call walk leaves the front walk is not the call walk\'s surface.');
+      for (let a = 0; a < Math.PI * 2; a += 0.3) for (const r of [0, 0.8, Q.r - 0.05]) assert(lawnOnly(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r), 'The floor in the plaza is a walk\'s.');
+      assert(lawnOnly(P.x + B.x, P.z + B.z), 'The floor under the building is a walk\'s.');
     }
   }
 
@@ -10114,18 +10165,21 @@ let tropicReport = '';
   assert.equal(phaseNames[phaseNames.indexOf('sky rock') + 1], 'tropic ground', 'The tropic island\'s ground is not built after the sky island\'s.');
   assert.equal(phaseNames[phaseNames.indexOf('batch sky') + 1], 'batch tropic', 'The tropic island is not batched right after the sky island.');
   assert.equal(phaseNames[phaseNames.indexOf('batch sky villa') + 1], 'batch tropic building', 'The tropic island\'s building is not batched after every other building.');
-  // Each held to its own limit (timed builds, above), set at the land lane (its ground and the
-  // building's stand-in: 16, 6 and 6 ms at the limits' pace under a load of 30 to 70) so that one five
-  // times slower fails; the island's building, garden and figure join these phases, and the limits
-  // are set again for what they cost then.
+  // Each held to its own limit (timed builds, above), set at the land lane for its ground and the
+  // building's stand-in, about three times what each takes at the limits' pace (19 to 25, 5 to 6 and 4
+  // to 5 ms, measured under loads of 10 to 50 on 15 cores: no quiet machine was to be had), so that
+  // one five times slower fails. The island's building, garden and figure join these phases at the
+  // merge: the limits are set again then, on a quiet machine (uptime first), for what they cost.
   const paced = ['tropic ground', 'batch tropic', 'batch tropic building'].map((name) => [name, phaseTimes.get(name)]);
-  for (const [name, limit] of [['tropic ground', 60], ['batch tropic', 25], ['batch tropic building', 25]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+  for (const [name, limit] of [['tropic ground', 60], ['batch tropic', 18], ['batch tropic building', 15]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   // Nothing of its ground in the land's batch (only its tide line, in the shore's foam).
   each(model.land, (p, o) => assert(o === foam || !plan.onTropic(p.x, p.z, 2), 'Something of the tropic island is in the land\'s batch.'));
-  // Its ground: at most four meshes (the lawn's grass, the beach's sand, and stone: the paths and the
-  // court, which cast nothing, and the rocks and the court's drum), every one batched with a surface
-  // kind, front-sided, opaque, cutting no holes; and the island as a whole (its ground, its building
-  // and whatever is joined to it: its garden and its figure) within 36 meshes and 90,000 triangles.
+  // Its ground: at most four meshes (the lawn's grass, the beach's sand, and stone: the walks, which
+  // cast nothing, and the rocks) and 9,500 triangles (decision 13: what the island's 90,000 leaves once
+  // its building, garden and figure have their caps, 30,000, 45,000 and 5,500), every one batched with
+  // a surface kind, front-sided, opaque, cutting no holes; and the island as a whole (its ground, its
+  // building and whatever is joined to it: its garden and its figure) within 36 meshes and 90,000
+  // triangles.
   let landMeshes = 0,
     landTriangles = 0;
   const kinds = new Set();
@@ -10139,7 +10193,7 @@ let tropicReport = '';
     assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} on the tropic island cuts holes.`);
     assert(o.receiveShadow, 'A mesh of the tropic island\'s ground takes no shadow.');
   });
-  assert(landMeshes <= 4 && landTriangles <= 10000 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
+  assert(landMeshes <= 4 && landTriangles <= 9500 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
   // (The island is every group setShown takes: its ground first, then its building's model root and
   // whatever else is joined to it, counted once each.)
   const parts = tropic.groups();
@@ -10154,15 +10208,13 @@ let tropicReport = '';
     });
   assert(islandMeshes <= 36 && islandTriangles <= 90000, `The tropic island costs ${islandMeshes} meshes and ${islandTriangles} triangles, over its caps.`);
   // Its colours, each no more saturated than its family: the lawn's the town's lawn greens, the
-  // concrete and its kerb the pavement's buff, the court's granite the kerb's, the rocks' greys
-  // the armour's warmed a step (no more saturated than the kerb's buff, all of them greys).
+  // concrete and its kerb the pavement's buff, the rocks' greys the armour's warmed a step (no more
+  // saturated than the kerb's buff, all of them greys).
   assert.deepEqual(TROPIC_LOOK.lawn, ['#98b74a', '#aac757']);
+  assert.deepEqual(Object.keys(TROPIC_LOOK), ['lawn', 'paving', 'kerb', 'granite'], 'The tropic island\'s ground has colours of the plaza\'s (the garden\'s own).');
   for (const [name, colour, family] of [
     ['paving', TROPIC_LOOK.paving, palette.pavement],
     ['kerb', TROPIC_LOOK.kerb, palette.pavement],
-    ...TROPIC_LOOK.court.map((c, k) => ['court ' + k, c, palette.kerb]),
-    ['drum', TROPIC_LOOK.drum, palette.kerb],
-    ['drum ring', TROPIC_LOOK.drumRing, palette.kerb],
     ...TROPIC_LOOK.granite.map((c, k) => ['granite ' + k, c, palette.kerb]),
   ])
     assert(hsv(colour).s <= hsv(family).s + 1e-9, `The tropic island's ${name} (${colour}) is more saturated than its family.`);
@@ -10229,6 +10281,36 @@ let tropicReport = '';
       }
   }
 
+  /* ---------------- its tide line ---------------- */
+  // Its tide line (the first of its two foam bands, the shore's rows from userData.tropicFoam on) lies
+  // on the shore profile's widths round its waterline and wobbles no sharper along it than the town's
+  // own tide line does along the town's shore (its 220 stations 0.897 apart, 0.5 of 0.12 sin 1.7i +
+  // 0.08 sin 4.3i): TROPIC_TIDE counts its waves the way round, a whole number of them, so the line
+  // closes where it starts with no step.
+  {
+    const fp = foam.geometry.attributes.position,
+      m = plan.TROPIC_SAMPLES,
+      first = fp.count - 2 * 2 * m,
+      width = [],
+      at = [];
+    for (let j = 0; j < m; j++) {
+      v.fromBufferAttribute(fp, first + 2 * j).applyMatrix4(foam.matrixWorld);
+      width.push(plan.tropicAt(v.x, v.z).shore);
+      at.push(plan.tropicShorePoint(plan.tropicBearings[j], P.beach));
+    }
+    let steepest = 0,
+      town = 0;
+    for (let j = 0; j < m; j++) {
+      const k = (j + 1) % m;
+      steepest = Math.max(steepest, Math.abs(width[k] - width[j]) / Math.hypot(at[k][0] - at[j][0], at[k][1] - at[j][1]));
+    }
+    const wobble = (i) => 0.5 * (0.12 * Math.sin(i * 1.7) + 0.08 * Math.sin(i * 4.3));
+    for (let i = 0; i < 220; i++) town = Math.max(town, Math.abs(wobble(i + 1) - wobble(i)) / 0.897);
+    assert(width.every((w) => w > 2.8 - 0.11 && w < 2.8 + 0.11), 'The tropic island\'s tide line is off the shore profile\'s widths.');
+    assert(TROPIC_TIDE.waves.every(([, n]) => Number.isInteger(n)) && steepest <= town * 1.05, `The tropic island's tide line wobbles ${steepest.toFixed(3)} a unit along its shore, the town's ${town.toFixed(3)}.`);
+    tropicReport += `, its tide line ${steepest.toFixed(2)} a unit at its steepest (the town's ${town.toFixed(2)})`;
+  }
+
   /* ---------------- setShown: all of it goes, and comes back exactly ---------------- */
   {
     const shownBytes = data.slice(),
@@ -10279,16 +10361,47 @@ let tropicReport = '';
     tropicReport += `, its shallows ${ring.length} texels (${gap.toFixed(1)} of deep water from the town's)`;
   }
 
-  /* ---------------- TROPIC_EXTENT bounds what of it can be on screen ---------------- */
-  // Every point of its ground (its shelf under the water too), its building and whatever is joined to
-  // it lies inside the ring the extent draws at the water's level and under its highest point; that
-  // ring holds its shallows too. And the box the scene measures on screen round the extent's points
-  // (as skyOnScreen does the sky island's) holds all of it, its tide line included, from every side
-  // and at every pitch from low to straight down: the camera projects orthographically, so a point's
-  // place on screen is its dot with the screen's right and up.
+  /* ---------------- TROPIC_EXTENT and TROPIC_SEEN: how it is framed, and what of it can be on screen ---------------- */
+  // TROPIC_EXTENT is decision 16's: the island's outline at the water (its waterline: x 6.5 to 32.5,
+  // z 40.5 to 61.5), a ring over it as high as its crowns rise, and its building's corners at its top;
+  // the camera frames the island by it. TROPIC_SEEN is that and the sea that goes and comes with the
+  // island (its shelf under the water, its shallows, its foam), which the scene's hide rule measures.
+  // Every point of the island (its groups, its shelf too) lies inside TROPIC_SEEN's ring at the water
+  // and under its highest point, and so do its shallows. Their boxes on screen (as the scene measures
+  // the sky island's: skyOnScreen) hold, from every side and at every pitch from low to straight down
+  // (the camera projects orthographically, so a point's place on screen is its dot with the screen's
+  // right and up): TROPIC_SEEN's all of the island, its tide line included; TROPIC_EXTENT's all of it
+  // that stands on the island (inside its waterline, at or over the water).
   {
-    const seen = [];
-    for (const g of parts) each(g, (p) => seen.push(p.x, p.y, p.z));
+    const R = TROPIC_REACH,
+      waterline = TROPIC_EXTENT.filter((p) => p.y === WATER),
+      crowns = TROPIC_EXTENT.filter((p) => p.y === R.crown),
+      roof = TROPIC_EXTENT.filter((p) => p.y === B.top),
+      span = (points) => new T.Box3().setFromPoints(points);
+    assert(waterline.length === R.points && crowns.length === R.points && roof.length === 4 && TROPIC_EXTENT.length === 2 * R.points + 4, 'TROPIC_EXTENT is not its waterline, its crowns\' ring and its building\'s corners.');
+    // Its rings are a polygon round the waterline whose sides touch it (each side's middle on it), so
+    // nothing of the waterline lies outside them; their corners stand 0.07 out at most.
+    for (const ring of [waterline, crowns])
+      ring.forEach((p, k) => {
+        const q = ring[(k + 1) % ring.length],
+          d = plan.tropicDistance(p.x, p.z);
+        assert(d > 0 && d < 0.07 && Math.abs(plan.tropicDistance((p.x + q.x) / 2, (p.z + q.z) / 2)) < 1e-3, 'TROPIC_EXTENT\'s rings are not round the waterline, touching it.');
+      });
+    const b = span(waterline);
+    assert(Math.abs(b.min.x - 6.5) < 1e-9 && Math.abs(b.max.x - 32.5) < 1e-9 && Math.abs(b.min.z - 40.5) < 1e-9 && Math.abs(b.max.z - 61.5) < 1e-9, `TROPIC_EXTENT at the water spans x ${b.min.x.toFixed(2)} to ${b.max.x.toFixed(2)}, z ${b.min.z.toFixed(2)} to ${b.max.z.toFixed(2)}, not the waterline's.`);
+    assert(TROPIC_EXTENT.every((e) => TROPIC_SEEN.some((p) => p.equals(e))), 'TROPIC_SEEN leaves out some of TROPIC_EXTENT.');
+    const seenFloor = TROPIC_SEEN.filter((p) => p.y === R.floor);
+    assert(seenFloor.length === R.points && seenFloor.every((p) => Math.abs(plan.tropicDistance(p.x, p.z) - R.sea) < 1e-3) && R.floor === SHORE_PROFILE.at(-1).height, 'TROPIC_SEEN does not reach the shelf\'s floor.');
+    assert(R.sea > SHORE_PROFILE.at(-1).width - P.beach && R.sea > TROPIC_SHALLOWS.width + 1, 'TROPIC_SEEN\'s ring at the water does not reach past the shelf and the shallows.');
+  }
+  {
+    const seen = [],
+      onIt = [];
+    for (const g of parts)
+      each(g, (p) => {
+        seen.push(p.x, p.y, p.z);
+        if (p.y >= WATER - 1e-6 && plan.tropicDistance(p.x, p.z) <= 0) onIt.push(p.x, p.y, p.z);
+      });
     {
       const fp = foam.geometry.attributes.position;
       for (let i = fp.count - 2 * 2 * plan.TROPIC_SAMPLES; i < fp.count; i++) {
@@ -10297,33 +10410,37 @@ let tropicReport = '';
         seen.push(v.x, v.y, v.z);
       }
     }
-    let missed = 0,
-      views = 0;
+    const missed = { seen: 0, extent: 0 };
+    let views = 0;
     for (let k = 0; k < 24; k++)
       for (const pitch of [0.4, 0.52, 0.744, 1.0, 1.35, Math.PI / 2]) {
         const b = (k * Math.PI) / 12,
           d = new T.Vector3(Math.sin(b) * Math.cos(pitch), Math.sin(pitch), Math.cos(b) * Math.cos(pitch)),
           right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
-          up = new T.Vector3().crossVectors(d, right),
-          box = [Infinity, -Infinity, Infinity, -Infinity];
-        for (const e of TROPIC_EXTENT) {
-          const x = e.dot(right),
-            y = e.dot(up);
-          box[0] = Math.min(box[0], x);
-          box[1] = Math.max(box[1], x);
-          box[2] = Math.min(box[2], y);
-          box[3] = Math.max(box[3], y);
-        }
-        for (let i = 0; i < seen.length; i += 3) {
-          const x = seen[i] * right.x + seen[i + 2] * right.z,
-            y = seen[i] * up.x + seen[i + 1] * up.y + seen[i + 2] * up.z;
-          if (x < box[0] - 1e-6 || x > box[1] + 1e-6 || y < box[2] - 1e-6 || y > box[3] + 1e-6) missed++;
+          up = new T.Vector3().crossVectors(d, right);
+        for (const [name, bound, points] of [['seen', TROPIC_SEEN, seen], ['extent', TROPIC_EXTENT, onIt]]) {
+          const box = [Infinity, -Infinity, Infinity, -Infinity];
+          for (const e of bound) {
+            const x = e.dot(right),
+              y = e.dot(up);
+            box[0] = Math.min(box[0], x);
+            box[1] = Math.max(box[1], x);
+            box[2] = Math.min(box[2], y);
+            box[3] = Math.max(box[3], y);
+          }
+          for (let i = 0; i < points.length; i += 3) {
+            const x = points[i] * right.x + points[i + 2] * right.z,
+              y = points[i] * up.x + points[i + 1] * up.y + points[i + 2] * up.z;
+            if (x < box[0] - 1e-6 || x > box[1] + 1e-6 || y < box[2] - 1e-6 || y > box[3] + 1e-6) missed[name]++;
+          }
         }
         views++;
       }
-    assert.equal(missed, 0, `TROPIC_EXTENT's box on screen misses ${missed} points of the tropic island over ${views} views.`);
-    const waterRing = TROPIC_EXTENT.filter((p) => p.y === WATER).map((p) => [p.x, p.z]),
-      top = Math.max(...TROPIC_EXTENT.map((p) => p.y)),
+    assert.equal(missed.seen, 0, `TROPIC_SEEN's box on screen misses ${missed.seen} points of the tropic island over ${views} views.`);
+    assert.equal(missed.extent, 0, `TROPIC_EXTENT's box on screen misses ${missed.extent} points of what stands on the tropic island over ${views} views.`);
+    assert(onIt.length > 1000, 'The check finds nothing standing on the tropic island.');
+    const waterRing = TROPIC_SEEN.filter((p) => p.y === WATER && plan.tropicDistance(p.x, p.z) > 1).map((p) => [p.x, p.z]),
+      top = Math.max(...TROPIC_SEEN.map((p) => p.y)),
       within = ([x, z]) => {
         let into = false;
         for (let i = 0, j = waterRing.length - 1; i < waterRing.length; j = i++) {
@@ -10340,16 +10457,16 @@ let tropicReport = '';
         if (!within([p.x, p.z])) outside++;
         highest = Math.max(highest, p.y);
       });
-    assert(waterRing.length >= 16 && outside === 0 && highest <= top, `TROPIC_EXTENT does not hold the tropic island (${outside} points outside it, its top ${highest.toFixed(2)} under ${top}).`);
+    assert(waterRing.length >= 16 && outside === 0 && highest <= top, `TROPIC_SEEN does not hold the tropic island (${outside} points outside it, its top ${highest.toFixed(2)} under ${top}).`);
     let shallows = 0;
     for (let j = 0; j < N; j++)
       for (let i = 0; i < N; i++) if (data[(j * N + i) * 4 + 1] > 0 && plan.tropicDistance(-MASK_EXTENT + (i + 0.5) * texel, -MASK_EXTENT + (j + 0.5) * texel) < 6 && !within([-MASK_EXTENT + (i + 0.5) * texel, -MASK_EXTENT + (j + 0.5) * texel])) shallows++;
-    assert.equal(shallows, 0, 'The tropic island\'s shallows reach out of TROPIC_EXTENT.');
+    assert.equal(shallows, 0, 'The tropic island\'s shallows reach out of TROPIC_SEEN.');
   }
 
   /* ---------------- the pointer ---------------- */
   // Its ground is the tropic island's: from the four Rotate stops and its file's bearing, a ray onto its
-  // lawn, its paths, its court or its beach finds it; the open sea 1.5 past its waterline does not.
+  // lawn, its walks or its beach finds it; the open sea 1.5 past its waterline does not.
   {
     let found = 0;
     for (const bearing of [...stops, file]) {
