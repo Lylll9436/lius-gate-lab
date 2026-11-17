@@ -7943,7 +7943,9 @@ let skyReport = '';
       };
     let least = Infinity;
     for (const [chapter, ids] of Object.entries(subjects)) {
-      if (chapter === 'sky-island' || chapter === 'tropic-island') continue;
+      // (The tropic island's building is checked like any chapter's subject once it is built: the camera
+      // lane's town builds no model for it.)
+      if (chapter === 'sky-island' || (chapter === 'tropic-island' && !models.has('tropic-island'))) continue;
       for (const drift of drifts) {
         const { flat } = axes(plan.chapterBearings[chapter] + drift),
           island = hullOf(shape.map(flat));
@@ -9969,5 +9971,5 @@ let skyReport = '';
   skyReport += `; its villa ${batched.length} meshes and ${Math.round(tris)} triangles, ${late.length} of its ${rooms.length} rooms still lit at 02:30`;
 }
 console.log(
-  `Town checks passed: 10 sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, and the sky island off the north-west headland: ${skyReport}), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
+  `Town checks passed: ${buildings.length} sites (8 on the island, the airport on its own island off the north shore, with its road, causeway, Departures Hall, hangar and a plane on its stand, the sky island off the north-west headland: ${skyReport}, and the tropic island off the south shore), ${districts.length} plan districts above the paving around their places, ${trees.length} trees off the streets, a boat that stays afloat, ${meshes} meshes / ${Math.round(triangles)} triangles built in ${Math.round(ms)} ms (or in ${phaseNames.length + 1} phases of at most ${Math.round(longestPhase)} ms), one shell per building with a fitted close-up, clickable buildings that answer for what the pointer is on, open sea, a lighthouse beam that stays over it, windows lit pane by pane that go out one at a time through the night, a balloon out over the shore, traffic signals in the UK sequence that the tram and the cyclist stop for at red and go on at green, trees that keep the season and a low golden-hour sun.`,
 );
