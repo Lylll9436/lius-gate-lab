@@ -561,17 +561,20 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
     return leaves;
   }
   /**
-   * Leaves spilling over a lip or a rail toward the bearing `toward`: `n` long lance blades from a
-   * foot at (x, y, z) inside the planting, spread a little either side of it, each leaning out
-   * over the edge and arching right over, its tip hanging down past it.
+   * Leaves spilling over a lip or a rail toward the bearing `toward`: `n` long lance blades (`size`
+   * long) from a foot at (x, y, z) inside the planting, spread a little either side of it, each
+   * leaning out about `lean` and arching right over by about `arch` more, so it clears the edge
+   * and its tip hangs down past it.
    */
-  function spill(x: number, y: number, z: number, toward: number, green: number, seed: number, n = 3, size = 0.55) {
+  function spill(x: number, y: number, z: number, toward: number, green: number, seed: number, o: { n?: number; size?: number; lean?: number; arch?: number } = {}) {
     const foot = new T.Vector3(x, y, z),
+      n = o.n ?? 3,
+      size = o.size ?? 0.55,
       leaves: T.BufferGeometry[] = [];
     for (let k = 0; k < n; k++) {
       const h = (i: number) => hash(seed * 3.1 + k * 2.9 + i * 0.41),
         bearing = toward + (n > 1 ? (k / (n - 1) - 0.5) * (n > 2 ? 1.3 : 0.65) : 0) + (h(1) - 0.5) * 0.2;
-      leaves.push(leaf(foot, bearing - Math.PI / 2, { length: size * (0.9 + 0.2 * h(2)), stalk: 0.06 * size, half: 0.06, lean: 0.85 + 0.1 * h(3), arch: 2.1 + 0.2 * h(4), flat: true, point: true }, BLADE[green], 4));
+      leaves.push(leaf(foot, bearing - Math.PI / 2, { length: size * (0.9 + 0.2 * h(2)), stalk: 0.06 * size, half: 0.06, lean: (o.lean ?? 0.85) + 0.08 * h(3), arch: (o.arch ?? 2.1) + 0.2 * h(4), flat: true, point: true }, BLADE[green], 4));
     }
     return leaves;
   }
@@ -936,7 +939,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         greenery.push(mass(Array.from({ length: 5 }, (_, k) => ({ clumps: [{ ...clump(x0 + 0.45 + k * 0.95 + (hash(k + 0.1) - 0.5) * 0.12, top + 0.02 + 0.04 * hash(k + 0.2), z0 + 0.15, 0.2 + 0.03 * hash(k + 0.3), 130 + k), florets: 10, long: 1.6, heading: 0 }], green: [1, 0, 1, 2, 1][k] })), top - 0.05, top + 0.3, 13));
         greenery.push(...bed(x0 + 0.08, x1 - 0.08, z0, z1, top, 13, { step: 0.58 }));
         fans.forEach((x, k) => greenery.push(...fan(x, top - 0.04, mid + 0.02, (hash(k * 3.7 + 1) - 0.5) * 0.5, 0.62, 4, 71 + k)));
-        for (const [x, k] of [[-1.6, 0], [0.7, 1]]) greenery.push(...spill(x, top - 0.02, z0 + 0.22, 0, k + 1, 150 + k));
+        for (const [x, k] of [[-1.6, 0], [0.7, 1]]) greenery.push(...spill(x, top - 0.02, z0 + 0.22, 0, k + 1, 150 + k, { size: 0.85, lean: 0.8, arch: 3.1 }));
       }
       {
         const x1 = p2.east - 0.115 - GAP,
@@ -971,7 +974,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       greenery.push(...rosette(4.52, PT - 0.03, 2.55, 0, 97, { n: 8, size: 0.52, half: 0.11, lean: 0.55, arch: 1.0 }));
       greenery.push(...rosette(4.8, PT - 0.03, 2.42, 1, 99, { n: 7, size: 0.56, half: 0.075, lean: 0.3, arch: 0.8, point: true }));
       greenery.push(...rosette(5.06, PT - 0.03, 2.52, 2, 96, { n: 8, size: 0.48, half: 0.11, lean: 0.45, arch: 1.0 }));
-      for (const [x, k] of [[4.42, 0], [5.17, 1]]) greenery.push(...spill(x, PT + 0.04, 2.62, 0, 1, 98 + k, 2, 0.5));
+      for (const [x, k] of [[4.42, 0], [5.17, 1]]) greenery.push(...spill(x, PT + 0.04, 2.62, 0, 1, 98 + k, { n: 2, size: 0.5 }));
     }
 
     parts(frame, white, L.paint, 'paint', { name: 'sde4-white' });
