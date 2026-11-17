@@ -112,7 +112,7 @@ function unitBall(detail: number) {
   return g;
 }
 /** Smooth 3D value noise in 0..1, for the clumps' gentle unevenness. */
-function noise3(x: number, y: number, z: number) {
+export function noise3(x: number, y: number, z: number) {
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z),
     u = sstep(x - ix, 0, 1), v = sstep(y - iy, 0, 1), w = sstep(z - iz, 0, 1),
     L = (i: number, j: number, k: number) => hash(i * 157.31 + j * 113.97 + k * 271.3);
@@ -122,7 +122,7 @@ function noise3(x: number, y: number, z: number) {
     w,
   );
 }
-type BuiltClump = { geo: T.BufferGeometry; lump: Float32Array; clump: Clump };
+export type BuiltClump = { geo: T.BufferGeometry; lump: Float32Array; clump: Clump };
 /**
  * One clump: an icosphere pushed out into `florets` soft domes (evenly spread on a seeded
  * sunflower spiral, joined by a soft maximum so shallow valleys part them, like the florets of a
@@ -290,7 +290,7 @@ export function mergeCrown(built: BuiltClump[], dy = 0) {
  * A trunk: rings at `rows` heights round a gentle bend (`bend(y)` gives the sideways offset), each
  * ring `radius(y, angle)` from its centre, joined into one smooth open tube.
  */
-function trunkTube(rows: number[], radial: number, radius: (y: number, a: number) => number, bend: (y: number) => [number, number]) {
+export function trunkTube(rows: number[], radial: number, radius: (y: number, a: number) => number, bend: (y: number) => [number, number]) {
   const position: number[] = [], index: number[] = [];
   rows.forEach((y) => {
     const [bx, bz] = bend(y);
@@ -329,9 +329,9 @@ function pine(t: T.Group, s: number, index: number, add: (g: T.BufferGeometry, k
   return t;
 }
 type AddPart = (g: T.BufferGeometry, k: SurfaceKind) => void;
-type Look = { tones: string[]; top: string; under: string };
+export type Look = { tones: string[]; top: string; under: string };
 /** A slim open tube from a to b (radius ra at a, rb at b), painted from `colour` at a to `colour` × fade at b. */
-function limb(a: T.Vector3, b: T.Vector3, ra: number, rb: number, radial: number, colour: string, fade: number) {
+export function limb(a: T.Vector3, b: T.Vector3, ra: number, rb: number, radial: number, colour: string, fade: number) {
   const d = b.clone().sub(a), g = new T.CylinderGeometry(rb, ra, d.length(), radial, 1, true);
   g.translate(0, d.length() / 2, 0);
   paintByHeight(g, colour, (y) => mix(1, fade, y / d.length()));

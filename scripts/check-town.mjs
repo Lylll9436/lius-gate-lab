@@ -5970,6 +5970,539 @@ function crossingEdges(X, Y) {
     for (const m of paleMeshes) assert.equal(m.material.color.getHex(), 0xffffff, 'The clouds are dimmed by day.');
   }
 }
+// The tropic island's garden kit (town-tropic-garden's createTropicGarden; nothing in the town calls it
+// yet), each piece built on its own with the check's own context, then the whole garden laid out in the
+// island's frame round the stand-ins it was planned on (TROPIC_LAND and tropicLawn, the land as lane
+// site's plan lays it; TROPIC_GARDEN.building, SDE4 as both SDE4 lanes build it, its roof's middle at
+// z -2.3; TROPIC_GARDEN.walks, Filip's day as lane figure lays it) and batched as the island will batch
+// it (one group, the lawn as its floor):
+// - every part has a surface kind; nothing is two-sided, transparent, cut out or glowing; its colours are
+//   on its vertices, in the kit's looks (TROPIC_GARDEN_LOOK, or the sky garden's for the shared table and
+//   chairs), none (nor any vertex) louder than its palette family; every joined piece of a solid is 0.07
+//   across or more every way, and no blade's keel is under 0.03; nothing moves, and nothing changes with
+//   the season (the island is evergreen);
+// - the rain trees: crowns much wider than they are tall (the umbrella), their tops at the stated height
+//   and their undersides level near it but in the bay toward the file; their hem one continuous edge
+//   (no notch where a lobe is missing; the bay draws in no deeper than its own depth); every limb's tip
+//   inside the canopy; the palms within their height and leaning out; the frangipani's flowers a
+//   mesh that casts nothing; the furniture at the town's seat and table heights and to Filip's measures
+//   (lane figure's: where his root sits at the desk and the café, the laptop square in front of him with
+//   its lid leaning back, nothing where his knees go, the saucer to his right), the bistro chairs' foot
+//   rings where seated soles rest; the props' frames as the figure lanes hold them;
+// - the budget: the whole garden in at most 10 meshes and 45,000 triangles once batched, on the solids'
+//   one program, its build and batch in time;
+// - the layout: no shrub left out for standing on SDE4; the trees, shrub beds and fans on the lawn,
+//   palms at the beach's edge, the café's table on SDE4's café anchor and its sitter a unit or more in
+//   from the turf's edge, the desk on the veranda clear of its planters; nothing of the planting or the
+//   furniture on the paths, the court, SDE4's footprint, mass or columns, no two crowns through one
+//   another, and the planting the walkers' clearance off Filip's walks and his call stretch;
+// - the lines of sight: from the island's file and its other three Rotate stops, no crown, trunk or
+//   piece of furniture hides Filip at any of his stations (where SDE4's own mass does not), and the
+//   garden leaves at least 70% of the glazed front in view at every stop that sees it;
+// - once the plan has the land's own constants (lane site's, at the merge), the stand-ins are the same.
+{
+  const TG = await load('town-tropic-garden'),
+    { createKit } = await load('town-kit'),
+    { createBatch } = await load('town-batch'),
+    { createCityMaterials } = await load('city-materials'),
+    { SKY_GARDEN_LOOK, SKY_GARDEN_FAMILY, TEA, FOOT_RING } = await load('town-sky-garden'),
+    { TROPIC_GARDEN_LOOK: LOOK, TROPIC_GARDEN_FAMILY: FAMILY, TROPIC_GARDEN: G, TROPIC_LAND: LAND, RAIN_TREE, RAIN_CROWN, PALM, DESK, LAPTOP, PHONE, CUP_AXIS, BISTRO_CHAIR, CAFE_TABLE, CAFE_SAUCER, SITTER, BLADES, tropicLawn, tropicLand } = TG;
+  const fresh = (season = 'summer') => {
+    const library = createCityMaterials(),
+      ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
+      kit = createKit(ctx);
+    return { ctx, garden: TG.createTropicGarden(ctx, kit), batch: createBatch(ctx).batch };
+  };
+  const meshesOf = (g) => {
+      const out = [];
+      g.traverse((o) => o.isMesh && out.push(o));
+      return out;
+    },
+    trisOf = (list) => list.reduce((n, m) => n + (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3, 0),
+    v = new T.Vector3(),
+    fmt = (p) => p.toArray().map((n) => n.toFixed(3)).join(', '),
+    sat = (c) => {
+      const max = Math.max(c.r, c.g, c.b);
+      return max ? (max - Math.min(c.r, c.g, c.b)) / max : 0;
+    },
+    srgb = (hex) => new T.Color(hex).convertLinearToSRGB(),
+    lookOf = (name) => LOOK[name] ?? SKY_GARDEN_LOOK[name],
+    familyOf = (name) => FAMILY[name] ?? SKY_GARDEN_FAMILY[name];
+  /** Each run of joined faces in a mesh (faces sharing a corner): its box in the world and its faces. */
+  const pieces = (m) => {
+    const q = m.geometry.attributes.position,
+      index = m.geometry.index,
+      key = (i) => [q.getX(i), q.getY(i), q.getZ(i)].map((n) => n.toFixed(4)).join(','),
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k))),
+      corner = (t, j) => (index ? index.getX(t * 3 + j) : t * 3 + j),
+      faces = (index ? index.count : q.count) / 3;
+    for (let i = 0; i < q.count; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let t = 0; t < faces; t++) for (const j of [1, 2]) parent.set(find(key(corner(t, j))), find(key(corner(t, 0))));
+    const out = new Map();
+    for (let t = 0; t < faces; t++) {
+      const r = find(key(corner(t, 0)));
+      if (!out.has(r)) out.set(r, { box: new T.Box3(), faces: 0 });
+      const piece = out.get(r);
+      piece.faces++;
+      for (const j of [0, 1, 2]) piece.box.expandByPoint(v.fromBufferAttribute(q, corner(t, j)).applyMatrix4(m.matrixWorld));
+    }
+    return [...out.values()];
+  };
+  /** Every vertex of a mesh, in the frame of `frame` (the world without one). */
+  const each = (m, visit, frame) => {
+    const q = m.geometry.attributes.position,
+      m4 = frame ? frame.matrixWorld.clone().invert().multiply(m.matrixWorld) : m.matrixWorld;
+    for (let i = 0; i < q.count; i++) visit(v.fromBufferAttribute(q, i).applyMatrix4(m4), i);
+  };
+  const byName = (g, name) => meshesOf(g).find((m) => m.name === name);
+
+  // The kit's colours, each within its palette family.
+  for (const [name, colour] of Object.entries(LOOK)) {
+    assert(/^#[0-9a-f]{6}$/.test(colour) && FAMILY[name], `The tropic garden's ${name} is not a colour with a family.`);
+    assert(sat(srgb(colour)) <= sat(srgb(FAMILY[name])) + 1e-3, `The tropic garden's ${name} (${colour}) is louder than its family (${FAMILY[name]}).`);
+  }
+  assert(SKY_GARDEN_LOOK.oak === LOOK.oak && SKY_GARDEN_LOOK.bronze === LOOK.bronze && SKY_GARDEN_FAMILY.oak && SKY_GARDEN_FAMILY.bronze, 'The bistro furniture\'s oak and bronze differ between the two garden kits.');
+
+  // Each piece on its own.
+  const { ctx, garden } = fresh(),
+    built = {
+      rainBig: garden.rainTree({ size: 'big', seed: 3 }),
+      rainSmall: garden.rainTree({ size: 'small', seed: 5 }),
+      palm: garden.coconutPalm({ height: 3.6, lean: 0.27, seed: 1 }),
+      frangipani: garden.frangipani({ seed: 1 }),
+      plaza: garden.plaza(() => 0, { front: -1.6, top: 0.12 }),
+      cafe: garden.cafeSet(),
+      desk: garden.deskSet(),
+      laptop: garden.laptop(),
+      phone: garden.phone(),
+      cup: garden.cup(),
+      saucer: garden.saucer(),
+    };
+  {
+    const g = new T.Group();
+    g.add(new T.Mesh(garden.shrubGeometry({ r: 0.4, height: 0.6, seed: 1 }), ctx.material('#ffffff', 'foliage')));
+    g.add(new T.Mesh(garden.fanGeometry({ height: 1, seed: 1 }), ctx.material('#ffffff', 'foliage')));
+    g.add(new T.Mesh(garden.bedGeometry({ line: [[0, 0], [1.3, 0.2]], width: 0.62, height: 0.56, seed: 1, ground: () => 0 }), ctx.material('#ffffff', 'foliage')));
+    g.children.forEach((m, k) => {
+      m.userData.looks = k === 1 ? ['fan', 'fanLit', 'shrub', 'shrub2', 'shrubLit', 'shrubUnder'] : ['shrub', 'shrub2', 'shrubLit', 'shrubUnder'];
+      m.name = ['tropic-shrub', 'tropic-fan', 'tropic-bed'][k];
+    });
+    built.shrubs = g;
+  }
+  assert.equal(ctx.animated.length, 0, 'Something of the tropic garden moves.');
+  for (const [name, g] of Object.entries(built)) {
+    assert(g.isGroup && g.position.lengthSq() === 0 && g.rotation.y === 0, `The tropic ${name}'s own group is not left for whoever places it.`);
+    g.updateMatrixWorld(true);
+    const list = meshesOf(g);
+    assert(list.length > 0, `The tropic ${name} is empty.`);
+    for (const m of list) {
+      const kind = m.material.userData.surfaceKind,
+        what = `The tropic ${name}'s ${m.name || kind}`;
+      assert(kind, `${what} has no surface kind.`);
+      assert(m.material.side !== T.DoubleSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest && m.material.emissive.getHex() === 0, `${what} is two-sided, transparent, cut out or glows.`);
+      if (!m.userData.ground)
+        for (const piece of pieces(m)) {
+          const size = piece.box.getSize(new T.Vector3());
+          assert(Math.min(size.x, size.y, size.z) >= 0.07 - 1e-3, `A piece of ${what} is ${fmt(size)} at ${fmt(piece.box.getCenter(new T.Vector3()))}.`);
+        }
+      const colour = m.geometry.getAttribute('color'),
+        looks = m.userData.looks,
+        c = new T.Color();
+      assert(m.material.color.getHex() === 0xffffff && colour && looks?.length && looks.every(lookOf), `${what} does not carry the kit's colours on its vertices.`);
+      // (A crown's paint blends its looks and turns each clump's hue a shade: its vertices are held to the
+      // looks' palette families, the owner's rule, not to the looks themselves.)
+      const limit = Math.max(...looks.map((l) => sat(srgb(familyOf(l)))));
+      for (let i = 0; i < colour.count; i++) assert(sat(c.fromBufferAttribute(colour, i).convertLinearToSRGB()) <= limit + 0.01, `${what} has a vertex louder than its looks' families (${sat(c).toFixed(3)} over ${limit.toFixed(3)}).`);
+    }
+  }
+  // Every blade (a leaf, a frond, a fern's or a fan's) is a closed solid 0.03 or more deep at its midrib
+  // (where its two faces stand furthest apart; its edges come to a point, as a leaf's do).
+  assert(BLADES.thinnest >= 0.03 - 1e-9 && BLADES.thinnest < 0.2, `The tropic garden's thinnest blade is ${BLADES.thinnest.toFixed(3)} at its midrib.`);
+
+  // The rain trees: an umbrella (a crown far wider than it is tall, its top at the stated height and its
+  // underside level near it), on a short trunk forking low, its limbs ending inside the crown; its hem one
+  // continuous edge; crown, wood and ferns, the ferns casting nothing.
+  const hems = {};
+  for (const [size, g, S] of [['big', built.rainBig, RAIN_TREE.big], ['small', built.rainSmall, RAIN_TREE.small]]) {
+    const crown = byName(g, `tropic-rain-crown`),
+      box = new T.Box3().setFromObject(crown),
+      span = Math.max(box.max.x - box.min.x, box.max.z - box.min.z),
+      ferns = byName(g, 'tropic-rain-ferns'),
+      wood = byName(g, 'tropic-rain-wood'),
+      { x: cx, z: cz, bay } = g.userData.crown,
+      B = RAIN_CROWN.bay,
+      inBay = (a) => Math.abs(plan.angleDiff(a, bay));
+    assert(Math.abs(box.max.y - S.top) < 1e-3 && box.min.y > S.under - 0.12 && box.min.y < S.under + 0.1, `A rain tree's crown runs from ${box.min.y.toFixed(2)} to ${box.max.y.toFixed(2)}, not from about ${S.under} to ${S.top}.`);
+    assert(span > 1.8 * S.radius && span < 2.15 * S.radius && span / (box.max.y - box.min.y) > 2.5, `A rain tree's crown is ${span.toFixed(2)} across and ${(box.max.y - box.min.y).toFixed(2)} tall: no umbrella.`);
+    // Its underside level: under the rim's outer half, the lowest point of every bearing (but in the bay
+    // toward the file, at bearing 0 when built on its own) within 0.3 of U.
+    const lows = Array.from({ length: 16 }, () => Infinity),
+      bin = (p, n) => Math.floor(((Math.atan2(p.z - cz, p.x - cx) + Math.PI) / (2 * Math.PI)) * n) % n,
+      middle = (k, n) => ((k + 0.5) / n) * 2 * Math.PI - Math.PI;
+    each(crown, (p) => {
+      if (Math.hypot(p.x - cx, p.z - cz) < 0.5 * S.radius) return;
+      const k = bin(p, 16);
+      lows[k] = Math.min(lows[k], p.y);
+    });
+    const rim = lows.filter((y, k) => Number.isFinite(y) && inBay(middle(k, 16)) > B.half + 0.25);
+    assert(rim.length >= 10 && Math.max(...rim) - S.under < 0.3 && Math.min(...rim) - S.under > -0.15, `A rain tree's underside is not level: its rim's lowest points run from ${Math.min(...rim).toFixed(2)} to ${Math.max(...rim).toFixed(2)}.`);
+    // The hem, one continuous edge: in 72 bearings, how far out the crown reaches from its underside up
+    // to its middle height; 0.8 of the radius or more outside the bay (its scallops dip no deeper), no
+    // less than the bay's own depth allows in it, and no bearing more than 0.08 of the radius short of
+    // both its neighbours (a notch where a lobe is missing, or a ball hanging free beside one).
+    const N = 72,
+      reach = Array.from({ length: N }, () => 0);
+    each(crown, (p) => {
+      if (p.y > S.under + 0.55 * (S.top - S.under)) return;
+      const k = bin(p, N);
+      reach[k] = Math.max(reach[k], Math.hypot(p.x - cx, p.z - cz));
+    });
+    let notch = 0,
+      shortest = Infinity;
+    reach.forEach((r, k) => {
+      const a = middle(k, N),
+        need = inBay(a) < B.half ? (1 - B.depth - 0.1) * S.radius : 0.8 * S.radius,
+        side = (reach[(k + N - 1) % N] + reach[(k + 1) % N]) / 2;
+      assert(r >= need, `A rain tree's hem reaches only ${r.toFixed(2)} out at bearing ${a.toFixed(2)} (${need.toFixed(2)} needed).`);
+      notch = Math.max(notch, side - r);
+      if (inBay(a) > B.half) shortest = Math.min(shortest, r / S.radius);
+    });
+    assert(notch < 0.08 * S.radius, `A rain tree's hem has a notch ${notch.toFixed(2)} deep.`);
+    hems[size] = { notch: notch / S.radius, shortest };
+    // Every limb ends inside the canopy, its tip's radius and all (the canopy's field there).
+    for (const { at, r, depth } of g.userData.limbs) assert(depth > r + 0.02, `A rain tree's limb ends ${depth.toFixed(2)} inside its crown at ${at.map((n) => n.toFixed(2)).join(', ')} (its tip ${r.toFixed(2)} thick).`);
+    assert(crown.material.userData.surfaceKind === 'foliage' && crown.castShadow && wood.material.userData.surfaceKind === 'bark' && wood.castShadow && !ferns.castShadow && ferns.userData.noShadow, 'A rain tree is not a casting crown on casting bark with ferns that cast nothing.');
+    const trunk = new T.Box3();
+    each(wood, (p) => p.y < S.fork - 0.2 && trunk.expandByPoint(p));
+    assert(trunk.max.x - trunk.min.x < 6 * S.trunk && trunk.min.y < 0, `A rain tree's trunk spreads ${(trunk.max.x - trunk.min.x).toFixed(2)} at its foot, or floats.`);
+  }
+  // The palm: within its height (the boot and the arching fronds a little over it), leaning out along +x,
+  // its fronds a closed foliage solid over bark.
+  {
+    const box = new T.Box3().setFromObject(built.palm),
+      fronds = byName(built.palm, 'tropic-palm-fronds'),
+      heart = built.palm.userData.crown;
+    assert(box.max.y > 3.6 && box.max.y < 3.6 + PALM.frond * 3.6 && heart.x > 0.4 && heart.x < 1.4 && Math.abs(heart.z) < 1e-9 && fronds.castShadow, `The palm stands ${box.max.y.toFixed(2)} high with its heart ${heart.x.toFixed(2)} out: not leaning out along +x within its height.`);
+  }
+  // The frangipani: about 2 tall, its flowers a mesh of their own casting nothing, cream round a yellow heart.
+  {
+    const box = new T.Box3().setFromObject(built.frangipani),
+      flowers = byName(built.frangipani, 'tropic-frangipani-flowers'),
+      tones = flowers.geometry.getAttribute('color'),
+      heart = srgb(LOOK.flowerHeart),
+      c = new T.Color();
+    let yellow = 0,
+      cream = 0;
+    for (let i = 0; i < tones.count; i++) {
+      c.fromBufferAttribute(tones, i).convertLinearToSRGB();
+      if (sat(c) > 0.5 && c.r > c.b + 0.3) yellow++;
+      else if (sat(c) < 0.15) cream++;
+    }
+    assert(box.max.y > 1.75 && box.max.y < 2.3 && !flowers.castShadow && yellow > 10 && cream > yellow && heart.r > heart.b, `The frangipani is ${box.max.y.toFixed(2)} high, or its flowers cast or are not cream with a yellow heart (${cream} cream, ${yellow} yellow).`);
+    assert(pieces(flowers).length >= 15, 'The frangipani has fewer than three clusters of five flowers.');
+  }
+  // The furniture, to Filip's measures (lane figure's FILIP_CHAIR, FILIP_DESK and FILIP_CAFE): the
+  // bistro chair's seat at the town's seat height and its foot ring's top at BISTRO_CHAIR.ring, its front
+  // bar out in front of the seat; the café's top at TEA.top, his root SITTER.setback behind his chair's
+  // front edge, the saucer on the table ahead of him and to his right; the desk's top at TEA.top, his
+  // root DESK.near behind its near edge and DESK.across to the +x of its middle, facing +z, the laptop
+  // square in front of him with its lid leaning back, nothing of the desk where his knees go.
+  {
+    const frame = byName(built.cafe, 'tropic-cafe-frame'),
+      timber = byName(built.cafe, 'tropic-cafe-timber'),
+      top = byName(built.cafe, 'tropic-cafe-top'),
+      table = new T.Box3().setFromObject(top),
+      seats = pieces(timber).filter((p) => Math.abs(p.box.max.y - TEA.seat) < 1e-6 && p.box.max.y - p.box.min.y < 0.1),
+      rings = pieces(frame).filter((p) => Math.abs(p.box.max.y - BISTRO_CHAIR.ring) < 1e-6 && p.box.max.y - p.box.min.y < 0.08);
+    assert(Math.abs(table.max.y - TEA.top) < 1e-6 && Math.abs(table.max.x - CAFE_TABLE.radius) < 1e-6 && seats.length === 2, `The café table's top is ${table.max.y.toFixed(3)} up and ${table.max.x.toFixed(3)} across, with ${seats.length} seats at the town's height.`);
+    // A ring a chair: its front bar and side bars one piece, its back bar another.
+    assert(frame.material.userData.surfaceKind === 'paint' && timber.material.userData.surfaceKind === 'wood' && rings.length === 4, `The bistro chairs are not oak on painted bronze with a foot ring each (${rings.length} pieces of ring).`);
+    const front = CAFE_TABLE.radius + TEA.gap,
+      toward = front - FOOT_RING.ahead - FOOT_RING.bar / 2;
+    assert(rings.some((p) => Math.abs(p.box.max.x + toward) < 1e-6) && rings.some((p) => Math.abs(p.box.min.x - toward) < 1e-6), `The foot rings' front bars do not stand ${FOOT_RING.ahead} in front of the seats.`);
+    const seat = built.cafe.userData.seats[0],
+      [sx, sy, sz] = built.cafe.userData.saucer;
+    assert(Math.abs(seat.x + front + SITTER.setback) < 1e-9 && seat.z === 0 && Math.abs(seat.heading - Math.PI / 2) < 1e-9, `The café's sitter's root (${seat.x.toFixed(3)}) is not ${SITTER.setback.toFixed(4)} behind his chair's front edge, facing the table.`);
+    assert(Math.abs(sy - TEA.top) < 1e-9 && Math.abs(sx - seat.x - CAFE_SAUCER.ahead) < 1e-9 && Math.abs(sz - CAFE_SAUCER.right) < 1e-9 && Math.hypot(sx, sz) < CAFE_TABLE.radius - 0.075, 'The café\'s saucer is not on its table ahead of its sitter and to his right.');
+    let dish = 0;
+    each(frame, (p) => Math.hypot(p.x - sx, p.z - sz) < 0.08 && p.y > TEA.top - 1e-6 && dish++);
+    assert(dish > 50, 'The café\'s saucer is not batched with its frame.');
+  }
+  {
+    const top = new T.Box3().setFromObject(byName(built.desk, 'tropic-desk-top')),
+      frame = byName(built.desk, 'tropic-desk-frame'),
+      timber = byName(built.desk, 'tropic-desk-timber'),
+      seat = built.desk.userData.seat,
+      keys = new T.Vector3(...built.desk.userData.keys),
+      [lx, , lz] = built.desk.userData.laptop,
+      chair = new T.Box3();
+    each(timber, (p) => p.y > TEA.seat - 0.1 && p.y < TEA.seat + 1e-6 && chair.expandByPoint(p));
+    assert(Math.abs(top.max.y - TEA.top) < 1e-6 && Math.abs(top.max.x - top.min.x - DESK.w) < 1e-6 && Math.abs(top.max.z - top.min.z - DESK.d) < 1e-6, 'The desk\'s top moved.');
+    assert(seat.heading === 0 && Math.abs(seat.z + DESK.d / 2 + DESK.near) < 1e-9 && Math.abs(seat.x - DESK.across) < 1e-9, `The desk's sitter (${seat.x.toFixed(3)}, ${seat.z.toFixed(3)}) is not ${DESK.near} behind its near edge and ${DESK.across} to the +x of its middle, facing +z.`);
+    assert(Math.abs(chair.max.z - seat.z - SITTER.setback) < 1e-3 && Math.abs((chair.max.x + chair.min.x) / 2 - seat.x) < 1e-3, `The desk's chair's front edge (${chair.max.z.toFixed(3)}) is not ${SITTER.setback.toFixed(4)} ahead of its sitter's root.`);
+    assert(Math.abs(lx - seat.x) < 1e-9 && Math.abs(lz - LAPTOP.d / 2 - (-DESK.d / 2 + DESK.inset)) < 1e-9 && keys.y > TEA.top + LAPTOP.base - 0.01 && keys.z - seat.z > 0.2 && keys.z - seat.z < 0.35, `The laptop is not square in front of the desk's sitter within reach (${fmt(keys)}).`);
+    // Nothing of the desk's frame where his knees go: under the top within 0.12 of its near edge and
+    // 0.19 of his middle across (lane figure's FILIP_DESK.knees and .legs).
+    each(frame, (p) => assert(!(p.z < -DESK.d / 2 + 0.12 && p.z > -DESK.d / 2 - 0.02 && Math.abs(p.x - seat.x) < 0.19 && p.y > 0.4 && p.y < TEA.top - DESK.slab - 0.001), `The desk's frame is in its sitter's way at ${fmt(p)}.`));
+    const rings = pieces(frame).filter((p) => Math.abs(p.box.max.y - BISTRO_CHAIR.ring) < 1e-6 && p.box.max.y - p.box.min.y < 0.08);
+    assert.equal(rings.length, 2, 'The desk\'s chair has no foot ring.');
+  }
+  // The props, as the figure lanes hold them: the laptop's base on the origin, its keys on its top and
+  // its lid leaning back away from its user (its top edge further +z than its hinge); the phone round its
+  // middle, the cup's handle at its origin with its axis CUP_AXIS along +x, the saucer's foot on the
+  // origin; each one mesh.
+  {
+    const lap = new T.Box3().setFromObject(built.laptop),
+      phone = new T.Box3().setFromObject(built.phone),
+      cup = new T.Box3().setFromObject(built.cup),
+      saucer = new T.Box3().setFromObject(built.saucer);
+    assert(Math.abs(lap.min.y) < 1e-6 && Math.abs(lap.max.x - LAPTOP.w / 2) < 1e-6 && lap.max.y > 0.2 && lap.max.y < 0.3 && built.laptop.userData.keys[1] > LAPTOP.base, 'The laptop does not stand on its base with its lid open over it.');
+    // (Its lid's top edge, the band of it within 0.03 of the laptop's top, on average behind the hinge.)
+    let lidZ = 0,
+      count = 0;
+    each(byName(built.laptop, 'tropic-laptop-body'), (p) => p.y > lap.max.y - 0.03 && ((lidZ += p.z), count++));
+    lidZ /= count;
+    assert(lidZ > LAPTOP.d / 2 + 0.01, `The laptop's lid leans over its keys (its top edge at z ${lidZ.toFixed(3)}, its hinge at ${(LAPTOP.d / 2).toFixed(3)}).`);
+    assert(phone.getSize(v).toArray().every((n, k) => Math.abs(n - [PHONE.w, PHONE.h, PHONE.d][k]) < 1e-6) && phone.getCenter(v).length() < 1e-6, 'The phone is not its rounded slab round its middle.');
+    assert(Math.abs((cup.max.x + cup.min.x) / 2 - (CUP_AXIS - 0.037 + 0.052) / 2) < 0.02 && Math.abs(saucer.min.y) < 1e-6 && Math.abs(saucer.max.y - 0.07) < 1e-3, 'The cup or the saucer is not the sky figure\'s china in its frame.');
+    for (const g of [built.laptop, built.phone, built.cup, built.saucer]) assert.equal(meshesOf(g).length, 1, `${g.name} is not one mesh.`);
+  }
+
+  // The stand-ins are the land's own once the plan has it (lane site's, after the merge).
+  if (plan.TROPIC_PATHS) {
+    const P = plan.TROPIC,
+      same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    assert(
+      same([P.a, P.b, P.beach, P.rocky, P.dome, P.pad], [LAND.waterline.a, LAND.waterline.b, LAND.beach, LAND.rocky, LAND.dome, LAND.pad]) &&
+        same(plan.TROPIC_ROCKY, LAND.stretches) &&
+        same([plan.TROPIC_BUILDING.x, plan.TROPIC_BUILDING.z, plan.TROPIC_BUILDING.hw, plan.TROPIC_BUILDING.hd], [LAND.podium.x, LAND.podium.z, LAND.podium.hw, LAND.podium.hd]) &&
+        same([plan.TROPIC_PAD.grow, plan.TROPIC_PAD.ease], [LAND.terrace.grow, LAND.terrace.ease]) &&
+        same(plan.TROPIC_PLAZA, LAND.court) &&
+        same(plan.TROPIC_MOUND, LAND.mound) &&
+        same([plan.TROPIC_PATHS.width, plan.TROPIC_PATHS.south, plan.TROPIC_PATHS.front], [LAND.paths.width, LAND.paths.south, LAND.paths.front]),
+      'The tropic garden was laid out on a land that is no longer the plan\'s: bring TROPIC_LAND up to the plan and check the layout again.',
+    );
+    for (let k = 0; k < 200; k++) {
+      const x = (plan.hash(k * 1.7) - 0.5) * 22,
+        z = (plan.hash(k * 2.9 + 5) - 0.5) * 18;
+      assert(Math.abs(plan.tropicTop(x + P.x, z + P.z) - tropicLawn(x, z)) < 1e-9, `The tropic garden's stand-in lawn is not the plan's at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+    }
+  }
+
+  // The whole garden, laid out in the island's frame on the stand-in land and batched as the island will
+  // batch it; built again in winter, it is the same garden (evergreen).
+  const island = { x: 19.5, z: 51 },
+    site = { ground: tropicLawn, building: G.building },
+    layoutTime = timeBuild(fresh, ({ garden, batch }) => {
+      const root = new T.Group();
+      root.position.set(island.x, 0, island.z);
+      const stations = garden.tropicGarden(root, site);
+      root.updateMatrixWorld(true);
+      const raw = new T.Group();
+      raw.copy(root, true);
+      batch(root, { floor: (x, z) => tropicLawn(x - island.x, z - island.z) });
+      return { root, raw, stations };
+    }),
+    { root, raw, stations } = layoutTime.built;
+  // (About 70 ms at the limits' pace when first measured: the limit is about three times that.)
+  inTime('The tropic garden\'s build and batch', layoutTime, 210);
+  root.updateMatrixWorld(true);
+  raw.updateMatrixWorld(true);
+  const all = meshesOf(root),
+    tropicTriangles = trisOf(all);
+  assert(all.length <= 10 && tropicTriangles <= 45000, `The tropic garden costs ${all.length} meshes and ${tropicTriangles} triangles.`);
+  for (const m of all) {
+    const key = m.material.customProgramCacheKey();
+    assert(m.material.vertexColors && (key === 'lius-bake-solid' || key === 'lius-ground-paving'), `The tropic garden's ${m.material.name} batch is not on the solids' or the paving's program (${key}).`);
+    assert(m.material.side !== T.DoubleSide && !m.material.transparent, `The tropic garden's ${m.material.name} batch is two-sided or transparent.`);
+  }
+  assert(!stations.skipped.length, `The tropic garden leaves out what would stand on SDE4: ${stations.skipped.join('; ')}.`);
+  {
+    const winter = fresh('winter'),
+      g = new T.Group();
+    winter.garden.tropicGarden(g, site);
+    g.updateMatrixWorld(true);
+    const a = meshesOf(raw),
+      b = meshesOf(g);
+    assert(a.length === b.length && a.every((m, k) => m.geometry.getAttribute('color').array.every((n, i) => n === b[k].geometry.getAttribute('color').array[i])), 'The tropic garden changes with the season.');
+  }
+
+  // The layout. Distances in the island's frame, against the stand-ins the layout was planned on: the
+  // land's turf edge, paths (centripetal Catmull-Rom lines 0.56 wide) and court; SDE4's footprint, mass
+  // and columns; Filip's walks (centripetal lines through their points) and call stretch; his stations
+  // as tropicGarden returns them. (A piece's group stands in the island's frame; its vertices come out
+  // in the world's.)
+  const B = G.building,
+    W = G.walks,
+    local = (p) => [p.x, p.z],
+    // How far in from the turf's edge, along the ray from the island's middle (negative on the beach).
+    turf = (x, z) => {
+      const at = tropicLand(x, z);
+      return at.turf - at.out;
+    },
+    curve = (points) => new T.CatmullRomCurve3(points.map(([x, z]) => new T.Vector3(x, 0, z)), false, 'centripetal').getSpacedPoints(160).map((p) => [p.x, p.z]),
+    toLines = (lines) => (x, z) => Math.min(...lines.map((line) => Math.min(...line.slice(1).map((q, k) => plan.distanceToSegment([x, z], line[k], q))))),
+    toPaths = toLines([curve(LAND.paths.south), curve(LAND.paths.front)]),
+    toWalks = toLines(W.ways.map(curve)),
+    toCall = (x, z) => plan.distanceToSegment([x, z], W.call[0], W.call[1]),
+    toCourt = (x, z) => Math.hypot(x - LAND.court.x, z - LAND.court.z) - LAND.court.r,
+    inRect = (r, x, z, m = 0) => x > r.x0 - m && x < r.x1 + m && z > r.z0 - m && z < r.z1 + m,
+    toColumns = (x, z) => Math.min(...B.columns.map((c) => Math.hypot(x - c.x, z - c.z) - c.r)),
+    top = tropicLawn(B.desk.x, B.desk.z) + B.podium.top,
+    groups = raw.children.filter((o) => o.isGroup);
+  const kinds = (prefix) => groups.filter((o) => o.name.startsWith(prefix));
+  // Trees on the lawn (the rain trees and frangipani a unit or so in), palms at the beach's edge.
+  for (const t of [...kinds('tropic-rain-tree'), ...kinds('tropic-frangipani')]) {
+    const [x, z] = local(t.position);
+    assert(turf(x, z) > 0.8, `A tree stands ${turf(x, z).toFixed(2)} in from the turf's edge at ${x}, ${z}.`);
+  }
+  for (const p of kinds('tropic-palm')) {
+    const [x, z] = local(p.position);
+    assert(turf(x, z) > -1.2 && turf(x, z) < 0.8, `A palm stands ${(-turf(x, z)).toFixed(2)} out from the turf's edge at ${x}, ${z}: not at the beach's edge.`);
+  }
+  for (const bed of G.beds) for (const [x, z] of bed.line) assert(turf(x, z) > bed.width / 2 + 0.05, `A shrub bed stands ${turf(x, z).toFixed(2)} in from the turf's edge at ${x}, ${z}.`);
+  for (const f of G.fans) assert(turf(f.x, f.z) > 0.3, `A fan stands ${turf(f.x, f.z).toFixed(2)} in from the turf's edge at ${f.x}, ${f.z}.`);
+  // Every piece of the planting and the furniture, vertex by vertex (in the island's frame).
+  const planted = [],
+    furniture = [];
+  for (const o of groups) {
+    const list = o.name === 'tropic-desk' || o.name === 'tropic-cafe-table' ? furniture : planted;
+    for (const m of meshesOf(o)) list.push({ m, group: o });
+  }
+  const at = (m, visit) => each(m, (p) => visit(p.x - island.x, p.y, p.z - island.z));
+  // Nothing low on the paths or the court; nothing low on SDE4's footprint but the desk set on the
+  // veranda's deck; nothing in its mass (the fin block with its fins, the glazed stack with its terraces,
+  // the roof slab), nothing within reach of a column; the planting the walkers' 0.27 off Filip's walks
+  // and his call stretch (a capsule its pacing turn wide).
+  const R = B.roof,
+    mass = [
+      { x0: B.fin.x0 - B.fin.proud, x1: B.fin.x1, z0: R.z0 - B.fin.proud, z1: R.z1 + B.fin.proud, y0: 0, y1: top + R.top },
+      { x0: B.stack.x0, x1: B.stack.x1, z0: B.stack.z0, z1: B.stack.z1, y0: 0, y1: top + B.stack.top },
+      { x0: R.x0, x1: R.x1, z0: R.z0, z1: R.z1, y0: top + R.soffit, y1: top + R.top },
+    ],
+    clearOf = { paths: Infinity, court: Infinity, footprint: Infinity, columns: Infinity, walks: Infinity };
+  for (const { m, group } of [...planted, ...furniture])
+    at(m, (x, y, z) => {
+      const low = y < tropicLawn(x, z) + 1.25,
+        desk = group.name === 'tropic-desk',
+        plant = !desk && group.name !== 'tropic-cafe-table';
+      if (low && !desk) {
+        clearOf.paths = Math.min(clearOf.paths, toPaths(x, z) - LAND.paths.width / 2);
+        clearOf.court = Math.min(clearOf.court, toCourt(x, z));
+        assert(toPaths(x, z) > LAND.paths.width / 2 + 0.05, `${m.name} reaches a path at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+        assert(toCourt(x, z) > 0.05, `${m.name} reaches the court at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+        for (const f of B.footprint) {
+          assert(!inRect(f, x, z, 0.02), `${m.name} reaches SDE4's footprint at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+          clearOf.footprint = Math.min(clearOf.footprint, Math.max(f.x0 - x, x - f.x1, f.z0 - z, z - f.z1));
+        }
+      }
+      for (const box of mass) assert(!(inRect(box, x, z, 0.1) && y > box.y0 && y < box.y1 + 0.1), `${m.name} reaches into SDE4's mass at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+      if (y < top + R.soffit) {
+        clearOf.columns = Math.min(clearOf.columns, toColumns(x, z));
+        assert(toColumns(x, z) > 0.12, `${m.name} comes within ${toColumns(x, z).toFixed(2)} of a column at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      }
+      if (plant && y < tropicLawn(x, z) + 1.3) {
+        const walk = Math.min(toWalks(x, z), toCall(x, z) - W.turn);
+        clearOf.walks = Math.min(clearOf.walks, walk);
+        assert(walk > 0.27, `${m.name} is in Filip's way at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)} (${walk.toFixed(2)} off his walk).`);
+      }
+    });
+  // No crown through another: every vertex of one tree's foliage 0.12 or more from another's (on a grid).
+  {
+    const CELL = 0.3,
+      cells = new Map(),
+      trees = groups.filter((o) => /tropic-(rain-tree|palm|frangipani)/.test(o.name));
+    trees.forEach((t, k) =>
+      meshesOf(t).forEach((m) =>
+        at(m, (x, y, z) => {
+          const key = `${Math.floor(x / CELL)},${Math.floor(y / CELL)},${Math.floor(z / CELL)}`;
+          (cells.get(key) ?? cells.set(key, []).get(key)).push([x, y, z, k]);
+        }),
+      ),
+    );
+    let closest = Infinity;
+    for (const [key, list] of cells) {
+      const [i, j, l] = key.split(',').map(Number);
+      for (let di = -1; di <= 1; di++)
+        for (let dj = -1; dj <= 1; dj++)
+          for (let dl = -1; dl <= 1; dl++) {
+            const other = cells.get(`${i + di},${j + dj},${l + dl}`);
+            if (!other) continue;
+            for (const [x, y, z, k] of list) for (const [x2, y2, z2, k2] of other) if (k2 !== k) closest = Math.min(closest, Math.hypot(x - x2, y - y2, z - z2));
+          }
+    }
+    assert(closest > 0.12, `Two of the island's trees run into one another (${closest.toFixed(3)} apart).`);
+  }
+  // The stations: the café's table on SDE4's café anchor, its seats a unit or more in from the turf's
+  // edge, the café off the court; the desk's middle on SDE4's desk anchor on the veranda, its set the
+  // walkers' clearance off the deck's planters; the sitters facing south and east-south-east.
+  {
+    const { desk, cafe } = stations,
+      V = B.veranda;
+    assert(turf(cafe.seat.x, cafe.seat.z) > 1 && turf(cafe.guest.x, cafe.guest.z) > 1, `The café's seats are ${turf(cafe.seat.x, cafe.seat.z).toFixed(2)} and ${turf(cafe.guest.x, cafe.guest.z).toFixed(2)} in from the turf's edge.`);
+    const table = groups.find((o) => o.name === 'tropic-cafe-table');
+    assert(Math.hypot(table.position.x - B.cafe.x, table.position.z - B.cafe.z) < 1e-9, 'The café table is not on SDE4\'s café anchor.');
+    for (const { m } of furniture.filter(({ group }) => group.name === 'tropic-cafe-table')) at(m, (x, y, z) => assert(toCourt(x, z) > 0.05, `The café stands on the court at ${x.toFixed(2)}, ${z.toFixed(2)}.`));
+    for (const { m } of furniture.filter(({ group }) => group.name === 'tropic-desk'))
+      at(m, (x, y, z) => {
+        assert(inRect(V, x, z, -0.1), `The desk set leaves the veranda at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        for (const p of B.planters) assert(!inRect(p, x, z, 0.27), `The desk set stands within 0.27 of a planter at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      });
+    assert(desk.seat.heading === 0 && Math.abs(desk.floor - top) < 1e-9 && cafe.seat.heading > 0.9 && cafe.seat.heading < 1.4, 'The desk\'s sitter does not face south on the deck, or the café\'s east-south-east.');
+  }
+  // The lines of sight. From the island's file (the gate's bearing) and its three other Rotate stops at the
+  // town's pitch, every point of a stand-in Filip (his head, chest and lap seated at the desk and the café;
+  // head, chest and hips along both sides of the call stretch) sees the camera past the garden, unless
+  // SDE4's mass (its stand-in boxes) already hides him there; from the file itself, always. And the
+  // garden leaves 70% of the glazed front (the stack's south face) in view at every stop that sees it.
+  const sight = { glass: Infinity };
+  {
+    // (Only the planting can hide him: his own chair is behind him and the laptop's lid in front of him.)
+    const ray = new T.Raycaster(),
+      targets = all.filter((m) => ['foliage', 'bark'].includes(m.material.userData.surfaceKind)),
+      { desk, cafe } = stations,
+      boxes = mass.map((b) => new T.Box3(new T.Vector3(island.x + b.x0, b.y0, island.z + b.z0), new T.Vector3(island.x + b.x1, b.y1, island.z + b.z1))),
+      lift = (x, z, dy) => new T.Vector3(island.x + x, tropicLawn(x, z) + dy, island.z + z),
+      lanes = [-W.turn, W.turn].flatMap((o) => [0, 0.25, 0.5, 0.75, 1].map((t) => [W.call[0][0] + (W.call[1][0] - W.call[0][0]) * t, W.call[0][1] + o])),
+      samples = {
+        desk: [1.02, 0.8, 0.58].map((dy) => new T.Vector3(island.x + desk.seat.x, desk.floor + dy, island.z + desk.seat.z + 0.05)),
+        cafe: [1.02, 0.8, 0.58].map((dy) => new T.Vector3(island.x + cafe.seat.x, cafe.floor + dy, island.z + cafe.seat.z)),
+        call: lanes.flatMap(([x, z]) => [0.9, 0.65, 0.4].map((dy) => lift(x, z, dy))),
+      },
+      hidden = [];
+    for (let k = 0; k < 4; k++) {
+      const b = G.file + (k * Math.PI) / 2,
+        back = new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38).normalize();
+      for (const [station, points] of Object.entries(samples))
+        for (const p of points) {
+          ray.set(p, back);
+          const byMass = boxes.some((box) => ray.ray.intersectsBox(box)),
+            hit = ray.intersectObjects(targets, false)[0];
+          if (hit && (k === 0 || !byMass)) hidden.push(`${station} at stop ${k} (${fmt(p)}) behind ${hit.object.material.name} at ${fmt(hit.point)}`);
+        }
+      // The glazed front, where this stop sees it.
+      if (back.z > 0.05) {
+        let open = 0,
+          count = 0;
+        const x1 = B.stack.x1 - 0.1;
+        for (let i = 0; i < 14; i++)
+          for (let j = 0; j < 8; j++) {
+            const p = new T.Vector3(island.x + B.stack.x0 + 0.1 + ((i + 0.5) / 14) * (x1 - B.stack.x0 - 0.1), top + 0.3 + ((j + 0.5) / 8) * 5.6, island.z + B.glass);
+            ray.set(p, back);
+            count++;
+            if (!ray.intersectObjects(targets, false).length) open++;
+          }
+        sight.glass = Math.min(sight.glass, open / count);
+        assert(open / count >= 0.7, `From Rotate stop ${k} the garden hides ${Math.round(100 * (1 - open / count))}% of the glazed front.`);
+      }
+    }
+    assert(!hidden.length, `The garden hides Filip: ${hidden.slice(0, 6).join('; ')}${hidden.length > 6 ? ` and ${hidden.length - 6} more` : ''}.`);
+  }
+  console.log(
+    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops, at least ${Math.round(100 * sight.glass)}% of the glazed front in view.`,
+  );
+}
 // The street and pier lamps (town-props' lamp), Glasgow cast-iron lamp standards, built alone: one
 // stands within the old 0.34 plinth square (every clearance in the plan assumes it), reaches no
 // further than 0.32 from its axis and stands under 2.5. Its one lantern glass, the lamps entry the
