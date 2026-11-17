@@ -422,14 +422,15 @@ export const TROPIC_SPAN = {
 };
 /**
  * The building's ground on the tropic island, in the island's own frame (tropicLocal: x east, z
- * south, from its middle): the SDE4's podium, `hw` by `hd` either side of (x, z) (its roof's 11 by
- * 7.2 and the podium's 0.4 round it), front due south, and `top`, the top of everything on it (the
- * roof's plant housings' lids, 7.71 over the podium's top at 0.38: town-sde4's buildSde4 hands back
- * its height, and check-town holds the two together). The island's model (plan.sites['tropic-island'])
+ * south, from its middle): the SDE4's podium, `hw` by `hd` either side of (x, z) (its roof's 8.6 by
+ * 4.8 and the podium's 0.4 round it), front due south, and `top`, the top of everything on it (the
+ * solar rows' high edges, 6.50 over the podium's top at 0.38: town-sde4's buildSde4 hands back its
+ * height, and check-town holds the two together). The island's model (plan.sites['tropic-island'])
  * has its root at the island's middle, so the building is built in this frame, its podium's foot on
- * the terrace (TROPIC.pad).
+ * the terrace (TROPIC.pad). (The rebuild at the main island's scale kept the east end and the south
+ * edge where they were and took the length off the west and the depth off the north.)
  */
-export const TROPIC_BUILDING = { x: 0, z: -2.3, hw: 5.9, hd: 4.0, top: 8.1 };
+export const TROPIC_BUILDING = { x: 1.2, z: -1.1, hw: 4.7, hd: 2.8, top: 6.9 };
 /**
  * The three homes stand side by side in a straight row, fronts in one line facing the ring
  * road (east), with a 2.4 gap between neighbours so each reads as its own house. Set back so
@@ -2008,7 +2009,7 @@ export function onTropic(x: number, z: number, margin = 0) {
  * third under the roof's front edge), lying on this level ground, and the walks start at its rim.
  */
 export const TROPIC_PAD = { grow: 0.6, ease: 1.4 };
-export const TROPIC_PLAZA = { x: -2.1, z: 2.3, r: 1.7 };
+export const TROPIC_PLAZA = { x: -1.35, z: 2.3, r: 1.7 };
 /**
  * One soft mound on the south-west lawn (the photo's grassy hill), on the knoll at the bay's west end
  * (TROPIC_COAST), in the island's own frame: `h` over the dome at (x, z), a cosine bump `r` round,
@@ -2064,8 +2065,8 @@ export const TROPIC_PATHS = {
   kerb: 0.08,
   lift: 0.03,
   branch: 0.036,
-  south: [[-1.25, 3.55], [-0.75, 4.65], [-1.4, 5.6], [-2.8, 6.05], [-4.2, 6.1], [-5.0, 6.45], [-5.45, 6.85]] as XZ[],
-  front: [[-0.6, 2.6], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
+  south: [[-0.5, 3.55], [-0.15, 4.65], [-1.0, 5.6], [-2.6, 6.05], [-4.2, 6.1], [-5.0, 6.45], [-5.45, 6.85]] as XZ[],
+  front: [[0.15, 2.6], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
   call: [[1.0, 2.75], [1.6, 3.55], [2.2, 4.6], [2.9, 5.3], [3.5, 5.3], [4.3, 5.3], [5.1, 5.3]] as XZ[],
   stretch: [[3.5, 5.3], [5.1, 5.3]] as [XZ, XZ],
 };

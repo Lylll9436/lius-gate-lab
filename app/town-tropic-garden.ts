@@ -25,7 +25,7 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * or its lean along a stated axis) and never moves that group: whoever places it sets its position and
  * turn. tropicGarden() places the whole garden in the island's frame (origin at its middle, +x east, +z
  * south, y up from the water level the land's own ground is measured from) round SDE4 as the other
- * lanes build it: its roof's middle at z -2.3, its front due south, the land's two walks and its coast
+ * lanes build it: its roof's middle at (1.2, -1.1), its front due south, the land's two walks and its coast
  * (town-plan's tropic island), the round plaza on the land's level terrace before the door (the land
  * lays no paving there: TropicSite.plaza) and SDE4 as its plan says (town-sde4's sde4Plan,
  * TROPIC_GARDEN.building).
@@ -1363,8 +1363,8 @@ export type TropicGarden = ReturnType<typeof createTropicGarden>;
 export type TropicRect = { x0: number; x1: number; z0: number; z1: number };
 /**
  * What of SDE4 the garden lays itself out round, in the island's frame (tropicBuilding reads it off
- * SDE4's plan): its roof's plan, soffit and top (over the podium's top), its fin block, its glazed
- * stack and the glazed front's plane, its podium (its top over the terrace the land lays for it), its
+ * SDE4's plan): its roof's plan, soffit and top (over the podium's top), its fin block (the west
+ * screen), its glazed stack and the glazed front's plane, both its screens, its podium (its top over the terrace the land lays for it), its
  * steps and ramp, its veranda's deck and the deck's planters, its columns, and the anchors it hands
  * the garden: the desk's middle and the way its sitter faces, and the café table's middle and the way
  * its sitter faces. `footprint` is what stands on the ground (podium, steps, ramp).
@@ -1373,6 +1373,7 @@ export type TropicBuilding = {
   roof: TropicRect & { soffit: number; top: number };
   fin: { x0: number; x1: number; proud: number };
   stack: TropicRect & { top: number };
+  screens: TropicRect[];
   glass: number;
   podium: TropicRect & { top: number };
   footprint: TropicRect[];
@@ -1418,6 +1419,7 @@ export function tropicBuilding(p: Sde4Plan): TropicBuilding {
     roof: { ...rect(p.roof), soffit: up(p.roof.soffit), top: up(p.roof.top) },
     fin: { x0: p.fin.x0, x1: p.fin.x1, proud: p.fin.proud },
     stack: { ...rect(p.stack), top: up(p.stack.top) },
+    screens: p.screens.map(rect),
     glass: p.glass,
     podium: { ...rect(p.podiumPlan), top: p.podium - p.lawn },
     footprint: [rect(p.podiumPlan), rect(p.steps), { x0: p.ramp.x0, x1: p.ramp.x1, z0: p.podiumPlan.z1, z1: p.ramp.foot.z }],
@@ -1449,15 +1451,15 @@ export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
  * The garden's layout, in the island's frame (origin at its middle, +x east, +z south), round the land
  * (town-plan's tropic island: its coast, lawn, walks and plaza) and SDE4 (its plan):
  * - `file`: the island's file's bearing (the gate's), toward which each rain tree's hem draws into its bay;
- * - `building`: SDE4 as its plan stands it (tropicBuilding of sde4Plan: its roof's middle at z -2.3, its
- *   podium's top 0.12 over the land's terrace, the desk's middle at (3.9, -1.7) facing south, the café
- *   table's middle at (-4.0, 3.7) facing east-south-east);
+ * - `building`: SDE4 as its plan stands it (tropicBuilding of sde4Plan: its roof's middle at (1.2, -1.1),
+ *   its podium's top 0.12 over the land's terrace, the desk's middle at (3.9, -1.7) facing south, the
+ *   café table's middle at (-3.25, 3.7) facing east-south-east);
  * - `walks`: Filip's day as tropic-figure lays it (FILIP_SITE): the call stretch's middle line and his
  *   pacing turn, and the points of his walks between his stations, which the planting keeps the
  *   walkers' clearance from;
  * - rain trees: the big one on the east lawn beside the veranda's open bay (photo 1's big trees stand to
  *   the building's right), its crown clear of the desk's lines of sight; the small one on the west lawn
- *   beside the fin block, the café at the rim of its shade, as near as keeps Filip in sight from all
+ *   west of the café (the café at the rim of its shade), as near as keeps Filip in sight from all
  *   four of the file's Rotate stops (it is 45 degrees off the two that look past it);
  * - palms on the sandy beach (two on the bay's crescent, two on the fuller south-east by the tail),
  *   each at a bearing from the island's middle and `shore` out on the beach's profile from the turf's
@@ -1465,12 +1467,12 @@ export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
  *   than about a unit past the waterline (a third of one as they stand), clear of every station's
  *   lines of sight (the bay's pair west of the call stretch's lines to the file's camera and to the
  *   south-west stop's, the tail's pair east of them);
- * - frangipani: two on the west lawn, one beside the fin block and one on the knoll west of the café
+ * - frangipani: two on the west lawn, one off the west screen's corner and one on the knoll west of the café
  *   (the land's south walk takes the strip below the plaza, and its bay leaves no lawn beyond it);
  * - beds of massed leafy shrubs (bedGeometry: a line, its width and height, and which way their broad
  *   leaves arch out, away from what they stand against) along SDE4's foot: before
- *   the fin block, in the strip between the podium's front and the front walk, east of the veranda's
- *   ramp, along the back and the fin block's west face, and single shrubs on the lawn's edge by the
+ *   the west screen, in the strip between the plaza and the front walk, east of the veranda's
+ *   ramp, along the back and the podium's west edge, and single shrubs on the lawn's edge by the
  *   south-east and south-west beaches and at the big rain tree's foot; heliconia fans as accents in the
  *   beds. The south lawn stays open, as photo 1's does.
  */
@@ -1484,7 +1486,7 @@ export const TROPIC_GARDEN = {
   },
   rainTrees: [
     { size: 'big' as RainTreeSize, x: 8.9, z: -1.6, ry: 1.1, seed: 3 },
-    { size: 'small' as RainTreeSize, x: -8.24, z: 2.81, ry: 0.3, seed: 5 },
+    { size: 'small' as RainTreeSize, x: -7.49, z: 2.81, ry: 0.3, seed: 5 },
   ],
   palms: [
     { bearing: 1.0, shore: 1.0, height: 3.6, lean: 0.27, seed: 1 },
@@ -1493,31 +1495,31 @@ export const TROPIC_GARDEN = {
     { bearing: -0.36, shore: 1.0, height: 3.35, lean: 0.26, seed: 4 },
   ],
   frangipani: [
-    { x: -7.3, z: 0.3, ry: 0.4, height: 2.05, seed: 1 },
+    { x: -4.75, z: 0.55, ry: 0.4, height: 2.05, seed: 1 },
     { x: -6.6, z: 5.4, ry: 1.7, height: 1.95, seed: 2 },
   ],
   beds: [
     // Before the fin block, between the podium's edge and the café.
-    { line: [[-5.68, 2.22], [-4.3, 2.16]], width: 0.72, height: 0.62, seed: 1, leaves: { toward: 2.4, spread: 0.55 } },
+    { line: [[-4.6, 2.22], [-3.55, 2.16]], width: 0.72, height: 0.62, seed: 1, leaves: { toward: 2.4, spread: 0.55 } },
     // The strip between the podium's front and the front walk.
-    { line: [[-0.1, 2.03], [1.85, 2.04]], width: 0.42, height: 0.44, seed: 2, leaves: null },
+    { line: [[0.7, 2.03], [1.85, 2.04]], width: 0.42, height: 0.44, seed: 2, leaves: null },
     // East of the veranda's ramp.
     { line: [[4.75, 2.16], [5.85, 2.48]], width: 0.66, height: 0.58, seed: 3, leaves: { toward: 0.1, spread: 0.5 } },
     // Along the back.
-    { line: [[-3.85, -6.82], [-2.25, -6.74]], width: 0.72, height: 0.62, seed: 4, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
-    { line: [[1.32, -6.82], [2.3, -6.74]], width: 0.62, height: 0.56, seed: 5, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
+    { line: [[-3.05, -4.42], [-1.45, -4.34]], width: 0.72, height: 0.62, seed: 4, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
+    { line: [[1.32, -4.42], [2.3, -4.34]], width: 0.62, height: 0.56, seed: 5, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
     // Along the fin block's west face.
-    { line: [[-6.5, -2.95], [-6.45, -0.85]], width: 0.68, height: 0.6, seed: 6, leaves: { toward: Math.PI, spread: 0.7 } },
+    { line: [[-4.1, -3.15], [-4.05, -1.05]], width: 0.68, height: 0.6, seed: 6, leaves: { toward: Math.PI, spread: 0.7 } },
     // At the palms' and the big rain tree's feet.
     { line: [[8.65, 2.95]], width: 0.6, height: 0.5, seed: 7 },
     { line: [[-6.75, 6.45]], width: 0.64, height: 0.52, seed: 8 },
     { line: [[7.75, -0.6]], width: 0.68, height: 0.56, seed: 9 },
   ] as { line: [number, number][]; width: number; height: number; seed: number; leaves?: { toward: number; spread: number } | null }[],
   fans: [
-    { x: -5.25, z: 2.05, height: 1.0, ry: 0.1, seed: 1 },
+    { x: -4.15, z: 2.05, height: 1.0, ry: 0.1, seed: 1 },
     { x: 5.62, z: 2.05, height: 0.95, ry: -0.2, seed: 2 },
-    { x: -1.75, z: -6.82, height: 1.05, ry: 0.05, seed: 3 },
-    { x: -6.5, z: -1.85, height: 1.0, ry: 1.5, seed: 4 },
+    { x: -0.95, z: -4.42, height: 1.05, ry: 0.05, seed: 3 },
+    { x: -4.1, z: -2.05, height: 1.0, ry: 1.5, seed: 4 },
   ],
 };
 /**

@@ -11752,26 +11752,21 @@ let tropicReport = '';
 //   greens painted on, none louder than the hedge's, the same in every season (the island is
 //   evergreen, decision 12); every joined piece but the glass is 0.07 across or more every way
 //   (thinner ones twinkle as the view moves);
-// - its size (decision 2, design.md 2.2): the parasol with the end block about 11 by 7.2 in plan, the
-//   membrane about 7.3 over the podium and nothing over 7.8; all of it inside the footprint and
-//   under the height it hands back, nothing under the podium's foot; its middle low enough for the
-//   models' framing (under 7) and its top under their 14;
-// - its read (decision 14, never a bigger Visiting PhD Residence): eight very slender white round
-//   columns (0.20 to 0.23 across: the owner's 'very slender', and never under the 0.18 at which a white
-//   shaft twinkles) from the podium to the soffit, each with a small plain collar at its foot and a disc
-//   under the soffit, each a step (0.06 or more) wider than the shaft, standing clear of every plate; the dark soffit band under the white rim, 0.25 deep or more and set back
-//   from it by a hair; rows of solar modules on the roof; bold champagne fins down the end block's
-//   west face; plates that step back as they rise; its planting one mesh of leaves over leafy
-//   clumps (a hundred pieces or more, 9,000 triangles at most), 0.15 or more off the top floor's
-//   glass and the slab over it;
+// - its scale and its read (the rebuild at the main island's scale: the storeys on the town's module,
+//   one thin roof, the plan near the Town Hall's, the openings at the town's window size; the real
+//   building's parts, cartooned: see the checks below, each with its negative tests); all of it inside
+//   the footprint and under the height it hands back, nothing under the podium's foot; its middle low
+//   enough for the models' framing (under 7) and its top under their 14; its planting one mesh of
+//   leaves over leafy clumps (a hundred pieces or more, 7,000 triangles at most), 0.15 or more off the
+//   roof box's glass and under the soffit;
 // - its anchors: the desk on the veranda's deck, clear of the columns, the planters and the glass,
-//   facing south; the entrance at the lobby's doors; the café beside the court, off the podium and
-//   its step and ramp, before the end block; its plan (sde4Plan) what it built: every column where the
+//   facing south, under the open portico (the soffit 2.5 times Filip's height over him); the entrance at the lobby's doors; the café beside the court, off the podium and
+//   its step and ramp, before the west screen; its plan (sde4Plan) what it built: every column where the
 //   plan has it, the veranda's planting inside the reach the plan gives it, the way between its
 //   planters open from the ramp to the deck;
 // - batched as the merge batches it, at most 12 meshes and 30,000 triangles (decision 13), on the
 //   town's own programs (no new one), cutting no holes, every varying it reads declared;
-// - its night: a light a pane, in the 'campus' role, but the lobby's doors (one light, the fixed
+// - its night: a light a bay (its spandrel and vision panes one light), in the 'campus' role, but the lobby's doors (one light, the fixed
 //   'entrance': warm and never out) and the balustrades ('clear', never lit); the campus mix's shares
 //   (three in four lit at 20:00, cool only an accent, half of those going out one at a time between
 //   22:30 and 01:30, the rest lit till morning), each within three binomial standard deviations of its
@@ -11779,6 +11774,7 @@ let tropicReport = '';
 //   draws them again; the bounds hold for any draw but a three-sigma one).
 {
   const { createSde4, sde4Plan, SDE4, SDE4_LOOK, SDE4_FAMILY, SDE4_WINDOWS, SDE4_ENTRANCE, SDE4_RAILS } = await load('town-sde4'),
+    { RESIDENCE_LEVELS } = await load('town-residence'),
     { palette } = await load('town-shared'),
     { createProps } = await load('town-props'),
     { createNature } = await load('town-nature'),
@@ -11879,46 +11875,148 @@ let tropicReport = '';
       theirs = meshesOf(winter.group).filter((m) => m.material.userData.surfaceKind === 'foliage');
     assert(theirs.length === foliage.length && theirs.every((m, i) => m.geometry.getAttribute('color').array.every((x, j) => x === foliage[i].geometry.getAttribute('color').array[j])), 'SDE4\'s planting changes with the season.');
   }
-  // Its size, and the models' framing rules (the town's island at sea level: its y is the world's).
-  assert(Math.abs(R.x1 - B.x0 - 11) <= 0.2 && Math.abs(R.z1 - R.z0 - 7.2) <= 0.2 && B.z0 === R.z0 && B.z1 === R.z1, `SDE4's parasol is ${(R.x1 - B.x0).toFixed(2)} by ${(R.z1 - R.z0).toFixed(2)}.`);
-  assert(Math.abs(R.top - 7.3) <= 0.1 && out.height - A.y <= 7.8 && out.height - A.y > R.parapet, `SDE4 stands ${(out.height - A.y).toFixed(2)} over its podium, its roof ${R.top}.`);
+  // Its scale (the rebuild: the main island's module, never again a parasol over three giant
+  // storeys): its storeys on the town's domestic module (the ground storey 1.6 to 1.8 floor to floor,
+  // each above 1.4 to 1.5, inside the main island's 1.45 (the Residence's top storey) to 2.5 (the Town
+  // Hall's ground storey)), its slabs' bands 0.18 to 0.22; one thin roof over them (its edge, white rim
+  // and dark soffit band, 0.30 to 0.36; its underside 1.2 or more over the roof terrace, its membrane
+  // 6.2 to 6.45 over the podium and nothing over 6.6); the roof with its two end screens about 8.6 by
+  // 4.8 in plan (under 1.3 times the Town Hall's 7.4 by 4.6 block), its top in the world under 7.21,
+  // half a unit under the Town Hall's ridge (7.71); all of it inside the footprint and under the height
+  // it hands back, nothing under the podium's foot; its middle low enough for the models' framing
+  // (under 7) and its top under their 14.
+  const hall = plan.sites['town-hall'],
+    scaleOf = (S, out) => {
+      const bad = [],
+        R = S.roof,
+        floors = [0, ...S.plates.map((q) => q.y1)],
+        steps = floors.slice(1).map((y, i) => y - floors[i]);
+      if (!(steps[0] >= 1.6 && steps[0] <= 1.8 && steps.slice(1).every((s) => s >= 1.4 - 1e-9 && s <= 1.5 + 1e-9) && steps.every((s) => s >= RESIDENCE_LEVELS.top - RESIDENCE_LEVELS.terrace - 1e-9 && s <= 2.5))) bad.push(`storeys ${steps.map((s) => s.toFixed(2)).join(', ')} floor to floor`);
+      if (!S.plates.every((q) => q.y1 - q.y0 >= 0.18 && q.y1 - q.y0 <= 0.22)) bad.push('slab bands off 0.2');
+      if (!(R.parapet - R.soffit >= 0.3 && R.parapet - R.soffit <= 0.36 + 1e-9 && R.soffit - S.plates[S.plates.length - 1].y1 >= 1.2)) bad.push(`a roof edge of ${(R.parapet - R.soffit).toFixed(2)}, or a roof terrace ${(R.soffit - S.plates[S.plates.length - 1].y1).toFixed(2)} tall`);
+      if (!(Math.abs(R.x1 - R.x0 - 8.6) <= 0.2 && Math.abs(R.z1 - R.z0 - 4.8) <= 0.2 && (R.x1 - R.x0) * (R.z1 - R.z0) < 1.3 * hall.w * hall.d && S.block.x0 === R.x0 && S.block.z0 === R.z0 && S.block.z1 === R.z1 && S.east.x1 < R.x1)) bad.push(`a roof ${(R.x1 - R.x0).toFixed(2)} by ${(R.z1 - R.z0).toFixed(2)}`);
+      if (!(R.top >= 6.2 && R.top <= 6.45 && out.height - S.at.y <= 6.6 && out.height - S.at.y > R.parapet && out.height < 7.21)) bad.push(`a top ${(out.height - S.at.y).toFixed(2)} over its podium (${out.height.toFixed(2)} in the world)`);
+      return bad;
+    };
+  assert.deepEqual(scaleOf(SDE4, out), [], `SDE4 is out of the main island's scale: ${scaleOf(SDE4, out).join('; ')}.`);
   assert((A.y + P.foot + out.height) / 2 < 7 && out.height < 14 && out.podium === A.y, `SDE4's box (${(A.y + P.foot).toFixed(2)} to ${out.height.toFixed(2)}) is too tall for the models' framing.`);
-  assert(out.roof.x0 === A.x + B.x0 && out.roof.x1 === A.x + R.x1 && out.roof.z0 === A.z + R.z0 && out.roof.z1 === A.z + R.z1, 'SDE4 hands back a roof that is not its own.');
-  // Its read (decision 14).
+  assert(out.roof.x0 === A.x + R.x0 && out.roof.x1 === A.x + R.x1 && out.roof.z0 === A.z + R.z0 && out.roof.z1 === A.z + R.z1, 'SDE4 hands back a roof that is not its own.');
+  // Its read (the real building, cartooned; decision 14, never a bigger Visiting PhD Residence): six very
+  // slender white round columns (0.20 to 0.23 across, never under the 0.18 at which a white shaft
+  // twinkles) along the south front only, evenly spaced, from the podium to the soffit, each with a
+  // small plain collar at its foot and a disc under the soffit, each a step (0.06 or more) wider than
+  // the shaft, standing clear of every slab; three or more round concrete columns (0.22 across or
+  // more) in the open levels; the dark soffit band under the white rim, set back from it by a hair; the
+  // solar field in `rows` long continuous rows (2 to 4, each 0.85 of the roof's length or more)
+  // covering 60% of the roof or more; fluted champagne fins of two widths down the west screen's west
+  // face and the east screen's east face, cut at the storey joints (0.07 or wider, about a storey
+  // apart); the slabs stepping back as they rise over an undercroft; one open stair (a sloping white
+  // upstand beside stone treads, rising a storey); a glass balustrade on a kerb along every terrace
+  // edge (six runs or more, the glass about 0.37 tall); and its glazing at the town's size: every
+  // bay (one light) 0.75 to 0.95 wide and every pane of glass at most 1.0 wide and 1.1 tall.
+  const named = (list, name) => list.find((m) => m.name === name),
+    readOf = (S, list, root) => {
+      const bad = [],
+        to = root.matrixWorld.clone().invert(),
+        A = S.at,
+        R = S.roof,
+        C = S.columns,
+        box = (m) => new T.Box3().setFromObject(m).applyMatrix4(to),
+        white = pieces(named(list, 'sde4-white')),
+        stone = pieces(named(list, 'sde4-stone')),
+        shafts = white.filter((p) => p.s.y > 5).sort((a, b) => a.c.x - b.c.x),
+        plates = S.plates.map((q) => new T.Box2(new T.Vector2(A.x + S.west, A.z + q.back), new T.Vector2(A.x + q.east, A.z + q.front)));
+      if (shafts.length !== 6) bad.push(`${shafts.length} columns, not six`);
+      const gaps = shafts.slice(1).map((p, i) => p.c.x - shafts[i].c.x);
+      if (!shafts.every((p) => Math.abs(p.c.z - (A.z + C.z)) < 1e-3 && p.c.z > A.z + Math.max(...S.plates.map((q) => q.front))) || Math.max(...gaps) - Math.min(...gaps) > 1e-3) bad.push('columns not evenly along the south front');
+      for (const { b, s, c } of shafts) {
+        if (!(Math.min(s.x, s.z) >= 0.2 - 1e-3 && Math.max(s.x, s.z) <= 0.23 && b.min.y <= A.y + 0.1 && b.max.y >= A.y + R.soffit - 0.2)) bad.push(`a column at ${fmt(c)} ${fmt(s)}`);
+        if (!(white.some((p) => p.s.x >= s.x + 0.06 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && p.b.min.y < A.y + 0.1) && white.some((p) => p.s.x >= s.x + 0.06 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && Math.abs(p.b.max.y - (A.y + R.soffit)) < 0.01))) bad.push(`the column at ${fmt(c)} lacks its collar or its disc`);
+        for (const q of plates) if (q.distanceToPoint(new T.Vector2(c.x, c.z)) < C.r + 0.1) bad.push(`the column at ${fmt(c)} stands against a slab`);
+      }
+      if (stone.filter((p) => Math.min(p.s.x, p.s.z) >= 0.22 && Math.abs(p.s.x - p.s.z) < 0.01 && p.s.x < 0.3 && p.s.y > 1).length < 3) bad.push('no round concrete columns in its open levels');
+      const soffit = named(list, 'sde4-soffit'),
+        sb = box(soffit);
+      if (!(hex(soffit.material.color) === hex(SDE4_LOOK.soffit) && Math.abs(sb.min.y - (A.y + R.soffit)) < 1e-3 && sb.max.z >= A.z + R.z1 - 0.05 && sb.max.z < A.z + R.z1 && sb.max.x >= A.x + R.x1 - 0.05 && sb.max.x < A.x + R.x1)) bad.push('no dark soffit band under its rim');
+      const rows = pieces(named(list, 'sde4-solar')).filter((p) => p.s.z > 0.8 && p.s.x >= 0.85 * (R.x1 - R.x0 - 2 * R.width)),
+        cover = rows.reduce((n, p) => n + p.s.x * p.s.z, 0) / ((R.x1 - R.x0) * (R.z1 - R.z0));
+      if (!(rows.length >= 2 && rows.length <= 4 && cover >= 0.6)) bad.push(`${rows.length} solar rows covering ${Math.round(100 * cover)}% of the roof`);
+      const fins = pieces(named(list, 'sde4-fins')),
+        westFins = fins.filter((p) => p.b.min.x <= A.x + S.block.x0 + 1e-3 && p.s.y > 1),
+        eastFins = fins.filter((p) => p.b.max.x >= A.x + S.east.x1 - 1e-3 && p.s.y > 1),
+        widths = new Set(westFins.map((p) => p.s.z.toFixed(2)));
+      if (westFins.length < 20 || eastFins.length < 10 || !widths.has(S.fin.w.toFixed(2)) || !widths.has(S.fin.narrow.toFixed(2))) bad.push(`${westFins.length} fins down the west screen and ${eastFins.length} down the east one, ${[...widths].join(' and ')} wide`);
+      const J = S.fin.joints;
+      if (!(S.fin.joint >= 0.07 && J.every((j, i) => (i ? j - J[i - 1] : j) >= 1.3 && (i ? j - J[i - 1] : j) <= 1.7) && westFins.every((p) => !J.some((j) => p.b.min.y < A.y + j + S.fin.joint / 2 - 1e-3 && p.b.max.y > A.y + j - S.fin.joint / 2 + 1e-3)))) bad.push('fins not cut at storey joints 0.07 wide');
+      const [g0, g1, g2] = S.glass,
+        [q0, q1, q2] = S.plates;
+      if (!(q0.front >= q1.front && q1.front > q2.front && g2.front < g1.front && g1.front < q0.front && g2.front < q1.front && g0.front < q0.front - 0.5)) bad.push('slabs not stepping back over an undercroft');
+      const st = S.stair;
+      if (!(white.some((p) => p.s.x >= (st.x1 - st.x0) * 0.9 && p.s.y >= q1.y1 - q0.y1 && p.c.z > A.z + st.z0) && stone.some((p) => Math.abs(p.s.x - (st.x1 - st.x0)) < 0.05 && Math.abs(p.b.max.y - (A.y + q1.y1)) < 1e-3 && Math.abs(p.b.min.y - (A.y + q0.y1)) < 1e-3))) bad.push('no open stair between its terraces');
+      const rails = list.filter((m) => m.userData.window === SDE4_RAILS).map(box);
+      if (!(rails.length >= 6 && rails.every((b) => b.max.y - b.min.y >= 0.3 && b.max.y - b.min.y <= 0.45))) bad.push(`${rails.length} balustrades`);
+      const groups = new Map();
+      for (const m of list.filter((m) => m.material.userData.surfaceKind === 'glass' && m.userData.window === SDE4_WINDOWS)) {
+        const b = box(m),
+          s = b.getSize(new T.Vector3()),
+          wide = Math.max(s.x, s.z);
+        if (wide > 1.0 + 1e-3 || s.y > 1.1 + 1e-3) bad.push(`a pane ${wide.toFixed(2)} by ${s.y.toFixed(2)}`);
+        const g = m.userData.windowGroup;
+        groups.set(g, groups.has(g) ? groups.get(g).union(b) : b);
+      }
+      for (const b of groups.values()) {
+        const s = b.getSize(new T.Vector3()),
+          wide = Math.max(s.x, s.z);
+        if (wide < 0.75 - 0.03 || wide > 0.95 + 0.02) bad.push(`a bay ${wide.toFixed(2)} wide`);
+      }
+      return [...new Set(bad)];
+    };
+  assert.deepEqual(readOf(SDE4, parts, group), [], `SDE4 does not read as SDE4 at the town's size: ${readOf(SDE4, parts, group).join('; ')}.`);
+  // The scale and read checks catch what they are for (negative tests): SDE4 built again with one
+  // measure put back the way it was, or made wrong, fails them.
   {
-    const named = (name) => parts.find((m) => m.name === name),
-      white = pieces(named('sde4-white')),
-      C = SDE4.columns,
-      shafts = white.filter((p) => p.s.y > 5),
-      soffit = named('sde4-soffit'),
-      sb = new T.Box3().setFromObject(soffit).applyMatrix4(group.matrixWorld.clone().invert()),
-      plates = SDE4.plates.map((q) => new T.Box2(new T.Vector2(A.x + SDE4.west, A.z + q.back), new T.Vector2(A.x + q.east, A.z + q.front)));
-    assert.equal(shafts.length, 8, `SDE4 has ${shafts.length} columns, not eight.`);
-    for (const { b, s, c } of shafts) {
-      assert(Math.min(s.x, s.z) >= 0.2 - 1e-3 && Math.max(s.x, s.z) <= 0.23 && b.min.y <= A.y + 0.1 && b.max.y >= A.y + R.soffit - 0.2, `A column at ${fmt(c)} is ${fmt(s)}, not a very slender column from the podium to the soffit.`);
-      assert(white.some((p) => p.s.x >= s.x + 0.06 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && p.b.min.y < A.y + 0.1) && white.some((p) => p.s.x >= s.x + 0.06 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && Math.abs(p.b.max.y - (A.y + R.soffit)) < 0.01), `The column at ${fmt(c)} lacks its base or its capital.`);
-      for (const q of plates) assert(q.distanceToPoint(new T.Vector2(c.x, c.z)) >= C.r + 0.1, `The column at ${fmt(c)} stands against a plate.`);
+    const variants = [
+      ['a storey as tall as the old ones', (S) => (S.plates[1].y1 = S.plates[1].y1 + 0.5), scaleOf],
+      ['the old 0.72 roof edge', (S) => (S.roof.parapet = S.roof.soffit + 0.72), scaleOf],
+      ['the old plan', (S) => Object.assign(S.roof, { x0: -5.5, x1: 5.5, z0: -3.6, z1: 3.6 }), scaleOf],
+      ['the old 1.25 panes', (S) => (S.BAY = 1.3), readOf],
+      ['the old solar modules', (S) => Object.assign(S.roof, { rows: 6, deep: 0.5 }), readOf],
+      ['a column out of step', (S) => (S.columns.x = S.columns.x.map((x, i) => (i === 2 ? x + 0.3 : x))), readOf],
+      ['the old 0.04 joints', (S) => (S.fin.joint = 0.04), readOf],
+    ];
+    for (const [what, change, check] of variants) {
+      const saved = structuredClone(SDE4);
+      change(SDE4);
+      try {
+        const v = build(make('summer'));
+        assert(check(SDE4, check === scaleOf ? v.out : meshesOf(v.group), v.group).length > 0, `SDE4 built with ${what} passes its checks.`);
+      } finally {
+        // Put every measure back in place (the objects the checks below hold stay the same objects).
+        const restore = (to, from) => {
+          for (const k of Object.keys(from)) if (from[k] && typeof from[k] === 'object' && !Array.isArray(from[k]) && to[k] && typeof to[k] === 'object') restore(to[k], from[k]);
+          else to[k] = from[k];
+        };
+        restore(SDE4, saved);
+      }
     }
-    assert(hex(soffit.material.color) === hex(SDE4_LOOK.soffit) && Math.abs(sb.min.y - (A.y + R.soffit)) < 1e-3 && R.rim - R.soffit >= 0.25 && sb.max.z >= A.z + R.z1 - 0.05 && sb.max.z < A.z + R.z1 && sb.max.x >= A.x + R.x1 - 0.05 && sb.max.x < A.x + R.x1, 'SDE4\'s dark soffit band does not run under its white rim.');
-    assert(pieces(named('sde4-solar')).filter((p) => p.s.x > 0.8 && p.s.z > 0.7).length >= 40, 'SDE4\'s roof lacks its solar rows.');
-    assert(pieces(named('sde4-fins')).filter((p) => p.b.min.x <= A.x + B.x0 + 1e-3 && p.s.y > 1.5).length >= 40, 'SDE4\'s end block lacks its fins down the west face.');
-    const [g0, g1, g2] = SDE4.glass;
-    assert(SDE4.plates[0].front >= SDE4.plates[1].front && SDE4.plates[1].front > SDE4.plates[2].front && g2.front < g1.front && g2.east < g1.east, 'SDE4\'s plates do not step back as they rise.');
-    assert(g0.front < SDE4.plates[0].front - 0.5, 'SDE4\'s ground floor stands out under its first slab: no undercroft.');
-    // Its planting (design.md 2.6): one mesh of leaves over leafy clumps (a hundred and more pieces,
-    // never a file of balls), within its share of the budget, and 0.15 or more off the top floor's
-    // glass and under the slab over it.
-    const planting = named('sde4-planting'),
-      grown = (x0, y0, z0, x1, y1, z1) => new T.Box3(new T.Vector3(A.x + x0, A.y + y0, A.z + z0), new T.Vector3(A.x + x1, A.y + y1, A.z + z1)).expandByScalar(0.15),
-      p3 = SDE4.plates[2],
-      [, , [l2, l2top]] = SDE4.storeys,
-      near = [grown(SDE4.west, l2, g2.back, g2.east, l2top, g2.front), grown(SDE4.west, p3.y0, p3.back, p3.east, p3.y1, p3.front)],
+  }
+  // Its planting (design.md 2.6): one mesh of leaves over leafy clumps (a hundred and more pieces,
+  // never a file of balls), within its share of the budget (7,000 triangles at most: the facade's
+  // detail was paid for out of the old 8,130), and 0.15 or more off the roof box's glass and under the
+  // soffit.
+  {
+    const planting = named(parts, 'sde4-planting'),
+      X = SDE4.box,
+      near = [new T.Box3(new T.Vector3(A.x + X.x0, A.y + SDE4.plates[2].y1, A.z + X.z0), new T.Vector3(A.x + X.x1, A.y + X.cap, A.z + X.z1)).expandByScalar(0.15)],
       q = planting.geometry.attributes.position,
       m4 = toIsland.clone().multiply(planting.matrixWorld),
       leaves = pieces(planting).length,
       plantingTris = (planting.geometry.index?.count ?? q.count) / 3;
-    assert(planting.material.userData.surfaceKind === 'foliage' && leaves >= 100 && plantingTris <= 9000, `SDE4's planting is ${leaves} pieces and ${plantingTris} triangles.`);
-    for (let i = 0; i < q.count; i++) assert(!near.some((b) => b.containsPoint(v.fromBufferAttribute(q, i).applyMatrix4(m4))), `SDE4's planting crowds the top floor's glass or its slab at ${fmt(v)}.`);
+    assert(planting.material.userData.surfaceKind === 'foliage' && leaves >= 100 && plantingTris <= 7000, `SDE4's planting is ${leaves} pieces and ${plantingTris} triangles.`);
+    for (let i = 0; i < q.count; i++) {
+      v.fromBufferAttribute(q, i).applyMatrix4(m4);
+      assert(!near.some((b) => b.containsPoint(v)) && v.y < A.y + R.soffit - 0.1, `SDE4's planting crowds the roof box's glass or the soffit at ${fmt(v)}.`);
+    }
   }
   // Its anchors.
   {
@@ -11928,7 +12026,10 @@ let tropicReport = '';
       planters = parts.filter((m) => m.name === 'sde4-planter').map((m) => new T.Box3().setFromObject(m).applyMatrix4(toIsland)).filter((b) => b.max.y < A.y + 0.6),
       glassEast = A.x + SDE4.glass[0].east;
     assert(d.x > A.x + V.x0 + 0.8 && d.x < A.x + V.x1 - 0.8 && d.z > A.z + V.z0 + 0.8 && d.z < A.z + V.z1 - 0.8 && Math.abs(d.y - A.y) < 1e-9 && d.heading === 0 && d.x - glassEast >= 1, `The desk at ${d.x.toFixed(2)}, ${d.z.toFixed(2)} is not on the veranda's deck, facing south.`);
-    for (const x of C.x) for (const s of [-1, 1]) assert(Math.hypot(d.x - (A.x + x), d.z - (A.z + s * C.z)) >= 1.2, 'The desk stands by a column.');
+    for (const x of C.x) assert(Math.hypot(d.x - (A.x + x), d.z - (A.z + C.z)) >= 1.2, 'The desk stands by a column.');
+    // Over him at the desk the open portico: nothing of SDE4 over the deck under the soffit but the
+    // east screen, the soffit 2.5 times his height or more over the deck.
+    assert(SDE4.plates.every((q) => q.east <= V.x0 + 1e-9) && SDE4.east.x1 <= V.x0 + 0.8 && d.x > A.x + SDE4.east.x1 + 0.4 && R.soffit >= 2.5 * 1.02, 'The desk is not under the open portico.');
     assert(planters.length === 2 && planters.every((b) => b.distanceToPoint(new T.Vector3(d.x, b.min.y, d.z)) >= 0.8), 'The desk is crowded by the veranda\'s planters.');
     const doors = parts.filter((m) => m.userData.window === SDE4_ENTRANCE),
       front = doors.filter((m) => Math.abs(m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).z - out.entrance.z) < 1e-3);
