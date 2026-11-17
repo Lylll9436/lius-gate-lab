@@ -8,7 +8,6 @@ import {
   easeArm,
   figureClock,
   figureHand,
-  FORE,
   handsInLap,
   HIP,
   LAP,
