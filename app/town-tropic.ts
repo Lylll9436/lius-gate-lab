@@ -45,8 +45,8 @@ const PAVING_GRID = { cell: 0.2, fine: 0.05, bend: 0.008 };
  * beyond the clusters, unevenly spaced, so the point and the knoll read as low outcrops broken into
  * blocks, not piles on sand (the point's easternmost lies where that stretch turns fully rocky: its
  * stones begin where its beach has narrowed and its surf breaks); and two lone boulders lie on the
- * sand (at the bay's east end, and on the tail at the hollow's south end), as the town's own beach
- * has. The point has one mass: the outcrop at its tip (the biggest cluster, a ledge stepping out
+ * sand (at the bay's east end, 1.65 east of the east bay palm's foot so its trunk does not rise out of
+ * the stone, and on the tail at the hollow's south end), as the town's own beach has. The point has one mass: the outcrop at its tip (the biggest cluster, a ledge stepping out
  * into the water beside it) and two small flank clusters of the template's first `stones` stones
  * only; each cluster turns the template's layout by its seed (`turn`), so none is a copy of another.
  * Each stone is sunk a third of its height, damp-darkened below the waterline as the armour is,
@@ -71,7 +71,7 @@ export const TROPIC_ROCKS = {
   ],
   ledge: { half: [0.62, 0.17, 0.34] as [number, number, number], cuts: [[0, 1, 0.1, 0.62]] as [number, number, number, number][] },
   lone: [
-    { bearing: 0.42, at: 1.3, size: 0.42, seed: 53 },
+    { bearing: 0.5, at: 1.3, size: 0.42, seed: 53 },
     { bearing: 1.5, at: 1.7, size: 0.36, seed: 61 },
   ],
   stones: [
