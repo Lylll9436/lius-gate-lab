@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { SurfaceKind } from './city-materials';
 import { palette, hash, sstep, type TownContext } from './town-shared';
+import { TROPIC_PATHS } from './town-plan';
 import { RESIDENCE_LOOK } from './town-residence';
 import type { WindowRole } from './town-batch';
 import type { Kit } from './town-kit';
@@ -157,7 +158,6 @@ export const SDE4 = {
   entrance: { x0: -3.05, x1: -2.05, z: 1.4, top: 1.4 },
   veranda: { x0: 1.4, x1: 4.4, z0: -2.5, z1: 2.5 },
   desk: { x: 2.7, z: -0.6, heading: 0 },
-  cafe: { x: -4.45, z: 4.8, heading: 1.18 },
 };
 /** Where SDE4 stands on the island by default (SDE4.at: see SDE4), in the island's frame. */
 export const SDE4_AT = SDE4.at;
@@ -271,6 +271,7 @@ export function sde4Plan(at: { x: number; y: number; z: number } = SDE4.at): Sde
     ST = S.steps,
     RA = S.ramp,
     lawn = -S.lift,
+    CAFE = TROPIC_PATHS.cafe,
     // The frames stand this far proud of the glass (glaze's PROUD and a hair).
     frames = 0.08;
   const A = (x: number, y: number, z: number, heading: number): Sde4Anchor => ({ x: at.x + x, y: at.y + y, z: at.z + z, heading }),
@@ -294,7 +295,8 @@ export function sde4Plan(at: { x: number; y: number; z: number } = SDE4.at): Sde
   return {
     desk: A(S.desk.x, 0, S.desk.z, S.desk.heading),
     entrance: A((E.x0 + E.x1) / 2, 0, E.z, 0),
-    cafe: A(S.cafe.x, lawn, S.cafe.z, S.cafe.heading),
+    // The café table on the walks' café terrace (town-plan's TROPIC_PATHS.cafe, in the island's frame).
+    cafe: { x: CAFE.tableX, y: at.y + lawn, z: CAFE.tableZ, heading: CAFE.heading },
     court: A((ST.x0 + ST.x1) / 2, lawn, P.z1 + ST.run, 0),
     ramp: { top: A(rampX, 0, P.z1, Math.PI), foot: A(rampX, -RA.drop, P.z1 + RA.run, Math.PI), width: RA.x1 - RA.x0, x0: at.x + RA.x0, x1: at.x + RA.x1 },
     deck: { ...rect(V.x0, P.x1 - P.kerb + 0.01, P.z0 + P.kerb - 0.01, P.z1 - P.kerb + 0.01), y: at.y },

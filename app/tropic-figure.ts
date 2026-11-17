@@ -219,7 +219,8 @@ export function filipFloor(x: number, z: number) {
     P = D.podiumPlan,
     R = D.ramp;
   if (x >= P.x0 && x <= P.x1 && z >= P.z0 && z <= P.z1) return D.podium;
-  if (x >= R.x0 && x <= R.x1 && z > R.top.z && z < R.foot.z) return R.top.y + ((R.foot.y - R.top.y) * (z - R.top.z)) / (R.foot.z - R.top.z);
+  // (The ramp lands on the forecourt: at its foot the paving's surface, over the ramp's own toe, is the floor.)
+  if (x >= R.x0 && x <= R.x1 && z > R.top.z && z < R.foot.z) return Math.max(R.top.y + ((R.foot.y - R.top.y) * (z - R.top.z)) / (R.foot.z - R.top.z), tropicFloor(x + TROPIC.x, z + TROPIC.z));
   return tropicFloor(x + TROPIC.x, z + TROPIC.z);
 }
 /**
@@ -251,18 +252,74 @@ export const FILIP_SOLIDS: FilipSolid[] = (() => {
  * furniture, all of him clear of every solid (his phone arm out to his side too), and 1.2 or more
  * inside the turf's lip.
  */
+/** How far to the side of his chair he gets up to (FILIP_GAIT.slide, declared with his gait below). */
+const SLIDE = 0.5;
 export const FILIP_SITE: FilipSite = (() => {
   const D = SDE4_PLAN,
-    way = (D.way.x0 + D.way.x1) / 2;
+    way = (D.way.x0 + D.way.x1) / 2,
+    W = TROPIC_PATHS,
+    Q = TROPIC_PLAZA,
+    turn = 0.3,
+    [near, far] = W.stretch,
+    // The stretch's two lanes on the bay walk: the stretch itself (east of the axis) and his second lane
+    // 2·turn to its left (west), which he walks down from the far end to the near.
+    xa = near[0] - 2 * turn,
+    xb = near[0],
+    // His line along the forecourt, between the ramp's foot and the forecourt's south edge.
+    zw = (W.rampFoot + W.forecourt.z1) / 2,
+    // His ring round the plaza's drum (its solid 0.46 round and the walkers' 0.27, and a little), the
+    // radius of his turns off it, and his line across the plaza's south half onto the café terrace,
+    // the walkers' 0.27 in from the terrace's south edge (clear of the café's guest chair).
+    ring = 0.8,
+    bend = 0.4,
+    south = W.cafe.z1 - 0.27,
+    /** Points `step` apart along a circle about c, radius r, from bearing a0 to a1. */
+    circle = (c: XZ, r: number, a0: number, to: number, step = 0.05): XZ[] => {
+      // (The shorter way round.)
+      const a1 = a0 + angleDiff(to, a0),
+        n = Math.max(2, Math.ceil((Math.abs(a1 - a0) * r) / step));
+      return Array.from({ length: n + 1 }, (_, k): XZ => {
+        const a = a0 + ((a1 - a0) * k) / n;
+        return [c[0] + Math.sin(a) * r, c[1] + Math.cos(a) * r];
+      });
+    },
+    at = (c: XZ, p: XZ) => Math.atan2(p[0] - c[0], p[1] - c[1]),
+    // Off the forecourt round the drum's south side onto the stretch's west lane, heading down it: a
+    // left turn off his forecourt line (c1), round the drum on his ring (to the right), and a left turn
+    // onto the lane (c3), each tangent to the next.
+    c1: XZ = [Q.x + Math.sqrt((ring + bend) ** 2 - (zw + bend - Q.z) ** 2), zw + bend],
+    c3: XZ = [xa + bend, Q.z + Math.sqrt((ring + bend) ** 2 - (xa + bend - Q.x) ** 2)],
+    t1: XZ = [Q.x + ((c1[0] - Q.x) * ring) / (ring + bend), Q.z + ((c1[1] - Q.z) * ring) / (ring + bend)],
+    t3: XZ = [Q.x + ((c3[0] - Q.x) * ring) / (ring + bend), Q.z + ((c3[1] - Q.z) * ring) / (ring + bend)],
+    drum = [
+      ...circle(c1, bend, at(c1, [c1[0], zw]), at(c1, t1)),
+      ...circle([Q.x, Q.z], ring, at([Q.x, Q.z], t1), at([Q.x, Q.z], t3)).slice(1),
+      ...circle(c3, bend, at(c3, t3), at(c3, [xa, c3[1]])).slice(1),
+    ],
+    // His café chair's side (as his day finds it: his root `slide` to his right of his seat) and the
+    // café table's middle.
+    cafe = { x: D.cafe.x, z: D.cafe.z, h: D.cafe.heading },
+    back = FILIP_CAFE.radius + FILIP_CAFE.gap + FILIP_CHAIR.setback,
+    seat: XZ = [cafe.x - Math.sin(cafe.h) * back, cafe.z - Math.cos(cafe.h) * back],
+    side: XZ = [seat[0] - Math.cos(cafe.h) * SLIDE, seat[1] + Math.sin(cafe.h) * SLIDE],
+    // The U-turn off the stretch's west lane at its near end onto its east lane, heading back up it
+    // (after a sliver straight on, so he sets off with no turn of his own).
+    uturn = arc(xa, near[1], 0, Math.PI, turn).slice(1);
   return {
     floor: filipFloor,
     desk: { x: D.desk.x, z: D.desk.z, heading: D.desk.heading, y: D.desk.y },
-    cafe: { x: D.cafe.x, z: D.cafe.z, heading: D.cafe.heading, y: tropicTop(D.cafe.x + TROPIC.x, D.cafe.z + TROPIC.z) },
-    call: { ends: TROPIC_PATHS.stretch, turn: 0.3 },
+    cafe: { x: D.cafe.x, z: D.cafe.z, heading: D.cafe.heading, y: tropicFloor(D.cafe.x + TROPIC.x, D.cafe.z + TROPIC.z) },
+    call: { ends: W.stretch, turn },
     ways: {
-      out: [[5.05, -1.85], [5.05, -1.0], [way, -0.42], [way, 1.4], [way, 2.6], [5.9, 3.9]],
-      across: [[1.8, 5.3], [-0.2, 5.3], [-1.9, 4.85], [-3.15, 4.75], [-4.6, 4.75], [-4.6, 3.85]],
-      home: [[-3.05, 4.75], [-1.5, 4.75], [0.5, 3.6], [2.6, 3.2], [way, 2.7], [way, 1.4], [way, -0.4], [5.15, -1.3], [5.15, -2.6]],
+      // Down the ramp onto the forecourt, west along it, round the drum's south and down the stretch's
+      // west lane (ending on it, heading into the stretch: the day walks him on to its far end).
+      out: [[5.05, -1.85], [5.05, -1.0], [way, -0.42], [way, 1.4], [way, zw], ...drum],
+      // Round onto the east lane and back up the bay walk, west across the plaza's south half onto the
+      // café terrace, past the table's south and round to his chair's side.
+      across: [[xa, near[1] + 1e-4], ...uturn, [xb, south], [cafe.x - 0.45, south], [side[0] - 0.1, side[1] + 0.35]],
+      // Back past the table's south, east across the plaza's south half and up onto the forecourt's
+      // line, east along it to the ramp's foot and up it to his desk.
+      home: [[cafe.x - 0.35, south], [Q.x - 0.3, south], [Q.x + ring + bend + 0.4, zw], [way, zw], [way, 1.4], [way, -0.4], [5.15, -1.3], [5.15, -2.6]],
     },
     solids: FILIP_SOLIDS,
     inland: tropicInland,
@@ -729,7 +786,7 @@ function drinking(j: FilipJoints, props: FilipProps, p: number, lift: number, re
  * before sitting down and after getting up, and gets up or sits down over `rise` seconds, sliding
  * `slide` out to the chair's side.
  */
-export const FILIP_GAIT: DayGait & { radius: number; pause: number; rise: number; slide: number } = { speed: 0.52, stride: STRIDE * S, ease: 1.2, turn: 1.0, minTurn: 0.4, radius: 0.4, pause: 0.35, rise: 0.9, slide: 0.5 };
+export const FILIP_GAIT: DayGait & { radius: number; pause: number; rise: number; slide: number } = { speed: 0.52, stride: STRIDE * S, ease: 1.2, turn: 1.0, minTurn: 0.4, radius: 0.4, pause: 0.35, rise: 0.9, slide: SLIDE };
 export const FILIP_PACE: DayGait = { ...FILIP_GAIT, speed: 0.32 };
 /**
  * His work at the desk (seconds from the day's start): typing (`typing`), thinking (`think`), typing,
@@ -986,12 +1043,11 @@ export function filipDayOf(site: FilipSite) {
   add(G.rise, { kind: 'rise', station: 'desk', up: true, seat: 'desk' });
   add(G.pause, { kind: 'stand', station: 'desk', x: seats.deskSide[0], z: seats.deskSide[1], heading: heading() });
   // Off on the phone, taking it from his pocket to his ear as he sets off (out from behind the desk,
-  // his phone arm clear of it), down the ramp and over the lawn to the call stretch's far end, round a
-  // corner past it onto its left side, heading back along it. (The corner past the far end rounded on
-  // his full radius, and a sliver into the start, so the walk ends heading exactly back along the
-  // stretch and his pacing starts with no turn of its own.)
+  // his phone arm clear of it), down the ramp and along the walks to the call stretch's far end on its
+  // left side, heading back along it (his ways end on that side's line, heading down it, so his pacing
+  // starts with no turn of its own).
   tag.phone = true;
-  go(seats.deskSide, [...site.ways.out, along(...start, out, 2 * G.radius), along(...start, out, 1e-4), start]);
+  go(seats.deskSide, [...site.ways.out, start]);
   (days.acts[days.acts.length - 1] as FilipAct & { kind: 'walk' }).answer = { at: FILIP_CALL.after, seconds: FILIP_CALL.walking };
   // Pacing: back along its left side, round a U-curve onto its right side and along it to the far end;
   // a moment standing there to listen; round again, and a last length along its left side. (His pacing

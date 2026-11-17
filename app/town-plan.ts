@@ -428,9 +428,11 @@ export const TROPIC_SPAN = {
  * height, and check-town holds the two together). The island's model (plan.sites['tropic-island'])
  * has its root at the island's middle, so the building is built in this frame, its podium's foot on
  * the terrace (TROPIC.pad). (The rebuild at the main island's scale kept the east end and the south
- * edge where they were and took the length off the west and the depth off the north.)
+ * edge where they were and took the length off the west and the depth off the north.) `ramp`: the
+ * veranda's ramp off the podium's south face (SDE4's, in this frame: its sides and its run out to its
+ * foot), which the walks' forecourt receives (TROPIC_PATHS); check-town holds it to SDE4's plan.
  */
-export const TROPIC_BUILDING = { x: 1.2, z: -1.1, hw: 4.7, hd: 2.8, top: 6.9 };
+export const TROPIC_BUILDING = { x: 1.2, z: -1.1, hw: 4.7, hd: 2.8, top: 6.9, ramp: { x0: 3.25, x1: 4.15, run: 0.72 } };
 /**
  * The three homes stand side by side in a straight row, fronts in one line facing the ring
  * road (east), with a 2.4 gap between neighbours so each reads as its own house. Set back so
@@ -2017,7 +2019,7 @@ export const TROPIC_PLAZA = { x: -1.35, z: 2.3, r: 1.7 };
  * slope, the dome's with it, is 1:5 at most (no one on it stands visibly tilted): that is what holds
  * it lower than the photo's hill (0.6 high and 5 across would be 1:2.7).
  */
-export const TROPIC_MOUND = { x: -6.4, z: 4.6, r: 2.6, h: 0.22 };
+export const TROPIC_MOUND = { x: -6.8, z: 5.0, r: 2.6, h: 0.22 };
 /**
  * The top of the tropic island's lawn at a world point: a gentle dome, TROPIC.dome over the turf's
  * lip in the middle and level with it at the turf's edge, the mound on it, and the level terrace
@@ -2037,88 +2039,241 @@ export function tropicTop(x: number, z: number) {
     edge = 1 - smoothstep((lawn - 0.86) / 0.14),
     dome = TROPIC.dome * (1 - lawn ** 2.4),
     podium = Math.hypot(Math.max(0, Math.abs(lx - B.x) - B.hw - G.grow), Math.max(0, Math.abs(lz - B.z) - B.hd - G.grow)),
-    court = Math.max(0, Math.hypot(lx - P.x, lz - P.z) - P.r - G.grow),
+    C = TROPIC_PATHS.cafe,
+    court = Math.max(0, Math.min(Math.hypot(lx - P.x, lz - P.z) - P.r, boxDistance(lx, lz, C.x0, C.x1, C.z0, C.z1)) - G.grow),
     terrace = (1 - smoothstep(Math.min(podium, court) / G.ease)) * edge,
     m = Math.hypot(lx - M.x, lz - M.z) / M.r,
     mound = m < 1 ? M.h * 0.5 * (1 + Math.cos(Math.PI * m)) * edge : 0;
   return dome + mound + (TROPIC.pad - dome - mound) * terrace;
 }
 /**
- * The tropic island's walks (design 1.3), in its own frame, as centripetal Catmull-Rom curves
- * through the points (town-tropic's paths draws them): pale concrete `width` across with a flush kerb
- * `kerb` wide a shade lighter, `lift` over the lawn.
- * - `south` (design's walk a): from the plaza's south-east rim in a long S, south and then west over
- *   the south lawn, past the café's spot on its south side and round the mound's south-east foot,
- *   toward the beach at the knoll (TROPIC_COAST's), the low rocky west end of the bay;
- * - `front` (walk b): from the plaza's east rim along the building's front to the foot of the
- *   veranda's ramp;
- * - `call` (walk b's branch to the south-east lawn): it leaves the front walk at the front walk's own
- *   second point, south-east, and turns onto the call stretch (`stretch`, its last 1.6: straight,
- *   running east-west, between its last three points), where he paces on the phone. It lies `branch`
- *   over the lawn, a hair over the front walk, so where it leaves it its paving lies on the front
- *   walk's and its kerbs start at the front walk's edge.
- * The walks that start at the plaza start at its rim (TROPIC_PLAZA.r), their first point inside it:
- * the garden's paving covers the plaza. The others' ends are round.
+ * The tropic island's walks before SDE4 (work/ual-design/walks/design.md: "two destinations, one
+ * forecourt"), in its own frame, solved from the plaza (TROPIC_PLAZA), the building's plan
+ * (TROPIC_BUILDING: the podium's south face, its east and west ends and the veranda's ramp) and the
+ * coast (the turf's lip on the entrance's axis), with the handful of named measures below. The
+ * entrance's axis (the plaza's x) runs straight on to the sea; the building's front is one paved line;
+ * off its east end one arc leads to a seat in the big rain tree's shade; the rest is open lawn.
+ * The plaza is the hinge of a cross, each arm meeting its rim square, on a diameter: the entrance's
+ * step to its north, the forecourt to its east, the café terrace to its west, the bay walk to its south.
+ * - `forecourt` (the main line, east arm): a straight band along the podium's south face from the
+ *   plaza's rim to the podium's east end, its north edge the podium's face (no lawn between), its south
+ *   edge one straight line `z1`: the face and `depth`, or the ramp's foot and `clear`, whichever is
+ *   further out. The veranda's ramp lands on it.
+ * - `cafe` (the main line, west arm): the forecourt's counterpart, a rectangle on the line of the
+ *   podium's face, from the plaza's rim `length` west (past the building's south-west corner), `depth`
+ *   deep, its two far corners rounded `corner`; the café table on it `table` west of the plaza's rim and
+ *   `tableIn` south of the face, its sitter facing `heading` (south-east, over the lawn to the bay and
+ *   toward the island's file). `form` 'round' is the fallback studied beside it (a round terrace `r`
+ *   round, joined to the plaza on its south-west as one outline): see design.md.
+ * - `bay` (the main walk, south arm): straight down the entrance's axis from the plaza's rim to the
+ *   landing, `width` across (the town's pavement), its end square under the landing's deck.
+ * - `landing`: a low wide oak deck `width` by `depth` across the axis, carried level over the turf's
+ *   lip (`onLawn` of it on the lawn, the rest over the sand), its deck `over` above the walk's surface
+ *   where they meet, broad steps down to the sand on its seaward side (the garden builds it:
+ *   town-tropic-garden's tropicLanding).
+ * - `tree` (the lesser walk): it leaves the forecourt's east end in line with it (its south edge the
+ *   forecourt's, run straight on), and one arc of `radius` turns it `turn` toward the north-east, to the
+ *   seat; `width` across.
+ * - `seat`: a round paved place `r` round under the big rain tree's hem, its middle `r` on along the
+ *   walk's line past the arc's end (the walk runs `into` it); an oak bench on its far rim faces back
+ *   over the open lawn to the bay (the garden's).
+ * - `main` and `tree.kerb`: the flush kerbs: grey granite `main.kerb` wide along every lawn edge of the
+ *   main line (forecourt, café terrace, bay walk), the light kerb `tree.kerb` wide along the tree walk
+ *   and the seat; every concave junction filleted `fillet` (the kerb runs on round it). Kerbs are the
+ *   paving's own outer band (tropicPaving's `kerb`), so they run on through every junction; none runs
+ *   along the podium or the plaza's rim.
+ * - `stretch`: Filip's call stretch on the bay walk (FILIP_SITE.call): straight 1.6, its near end
+ *   (south) so that his pacing turn (0.3) stays `inland` in from the turf's lip, his two pacing lanes
+ *   `pace` either side of the axis.
+ * - `lift`: every surface's height over the lawn.
  */
-export const TROPIC_PATHS = {
-  width: 0.56,
-  kerb: 0.08,
-  lift: 0.03,
-  branch: 0.036,
-  south: [[-0.5, 3.55], [-0.15, 4.65], [-1.0, 5.6], [-2.6, 6.05], [-4.2, 6.1], [-5.0, 6.45], [-5.45, 6.85]] as XZ[],
-  front: [[0.15, 2.6], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
-  call: [[1.0, 2.75], [1.6, 3.55], [2.2, 4.6], [2.9, 5.3], [3.5, 5.3], [4.3, 5.3], [5.1, 5.3]] as XZ[],
-  stretch: [[3.5, 5.3], [5.1, 5.3]] as [XZ, XZ],
-};
+export const TROPIC_PATHS = (() => {
+  const Q = TROPIC_PLAZA,
+    B = TROPIC_BUILDING,
+    face = B.z + B.hd,
+    east = B.x + B.hw,
+    west = B.x - B.hw,
+    rampFoot = face + B.ramp.run,
+    lift = 0.03,
+    main = { kerb: 0.11, fillet: 0.3 },
+    forecourt = { depth: 1.2, clear: 0.28 },
+    z1 = Math.max(face + forecourt.depth, rampFoot + forecourt.clear),
+    cafe = { form: 'rect' as 'rect' | 'round', length: 2.4, depth: 1.95, corner: 0.3, table: 1.0, tableIn: 0.55, heading: 0.8, r: 1.25 },
+    bay = { width: 1.1 },
+    // The turf's lip on the entrance's axis: the first point south of the plaza that is off the lawn.
+    lip = (() => {
+      let a = Q.z + Q.r,
+        b = Q.z + 12;
+      for (let k = 0; k < 60; k++) {
+        const m = (a + b) / 2;
+        if (tropicInland(Q.x, m) > 0) a = m;
+        else b = m;
+      }
+      return a;
+    })(),
+    landing = { width: 2.1, depth: 1.2, onLawn: 0.65, over: 0.03 },
+    tree = { width: 0.7, kerb: 0.1, radius: 2.3, turn: (40 * Math.PI) / 180, into: 0.4 },
+    seatR = 0.8,
+    // The tree walk's line: z `line`, its arc about (east, line - radius), from bearing 0 to `turn`.
+    line = z1 - tree.width / 2,
+    centre: XZ = [east, line - tree.radius],
+    arcEnd: XZ = [centre[0] + tree.radius * Math.sin(tree.turn), centre[1] + tree.radius * Math.cos(tree.turn)],
+    ahead: XZ = [Math.cos(tree.turn), -Math.sin(tree.turn)],
+    inland = 1.2,
+    pace = 0.3,
+    // The stretch's near end: as far south as keeps his pacing turn there (a half circle `pace` round
+    // the axis) `inland` and a hair in from the turf's lip.
+    near = (() => {
+      const turnOk = (z: number) => Array.from({ length: 13 }, (_, k) => (k / 12) * Math.PI).every((a) => tropicInland(Q.x + Math.cos(a) * pace, z + Math.sin(a) * pace) >= inland + 0.02);
+      let a = Q.z,
+        b = lip;
+      for (let k = 0; k < 50; k++) {
+        const m = (a + b) / 2;
+        if (turnOk(m)) a = m;
+        else b = m;
+      }
+      return a;
+    })();
+  return {
+    lift,
+    face,
+    east,
+    west,
+    rampFoot,
+    rampX: [B.ramp.x0, B.ramp.x1] as [number, number],
+    main,
+    forecourt: { ...forecourt, x0: Q.x, x1: east, z0: face, z1 },
+    cafe: { ...cafe, x0: Q.x - Q.r - cafe.length, x1: Q.x - Q.r, z0: face, z1: face + cafe.depth, tableX: Q.x - Q.r - cafe.table, tableZ: face + cafe.tableIn },
+    bay: { ...bay, x: Q.x, z0: Q.z + Math.sqrt(Q.r ** 2 - (bay.width / 2) ** 2), end: lip - landing.onLawn + 0.05 },
+    lip,
+    landing: { ...landing, x: Q.x, z0: lip - landing.onLawn, z1: lip - landing.onLawn + landing.depth },
+    tree: { ...tree, line, centre, arcEnd, ahead },
+    seat: { x: arcEnd[0] + seatR * ahead[0], z: arcEnd[1] + seatR * ahead[1], r: seatR },
+    stretch: [[Q.x + pace, near], [Q.x + pace, near - 1.6]] as [XZ, XZ],
+    inland,
+    pace,
+  };
+})();
+/** A box's signed distance (x0..x1 by z0..z1), negative inside. */
+function boxDistance(x: number, z: number, x0: number, x1: number, z0: number, z1: number) {
+  const dx = Math.max(x0 - x, x - x1),
+    dz = Math.max(z0 - z, z - z1);
+  return Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0);
+}
+/** A box's signed distance with every corner rounded `r`. */
+function roundBoxDistance(x: number, z: number, x0: number, x1: number, z0: number, z1: number, r: number) {
+  return boxDistance(x, z, x0 + r, x1 - r, z0 + r, z1 - r) - r;
+}
+/** The union of two signed distances with the concave corners between them filleted `r` (a circle's arc where they meet square). */
+function roundUnion(a: number, b: number, r: number) {
+  const u = Math.max(r - a, 0),
+    v = Math.max(r - b, 0);
+  return Math.max(r, Math.min(a, b)) - Math.hypot(u, v);
+}
 /**
- * Each walk's middle line in the world, fine polylines (a few hundredths between points) through the
- * same curves, from where it starts on the plaza's rim (the south and front walks; the call walk from
- * its first point, on the front walk's line) to its end.
+ * The tropic island's paving at a point of its own frame (TROPIC_PATHS), as signed distances
+ * (negative inside):
+ * - `union`: everything paved or built as one shape (the plaza, the podium, the forecourt, the café
+ *   terrace, the bay walk, the tree walk and the seat), its concave junctions filleted; its edge is
+ *   the lawn's edge;
+ * - `paving`: what the land paves, the union less the plaza (the garden's: the land's paving runs 0.01
+ *   onto its rim) and the podium (tucked 0.02 under its face);
+ * - `kerb`: the width of the flush kerb there (the main line's, or the tree walk's east of the
+ *   forecourt's end), so the kerb is where union > -kerb inside the paving.
+ */
+export function tropicPaving(x: number, z: number) {
+  const W = TROPIC_PATHS,
+    Q = TROPIC_PLAZA,
+    B = TROPIC_BUILDING,
+    r = W.main.fillet,
+    plaza = Math.hypot(x - Q.x, z - Q.z) - Q.r,
+    podium = boxDistance(x, z, B.x - B.hw, B.x + B.hw, B.z - B.hd, B.z + B.hd),
+    F = W.forecourt,
+    fore = boxDistance(x, z, Q.x, F.x1, F.z0 - 0.5, F.z1),
+    C = W.cafe,
+    cafe =
+      C.form === 'rect'
+        ? roundBoxDistance(x, z, C.x0, Q.x + C.corner, C.z0, C.z1, C.corner)
+        : Math.hypot(x - (Q.x - Q.r * 0.82), z - (Q.z + Q.r * 0.85)) - C.r,
+    bay = boxDistance(x, z, W.bay.x - W.bay.width / 2, W.bay.x + W.bay.width / 2, Q.z, W.bay.end),
+    T0 = W.tree,
+    h = T0.width / 2,
+    [cx, cz] = T0.centre,
+    a = Math.atan2(x - cx, z - cz),
+    // The arc's band between its two end lines (and the band run straight back west into the forecourt).
+    arc = a >= 0 && a <= T0.turn ? Math.abs(Math.hypot(x - cx, z - cz) - T0.radius) - h : Infinity,
+    back = boxDistance(x, z, Q.x, W.east, T0.line - h, T0.line + h),
+    // On past the arc's end into the seat, square.
+    u = (x - T0.arcEnd[0]) * T0.ahead[0] + (z - T0.arcEnd[1]) * T0.ahead[1],
+    v = -(x - T0.arcEnd[0]) * T0.ahead[1] + (z - T0.arcEnd[1]) * T0.ahead[0],
+    into = Math.max(Math.abs(u - T0.into / 2) - T0.into / 2, Math.abs(v) - h),
+    // (Cut square across its two ends: the end lines are the band's own.)
+    ends = Math.min(
+      ...[0, T0.turn].map((t) => {
+        const ex = cx + T0.radius * Math.sin(t),
+          ez = cz + T0.radius * Math.cos(t),
+          nx = Math.sin(t),
+          nz = Math.cos(t),
+          along = (x - ex) * nx + (z - ez) * nz,
+          clamp = Math.max(-h, Math.min(h, along));
+        return Math.hypot(x - ex - nx * clamp, z - ez - nz * clamp);
+      }),
+    ),
+    treeWalk = Math.min(arc === Infinity ? ends : arc, back, into),
+    seat = Math.hypot(x - W.seat.x, z - W.seat.z) - W.seat.r;
+  let main = roundUnion(plaza, fore, r);
+  main = roundUnion(main, cafe, C.form === 'rect' ? r : 0.4);
+  main = roundUnion(main, bay, r);
+  const lesser = roundUnion(treeWalk, seat, r),
+    union = Math.min(roundUnion(main, lesser, r), podium),
+    paving = Math.max(union, -(plaza + 0.01), -(podium + 0.02));
+  return { union, paving, kerb: x > W.east - 0.1 ? T0.kerb : W.main.kerb };
+}
+/**
+ * The walks' middle lines in the world, fine polylines (about 0.05 apart): the forecourt's from the
+ * plaza's rim to the podium's east end, on its own middle; the bay walk's from the plaza's rim to its
+ * end under the landing, on the axis; the tree walk's from the forecourt's east end round its arc to
+ * the seat's middle.
  */
 export const TROPIC_PATH_LINES = (() => {
-  const Q = TROPIC_PLAZA,
-    line = (points: XZ[], fromRim: boolean) => {
-      const fine = Array.from({ length: 401 }, (_, k): XZ => {
-        const [x, z] = centripetal(points, k / 400);
-        return [TROPIC.x + x, TROPIC.z + z];
-      });
-      if (!fromRim) return fine;
-      const outside = (p: XZ) => Math.hypot(p[0] - TROPIC.x - Q.x, p[1] - TROPIC.z - Q.z) - Q.r,
-        k = fine.findIndex((p) => outside(p) >= 0),
-        [a, b] = [fine[k - 1], fine[k]],
-        f = -outside(a) / (outside(b) - outside(a));
-      return [[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f] as XZ, ...fine.slice(k)];
-    };
-  return { south: line(TROPIC_PATHS.south, true), front: line(TROPIC_PATHS.front, true), call: line(TROPIC_PATHS.call, false) };
+  const W = TROPIC_PATHS,
+    Q = TROPIC_PLAZA,
+    at = (x: number, z: number): XZ => [TROPIC.x + x, TROPIC.z + z],
+    straight = (a: XZ, b: XZ) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.05));
+      return Array.from({ length: n + 1 }, (_, k): XZ => at(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
+    },
+    T0 = W.tree,
+    mid = (W.forecourt.z0 + W.forecourt.z1) / 2,
+    steps = Math.ceil((T0.radius * T0.turn) / 0.05),
+    arc = Array.from({ length: steps + 1 }, (_, k): XZ => {
+      const a = (k / steps) * T0.turn;
+      return at(T0.centre[0] + T0.radius * Math.sin(a), T0.centre[1] + T0.radius * Math.cos(a));
+    });
+  return {
+    forecourt: straight([Q.x + Math.sqrt(Q.r ** 2 - (mid - Q.z) ** 2), mid], [W.east, mid]),
+    bay: straight([Q.x, W.bay.z0], [Q.x, W.bay.end]),
+    tree: [...arc, ...straight(T0.arcEnd, [W.seat.x, W.seat.z]).slice(1)],
+  };
 })();
 /**
+ * How far a world point is inside the tropic island's paving laid by the land (tropicPaving's
+ * `paving`: the forecourt, the café terrace, the bay walk, the tree walk and the seat), negative
+ * outside; the plaza (the garden's) and the podium are not counted.
+ */
+export function tropicWalkInside(x: number, z: number) {
+  const [lx, lz] = tropicLocal(x, z);
+  return -tropicPaving(lx, lz).paving;
+}
+/**
  * The ground drawn at a world point of the tropic island, what a figure stands on: the lawn
- * (tropicTop), or a walk where it is on one (its lift over the lawn; the call walk's where it lies
- * over the front walk), each step up eased over `ease` of the lawn outside the walk's edge, as on the
- * sky island (skyFloor). A walk is cut square where it starts (at the plaza's rim, or on the front
- * walk's line) and round where it ends, as drawn. (The plaza's paving and the building's podium, deck
- * and ramp are their builders' own floors.)
+ * (tropicTop), or the land's paving where it is on it (its lift over the lawn), the step up eased over
+ * `ease` of the lawn outside the paving's edge, as on the sky island (skyFloor). (The plaza's paving,
+ * the landing and the building's podium, deck and ramp are their builders' own floors.)
  */
 export const TROPIC_FLOOR = { ease: 0.15 };
 export function tropicFloor(x: number, z: number) {
-  const W = TROPIC_PATHS,
-    step = (inside: number) => {
-      const u = Math.min(1, Math.max(0, 1 + inside / TROPIC_FLOOR.ease));
-      return u * u * (3 - 2 * u);
-    },
-    walks = Math.max(tropicWalkInside('south', x, z), tropicWalkInside('front', x, z));
-  return tropicTop(x, z) + Math.max(W.lift * step(walks), W.branch * step(tropicWalkInside('call', x, z)));
-}
-/**
- * How far a world point is inside one of the tropic island's walks (TROPIC_PATH_LINES), negative
- * outside: cut square where the walk starts (nothing behind its first point counts), round where it
- * ends, as town-tropic draws it.
- */
-export function tropicWalkInside(walk: keyof typeof TROPIC_PATH_LINES, x: number, z: number) {
-  const line = TROPIC_PATH_LINES[walk],
-    [a, b] = line;
-  if ((x - a[0]) * (b[0] - a[0]) + (z - a[1]) * (b[1] - a[1]) < 0) return -Infinity;
-  return TROPIC_PATHS.width / 2 - polylineDistance(line, x, z);
+  return pathFloor(tropicTop(x, z), tropicWalkInside(x, z), TROPIC_PATHS.lift, TROPIC_FLOOR.ease);
 }
 
 /* ------------------------------------------------------------------ */
