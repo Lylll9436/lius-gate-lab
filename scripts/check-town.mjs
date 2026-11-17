@@ -23,6 +23,7 @@ for (const name of [
   'figure-rig',
   'sky-figure',
   'tropic-figure',
+  'tropic-figure-look',
   'city-hover',
   'city-inspection',
   'city-ink',
@@ -5298,6 +5299,427 @@ function crossingEdges(X, Y) {
   assert(before.every((d) => Math.abs(d - (39 / 40) * (last + S.sink)) < 1e-6), 'At its end the stream has not gone on down the line past its last ring.');
   assert(moved <= ((last + S.sink) / 40) * 1.001 && moved >= (last / 40) * 1.5, `A step of a fortieth moves a ring ${moved.toFixed(4)} down the line.`);
   pose('stand', 0);
+}
+// Filip Biljecki's figure (tropic-figure-look.ts: his look; his day is the tropic island's), built
+// on his own beside Alison's. He is the town's second named person, built on exactly her rig, so
+// her pose maths and the residents' walk drive him unchanged:
+// - Rig: his root ('filip') is scaled FILIP_SCALE (1.08) all over, and inside it his joints are
+//   hers: the same names in the same tree and order ('body'; 'leg-left' and 'leg-right' with a
+//   'knee' each; 'arm-left' and 'arm-right' with an 'elbow' each), each at her pivot at rest (the
+//   same place, turn and scale), each with its meshes in her surface kinds and names (his hair a
+//   mesh of its own, 'filip-hair', as hers is 'alison-hair'); and poseAlison, given his joints,
+//   sets every one of them exactly as it sets hers and lifts him by her lift, for every one of her
+//   poses over a sweep of phases (her own props standing in for his).
+// - Build: at most 5,500 triangles in 14 meshes as built (11 of him, as many as hers, and his
+//   three hand props: the phone, the cup and the saucer, each one mesh, hidden until a pose shows
+//   it), 13 once batched part by part; every mesh in a figure's surface kind, one-sided, opaque,
+//   cutting no holes, its colours on its vertices. Standing, his soles are on y 0, the top of his
+//   hair is FILIP.height up (in his own frame as tall as the tallest resident, give or take 0.02),
+//   and he keeps within the walkers' clearance scaled to him.
+// - Colour: everything on him at or under the figures' 0.55 (no exception, not even his hair); his
+//   hair brown (every shade's hue 15 to 40 degrees, its value under 0.55); FILIP_LOOK's shirt white,
+//   its chinos navy, its belt, shoes and brows brown.
+// - Thickness: every joined piece of him and his props is 0.07 or more across every way (in his own
+//   frame, so 0.0756 on the island), but his nose (a resident's, a 0.04 bump sunk in his face).
+// - His head is his own (FILIP_HEAD), not the residents' nearly round HEAD, which read too full on
+//   him (the owner, 2026-11-16: his face a little longer, less fat): 8 to 12% taller and 5 to 8%
+//   narrower than HEAD, taller than it is wide (by 15% or more), its lower half narrowing faster
+//   than its upper (at 60% of the way down from its widest ring it is 4% or more narrower than at
+//   60% of the way up, where an ellipsoid's are alike), and the head he is built with is that one
+//   (every vertex of it on FILIP_HEAD's surface). What sits on it is measured on it: his ears, nose
+//   and eyes where FILIP_FACE says, his ears standing 0.015 or more out of it.
+// - Likeness (work/ual-design/facts.md: short brown hair swept to the side, clean-shaven, no
+//   glasses, light skin, a white shirt, open at the neck in his photo and buttoned up here: the
+//   owner, 2026-11-17, found the open neck a little indecent): his hair short (nowhere under 0.68,
+//   so his nape shows, and clear of his ears), never bald (its top 0.02 or more over his skull),
+//   parted on his left (at 0.02 and 0.06 ahead of his crown its top steps down 0.008 or more
+//   somewhere between x 0.04 and 0.09, those on HEAD's width and carried to his as his hair is:
+//   times FILIP_HEAD.r[0] / HEAD.r[0]) and swept across to his right (his right side, at 0.1 out so
+//   carried, 0.01 or more higher than his left); no glasses (his face is his head, neck, nose and
+//   two ears, nothing but his head lies across his eyes, and nothing but his skin and features is
+//   over them: from the town camera's height, in front and 40 degrees either side, a ray at each
+//   eye meets his face at a cell of FILIP_LOOK.eyes, not his hair); his sleeves rolled to the elbow
+//   (a white cuff standing 0.006 or more proud of the sleeve, his forearm bare below it).
+// - His shirt buttoned up: no skin on it anywhere (every corner of his shirt's mesh is cloth); its
+//   collar one joined piece round his neck, covering the crease where his head meets his shoulders
+//   all round (looking in square to the torso 0.004 under the crease, every 5 degrees round, the
+//   collar comes first: no gap between it and his jaw), standing at most 0.015 up his head over
+//   that crease and not at all under his chin (within 0.3 of straight ahead, none of it out of his
+//   head is over the crease: his chin rests on it, not in it); its two points meeting under his
+//   chin (down his middle, from in front, the collar from the crease 0.005 to 0.02 down) and
+//   parting there, their tips (mirrored) lying on his chest 0.03 to 0.07 either side of his middle,
+//   0.03 or more under where they part; four or five buttons (cells of FILIP_LOOK.button, a muted
+//   warm shade 0.05 or more under the shirt's white, saturation 0.15 at most) down the placket's
+//   middle, each 0.016 across or less and inside the placket's 0.011 either side, evenly spaced,
+//   the top one 0.003 to 0.02 under where the points part and seen between them from in front and
+//   from the town camera's pitch, the lowest above the belt; and the placket a shade deeper (0.88
+//   to 0.97 of the shirt beside it) down his middle from the belt up to where the points part.
+{
+  const { createFilip, FILIP, FILIP_FACE, FILIP_HEAD, FILIP_LOOK, FILIP_SCALE, filipHeadReach } = await load('tropic-figure-look'),
+    { createAlison, poseAlison, ALISON_POSES } = await load('sky-figure'),
+    { createResident, HEAD, DEPTH, torsoAt } = await load('city-people'),
+    { createCityMaterials } = await load('city-materials'),
+    library = createCityMaterials(),
+    { root, joints, props } = createFilip(library.material),
+    her = createAlison(library.material),
+    hand = Object.values(props),
+    meshes = [],
+    v = new T.Vector3(),
+    tri = (m) => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3,
+    held = (m) => hand.includes(m.parent),
+    label = (m) => `${m.parent.name || 'part'}${m.name ? '/' + m.name : ''}`;
+  root.traverse((o) => o.isMesh && meshes.push(o));
+  assert.equal(root.name, 'filip');
+  assert(FILIP_SCALE === 1.08 && root.scale.x === FILIP_SCALE && root.scale.y === FILIP_SCALE && root.scale.z === FILIP_SCALE, `His root is scaled ${root.scale.toArray().join(', ')}, not ${FILIP_SCALE} all over.`);
+  assert.equal(meshes.length, 14, `Filip is ${meshes.length} meshes as built.`);
+  assert.deepEqual(hand.map((g) => g.name), ['phone', 'coffee-cup', 'saucer']);
+  assert(hand.every((g) => !g.visible && g.children.length === 1 && g.children[0].isMesh), 'Each of his props is one mesh, hidden until a pose shows it.');
+  const triangles = meshes.reduce((n, m) => n + tri(m), 0);
+  assert(triangles <= 5500, `Filip costs ${triangles} triangles.`);
+  // His joints are hers: the same tree of names (props aside), each at her pivot at rest, each
+  // joint's own meshes in her kinds and names, in her order.
+  const herHand = Object.values(her.props),
+    tree = (o, skip) => o.children.filter((c) => !c.isMesh && !skip.includes(c)).map((c) => [c.name, tree(c, skip)]),
+    pairs = [[joints.body, her.joints.body], ...[0, 1].flatMap((k) => [[joints.legs[k], her.joints.legs[k]], [joints.knees[k], her.joints.knees[k]], [joints.arms[k], her.joints.arms[k]], [joints.elbows[k], her.joints.elbows[k]]])],
+    local = (o) => (o.updateMatrix(), o.matrix.elements),
+    same = (a, b) => a.every((n, i) => Math.abs(n - b[i]) < 1e-12),
+    kinds = (g, who) => g.children.filter((c) => c.isMesh).map((m) => `${m.material.userData.surfaceKind}:${m.name.replace(who + '-', '')}`);
+  assert.deepEqual(tree(root, hand), tree(her.root, herHand), 'His joints are not Alison’s.');
+  for (const [a, b] of pairs) {
+    assert(same(local(a), local(b)), `His ${a.name} does not stand at Alison's pivot at rest.`);
+    assert.deepEqual(kinds(a, 'filip'), kinds(b, 'alison'), `His ${a.name}'s meshes are not in Alison's kinds.`);
+  }
+  // Her pose maths drive him unchanged, over every pose and a sweep of phases.
+  const stand = createAlison(library.material).props;
+  for (const name of ALISON_POSES)
+    for (const phase of [0, 0.13, 0.37, 0.5, 0.71, 0.94, 2.25]) {
+      const a = poseAlison(joints, stand, name, phase),
+        b = poseAlison(her.joints, her.props, name, phase);
+      assert(a.lift === b.lift && pairs.every(([p, q]) => same(local(p), local(q))), `'${name}' at ${phase} poses him otherwise than Alison.`);
+    }
+  poseAlison(joints, stand, 'stand', 0);
+  // Batched as town-build batches its figures (each group's own meshes, one batch a kind and a
+  // shadow flag, a mesh casting when its longest side is 0.3 or more): 13.
+  let batched = 0;
+  for (const g of [joints.body, ...joints.legs, ...joints.knees, ...joints.arms, ...joints.elbows, ...hand]) {
+    const own = g.children.filter((c) => c.isMesh);
+    assert(own.length, `His ${g.name} has no mesh.`);
+    batched += new Set(own.map((m) => {
+      m.geometry.computeBoundingBox();
+      const s = m.geometry.boundingBox.getSize(v);
+      return `${m.material.userData.surfaceKind}|${Math.max(s.x, s.y, s.z) >= 0.3}`;
+    })).size;
+  }
+  assert.equal(batched, 13, `Filip batches into ${batched} meshes.`);
+  // Standing: his height, his soles and his width, his props aside.
+  root.updateMatrixWorld(true);
+  const box = new T.Box3(),
+    heights = [];
+  for (const m of meshes.filter((m) => !held(m))) box.expandByObject(m);
+  for (let i = 0; i < 9; i++) {
+    const r = createResident(i, library.material);
+    r.updateMatrixWorld(true);
+    heights.push(new T.Box3().setFromObject(r).max.y);
+  }
+  assert(Math.abs(box.max.y - FILIP.height) < 0.005, `FILIP.height is ${FILIP.height}, and he stands ${box.max.y.toFixed(3)}.`);
+  assert(Math.abs(box.max.y / FILIP_SCALE - Math.max(...heights)) < 0.02, `In his own frame he stands ${(box.max.y / FILIP_SCALE).toFixed(3)}, the tallest resident ${Math.max(...heights).toFixed(3)}.`);
+  assert(Math.abs(box.min.y) < 0.004 * FILIP_SCALE, `Standing, his soles are at ${box.min.y.toFixed(3)}.`);
+  assert(Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z) < 0.27 * FILIP_SCALE, 'Filip is wider than the walkers’ clearances allow, scaled to him.');
+  // Colour.
+  const saturation = (c) => {
+      const max = Math.max(c.r, c.g, c.b);
+      return max ? (max - Math.min(c.r, c.g, c.b)) / max : 0;
+    },
+    hueOf = (c) => {
+      const max = Math.max(c.r, c.g, c.b),
+        d = max - Math.min(c.r, c.g, c.b),
+        h = !d ? 0 : max === c.r ? (c.g - c.b) / d : max === c.g ? 2 + (c.b - c.r) / d : 4 + (c.r - c.g) / d;
+      return (h * 60 + 360) % 360;
+    },
+    value = (c) => Math.max(c.r, c.g, c.b),
+    parse = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
+    },
+    colour = new T.Color();
+  for (const m of meshes) {
+    const kind = m.material.userData.surfaceKind,
+      c = m.geometry.getAttribute('color');
+    assert(kind === 'fabric' || kind === 'paint', `His ${label(m)} is in no surface kind of a figure's (${kind}).`);
+    assert(m.material.side === T.FrontSide && !m.material.transparent && m.material.opacity === 1 && !m.material.alphaTest && m.material.depthWrite, `His ${label(m)} is two-sided, transparent or cut out.`);
+    assert(!m.material.onBeforeCompile || !patchedShader(m.material).fragmentShader.includes('discard'), `His ${label(m)} cuts holes.`);
+    assert(c && c.count === m.geometry.getAttribute('position').count, `His ${label(m)} has no colours on its vertices.`);
+    for (let k = 0; k < c.count; k++) {
+      colour.fromBufferAttribute(c, k).convertLinearToSRGB();
+      assert(saturation(colour) <= 0.55 + 1e-4, `His ${label(m)} wears a colour louder than the town's figures (${colour.getHexString()}, ${saturation(colour).toFixed(3)}).`);
+      if (m.name === 'filip-hair') assert(hueOf(colour) >= 15 && hueOf(colour) <= 40 && value(colour) < 0.55, `His hair is not brown (${colour.getHexString()}).`);
+    }
+  }
+  const L = FILIP_LOOK;
+  for (const [key, hex] of Object.entries(L)) assert(saturation(parse(hex)) <= 0.55, `FILIP_LOOK.${key} is louder than the figures' 0.55.`);
+  assert(value(parse(L.shirt)) > 0.85 && saturation(parse(L.shirt)) < 0.1, 'His shirt is not white.');
+  assert(hueOf(parse(L.trousers)) >= 200 && hueOf(parse(L.trousers)) <= 235 && value(parse(L.trousers)) < 0.4, 'His chinos are not navy.');
+  for (const key of ['hair', 'brows', 'belt', 'shoes']) assert(hueOf(parse(L[key])) >= 15 && hueOf(parse(L[key])) <= 40 && value(parse(L[key])) < 0.55, `FILIP_LOOK.${key} is not a brown.`);
+  // Each run of joined faces in a mesh, as its box in the mesh's own frame and its vertices (their indices).
+  const pieces = (m) => {
+    const q = m.geometry.getAttribute('position'),
+      index = m.geometry.index,
+      at = (i) => (index ? index.getX(i) : i),
+      key = (i) => [q.getX(at(i)), q.getY(at(i)), q.getZ(at(i))].map((n) => n.toFixed(4)).join(','),
+      n = index ? index.count : q.count,
+      parent = new Map(),
+      find = (k) => (parent.get(k) === k ? k : (parent.set(k, find(parent.get(k))), parent.get(k)));
+    for (let i = 0; i < n; i++) if (!parent.has(key(i))) parent.set(key(i), key(i));
+    for (let i = 0; i + 2 < n; i += 3) for (const j of [1, 2]) parent.set(find(key(i + j)), find(key(i)));
+    const boxes = new Map();
+    for (let i = 0; i < n; i++) {
+      const piece = find(key(i));
+      if (!boxes.has(piece)) boxes.set(piece, { box: new T.Box3(), points: [] });
+      boxes.get(piece).box.expandByPoint(v.fromBufferAttribute(q, at(i)));
+      boxes.get(piece).points.push(at(i));
+    }
+    return [...boxes.values()].map(({ box: b, points }) => ({ size: b.getSize(new T.Vector3()), centre: b.getCenter(new T.Vector3()), points }));
+  };
+  const thin = (p) => Math.min(p.size.x, p.size.y, p.size.z) < 0.07 - 1e-3,
+    sized = (p) => p.size.toArray().map((n) => n.toFixed(3)).join(' x '),
+    face = joints.body.children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'paint');
+  for (const m of meshes.filter((m) => m !== face)) for (const p of pieces(m)) assert(!thin(p), `A piece of his ${label(m)} is ${sized(p)}.`);
+  // His face: his head, neck, nose and two ears, no glasses; only the nose under 0.07.
+  const features = pieces(face),
+    slight = features.filter(thin),
+    volume = (p) => p.size.x * p.size.y * p.size.z,
+    skull = features.reduce((a, b) => (volume(a) >= volume(b) ? a : b)),
+    nose = new T.Vector3(...FILIP_FACE.nose);
+  assert.equal(features.length, 5, `His face is ${features.length} pieces, not his head, neck, nose and ears.`);
+  assert(slight.length === 1 && Math.abs(slight[0].centre.x - nose.x) < 0.005 && Math.abs(slight[0].centre.y - nose.y) < 0.01 && slight[0].centre.z > 0.12 && Math.max(slight[0].size.x, slight[0].size.y, slight[0].size.z) < 0.05, `Something on his face other than his nose is under 0.07: ${slight.map(sized).join('; ')}.`);
+  assert(features.filter((p) => p !== skull && Math.abs(p.centre.y - FILIP_FACE.eyes[0][1]) < 0.03 && p.size.x > 0.1).length === 0, 'Something lies across his eyes: he wears no glasses.');
+  // His head is his own: longer and leaner than a resident's, its lower half narrowing faster, and
+  // the head he is built with.
+  {
+    const H = FILIP_HEAD,
+      tall = H.up + H.down,
+      wide = 2 * H.r[0],
+      // Its half-width at height y: the furthest out across (x) that is on or in it, at any depth.
+      across = (y) => {
+        let most = 0;
+        for (let z = -0.2; z <= 0.2; z += 0.0005) {
+          if (filipHeadReach(0, y, z) > 1) continue;
+          let lo = 0,
+            hi = 0.3;
+          for (let k = 0; k < 40; k++) {
+            const m = (lo + hi) / 2;
+            if (filipHeadReach(m, y, z) <= 1) lo = m;
+            else hi = m;
+          }
+          most = Math.max(most, lo);
+        }
+        return most;
+      },
+      widest = across(H.y),
+      below = across(H.y - 0.6 * H.down) / widest,
+      above = across(H.y + 0.6 * H.up) / widest;
+    assert(tall / (2 * HEAD.r[1]) >= 1.08 && tall / (2 * HEAD.r[1]) <= 1.12, `His head is ${tall.toFixed(3)} tall, a resident's ${(2 * HEAD.r[1]).toFixed(3)}: not 8 to 12% taller.`);
+    assert(wide / (2 * HEAD.r[0]) >= 0.92 && wide / (2 * HEAD.r[0]) <= 0.95, `His head is ${wide.toFixed(3)} across, a resident's ${(2 * HEAD.r[0]).toFixed(3)}: not 5 to 8% narrower.`);
+    assert(tall >= 1.15 * wide && Math.abs(widest - H.r[0]) < 1e-4, `His head is ${tall.toFixed(3)} tall and ${(2 * widest).toFixed(3)} across: not taller than it is wide.`);
+    assert(below <= 0.95 * above, `Down its lower half his head is ${below.toFixed(3)} of its widest at 60%, up its upper half ${above.toFixed(3)}: his jaw does not narrow.`);
+    const q = face.geometry.getAttribute('position');
+    let off = 0;
+    for (const i of skull.points) off = Math.max(off, Math.abs(filipHeadReach(q.getX(i), q.getY(i), q.getZ(i)) - 1));
+    assert(skull.points.length > 1000 && off < 1e-4 && Math.abs(skull.size.x - 2 * H.r[0]) < 1e-3, `His head is not FILIP_HEAD (${off.toExponential(1)} off it, ${skull.size.x.toFixed(4)} across).`);
+    for (const ear of features.filter((p) => FILIP_FACE.ears.some((e) => p.centre.distanceTo(new T.Vector3(...e)) < 0.002)))
+      assert(Math.abs(ear.centre.x) + ear.size.x / 2 - across(ear.centre.y) >= 0.015, `His ear at ${ear.centre.toArray().map((n) => n.toFixed(3)).join(', ')} hardly stands out of his head.`);
+  }
+  // His hair (in his own frame, his root unscaled for the measuring): short, clear of his ears,
+  // never bald, parted on his left and swept to his right; and his eyes clear of it.
+  root.scale.setScalar(1);
+  root.updateMatrixWorld(true);
+  {
+    const hair = meshes.find((m) => m.name === 'filip-hair'),
+      q = hair.geometry.getAttribute('position'),
+      ears = features.filter((p) => FILIP_FACE.ears.some((e) => p.centre.distanceTo(new T.Vector3(...e)) < 0.002));
+    assert.equal(ears.length, 2, 'He has not two ears either side of his head.');
+    let low = Infinity,
+      top = -Infinity;
+    for (let i = 0; i < q.count; i++) {
+      v.fromBufferAttribute(q, i);
+      low = Math.min(low, v.y);
+      top = Math.max(top, v.y);
+      // (Hair inside his head, the hidden rim of its cut edge, covers nothing.)
+      if (filipHeadReach(v.x, v.y, v.z) < 1) continue;
+      for (const ear of ears)
+        assert(Math.hypot((v.x - ear.centre.x) / (ear.size.x / 2 + 0.008), (v.y - ear.centre.y) / (ear.size.y / 2 + 0.008), (v.z - ear.centre.z) / (ear.size.z / 2 + 0.008)) > 1, `His hair covers his ear at ${v.toArray().map((n) => n.toFixed(3)).join(', ')}.`);
+    }
+    assert(low >= 0.68, `His hair comes down to ${low.toFixed(3)}: it is not short.`);
+    assert(top >= FILIP_FACE.crown + 0.02, `His hair's top is ${(top - FILIP_FACE.crown).toFixed(3)} over his skull: he reads bald.`);
+    const ray = new T.Raycaster(),
+      down = new T.Vector3(0, -1, 0),
+      over = (x, z) => {
+        ray.set(new T.Vector3(x, 2, z), down);
+        return ray.intersectObject(hair)[0]?.point.y ?? NaN;
+      };
+    // (Across, on HEAD's width carried to his, as his hair is.)
+    const k = FILIP_HEAD.r[0] / HEAD.r[0];
+    for (const z of [0.02, 0.06]) {
+      let step = 0;
+      for (let x = 0.04 * k; x <= 0.09 * k + 1e-9; x += 0.0025 * k) step = Math.max(step, over(x, z) - over(x + 0.012 * k, z));
+      assert(step >= 0.008, `At ${z} ahead of his crown his hair has no parting on his left (its top steps down ${step.toFixed(4)} at the most).`);
+      assert(over(-0.1 * k, z) >= over(0.1 * k, z) + 0.01, `At ${z} ahead of his crown his hair is not swept to his right (${over(-0.1 * k, z).toFixed(3)} on his right, ${over(0.1 * k, z).toFixed(3)} on his left).`);
+    }
+    const eyes = new T.Color(L.eyes),
+      rise = Math.atan2(35, 38);
+    for (let deg = -40; deg <= 40; deg += 10)
+      for (const side of [-1, 1]) {
+        const turn = (deg * Math.PI) / 180,
+          look = new T.Vector3(-Math.sin(turn) * Math.cos(rise), -Math.sin(rise), -Math.cos(turn) * Math.cos(rise)),
+          eye = new T.Vector3(...FILIP_FACE.eyes[(side + 1) / 2]);
+        ray.set(eye.clone().addScaledVector(look, -3), look);
+        const first = ray.intersectObjects([hair, face])[0],
+          drawn = first && colour.fromBufferAttribute(face.geometry.getAttribute('color'), first.face.a);
+        assert(first && first.object === face && first.point.distanceTo(eye) < 0.012 && Math.abs(drawn.r - eyes.r) + Math.abs(drawn.g - eyes.g) + Math.abs(drawn.b - eyes.b) < 1e-3, `From ${deg} degrees his ${side < 0 ? 'right' : 'left'} eye is not to be seen.`);
+      }
+  }
+  // His shirt, buttoned up: no skin on it, its collar closed round his neck, his buttons down the
+  // placket; his sleeves rolled to the elbow.
+  {
+    const shirt = joints.body.children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'fabric' && !m.name),
+      q = shirt.geometry.getAttribute('position'),
+      c = shirt.geometry.getAttribute('color'),
+      at = (k) => v.fromBufferAttribute(q, k).toArray().map((n) => n.toFixed(3)).join(', ');
+    for (let k = 0; k < c.count; k++) {
+      colour.fromBufferAttribute(c, k).convertLinearToSRGB();
+      assert(saturation(colour) <= 0.2 || value(colour) <= 0.6, `His shirt shows skin at ${at(k)} (${colour.getHexString()}): it is not buttoned up.`);
+    }
+    const collars = pieces(shirt).filter((p) => p.centre.y > 0.55 && p.size.y < 0.12 && p.size.x > 0.15 && p.size.z > 0.15);
+    assert.equal(collars.length, 1, `His collar is ${collars.length} pieces round his neck, not one.`);
+    const collar = new Set(collars[0].points),
+      onTorso = (a, y) => new T.Vector3(torsoAt(y) * Math.sin(a), y, torsoAt(y) * Math.cos(a) * DEPTH),
+      // Where his head meets his shoulders at azimuth a (0 ahead): where the torso comes out of his head.
+      crease = (a) => {
+        let lo = 0.58,
+          hi = 0.642;
+        for (let k = 0; k < 40; k++) {
+          const m = (lo + hi) / 2,
+            p = onTorso(a, m);
+          if (filipHeadReach(p.x, p.y, p.z) > 1) lo = m;
+          else hi = m;
+        }
+        return (lo + hi) / 2;
+      },
+      ray = new T.Raycaster(),
+      // What of his shirt a ray from `from` towards `to` meets first: its triangle's first corner and whose it is.
+      meets = (from, to) => {
+        ray.set(from, to.clone().sub(from).normalize());
+        const hit = ray.intersectObject(shirt)[0];
+        return hit ? { k: hit.face.a, of: collar.has(hit.face.a) ? 'collar' : 'shirt' } : { k: -1, of: 'nothing' };
+      };
+    // The collar meets his jaw all round: 0.004 under the crease, looking in square to the torso, it comes first.
+    for (let deg = 0; deg < 360; deg += 5) {
+      const a = (deg * Math.PI) / 180,
+        y = crease(a) - 0.004,
+        p = onTorso(a, y),
+        r = torsoAt(y),
+        n = new T.Vector3(p.x / r, -(torsoAt(y + 1e-4) - torsoAt(y - 1e-4)) / 2e-4, p.z / (r * DEPTH * DEPTH)).normalize();
+      assert.equal(meets(p.clone().addScaledVector(n, 0.05), p).of, 'collar', `At ${deg} degrees round his neck his collar does not reach the crease under his jaw: a gap between them.`);
+    }
+    // It stands up his head no more than a band does, and under his chin not at all: his chin rests on it.
+    for (const k of collar) {
+      v.fromBufferAttribute(q, k);
+      if (filipHeadReach(v.x, v.y, v.z) <= 1) continue;
+      const a = Math.atan2(v.x, v.z / DEPTH),
+        over = v.y - crease(a);
+      assert(over <= 0.015 && (Math.abs(a) > 0.3 || over <= 0.001), `His collar stands ${over.toFixed(4)} up his head at ${at(k)}${Math.abs(a) <= 0.3 ? ': his chin sinks into it' : ''}.`);
+    }
+    // Its points meet under his chin, down his middle, then part.
+    const front = crease(0);
+    let parted = NaN;
+    for (let y = front - 0.0005; y > 0.55; y -= 0.0005)
+      if (meets(new T.Vector3(0, y, 1), new T.Vector3(0, y, 0)).of !== 'collar') {
+        parted = y;
+        break;
+      }
+    assert(front - parted >= 0.005 && front - parted <= 0.02, `His collar's points meet ${(front - parted).toFixed(4)} down his middle under his chin: closed there 0.005 to 0.02, then parting.`);
+    const tips = [-1, 1].map((s) => {
+      let low = null;
+      for (const k of collar) {
+        v.fromBufferAttribute(q, k);
+        if (Math.sign(v.x) === s && v.z > 0 && (!low || v.y < low.y)) low = v.clone();
+      }
+      return low;
+    });
+    for (const tip of tips) assert(Math.abs(tip.x) > 0.03 && Math.abs(tip.x) < 0.07 && tip.y > 0.54 && tip.y < parted - 0.03 && tip.z > 0.1, `A point of his collar ends at ${tip.toArray().map((n) => n.toFixed(3)).join(', ')}: not lying on his chest beside his top button.`);
+    assert(Math.abs(tips[0].x + tips[1].x) < 1e-4 && Math.abs(tips[0].y - tips[1].y) < 1e-4 && Math.abs(tips[0].z - tips[1].z) < 1e-4, 'His collar\u2019s points are not a mirrored pair.');
+    // His buttons: the cells of his shirt in FILIP_LOOK.button (its colour's direction: the torso's
+    // tone only darkens it), grouped by height.
+    const tint = new T.Color(L.button),
+      way = new T.Vector3(tint.r, tint.g, tint.b).normalize(),
+      buttonLike = (k) => new T.Vector3(c.getX(k), c.getY(k), c.getZ(k)).normalize().distanceTo(way) < 1e-3,
+      cells = new Set(),
+      buttons = [];
+    for (let i = 0; i < q.count; i += 3) {
+      if (![0, 1, 2].every((k) => buttonLike(i + k))) continue;
+      cells.add(i);
+      const box = new T.Box3();
+      for (const k of [0, 1, 2]) box.expandByPoint(v.fromBufferAttribute(q, i + k));
+      const same = buttons.find((b) => box.min.y <= b.box.max.y + 0.002 && box.max.y >= b.box.min.y - 0.002);
+      if (same) same.box.union(box);
+      else buttons.push({ box });
+    }
+    buttons.sort((a, b) => b.box.max.y - a.box.max.y);
+    assert(buttons.length >= 4 && buttons.length <= 5, `He has ${buttons.length} buttons, not a top one and three or four more.`);
+    for (const { box } of buttons) {
+      const size = box.getSize(new T.Vector3()),
+        mid = box.getCenter(new T.Vector3());
+      assert(Math.abs(mid.x) < 1e-3 && box.min.x > -0.011 && box.max.x < 0.011 && mid.z > 0.08, `His button at ${mid.y.toFixed(3)} is not on his placket.`);
+      assert(size.x >= 0.008 && size.x <= 0.016 && size.y >= 0.006 && size.y <= 0.014, `His button at ${mid.y.toFixed(3)} is ${size.x.toFixed(4)} by ${size.y.toFixed(4)}: not a small button.`);
+    }
+    const top = buttons[0].box,
+      gaps = buttons.slice(1).map((b, i) => buttons[i].box.getCenter(new T.Vector3()).y - b.box.getCenter(new T.Vector3()).y);
+    assert(parted - top.max.y >= 0.003 && parted - top.max.y <= 0.02, `His top button's top is ${(parted - top.max.y).toFixed(4)} under where his collar's points part: not just under the collar.`);
+    for (const rise of [0, Math.atan2(35, 38)]) {
+      const mid = top.getCenter(new T.Vector3()),
+        hit = meets(mid.clone().add(new T.Vector3(0, Math.sin(rise), Math.cos(rise))), mid);
+      assert(cells.has(hit.k), `From ${rise ? 'the town camera\u2019s pitch' : 'in front'} his top button is hidden (the ray meets his ${hit.of}).`);
+    }
+    assert(Math.max(...gaps) - Math.min(...gaps) < 0.005 && buttons[buttons.length - 1].box.min.y > 0.4, `His buttons are not evenly down his placket to above his belt (gaps ${gaps.map((g) => g.toFixed(4)).join(', ')}).`);
+    assert(saturation(parse(L.button)) <= 0.15 && hueOf(parse(L.button)) >= 20 && hueOf(parse(L.button)) <= 50 && value(parse(L.button)) >= 0.7 && value(parse(L.button)) <= value(parse(L.shirt)) - 0.05, 'His buttons are not a muted warm shade off his shirt\u2019s white.');
+    // The placket: a shade deeper down his middle than his shirt beside it (in linear light, as the
+    // shade is taken), from the belt up to where the points part.
+    const shadeAt = (x, y) => {
+      const { k } = meets(new T.Vector3(x, y, 1), new T.Vector3(x, y, 0));
+      let sum = 0;
+      for (const j of [0, 1, 2]) sum += value(colour.fromBufferAttribute(c, k - (k % 3) + j));
+      return sum / 3;
+    };
+    for (const y of [0.395, ...buttons.map((b, i) => (i ? (b.box.max.y + buttons[i - 1].box.min.y) / 2 : null)).filter((y) => y), (top.max.y + parted) / 2]) {
+      const ratio = shadeAt(0, y) / shadeAt(0.03, y);
+      assert(ratio >= 0.88 && ratio <= 0.97, `At ${y.toFixed(3)} up his middle is ${ratio.toFixed(3)} of his shirt beside it: no placket there.`);
+    }
+    for (const k of [0, 1]) {
+      const fore = joints.elbows[k].children.find((m) => m.isMesh),
+        sleeve = joints.arms[k].children.find((m) => m.isMesh),
+        p = fore.geometry.getAttribute('position'),
+        col = fore.geometry.getAttribute('color'),
+        s = sleeve.geometry.getAttribute('position');
+      let cuff = 0,
+        lowest = Infinity,
+        bare = 0,
+        wrist = 0;
+      for (let i = 0; i < s.count; i++) if (Math.abs(s.getY(i) + 0.095) < 1e-6) wrist = Math.max(wrist, Math.hypot(s.getX(i), s.getZ(i)));
+      for (let i = 0; i < p.count; i++) {
+        colour.fromBufferAttribute(col, i).convertLinearToSRGB();
+        const white = saturation(colour) < 0.1 && value(colour) > 0.7,
+          y = p.getY(i);
+        if (y < -0.074) continue; // (the mitten)
+        if (white) {
+          cuff = Math.max(cuff, Math.hypot(p.getX(i), p.getZ(i)));
+          lowest = Math.min(lowest, y);
+        } else if (y < -0.04) bare++;
+      }
+      assert(wrist > 0.04 && cuff >= wrist + 0.006, `His ${k ? 'left' : 'right'} sleeve's rolled cuff stands ${(cuff - wrist).toFixed(4)} proud of it.`);
+      assert(lowest > -0.04 && bare > 0, `His ${k ? 'left' : 'right'} forearm is not bare under the cuff (white down to ${lowest.toFixed(3)}).`);
+    }
+  }
+  root.scale.setScalar(FILIP_SCALE);
 }
 // The Wellington statue as built (before batching, at its own origin): the bronze stands on its
 // plate, touching it only over the plate (in at least three of its corners: three hooves down, one
