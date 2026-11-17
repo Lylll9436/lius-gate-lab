@@ -25,6 +25,7 @@ import { createAirport } from './town-airport';
 import { createSkyIsland } from './town-sky';
 import { createSkyGarden } from './town-sky-garden';
 import { createSkyVilla } from './town-sky-villa';
+import { createTropicIsland } from './town-tropic';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
@@ -32,10 +33,11 @@ export { palette } from './town-shared';
 export { treeLook, heatherLook } from './town-nature';
 export { MASK_EXTENT, MASK_SIZE, AIRPORT_SHALLOWS, addAirportShallows, buildGroundMasks } from './town-ground';
 export { BALLOON, followDrift } from './town-movers';
+export { TROPIC_EXTENT, TROPIC_SEEN, type TropicIsland } from './town-tropic';
 
 /**
- * The town itself: terrain, streets, nine buildings, trees,
- * street furniture, the harbour, the lighthouse, the airport's island, the sky island and the things that move.
+ * The town itself: terrain, streets, ten buildings, trees, street furniture, the harbour, the
+ * lighthouse, the airport's island, the sky island, the tropic island and the things that move.
  * Everything is procedural and merged into a few draw calls per surface family.
  *
  * This file assembles the town; each part lives in its own module:
@@ -62,6 +64,10 @@ export { BALLOON, followDrift } from './town-movers';
  * - town-sky-garden.ts: the sky island's garden kit (its short falls and their cloud puffs, clouds,
  *   floating rocks, tea table, telescope, garden lamps and urns), which town-sky places;
  * - town-sky-villa.ts: the red-brick villa on the sky island (its shell, `sky.shell`);
+ * - town-tropic.ts: the tropic island off the south shore (its lawn, beach, walks and rocks,
+ *   in its own group, `tropicLand`, its shallows in the ground masks and its tide line in the
+ *   shore's foam; setShown takes the whole island away and brings it back) and the stand-in for its
+ *   building, a model (model 'tropic') whose root stands at the island's middle;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
  * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
@@ -126,7 +132,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     // The airport's ground: its own group, built and batched in its own phases, never in the land's.
     airportLand = new T.Group(),
     // The sky island, likewise: its groups under one root.
-    sky: SkyIsland = { root: new T.Group(), land: new T.Group(), rock: new T.Group(), shell: new T.Group() };
+    sky: SkyIsland = { root: new T.Group(), land: new T.Group(), rock: new T.Group(), shell: new T.Group() },
+    // The tropic island's ground, as the airport's: its own group, built and batched in its own phases.
+    tropicLand = new T.Group();
   city.name = 'town';
   land.name = 'land';
   airportLand.name = 'airport-land';
@@ -136,7 +144,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   sky.rock.name = 'sky-rock';
   sky.shell.name = 'sky-villa';
   sky.root.add(sky.land, sky.rock, sky.shell);
-  city.add(land, airportLand, sky.root);
+  tropicLand.name = 'tropic-land';
+  city.add(land, airportLand, sky.root, tropicLand);
   const lamps: T.Mesh[] = [],
     clocks: { hour: T.Object3D; minute: T.Object3D }[] = [],
     animated: TownContext['animated'] = [];
@@ -151,6 +160,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const skyGarden = createSkyGarden(ctx, kit, props, nature);
   const skyIsland = createSkyIsland(ctx, props, nature, skyGarden);
   const { buildSkyVilla } = createSkyVilla(ctx, kit, props, nature);
+  const tropicIsland = createTropicIsland(ctx);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
@@ -189,7 +199,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   /* ---------------------------------------------------------------- */
   /* Assembly                                                          */
   /* ---------------------------------------------------------------- */
-  buildTerrain();
+  const { foam } = buildTerrain();
   yield 'terrain';
   buildStreets();
   yield 'streets';
@@ -286,6 +296,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   yield 'sky ground';
   skyIsland.skyUnderside(sky.rock);
   yield 'sky rock';
+  // The tropic island's ground (its lawn, beach, walks and rocks), its shallows baked into the
+  // masks' G as it is built (its tide line is in the shore's foam already); its building is a model,
+  // built with the town's below and joined to it there.
+  const tropic = tropicIsland.tropicGround(tropicLand, { foam, masks: groundMasks });
+  yield 'tropic ground';
 
   const models = new Map<BuildingId, Model>();
   for (const b of buildings) {
@@ -306,9 +321,14 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     else if (b.model === 'archive') buildArchive(shell, site);
     else if (b.model === 'residence') buildResidence(shell, site);
     else if (b.model === 'airport') buildAirport(shell, site);
+    // The tropic island's building, in the island's own frame (its root is at the island's middle):
+    // the stand-in holds the slot the SDE4 (town-sde4.ts's buildSde4) takes at the merge.
+    else if (b.model === 'tropic') tropicIsland.standIn(shell);
     else buildTerrace(shell, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
     models.set(b.id, { root, shell, fade: [], center: new T.Vector3(site.x, 0, site.z) });
   }
+  // The tropic island's building goes and comes with the island (setShown).
+  tropic.join(models.get('tropic-island')!.root);
 
   // People: seven residents on the pavements of the ring.
   const walkers: Walker[] = [];
@@ -441,10 +461,15 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // Alison, part by part as the town's figures are, so her joints still bend and her props still come and go.
   batchFigure(alison);
   yield 'batch sky';
+  // The tropic island's ground: contact shade from its own lawn (plan.tropicTop), not the sea.
+  batch(tropicLand, { floor: plan.tropicTop });
+  yield 'batch tropic';
   batch(parkGroup);
   yield 'batch park';
   // Each glass pane carries its own night light in aWindow (batch() draws it; see town-batch.ts).
   for (const [id, m] of models) {
+    // (The tropic island's building is batched last of all, below.)
+    if (id === 'tropic-island') continue;
     const windows = id === 'town-hall' || id === 'city-archive' || id === 'airport' ? 'civic' : id === 'research-studio' ? 'studio' : id === 'visiting-phd' ? 'residence' : 'home';
     // The airport stands on its deck (0.4 up), so its contact shade starts there.
     batch(m.shell, { windows, place: id, floor: id === 'airport' ? plan.deckHeight : undefined });
@@ -454,6 +479,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // The sky island's villa, on its deck.
   batch(sky.shell, { place: 'sky-island', floor: plan.skyTop });
   yield 'batch sky villa';
+  // The tropic island's building, on the island's terrace, last of the buildings: its panes' night
+  // lights claim their times after every other building's, so none of theirs moves.
+  batch(models.get('tropic-island')!.shell, { windows: 'campus', place: 'tropic-island', floor: plan.tropicTop });
+  yield 'batch tropic building';
   for (const walker of walkers) batchFigure(walker.root);
   batchFigure(dogWalker);
   batchFigure(cyclist);
@@ -478,6 +507,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     land,
     airportLand,
     sky,
+    tropicLand,
+    tropic,
     models,
     walkers,
     tram,

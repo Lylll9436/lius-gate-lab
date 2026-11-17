@@ -292,6 +292,143 @@ export const SKY_VILLA = {
   chimneys: { x: 2.8, z: -0.945, hw: 0.5, hd: 0.31, top: 7.6, cope: { hw: 0.64, hd: 0.45, top: 7.76 }, cans: 8.171 },
 };
 /**
+ * The tropic island's datum (its coast, lawn, paths and shore are in its own section below): a
+ * neighbour's island on the sea off the south shore, for Filip Biljecki and UAL (Singapore lies to
+ * the south), 54.6 out from the plaza and about 21 degrees east of due south. Its middle is at x, z.
+ * Its coast (TROPIC_COAST) is drawn on the ellipse of half-axes `a` (east-west) and `b`
+ * (north-south) that decision 2 placed (its shores at z 40.5 and 61.5, x 6.5 and 32.5): not that
+ * ellipse itself (the owner: one plain ellipse looks strange), but a natural small island on it, its
+ * waterline within 1.5 of the ellipse's box all round (TROPIC_SPAN; check-town measures its
+ * clearances from the boat, the lighthouse beam, the gulls, the balloon and the plane to that line
+ * and to the rocks that stand on it). Its beach runs `beach` out from the turf's edge to the waterline
+ * on plain sand (the town's own shore profile, town-ground's SHORE_PROFILE, meets the sea that far
+ * out), wider in its bay and on its tail, and `rocky` where its rocks stand (TROPIC_ROCKY). Its lawn
+ * is a gentle dome, level with the turf's lip at its edge and `dome` over it in the middle; the
+ * building and the round plaza before its door stand on a level terrace `pad` up (tropicTop).
+ */
+export const TROPIC = { x: 19.5, z: 51, a: 13, b: 10.5, beach: 2.89, rocky: 1.15, dome: 0.32, pad: 0.26 };
+/**
+ * The tropic island's coast, on TROPIC's ellipse, in the main island's shape language (islandRadius:
+ * a base shape, a few low harmonics, a broad bay and a headland): on the ray of bearing b from its
+ * middle its waterline lies tropicReach(b) out, the ellipse's radius there and
+ * - `waves`, a gentle low-order wobble, [amount, harmonic, phase] each: amount sin(harmonic b + phase);
+ * - `features`, the broad swells and hollows of its shore, each `swell` out to sea at its middle (a
+ *   hollow's is negative) and easing off as a bell either side (exp(-(d / width)^2), d the bearing's
+ *   angle from the feature's): the low rocky `point` behind the building, on the north-north-east,
+ *   with its long `flank` to the north and a lesser swell on the `north-west` where its rocks end; the
+ *   low rocky `knoll` on the south-west, the mound on its lawn (TROPIC_MOUND); the shallow sandy `bay`
+ *   due south, in front of the building, its crescent beach running from the knoll's rocks to the
+ *   fuller `south-east` (round the phone path) and on to the short sandy `tail` on the
+ *   east-south-east, on its broad `tail base`; and the shallow `hollow` on the north-east between the
+ *   tail and the point. (TROPIC_ROCKY's stones stand on the point and on the knoll.)
+ * Its beach (tropicBeach) is TROPIC.beach on plain sand and wider where a feature brings sand (`sand`:
+ * the share of its swell or hollow that is beach, so the lawn does not follow the tail out and the
+ * bay's beach is a wide crescent) and by `loose` of the wobble, and wavers on its own (`turf`, as the
+ * wobble's terms): so the turf's edge follows the coast loosely, never as a parallel line. Over the
+ * rocky stretches the beach narrows to TROPIC.rocky instead, the lawn coming down to the stones.
+ */
+export const TROPIC_COAST = {
+  waves: [[0.16, 2, 2.2], [0.1, 3, 0.4]] as [number, number, number][],
+  features: [
+    { name: 'point', bearing: Math.PI - 0.32, swell: 1.2, width: 0.3, sand: 0 },
+    { name: 'flank', bearing: Math.PI + 0.12, swell: 0.25, width: 0.4, sand: 0 },
+    { name: 'north-west', bearing: -2.15, swell: 0.3, width: 0.25, sand: 0 },
+    { name: 'knoll', bearing: -0.98, swell: 1.2, width: 0.22, sand: 0 },
+    { name: 'bay', bearing: 0, swell: -0.9, width: 0.3, sand: 0.15 },
+    { name: 'south-east', bearing: 0.66, swell: 0.5, width: 0.36, sand: 0.3 },
+    { name: 'tail', bearing: 1.3, swell: 1.5, width: 0.21, sand: 0.75 },
+    { name: 'tail base', bearing: 1.0, swell: 0.3, width: 0.3, sand: 0.4 },
+    { name: 'hollow', bearing: 2.05, swell: -0.6, width: 0.27, sand: 0.3 },
+  ],
+  loose: 0.45,
+  turf: [0.12, 4, 1.3] as [number, number, number],
+};
+/** The tropic island's coast's wobble on a bearing (TROPIC_COAST.waves). */
+export function tropicWobble(bearing: number) {
+  let sum = 0;
+  for (const [amount, harmonic, phase] of TROPIC_COAST.waves) sum += amount * Math.sin(harmonic * bearing + phase);
+  return sum;
+}
+/** How far feature `f` of the tropic island's coast swells its shore out on a bearing (a hollow's negative). */
+export function tropicSwell(f: (typeof TROPIC_COAST.features)[number], bearing: number) {
+  return f.swell * Math.exp(-((angleDiff(bearing, f.bearing) / f.width) ** 2));
+}
+/**
+ * A smooth function of the bearing, tabulated at `steps` even bearings round from 0 with its slope
+ * there, read back by cubic Hermite interpolation (C1: its value and slope run on smoothly; within a
+ * few billionths of a unit of the function itself at these steps where it is smooth, a
+ * ten-thousandth where a rocky stretch's ease begins or ends). The coast's functions are sums of nine
+ * bells and a few waves, and the ground asks them tens of thousands of times as it is built.
+ */
+function rays(f: (bearing: number) => number, steps = 2048) {
+  const step = TAU / steps,
+    e = 1e-5,
+    values = new Float64Array(steps),
+    slopes = new Float64Array(steps);
+  for (let k = 0; k < steps; k++) {
+    values[k] = f(k * step);
+    slopes[k] = (f(k * step + e) - f(k * step - e)) / (2 * e);
+  }
+  return (bearing: number) => {
+    const u = (((bearing / step) % steps) + steps) % steps,
+      k = Math.floor(u) % steps,
+      k1 = (k + 1) % steps,
+      t = u - Math.floor(u),
+      t2 = t * t,
+      t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * values[k] + (t3 - 2 * t2 + t) * step * slopes[k] + (3 * t2 - 2 * t3) * values[k1] + (t3 - t2) * step * slopes[k1];
+  };
+}
+/**
+ * How far out from the tropic island's middle its waterline lies on a bearing: its ellipse's radius
+ * there, its wobble and its features' swells (TROPIC_COAST; tabulated by `rays`). One value on every
+ * ray: seen from its middle no stretch of its shore lies behind another, so every ray from there
+ * crosses its waterline once.
+ */
+export const tropicReach = rays((bearing) => {
+  let r = 1 / Math.hypot(Math.sin(bearing) / TROPIC.a, Math.cos(bearing) / TROPIC.b) + tropicWobble(bearing);
+  for (const f of TROPIC_COAST.features) r += tropicSwell(f, bearing);
+  return r;
+});
+/**
+ * How far the tropic island's waterline reaches from its middle along the direction (dx, dz) (a unit
+ * vector, world x, z): the most of x dx + z dz over it, in the island's own frame. Found on 720 rays,
+ * then on the waterline itself between the best one's neighbours (golden sections: exact to far
+ * under a millimetre).
+ */
+export function tropicSupport(dx: number, dz: number) {
+  const along = (b: number) => tropicReach(b) * (Math.sin(b) * dx + Math.cos(b) * dz),
+    n = 720,
+    step = TAU / n;
+  let best = 0;
+  for (let k = 1; k < n; k++) if (along(k * step) > along(best * step)) best = k;
+  let lo = (best - 1) * step,
+    hi = (best + 1) * step;
+  const g = (Math.sqrt(5) - 1) / 2;
+  for (let i = 0; i < 60; i++) {
+    const a = hi - g * (hi - lo),
+      b = lo + g * (hi - lo);
+    if (along(a) > along(b)) hi = b;
+    else lo = a;
+  }
+  return Math.max(along(best * step), along((lo + hi) / 2));
+}
+/** The tropic island's waterline's box in the world (tropicSupport along the four axes). */
+export const TROPIC_SPAN = {
+  x0: TROPIC.x - tropicSupport(-1, 0),
+  x1: TROPIC.x + tropicSupport(1, 0),
+  z0: TROPIC.z - tropicSupport(0, -1),
+  z1: TROPIC.z + tropicSupport(0, 1),
+};
+/**
+ * The building's ground on the tropic island, in the island's own frame (tropicLocal: x east, z
+ * south, from its middle): the SDE4's podium, `hw` by `hd` either side of (x, z) (its roof's 11 by
+ * 7.2 and the podium's 0.4 round it), front due south, and the top of its roof. The island's model
+ * (plan.sites['tropic-island']) has its root at the island's middle, so the building is built in
+ * this frame, its podium's foot on the terrace (TROPIC.pad).
+ */
+export const TROPIC_BUILDING = { x: 0, z: -2.3, hw: 5.9, hd: 4.0, top: 7.85 };
+/**
  * The three homes stand side by side in a straight row, fronts in one line facing the ring
  * road (east), with a 2.4 gap between neighbours so each reads as its own house. Set back so
  * every front garden is as deep (about 1.9 beyond the pavement) as the deepest one used to be.
@@ -345,6 +482,19 @@ export const sites: Record<BuildingId, Site> = {
     height: SKY_VILLA.height,
     y: SKY.top,
   },
+  // On the tropic island (onTropic, not onIsland): the model's root at the island's middle, so its
+  // building is built in the island's own frame (TROPIC_BUILDING), front due south; w and d are the
+  // island's own, the box about its middle that holds its waterline (TROPIC_SPAN), and height its
+  // roof's top.
+  'tropic-island': {
+    id: 'tropic-island',
+    x: TROPIC.x,
+    z: TROPIC.z,
+    rotation: 0,
+    w: 2 * Math.max(TROPIC.x - TROPIC_SPAN.x0, TROPIC_SPAN.x1 - TROPIC.x),
+    d: 2 * Math.max(TROPIC.z - TROPIC_SPAN.z0, TROPIC_SPAN.z1 - TROPIC.z),
+    height: TROPIC_BUILDING.top,
+  },
   'research-studio': { id: 'research-studio', x: 10.2, z: -5, rotation: -Math.PI / 2, w: 5.6, d: 5.2, height: 5 },
   'city-archive': { id: 'city-archive', x: 9.4, z: 9.2, rotation: -Math.PI / 2, w: 6.2, d: 4.8, height: 4.2 },
   // On the airport's island (onAirport, not onIsland): the Departures Hall (x -1.6..2.6, centred on
@@ -383,6 +533,9 @@ export const chapterBearings: Record<string, number> = {
   // once more, so again no new bearing: the villa's south front is seen 35 degrees off, turned to
   // the camera's left, the side the key light is on.
   'sky-island': SKY_FILE,
+  // The tropic island's own file (City mode only, as the sky island's), from the gate's bearing as
+  // well: the building's south front 35 degrees off, on the camera's left.
+  'tropic-island': Math.PI / 4 - 0.18,
 };
 /** The buildings whose fronts each chapter is about (checked against the bearings above). */
 export const chapterSubjects: Record<string, BuildingId[]> = {
@@ -393,6 +546,7 @@ export const chapterSubjects: Record<string, BuildingId[]> = {
   'lius-gate': ['lius-gate'],
   airport: ['airport'],
   'sky-island': ['sky-island'],
+  'tropic-island': ['tropic-island'],
 };
 export const park = { x: -9.6, z: 9.2, w: 8.4, d: 5.4 };
 export const reservedPlot = { x: 21, z: -7.5, w: 5, d: 5 };
@@ -414,13 +568,13 @@ export const cottages: { n: number; x: number; z: number; rotation: number; colo
 ];
 /**
  * Where the planting was first laid out round: the seven sites before the residence (and the
- * airport, out at sea, and the sky island, over it), and every cottage's spot with the north
- * cottage's among them. The tree and heather rules keep reading these, and the trees on ground
- * built on since (residencePlot) are dropped afterwards, by id, so new building never moves, adds
- * or re-species another tree (as the paddock's tree was dropped).
+ * airport, out at sea, the sky island, over it, and the tropic island, off the south shore), and
+ * every cottage's spot with the north cottage's among them. The tree and heather rules keep reading
+ * these, and the trees on ground built on since (residencePlot) are dropped afterwards, by id, so
+ * new building never moves, adds or re-species another tree (as the paddock's tree was dropped).
  */
 const PLANTED = {
-  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island'),
+  sites: () => siteList.filter((s) => s.id !== 'visiting-phd' && s.id !== 'airport' && s.id !== 'sky-island' && s.id !== 'tropic-island'),
   cottages: [[-24.6, -10.6], ...cottages.map((c): XZ => [c.x, c.z])] as XZ[],
 };
 /**
@@ -1556,6 +1710,331 @@ export function alisonStream(s: { front: number; tail: number }, pour: number, d
     tail = Math.min(1, tail + dt / W.leave);
   } else if (pour >= 0.5) front = Math.min(1, front + dt / W.reveal);
   return { front, tail };
+}
+
+/* ------------------------------------------------------------------ */
+/* The tropic island                                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The tropic island (TROPIC, its coast TROPIC_COAST and TROPIC_BUILDING, above the sites): a
+ * neighbour's island on the sea off the south shore, 12 of open water from the town's waterline, with
+ * nothing joining it to the town. Points on it are given in the world's x, z or in its own frame
+ * (tropicLocal: x east, z south, from its middle); bearings are the scene's (a bearing b points along
+ * (sin b, cos b): 0 south, pi/2 east, pi north). Its waterline is one smooth closed line, one point
+ * on every ray from its middle (tropicReach); the rest is laid out along those rays: on the ray of
+ * bearing b the beach is tropicBeach(b) wide inside the waterline, and the turf's edge is at their
+ * difference. Its shore's stations stand evenly along the waterline (tropicBearings), and
+ * tropicDistance is the true distance from it. The town's other ground knows nothing of it (the
+ * ground masks' R, B and A are nought over it, as over the airport's deck); only the sea's shallows
+ * ring it (town-ground's addTropicShallows).
+ */
+/** A world point in the tropic island's own frame (x east, z south, from its middle). */
+export function tropicLocal(x: number, z: number): XZ {
+  return [x - TROPIC.x, z - TROPIC.z];
+}
+/**
+ * The tropic island's rocky stretches (bearings from its middle), `half` either side of their middles:
+ * the low rocky point behind the building and its flank, round the building's back from its
+ * north-east corner to its north-west one, and the knoll on the south-west, the bay's west end. Over
+ * them the beach narrows to TROPIC.rocky (the lawn comes down to the stones) and granite boulders
+ * stand on it (town-tropic's rocks); each eases back to the sand over `ease` beyond, slowly enough
+ * that the turf's edge turns no tighter than the coast does.
+ */
+export const TROPIC_ROCKY = [
+  { bearing: Math.PI - 0.15, half: 0.86, ease: 0.55 },
+  { bearing: -0.97, half: 0.14, ease: 0.45 },
+];
+/** How rocky the tropic island's shore is on a bearing: 1 on its rocky stretches, 0 on the sand. */
+export function tropicRockiness(bearing: number) {
+  let rocky = 0;
+  for (const s of TROPIC_ROCKY) rocky = Math.max(rocky, 1 - smoothstep((Math.abs(angleDiff(bearing, s.bearing)) - s.half) / s.ease));
+  return rocky;
+}
+/**
+ * The tropic island's beach on a bearing were it all sand: TROPIC.beach, and the share of each
+ * feature's swell or hollow that is sand (TROPIC_COAST: the bay's wide crescent, the tail), and of
+ * the wobble (`loose`), and the turf's own waver (`turf`).
+ */
+export function tropicSand(bearing: number) {
+  const C = TROPIC_COAST,
+    [amount, harmonic, phase] = C.turf;
+  let w = TROPIC.beach + C.loose * tropicWobble(bearing) + amount * Math.sin(harmonic * bearing + phase);
+  for (const f of C.features) w += f.sand * Math.abs(tropicSwell(f, bearing));
+  return w;
+}
+/** The tropic island's beach on a bearing: how wide it is along the ray, from the turf's edge to the waterline (tabulated by `rays`). */
+export const tropicBeach = rays((bearing) => {
+  const sand = tropicSand(bearing);
+  return sand + (TROPIC.rocky - sand) * tropicRockiness(bearing);
+});
+/**
+ * Where a world point lies on the tropic island: its bearing from the middle and how far out it is
+ * along that ray (`out`); the waterline's and the beach's reach on it; `lawn`, the share of the way
+ * from the middle to the turf's edge (1 on the edge); and `shore`, the width the town's own shore
+ * profile (town-ground's SHORE_PROFILE) puts there, out from the turf's edge (negative on the lawn,
+ * TROPIC.beach on the waterline, every beach, narrow or wide, scaled to it, and one for one beyond it).
+ */
+export function tropicAt(x: number, z: number) {
+  const [lx, lz] = tropicLocal(x, z),
+    bearing = Math.atan2(lx, lz),
+    out = Math.hypot(lx, lz),
+    reach = tropicReach(bearing),
+    beach = tropicBeach(bearing),
+    turf = reach - beach;
+  return { bearing, out, reach, beach, lawn: out / turf, shore: out <= reach ? ((out - turf) / beach) * TROPIC.beach : TROPIC.beach + out - reach };
+}
+/** The world point on the ray of `bearing` from the tropic island's middle that is `width` of the shore profile out from the turf's edge (tropicAt's `shore`, read back). */
+export function tropicShorePoint(bearing: number, width: number): XZ {
+  const reach = tropicReach(bearing),
+    beach = tropicBeach(bearing),
+    out = width <= TROPIC.beach ? reach - beach + (width / TROPIC.beach) * beach : reach + width - TROPIC.beach;
+  return [TROPIC.x + Math.sin(bearing) * out, TROPIC.z + Math.cos(bearing) * out];
+}
+/**
+ * The way round the tropic island's waterline: TROPIC_ARC.steps rays at even bearings, clockwise
+ * seen from above from its east end (from the east toward the south, as the town's own outline runs),
+ * each with how far along the waterline it is from the east end (`along`; `round` the whole way).
+ */
+const TROPIC_ARC = (() => {
+  const steps = 8192,
+    bearings: number[] = [],
+    along: number[] = [0];
+  let [px, pz] = [0, 0];
+  for (let k = 0; k <= steps; k++) {
+    const b = Math.PI / 2 - (k / steps) * TAU,
+      r = tropicReach(b),
+      x = Math.sin(b) * r,
+      z = Math.cos(b) * r;
+    bearings.push(b);
+    if (k) along.push(along[k - 1] + Math.hypot(x - px, z - pz));
+    [px, pz] = [x, z];
+  }
+  return { steps, bearings, along, round: along[steps] };
+})();
+/** The bearing of the point a share `f` of the way round the tropic island's waterline from its east end (clockwise), in (-pi, pi]. */
+export function tropicBearingAround(f: number) {
+  const A = TROPIC_ARC,
+    d = (((f % 1) + 1) % 1) * A.round;
+  let lo = 0,
+    hi = A.steps;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (A.along[mid] <= d) lo = mid;
+    else hi = mid;
+  }
+  const b = A.bearings[lo] + ((A.bearings[hi] - A.bearings[lo]) * (d - A.along[lo])) / (A.along[hi] - A.along[lo] || 1);
+  return Math.atan2(Math.sin(b), Math.cos(b));
+}
+/** How long the tropic island's waterline is, the whole way round. */
+export const TROPIC_ROUND = TROPIC_ARC.round;
+/**
+ * The tropic island's waterline's outward normal on a bearing (world x, z, unit): square to the line
+ * itself, not along the ray (its slope by bearing from a central difference a hundred-thousandth
+ * either side: exact to far under a millimetre).
+ */
+export function tropicNormal(bearing: number): XZ {
+  const e = 1e-5,
+    r = tropicReach(bearing),
+    slope = (tropicReach(bearing + e) - tropicReach(bearing - e)) / (2 * e),
+    s = Math.sin(bearing),
+    c = Math.cos(bearing),
+    nx = r * s - slope * c,
+    nz = r * c + slope * s,
+    l = Math.hypot(nx, nz);
+  return [nx / l, nz / l];
+}
+/**
+ * The tropic island's shore stations: TROPIC_SAMPLES bearings evenly along its waterline (by the
+ * way round, not by the angle, so they stand as far apart in the bay as on the tail), clockwise seen
+ * from above from its east end, as the town's own outline runs. The lawn's rings and the shore's
+ * bands are laid along their rays; its tide line runs through them.
+ */
+export const TROPIC_SAMPLES = 112;
+export const tropicBearings = Array.from({ length: TROPIC_SAMPLES }, (_, j) => tropicBearingAround(j / TROPIC_SAMPLES));
+/**
+ * `count` points evenly along the tropic island's waterline, each moved `offset` along the
+ * waterline's own outward normal (negative inside), clockwise seen from above from its east end,
+ * with that normal. (The waterline turns inward no tighter than a radius of 3 anywhere, 6.6 as it
+ * stands, so up to that far out these points lie on the line `offset` from it.)
+ */
+export function tropicOutline(offset = 0, count = 96) {
+  return Array.from({ length: count }, (_, i) => {
+    const b = tropicBearingAround(i / count),
+      r = tropicReach(b),
+      [nx, nz] = tropicNormal(b);
+    return { x: TROPIC.x + Math.sin(b) * r + nx * offset, z: TROPIC.z + Math.cos(b) * r + nz * offset, nx, nz };
+  });
+}
+/**
+ * The tropic island's waterline as a fine closed line of `points` evenly along it (world x, z: about
+ * 0.05 apart, so the line strays from the waterline by under a millimetre where it turns tightest, at
+ * the tail), in runs of `run` points with the circle round each (its middle and radius), so
+ * tropicDistance looks only at the runs near enough to hold the nearest point.
+ */
+const TROPIC_LINE = (() => {
+  const points = 1440,
+    run = 16,
+    line = Array.from({ length: points }, (_, i): XZ => {
+      const b = tropicBearingAround(i / points),
+        r = tropicReach(b);
+      return [TROPIC.x + Math.sin(b) * r, TROPIC.z + Math.cos(b) * r];
+    }),
+    runs = Array.from({ length: points / run }, (_, k) => {
+      const from = k * run,
+        at = (i: number) => line[(from + i) % points];
+      let x = 0,
+        z = 0;
+      for (let i = 0; i <= run; i++) [x, z] = [x + at(i)[0] / (run + 1), z + at(i)[1] / (run + 1)];
+      let radius = 0;
+      for (let i = 0; i <= run; i++) radius = Math.max(radius, Math.hypot(at(i)[0] - x, at(i)[1] - z));
+      return { from, x, z, radius };
+    });
+  return { line, run, runs };
+})();
+/**
+ * Signed distance from the tropic island's waterline: negative on the island, positive out on the
+ * sea. The true distance to its fine line (TROPIC_LINE: exact to under a millimetre), the nearest
+ * point found among the runs whose circles come nearer than the waterline's own point on the
+ * point's ray (that distance bounds it); the sign from the ray (inside where it falls short of the
+ * waterline).
+ */
+export function tropicDistance(x: number, z: number) {
+  const { line, run, runs } = TROPIC_LINE,
+    n = line.length,
+    { out, reach } = tropicAt(x, z);
+  let best = Math.abs(out - reach);
+  for (const r of runs) {
+    if (Math.hypot(x - r.x, z - r.z) - r.radius >= best) continue;
+    for (let i = r.from; i < r.from + run; i++) best = Math.min(best, distanceToSegment([x, z], line[i % n], line[(i + 1) % n]));
+  }
+  return out <= reach ? -best : best;
+}
+/**
+ * On the tropic island (its lawn and beach), inside the `margin` level of tropicDistance (a signed
+ * distance, as onAirport's is): onTropic(x, z, -3) keeps 3 in from the waterline.
+ */
+export function onTropic(x: number, z: number, margin = 0) {
+  return tropicDistance(x, z) <= margin;
+}
+/**
+ * The level terrace the building stands on, in the island's own frame: its podium
+ * (TROPIC_BUILDING) and the round plaza before its door (TROPIC_PLAZA, `r` round its middle), each
+ * grown by `grow`, at TROPIC.pad; the lawn eases into it over `ease`. The land lays no paving on the
+ * plaza: the garden builds it (town-tropic-garden's plaza, the photo's circular paving, its north
+ * third under the roof's front edge), lying on this level ground, and the walks start at its rim.
+ */
+export const TROPIC_PAD = { grow: 0.6, ease: 1.4 };
+export const TROPIC_PLAZA = { x: -2.1, z: 2.3, r: 1.7 };
+/**
+ * One soft mound on the south-west lawn (the photo's grassy hill), on the knoll at the bay's west end
+ * (TROPIC_COAST), in the island's own frame: `h` over the dome at (x, z), a cosine bump `r` round,
+ * drawn down to the lawn near the turf's edge. Its
+ * slope, the dome's with it, is 1:5 at most (no one on it stands visibly tilted): that is what holds
+ * it lower than the photo's hill (0.6 high and 5 across would be 1:2.7).
+ */
+export const TROPIC_MOUND = { x: -6.4, z: 4.6, r: 2.6, h: 0.22 };
+/**
+ * The top of the tropic island's lawn at a world point: a gentle dome, TROPIC.dome over the turf's
+ * lip in the middle and level with it at the turf's edge, the mound on it, and the level terrace
+ * (TROPIC_PAD) at TROPIC.pad; the terrace and the mound are drawn down to the dome over the last
+ * seventh of the way to the edge, so the lawn always meets the beach at its lip. Off the lawn, 0
+ * (the beach's own heights are its shore profile's). What stands on the island stands on this, and
+ * batch() bakes the island's contact shade from it.
+ */
+export function tropicTop(x: number, z: number) {
+  const { lawn } = tropicAt(x, z);
+  if (lawn >= 1) return 0;
+  const [lx, lz] = tropicLocal(x, z),
+    B = TROPIC_BUILDING,
+    P = TROPIC_PLAZA,
+    M = TROPIC_MOUND,
+    G = TROPIC_PAD,
+    edge = 1 - smoothstep((lawn - 0.86) / 0.14),
+    dome = TROPIC.dome * (1 - lawn ** 2.4),
+    podium = Math.hypot(Math.max(0, Math.abs(lx - B.x) - B.hw - G.grow), Math.max(0, Math.abs(lz - B.z) - B.hd - G.grow)),
+    court = Math.max(0, Math.hypot(lx - P.x, lz - P.z) - P.r - G.grow),
+    terrace = (1 - smoothstep(Math.min(podium, court) / G.ease)) * edge,
+    m = Math.hypot(lx - M.x, lz - M.z) / M.r,
+    mound = m < 1 ? M.h * 0.5 * (1 + Math.cos(Math.PI * m)) * edge : 0;
+  return dome + mound + (TROPIC.pad - dome - mound) * terrace;
+}
+/**
+ * The tropic island's walks (design 1.3), in its own frame, as centripetal Catmull-Rom curves
+ * through the points (town-tropic's paths draws them): pale concrete `width` across with a flush kerb
+ * `kerb` wide a shade lighter, `lift` over the lawn.
+ * - `south` (design's walk a): from the plaza's south-east rim in a long S, south and then west over
+ *   the south lawn, past the café's spot on its south side and round the mound's south-east foot,
+ *   toward the beach at the knoll (TROPIC_COAST's), the low rocky west end of the bay;
+ * - `front` (walk b): from the plaza's east rim along the building's front to the foot of the
+ *   veranda's ramp;
+ * - `call` (walk b's branch to the south-east lawn): it leaves the front walk at the front walk's own
+ *   second point, south-east, and turns onto the call stretch (`stretch`, its last 1.6: straight,
+ *   running east-west, between its last three points), where he paces on the phone. It lies `branch`
+ *   over the lawn, a hair over the front walk, so where it leaves it its paving lies on the front
+ *   walk's and its kerbs start at the front walk's edge.
+ * The walks that start at the plaza start at its rim (TROPIC_PLAZA.r), their first point inside it:
+ * the garden's paving covers the plaza. The others' ends are round.
+ */
+export const TROPIC_PATHS = {
+  width: 0.56,
+  kerb: 0.08,
+  lift: 0.03,
+  branch: 0.036,
+  south: [[-1.25, 3.55], [-0.75, 4.65], [-1.4, 5.6], [-2.8, 6.05], [-4.2, 6.1], [-5.0, 6.45], [-5.45, 6.85]] as XZ[],
+  front: [[-0.6, 2.6], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
+  call: [[1.0, 2.75], [1.6, 3.55], [2.2, 4.6], [2.9, 5.3], [3.5, 5.3], [4.3, 5.3], [5.1, 5.3]] as XZ[],
+  stretch: [[3.5, 5.3], [5.1, 5.3]] as [XZ, XZ],
+};
+/**
+ * Each walk's middle line in the world, fine polylines (a few hundredths between points) through the
+ * same curves, from where it starts on the plaza's rim (the south and front walks; the call walk from
+ * its first point, on the front walk's line) to its end.
+ */
+export const TROPIC_PATH_LINES = (() => {
+  const Q = TROPIC_PLAZA,
+    line = (points: XZ[], fromRim: boolean) => {
+      const fine = Array.from({ length: 401 }, (_, k): XZ => {
+        const [x, z] = centripetal(points, k / 400);
+        return [TROPIC.x + x, TROPIC.z + z];
+      });
+      if (!fromRim) return fine;
+      const outside = (p: XZ) => Math.hypot(p[0] - TROPIC.x - Q.x, p[1] - TROPIC.z - Q.z) - Q.r,
+        k = fine.findIndex((p) => outside(p) >= 0),
+        [a, b] = [fine[k - 1], fine[k]],
+        f = -outside(a) / (outside(b) - outside(a));
+      return [[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f] as XZ, ...fine.slice(k)];
+    };
+  return { south: line(TROPIC_PATHS.south, true), front: line(TROPIC_PATHS.front, true), call: line(TROPIC_PATHS.call, false) };
+})();
+/**
+ * The ground drawn at a world point of the tropic island, what a figure stands on: the lawn
+ * (tropicTop), or a walk where it is on one (its lift over the lawn; the call walk's where it lies
+ * over the front walk), each step up eased over `ease` of the lawn outside the walk's edge, as on the
+ * sky island (skyFloor). A walk is cut square where it starts (at the plaza's rim, or on the front
+ * walk's line) and round where it ends, as drawn. (The plaza's paving and the building's podium, deck
+ * and ramp are their builders' own floors.)
+ */
+export const TROPIC_FLOOR = { ease: 0.15 };
+export function tropicFloor(x: number, z: number) {
+  const W = TROPIC_PATHS,
+    step = (inside: number) => {
+      const u = Math.min(1, Math.max(0, 1 + inside / TROPIC_FLOOR.ease));
+      return u * u * (3 - 2 * u);
+    },
+    walks = Math.max(tropicWalkInside('south', x, z), tropicWalkInside('front', x, z));
+  return tropicTop(x, z) + Math.max(W.lift * step(walks), W.branch * step(tropicWalkInside('call', x, z)));
+}
+/**
+ * How far a world point is inside one of the tropic island's walks (TROPIC_PATH_LINES), negative
+ * outside: cut square where the walk starts (nothing behind its first point counts), round where it
+ * ends, as town-tropic draws it.
+ */
+export function tropicWalkInside(walk: keyof typeof TROPIC_PATH_LINES, x: number, z: number) {
+  const line = TROPIC_PATH_LINES[walk],
+    [a, b] = line;
+  if ((x - a[0]) * (b[0] - a[0]) + (z - a[1]) * (b[1] - a[1]) < 0) return -Infinity;
+  return TROPIC_PATHS.width / 2 - polylineDistance(line, x, z);
 }
 
 /* ------------------------------------------------------------------ */

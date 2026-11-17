@@ -36,11 +36,12 @@ export const readingChapters = [
 ];
 /**
  * Places with a City file of their own but no chapter on the reading page, each with the chapter
- * that hosts it: the sky island, a neighbour of the town, is filed under About (the Town Hall's).
- * A hosted place lights its host's chip in the masthead in City mode, and a reading address for
- * it reads its host chapter; City mode still faces it from its own bearing (facingChapter).
+ * that hosts it: the sky island and the tropic island, neighbours of the town, are filed under
+ * About (the Town Hall's). A hosted place lights its host's chip in the masthead in City mode, and
+ * a reading address for it reads its host chapter; City mode still faces it from its own bearing
+ * (facingChapter).
  */
-const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall' };
+const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall', 'tropic-island': 'town-hall' };
 /** The chapter that hosts an address's place, if it is a hosted one. */
 const hostOf = (id: ContentId) => HOSTED[id.replace(/^place:/, '') as BuildingId];
 /**
