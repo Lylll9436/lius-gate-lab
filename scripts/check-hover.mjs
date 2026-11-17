@@ -206,11 +206,11 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   skyRoot.visible = true;
 }
 // The tropic island: a building model of the town's whose ground answers for it, as addHitBoxes
-// hangs it (an elliptic slab of the island's waterline, no taller than its lawn, on its building's
-// box): the pointer on its lawn or its beach names it and a click opens it; the open sea beside it
-// does not; and hidden (its root not drawn: the scene leaves the island out of the opening view), it
-// answers neither the pointer nor a click. The toy island's own model and label join the town only
-// for this.
+// hangs it (a slab of the island's waterline, no taller than its lawn, on its building's box; here a
+// toy island's round slab): the pointer on its lawn or its beach names it and a click opens it; the
+// open sea beside it does not; and hidden (its root not drawn: the scene leaves the island out of the
+// opening view), it answers neither the pointer nor a click. The toy island's own model and label
+// join the town only for this.
 {
   const at = new T.Vector3(4.6, 0, -1.6),
     root = new T.Group(),
