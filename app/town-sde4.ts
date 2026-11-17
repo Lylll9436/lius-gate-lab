@@ -79,7 +79,8 @@ export const SDE4_GREENS = {
  * the footprint centred on the origin.
  * - `at`: where it stands on the island, in the island's frame (origin at the island's centre, x
  *   east, z south, y up from the sea's datum, as the airport's land): its footprint's middle (x, z)
- *   and the podium's top (y). The lawn round the podium is to stand about `lift` under its top.
+ *   and the podium's top (y): 0.38, the land's level terrace (plan.TROPIC.pad, 0.26) and `lift`. The
+ *   lawn round the podium is to stand about `lift` under its top.
  * - `podium`: the low plinth everything stands on (its top y 0), its kerb's width, and its `foot`,
  *   to which the podium, its step and ramp, the fin block, the columns' pads and the planters run
  *   down so a domed lawn buries their feet.
@@ -93,7 +94,8 @@ export const SDE4_GREENS = {
  *   `fin.proud` behind them; `fin`: the fins' pitch, width and depth, and the storey joints where
  *   the block's panels meet: a `joint`-wide cut through every fin and a groove across the body at
  *   each, one shadow line across the whole face.
- * - `columns`: radius, the x of each pair and the z either side (clear of every plate's edge).
+ * - `columns`: radius (0.21 across: very slender, over the 0.18 under which a white shaft twinkles
+ *   as the view moves), the x of each pair and the z either side (clear of every plate's edge).
  * - `storeys` (floor and ceiling of G, L1 and L2), `plates` (each slab's y span and edges: front,
  *   back, east; the west end meets the block at `west`; each front 0.4 behind the one under it, so
  *   the terraces step back as they rise) and `glass` (each storey's glass lines).
@@ -102,7 +104,7 @@ export const SDE4_GREENS = {
  *   the figure (see Sde4Build).
  */
 export const SDE4 = {
-  at: { x: 0, y: 0.45, z: -2.3 },
+  at: { x: 0, y: 0.38, z: -2.3 },
   lift: 0.12,
   podium: { x0: -5.9, x1: 5.9, z0: -4.0, z1: 4.0, kerb: 0.3, foot: -0.6 },
   steps: { x0: -3.45, x1: -0.75, run: 0.34, rise: 0.06 },
@@ -110,7 +112,7 @@ export const SDE4 = {
   roof: { x0: -3.7, x1: 5.5, z0: -3.6, z1: 3.6, soffit: 6.62, rim: 6.92, top: 7.34, parapet: 7.44, width: 0.16, corner: 0.12, margin: 0.42, strip: [0.6, 1.2] as [number, number] },
   block: { x0: -5.5, x1: -3.7, z0: -3.6, z1: 3.6, top: 7.34 },
   fin: { pitch: 0.6, w: 0.24, proud: 0.16, corner: 0.3, joints: [1.85, 3.75, 5.62], joint: 0.04 },
-  columns: { r: 0.13, x: [-2.4, 0, 2.4, 4.8], z: 3.15 },
+  columns: { r: 0.105, x: [-2.4, 0, 2.4, 4.8], z: 3.15 },
   west: -3.7,
   storeys: [[0, 1.7], [2.0, 3.6], [3.9, 5.5]] as [number, number][],
   plates: [
@@ -131,6 +133,19 @@ export const SDE4 = {
 /** Where SDE4 stands on the island by default (SDE4.at: see SDE4), in the island's frame. */
 export const SDE4_AT = SDE4.at;
 /**
+ * The veranda's two planters (the building's frame, as SDE4: their troughs' plan, `top` their lip
+ * over the podium) and the reach of the planting in each (its plan and its top over the podium:
+ * check-town holds the built leaves inside it), with the way between them from the ramp to the
+ * desk, which no leaf leans into (Filip walks it on the phone, his elbow out to his side).
+ */
+export const SDE4_VERANDA = {
+  planters: [
+    { x0: 2.7, x1: 3.26, z0: 2.25, z1: 2.85, top: 0.42, leaves: { x0: 2.92, x1: 3.2, z0: 2.04, z1: 3.06, top: 1.18 } },
+    { x0: 4.25, x1: 5.3, z0: 2.25, z1: 2.85, top: 0.42, leaves: { x0: 4.29, x1: 5.4, z0: 2.1, z1: 3.08, top: 0.92 } },
+  ],
+  way: { x0: 3.26, x1: 4.25 },
+};
+/**
  * Its night: one light a pane in the 'campus' role (town-batch's WINDOW_MIX: offices, three in four
  * lit in the evening, half going out one by one between 22:30 and 01:30). The entrance's doors are
  * the fixed 'entrance' role, the lobby left on all night, so the front always has its door lit. The
@@ -147,30 +162,122 @@ export const SDE4_WINDOWS: WindowRole = 'campus',
  */
 export type Sde4Anchor = { x: number; y: number; z: number; heading: number };
 /**
- * What buildSde4 hands back, all in the island's frame (the group's):
+ * The columns' collars, plain and modern (the real ones are plain tubes): a small collar at the
+ * foot, 0.28 across and 0.10 tall, its top edge eased, and a plain disc under the soffit, 0.30
+ * across and 0.07 tall, its lower edge eased: no more than a step out of the slender shaft, so
+ * nothing of a classical base or capital, yet each column still reads as carrying the roof.
+ */
+const BASE: [number, number][] = [[0, 0], [0.14, 0], [0.14, 0.08], [0.125, 0.1], [0, 0.1]];
+const CAPITAL: [number, number][] = [[0, 0], [0.135, 0], [0.15, 0.015], [0.15, 0.07], [0, 0.07]];
+/** A rectangle in plan, in the island's frame. */
+export type Sde4Rect = { x0: number; x1: number; z0: number; z1: number };
+/** A box in the island's frame: its plan, and its foot and top (y0, y1); `name` says what it is. */
+export type Sde4Box = Sde4Rect & { y0: number; y1: number; name: string };
+/**
+ * Where SDE4 stands and what it hands the island's other builders, all in the island's frame (the
+ * group's), worked out from SDE4's measures alone (sde4Plan: the garden and the figure read it
+ * without building anything; buildSde4 hands back the same, with the height it built):
  * - `desk`: the veranda desk's middle on the deck (y the deck's top), heading the way he looks
  *   from his chair behind it (south, over the lawn to the file's camera);
  * - `entrance`: the middle of the entrance doors on the floor, heading out of them;
  * - `cafe`: the café table's middle beside the court, in front of the fin block (y the lawn the
  *   podium assumes beside it: at.y - lift), heading the way he looks from his chair (east-south-east);
  * - `court`: the step's foot before the entrance, where the court's paving is to meet it (y the lawn level);
- * - `ramp`: the veranda ramp's foot (y the lawn level), heading up it (north);
+ * - `ramp`: the veranda's 1:6 ramp off the podium's front: its top on the podium's kerb and its foot
+ *   on the lawn (each in the middle of its width, heading up it, north), its width and its sides (x0, x1);
+ * - `deck`: the veranda's oak deck (its plan; y its top, the podium's); `podiumPlan`: the podium's;
  * - `footprint`: the plan box of everything the building stands on the ground (podium, step, ramp);
- * - `roof`: the parasol's plan box (with the fin block: the building's outline seen from above);
- * - `height`: the top of everything: the roof's plant housings' lids, 0.37 over its membrane (the
- *   solar panels reach about 0.23 over it); `podium`, the podium's top.
+ * - `steps`: the court's step before the entrance (its plan; y its tread's top);
+ * - `roof`: the parasol's plan box with the fin block (the building's outline seen from above), the
+ *   underside of its dark soffit band and its membrane's top; `podium`, the podium's top; `lawn`, the
+ *   lawn's level it assumes round the podium;
+ * - `columns`: the eight columns' middles and radius, each `collar` round at its foot up to y `top`
+ *   and on a square `pad` (its half width and top);
+ * - `stack`: the glazed floors' plan (frames and corner posts included) and the top of the top
+ *   floor's roof, `glass` the ground floor's glazed front (z); `fin`: the end block's plan and how far
+ *   its fins stand out of its body;
+ * - `keepOut`: what stands on the podium and the deck that a walker or a piece of furniture keeps
+ *   clear of, as boxes: the ground floor's glazed stack, the lobby's vestibule, the fin block, each
+ *   veranda planter (its trough, then the reach of its planting over it) and the court's step;
+ * - `way`: the way between the veranda's planters, from the ramp to the desk (its plan), which no leaf leans into.
  */
-export type Sde4Build = {
+export type Sde4Plan = {
   desk: Sde4Anchor;
   entrance: Sde4Anchor;
   cafe: Sde4Anchor;
   court: Sde4Anchor;
-  ramp: Sde4Anchor;
-  footprint: { x0: number; x1: number; z0: number; z1: number };
-  roof: { x0: number; x1: number; z0: number; z1: number };
-  height: number;
+  ramp: { top: Sde4Anchor; foot: Sde4Anchor; width: number; x0: number; x1: number };
+  deck: Sde4Rect & { y: number };
+  podiumPlan: Sde4Rect;
+  footprint: Sde4Rect;
+  steps: Sde4Rect & { y: number };
+  roof: Sde4Rect & { soffit: number; top: number };
   podium: number;
+  lawn: number;
+  columns: { x: number; z: number; r: number }[];
+  collar: { r: number; top: number };
+  pad: { half: number; top: number };
+  stack: Sde4Rect & { top: number };
+  glass: number;
+  fin: Sde4Rect & { proud: number };
+  keepOut: Sde4Box[];
+  way: Sde4Rect;
 };
+/** What buildSde4 hands back: its plan (Sde4Plan) and `height`, the top of everything as built (the roof's plant housings' lids, 0.37 over its membrane; the solar panels reach about 0.23 over it). */
+export type Sde4Build = Sde4Plan & { height: number };
+/** SDE4's plan (Sde4Plan) standing at `at`, from its measures alone. */
+export function sde4Plan(at: { x: number; y: number; z: number } = SDE4.at): Sde4Plan {
+  const S = SDE4,
+    P = S.podium,
+    R = S.roof,
+    B = S.block,
+    C = S.columns,
+    G0 = S.glass[0],
+    E = S.entrance,
+    V = S.veranda,
+    ST = S.steps,
+    RA = S.ramp,
+    lawn = -S.lift,
+    // The frames stand this far proud of the glass (glaze's PROUD and the corner posts' 0.02 more).
+    frames = 0.12;
+  const A = (x: number, y: number, z: number, heading: number): Sde4Anchor => ({ x: at.x + x, y: at.y + y, z: at.z + z, heading }),
+    rect = (x0: number, x1: number, z0: number, z1: number): Sde4Rect => ({ x0: at.x + x0, x1: at.x + x1, z0: at.z + z0, z1: at.z + z1 }),
+    box = (name: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number): Sde4Box => ({ name, ...rect(x0, x1, z0, z1), y0: at.y + y0, y1: at.y + y1 }),
+    rampX = (RA.x0 + RA.x1) / 2,
+    stepTop = P.z1 - 0.06,
+    keepOut: Sde4Box[] = [
+      box('glazed stack', S.west, G0.east + frames, 0, S.plates[2].y1, G0.back - frames, G0.front + frames),
+      box('lobby', E.x0 - 0.1, E.x1 + 0.1, 0, E.top + 0.1, G0.front - 0.05, E.z + 0.14),
+      box('fin block', B.x0, B.x1, P.foot, R.parapet + 0.012, B.z0, B.z1),
+    ];
+  for (const t of SDE4_VERANDA.planters) {
+    keepOut.push(box('veranda planter', t.x0, t.x1, P.foot, t.top, t.z0, t.z1));
+    keepOut.push(box('veranda planting', t.leaves.x0, t.leaves.x1, t.top - 0.12, t.leaves.top, t.leaves.z0, t.leaves.z1));
+  }
+  keepOut.push(box('court step', ST.x0, ST.x1, P.foot, -ST.rise, stepTop, P.z1 + ST.run));
+  return {
+    desk: A(S.desk.x, 0, S.desk.z, S.desk.heading),
+    entrance: A((E.x0 + E.x1) / 2, 0, E.z, 0),
+    cafe: A(S.cafe.x, lawn, S.cafe.z, S.cafe.heading),
+    court: A((ST.x0 + ST.x1) / 2, lawn, P.z1 + ST.run, 0),
+    ramp: { top: A(rampX, 0, P.z1, Math.PI), foot: A(rampX, -RA.drop, P.z1 + RA.run, Math.PI), width: RA.x1 - RA.x0, x0: at.x + RA.x0, x1: at.x + RA.x1 },
+    deck: { ...rect(V.x0, P.x1 - P.kerb + 0.01, P.z0 + P.kerb - 0.01, P.z1 - P.kerb + 0.01), y: at.y },
+    podiumPlan: rect(P.x0, P.x1, P.z0, P.z1),
+    footprint: rect(P.x0, P.x1, P.z0, P.z1 + Math.max(ST.run, RA.run)),
+    steps: { ...rect(ST.x0, ST.x1, stepTop, P.z1 + ST.run), y: at.y - ST.rise },
+    roof: { ...rect(B.x0, R.x1, R.z0, R.z1), soffit: at.y + R.soffit, top: at.y + R.top },
+    podium: at.y,
+    lawn: at.y + lawn,
+    columns: C.x.flatMap((x) => [-1, 1].map((s) => ({ x: at.x + x, z: at.z + s * C.z, r: C.r }))),
+    collar: { r: BASE[1][0], top: at.y + 0.06 + BASE[BASE.length - 1][1] },
+    pad: { half: 0.25, top: at.y + 0.06 },
+    stack: { ...rect(S.west, G0.east + frames, G0.back - frames, G0.front + frames), top: at.y + S.plates[2].y1 },
+    glass: at.z + G0.front,
+    fin: { ...rect(B.x0, B.x1, B.z0, B.z1), proud: S.fin.proud },
+    keepOut,
+    way: rect(SDE4_VERANDA.way.x0, SDE4_VERANDA.way.x1, SDE4_VERANDA.planters[0].z0, SDE4_VERANDA.planters[0].z1),
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /* SDE4                                                                */
@@ -310,14 +417,6 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
     if (!g) columnGeometries.set(name, (g = new T.LatheGeometry(profile.map(([r, y]) => new T.Vector2(r, y)), 16)));
     return g;
   };
-  /**
-   * The columns' collars, plain and modern (the real ones are plain tubes): a drum at the foot,
-   * 0.40 across and 0.125 tall, its top edge eased, and a disc under the soffit, 0.42 across and
-   * 0.09 tall, its lower edge eased; big enough to read at the overview, so each column reads as
-   * carrying the roof and never as a pole.
-   */
-  const BASE: [number, number][] = [[0, 0], [0.2, 0], [0.2, 0.1], [0.18, 0.125], [0, 0.125]];
-  const CAPITAL: [number, number][] = [[0, 0], [0.185, 0], [0.21, 0.025], [0.21, 0.09], [0, 0.09]];
   /**
    * A rim round a plan (x0..x1, z0..z1, its east corners rounded r), `width` wide on the south, east
    * and north (its west side is the end block's face, so it stays open there: a U in plan), standing
@@ -588,8 +687,8 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
    *   plate with a band of shade under it; on top, inside the parapet, a membrane a step deeper than
    *   the rim and two fields of solar panels either side of a service strip (rows of chunky modules
    *   tilted to the south on dark rails, two louvred plant housings on the strip).
-   * - Eight slender white columns, Ø0.26, standing clear of the plates from the podium to the
-   *   soffit on granite pads, each with a plain drum at its foot and a disc under the soffit.
+   * - Eight very slender white columns, Ø0.21, standing clear of the plates from the podium to the
+   *   soffit on granite pads, each with a small plain collar at its foot and a disc under the soffit.
    * - The champagne end block at the west, as tall as the roof's rim and flush with it: corner piers
    *   and bold vertical fins (0.6 apart, 0.24 wide, 0.16 deep, their front corners chamfered) down
    *   its south, west and north faces and on the strip of its east face the file's camera sees; its
@@ -670,10 +769,11 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       // the podium's kerb, its foot run down for the lawn to bury.
       const ST = S.steps;
       solid(frame, ST.x0, ST.x1, foot, -ST.rise, P.z1 - 0.06, P.z1 + ST.run, L.band, 'stone', { bevel: 0.03, shade: SH.kerb, name: 'sde4-podium' });
-      // The veranda's ramp: a 1:6 fall off the kerb, paved, its foot at the lawn round the podium.
+      // The veranda's ramp: a 1:6 fall from the kerb's edge, paved, its foot at the lawn round the
+      // podium (its top runs back level into the kerb, so it meets it with no lip).
       const RA = S.ramp,
         ramp = new T.Mesh(
-          prism([[P.z1 - 0.06, 0], [P.z1 + RA.run, -RA.drop], [P.z1 + RA.run, foot], [P.z1 - 0.06, foot]].map(([zz, yy]): [number, number] => [-zz, yy]), RA.x1 - RA.x0, 0.015, 0)
+          prism([[P.z1 - 0.06, 0], [P.z1, 0], [P.z1 + RA.run, -RA.drop], [P.z1 + RA.run, foot], [P.z1 - 0.06, foot]].map(([zz, yy]): [number, number] => [-zz, yy]), RA.x1 - RA.x0, 0.015, 0)
             .clone()
             .rotateY(Math.PI / 2),
           material(L.paving, 'paving'),
@@ -761,9 +861,9 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
           // The granite pad (dressing stone a step deeper), its foot in the paving.
           bands.push(block(x - 0.25, x + 0.25, -0.04, 0.06, z - 0.25, z + 0.25, 0.025, undefined, SH.pad));
           white.push({ geometry: base, matrix: placed(x, 0.06, z) });
-          // The shaft, from inside the drum up into the disc.
-          white.push({ geometry: post(C.r, top - 0.13), matrix: placed(x, 0.08 + (top - 0.13) / 2, z) });
-          white.push({ geometry: capital, matrix: placed(x, top - 0.09, z) });
+          // The shaft, from inside the collar up into the disc.
+          white.push({ geometry: post(C.r, top - 0.1), matrix: placed(x, 0.08 + (top - 0.1) / 2, z) });
+          white.push({ geometry: capital, matrix: placed(x, top - 0.07, z) });
         }
     }
 
@@ -965,18 +1065,18 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         [-1.95, -1.4, -0.85].forEach((x, k) => greenery.push(...rosette(x, top - 0.03, mid - 0.02, (k + 2) % 3, 190 + k, { n: 5, size: 0.32, half: 0.06, point: k === 1, turn: Math.PI, arc: 3.2 })));
       }
       // The veranda's two big planters at its south edge, the way from the ramp to the desk between
-      // them: a heliconia fan in the west one (turned off the column beside it); in the east one a
-      // leafy bush (three leafy plants side by side) spilling over its front either side of the
-      // column before it.
-      const V = S.veranda,
-        PT = 0.42;
-      trough(V.x0 + 0.1, V.x0 + 0.66, 2.25, 2.85, 0, PT);
-      trough(4.25, 5.3, 2.25, 2.85, 0, PT);
-      greenery.push(...fan(V.x0 + 0.42, PT - 0.04, 2.52, 0.25, 0.88, 6, 91, 0.11));
-      greenery.push(...rosette(4.52, PT - 0.03, 2.55, 0, 97, { n: 8, size: 0.52, half: 0.11, lean: 0.55, arch: 1.0 }));
-      greenery.push(...rosette(4.8, PT - 0.03, 2.42, 1, 99, { n: 7, size: 0.56, half: 0.075, lean: 0.3, arch: 0.8, point: true }));
-      greenery.push(...rosette(5.06, PT - 0.03, 2.52, 2, 96, { n: 8, size: 0.48, half: 0.11, lean: 0.45, arch: 1.0 }));
-      for (const [x, k] of [[4.42, 0], [5.17, 1]]) greenery.push(...spill(x, PT + 0.04, 2.62, 0, 1, 98 + k, { n: 2, size: 0.5 }));
+      // them (Filip walks it, on the phone: no leaf leans into it, SDE4_VERANDA's `way`): a heliconia
+      // fan in the west one, its paddles spread north-south along the trough; in the east one a leafy
+      // bush (three leafy plants side by side, kept to its east part) spilling over its front.
+      const [wp, ep] = SDE4_VERANDA.planters,
+        PT = wp.top;
+      trough(wp.x0, wp.x1, wp.z0, wp.z1, 0, PT);
+      trough(ep.x0, ep.x1, ep.z0, ep.z1, 0, PT);
+      greenery.push(...fan(wp.x0 + 0.3, PT - 0.04, 2.55, Math.PI / 2 + 0.2, 0.84, 6, 91, 0.11));
+      greenery.push(...rosette(4.68, PT - 0.03, 2.55, 0, 97, { n: 8, size: 0.44, half: 0.11, lean: 0.45, arch: 1.0 }));
+      greenery.push(...rosette(4.92, PT - 0.03, 2.42, 1, 99, { n: 7, size: 0.52, half: 0.075, lean: 0.3, arch: 0.8, point: true }));
+      greenery.push(...rosette(5.1, PT - 0.03, 2.55, 2, 96, { n: 8, size: 0.44, half: 0.11, lean: 0.4, arch: 1.0 }));
+      for (const [x, k] of [[4.62, 0], [5.17, 1]]) greenery.push(...spill(x, PT + 0.04, 2.62, 0, 1, 98 + k, { n: 2, size: 0.5 }));
     }
 
     parts(frame, white, L.paint, 'paint', { name: 'sde4-white' });
@@ -995,10 +1095,8 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       frame.add(m);
     }
 
-    // The anchors, in the island's frame; the height is the built one (the frame's own reach).
-    const A = (x: number, y: number, z: number, heading: number): Sde4Anchor => ({ x: at.x + x, y: at.y + y, z: at.z + z, heading });
-    const lawn = -S.lift,
-      v = new T.Vector3(),
+    // Its plan, in the island's frame (sde4Plan), and the height it built (the frame's own reach).
+    const v = new T.Vector3(),
       m4 = new T.Matrix4();
     let top = -Infinity;
     frame.updateMatrixWorld(true);
@@ -1009,17 +1107,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       m4.multiplyMatrices(toFrame, o.matrixWorld);
       for (let i = 0; i < p.count; i++) top = Math.max(top, v.fromBufferAttribute(p, i).applyMatrix4(m4).y);
     });
-    return {
-      desk: A(S.desk.x, 0, S.desk.z, S.desk.heading),
-      entrance: A((S.entrance.x0 + S.entrance.x1) / 2, 0, S.entrance.z, 0),
-      cafe: A(S.cafe.x, lawn, S.cafe.z, S.cafe.heading),
-      court: A((S.steps.x0 + S.steps.x1) / 2, lawn, P.z1 + S.steps.run, 0),
-      ramp: A((S.ramp.x0 + S.ramp.x1) / 2, lawn, P.z1 + S.ramp.run, Math.PI),
-      footprint: { x0: at.x + P.x0, x1: at.x + P.x1, z0: at.z + P.z0, z1: at.z + P.z1 + Math.max(S.steps.run, S.ramp.run) },
-      roof: { x0: at.x + B.x0, x1: at.x + R.x1, z0: at.z + R.z0, z1: at.z + R.z1 },
-      height: at.y + top,
-      podium: at.y,
-    };
+    return { ...sde4Plan(at), height: at.y + top };
   }
   return { buildSde4 };
 }

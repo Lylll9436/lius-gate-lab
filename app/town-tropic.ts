@@ -122,7 +122,7 @@ const WATERLINE_HULL = hullRing(0);
  * The tropic island as the camera frames it (decision 16's TROPIC_EXTENT), world points: its outline
  * at the water (WATERLINE_HULL, round its waterline: its box is the waterline's, plan.TROPIC_SPAN), the
  * tops of its trees (that ring again, TROPIC_REACH.crown up) and of its building (its corners at its
- * top, 7.85 up). Everything of the island that stands on it, at or over the water and inside its
+ * top, 8.1 up). Everything of the island that stands on it, at or over the water and inside its
  * waterline, lies inside these points' hull, so their box on screen holds it from any side and pitch
  * (check-town). What lies on the sea round it (its shelf under the water, its shallows, its foam, the
  * feet of the stones that stand in the water) is not in it: that is TROPIC_SEEN's.
@@ -153,9 +153,18 @@ export const TROPIC_SEEN: T.Vector3[] = (() => {
   ];
 })();
 /**
+ * The ground drawn at a world point of the tropic island: the lawn (plan.tropicTop) or, off it, the
+ * beach's shore profile (town-ground's shoreHeight), as its rocks stand on it; what the garden stands
+ * its trees on (its palms on the sand).
+ */
+export function tropicGroundAt(x: number, z: number) {
+  const width = plan.tropicAt(x, z).shore;
+  return width <= 0 ? plan.tropicTop(x, z) : shoreHeight(width);
+}
+/**
  * The tropic island's ground once built (town-build's 'tropic ground'): its group, and setShown,
- * which shows or hides the whole island in the scene: its ground, every group joined to it (the
- * merge joins its building's model root, its garden and its figure), its foam (the town's foam
+ * which shows or hides the whole island in the scene: its ground, every group joined to it (its
+ * building's model root, its garden and Filip), its foam (the town's foam
  * mesh drawn only up to the island's rows) and its shallows (the ground masks' G over the island,
  * written back as it was without them). Hidden, nothing of it is drawn, casts or answers the
  * pointer (city-scene's pickTarget passes over a model whose root is hidden), and no ring is left on
@@ -167,8 +176,8 @@ export type TropicIsland = {
   join: (...groups: T.Object3D[]) => void;
   /**
    * Every group setShown takes: its ground first, then each one joined (its building's model root,
-   * and after the merge its garden and its figure). check-town holds them together to the island's
-   * caps, inside TROPIC_SEEN, and what of them stands on the island inside TROPIC_EXTENT.
+   * its garden and Filip). check-town holds them together to the island's caps, inside TROPIC_SEEN,
+   * and what of them stands on the island inside TROPIC_EXTENT.
    */
   groups: () => readonly T.Object3D[];
   setShown: (shown: boolean) => void;
@@ -540,59 +549,6 @@ export function createTropicIsland(ctx: TownContext) {
     };
   }
 
-  /* ---------------------------------------------------------------- */
-  /* The building's slot                                               */
-  /* ---------------------------------------------------------------- */
-  /**
-   * A stand-in for the island's building, in the island's own frame (the model's shell: its root
-   * is at the island's middle) on the terrace (TROPIC_BUILDING, TROPIC.pad): a pale podium, a glass
-   * stack in panes under white floor bands, the champagne end block, eight slender white columns
-   * and the one flat white roof over a dark soffit. It holds the slot the SDE4 (town-sde4.ts's
-   * buildSde4, from its own lane) takes at the merge: town-build's 'tropic' branch calls this, and
-   * the merge calls buildSde4 there instead. Its panes are glass in panes, so the town's window
-   * lights ('campus') reach it as they will the SDE4's.
-   */
-  function standIn(shell: T.Group) {
-    const B = plan.TROPIC_BUILDING,
-      floor = P.pad + 0.12,
-      box = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, colour: string, kind: SurfaceKind) => {
-        const m = new T.Mesh(new T.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), material(colour, kind));
-        m.position.set((x0 + x1) / 2 + B.x, (y0 + y1) / 2, (z0 + z1) / 2 + B.z);
-        m.castShadow = m.receiveShadow = true;
-        shell.add(m);
-        return m;
-      };
-    // The podium, the glass stack's floors and its panes (building-local x, z from TROPIC_BUILDING's middle).
-    box(-B.hw, B.hw, P.pad - 0.06, floor, -B.hd, B.hd, RESIDENCE_LOOK.stone, 'stone');
-    const storeys = [[0, 1.45], [1.65, 2.95], [3.15, 4.45], [4.65, 5.95]];
-    storeys.forEach(([y0, y1], k) => {
-      if (k) box(-3.7, 2.6, floor + y0 - 0.2, floor + y0, -2.9, 2.7 - 0.12 * k, RESIDENCE_LOOK.dressing, 'stone');
-      const front = 1.9 - 0.25 * k,
-        x1 = 2.6 - 0.45 * k;
-      for (let i = 0; i < 5; i++) {
-        const a = -3.7 + ((x1 + 3.7) * i) / 5,
-          b = -3.7 + ((x1 + 3.7) * (i + 1)) / 5;
-        box(a + 0.04, b - 0.04, floor + y0 + 0.04, floor + y1 - 0.04, front - 0.07, front, palette.studioGlass, 'glass');
-        box(a + 0.04, b - 0.04, floor + y0 + 0.04, floor + y1 - 0.04, -2.6, -2.53, palette.studioGlass, 'glass');
-      }
-      box(x1 - 0.07, x1, floor + y0 + 0.04, floor + y1 - 0.04, -2.53, front - 0.07, palette.studioGlass, 'glass');
-      box(-3.7, -3.6, floor + y0 + 0.04, floor + y1 - 0.04, -2.53, front - 0.07, palette.studioGlass, 'glass');
-    });
-    box(-3.7, 2.6, floor + 5.95, floor + 6.15, -2.9, 2.0, RESIDENCE_LOOK.dressing, 'stone');
-    // The champagne end block, as tall as the roof's top.
-    box(-5.5, -3.7, floor, floor + 7.3, -3.6, 3.6, RESIDENCE_LOOK.brass, 'paint');
-    // The eight slender white columns, and the roof: a white slab over a dark soffit.
-    for (const x of [-2.4, 0, 2.4, 4.8])
-      for (const z of [-3.15, 3.15]) {
-        const m = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 6.95, 16), material(palette.white, 'paint'));
-        m.position.set(x + B.x, floor + 6.95 / 2, z + B.z);
-        m.castShadow = m.receiveShadow = true;
-        shell.add(m);
-      }
-    box(-3.7, 5.5, floor + 6.9, floor + 6.97, -3.55, 3.55, '#574d44', 'wood');
-    box(-3.7, 5.5, floor + 6.95, floor + 7.3, -3.6, 3.6, palette.white, 'paint');
-  }
-
-  return { tropicGround, standIn };
+  return { tropicGround };
 }
 export type TropicIslandKit = ReturnType<typeof createTropicIsland>;

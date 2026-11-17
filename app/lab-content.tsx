@@ -854,14 +854,16 @@ function NeighboursCard({
   const zh = locale === 'zh',
     group = neighbour.group,
     place = buildings.find((b) => b.id === neighbour.buildingId),
-    where = place?.where?.[locale],
-    // One text, so the heading reads as one line ("Neighbours · Above the town").
-    heading = `${zh ? '近邻' : 'Neighbours'}${where ? ` · ${where}` : ''}`;
+    where = place?.where?.[locale];
   return (
     <section className="neighbours" id={`read-${neighbour.buildingId}`}>
       <h3 tabIndex={-1}>
         <PlaceGlyph kind={glyphFor(neighbour.buildingId)} size={15} />
-        {heading}
+        {/* One text beside the glyph ("Neighbours · Above the town"); where it must wrap, it breaks after the dot, the place's words kept together. */}
+        <span>
+          {`${zh ? '近邻' : 'Neighbours'}${where ? ' · ' : ''}`}
+          {where && <span className="neighbours-where">{where}</span>}
+        </span>
       </h3>
       <p className="neighbours-group">
         {group.name[locale]} · {group.fullName[locale]}

@@ -237,12 +237,13 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   assert.deepEqual(selection, [], 'Hidden, the tropic island must not open.');
   h.tropicShown = true;
   hoverPins.push('the tropic island picked only while it is in view');
+}
 // The tropic island: a building model of the town's whose ground answers for it, as addHitBoxes
 // hangs it (a slab of the island's waterline, no taller than its lawn, on its building's box; here a
 // toy island's round slab): the pointer on its lawn or its beach names it and a click opens it; the
 // open sea beside it does not; and hidden (its root not drawn: the scene leaves the island out of the
-// opening view), it answers neither the pointer nor a click. The toy island's own model and label
-// join the town only for this.
+// opening view), it answers neither the pointer nor a click. The toy island's own model stands in for
+// the town's island's only for this (its label is the island's own).
 {
   const at = new T.Vector3(4.6, 0, -1.6),
     root = new T.Group(),
@@ -258,10 +259,8 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   root.updateMatrixWorld(true);
   hit.updateMatrixWorld(true);
   const island = { root, hit },
-    label = { b: { id: 'tropic-island' }, element: { offsetWidth: 240, offsetHeight: 70, style: { visibility: 'hidden' } } },
     town = h.models;
   h.models = new Map([...town, ['tropic-island', island]]);
-  labels.push(label);
   const lawn = eventAt(at.clone().add(new T.Vector3(-1.1, 0.3, 0.45))),
     sea = eventAt(at.clone().add(new T.Vector3(0, 0, 1.9)));
   h.ray.setFromCamera(new T.Vector2(((lawn.clientX - 42) / 800) * 2 - 1, (-(lawn.clientY - 20) / 500) * 2 + 1), camera);
@@ -285,7 +284,6 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
     assert.deepEqual(selection, [], 'Hidden, the tropic island must not open.');
   }
   root.visible = true;
-  labels.pop();
   h.models = town;
   hoverPins.push('the tropic island on its own ground (its lawn, not the sea beside it) and not while hidden');
 }

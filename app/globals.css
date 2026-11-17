@@ -1751,7 +1751,7 @@ body:has(.mode-explore),
   scroll-margin-top: calc(var(--masthead) + 16px);
 }
 /* Each card's heading says where its island lies. On a phone the longest ("Neighbours · Off the
-   south shore") takes two lines: balanced, so its last word is not left alone on the second. */
+   south shore") takes two lines, broken after the dot: the place's words stay together. */
 .neighbours h3 {
   display: flex;
   align-items: center;
@@ -1763,6 +1763,9 @@ body:has(.mode-explore),
   text-transform: uppercase;
   text-wrap: balance;
   color: var(--ink-2);
+}
+.neighbours h3 .neighbours-where {
+  white-space: nowrap;
 }
 .neighbours h3:focus {
   outline: none;

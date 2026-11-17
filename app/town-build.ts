@@ -25,7 +25,10 @@ import { createAirport } from './town-airport';
 import { createSkyIsland } from './town-sky';
 import { createSkyGarden } from './town-sky-garden';
 import { createSkyVilla } from './town-sky-villa';
-import { createTropicIsland } from './town-tropic';
+import { createTropicIsland, tropicGroundAt } from './town-tropic';
+import { createSde4, type Sde4Build } from './town-sde4';
+import { createTropicGarden, tropicGardenSite } from './town-tropic-garden';
+import { placeFilip } from './tropic-figure';
 import { createBuildings } from './town-buildings';
 import { createMovers } from './town-movers';
 import { createCountry } from './town-country';
@@ -66,8 +69,15 @@ export { TROPIC_EXTENT, TROPIC_SEEN, type TropicIsland } from './town-tropic';
  * - town-sky-villa.ts: the red-brick villa on the sky island (its shell, `sky.shell`);
  * - town-tropic.ts: the tropic island off the south shore (its lawn, beach, walks and rocks,
  *   in its own group, `tropicLand`, its shallows in the ground masks and its tide line in the
- *   shore's foam; setShown takes the whole island away and brings it back) and the stand-in for its
- *   building, a model (model 'tropic') whose root stands at the island's middle;
+ *   shore's foam; setShown takes the whole island away and brings it back: its ground, its building,
+ *   its garden and Filip, with its shallows and foam);
+ * - town-sde4.ts: the cartoon of NUS SDE4 on the tropic island, a model (model 'tropic') whose root
+ *   stands at the island's middle, so it builds in the island's own frame;
+ * - town-tropic-garden.ts: the tropic island's garden (its rain trees, palms, frangipani, shrub beds
+ *   and fans, the round plaza before SDE4's door, the café set and the veranda desk), in a group of
+ *   its own in the island's frame;
+ * - tropic-figure.ts and tropic-figure-look.ts: Filip Biljecki's figure (his look on the shared rig,
+ *   figure-rig.ts) and his day on the island: the desk, the call and coffee;
  * - town-buildings.ts: the gate, the Town Hall, the studio and the archive;
  * - town-movers.ts: the balloon, the tram, the boat and the bicycle;
  * - town-country.ts: the Highland herd and its paddock, the sheep, the standing stones and the
@@ -161,6 +171,8 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   const skyIsland = createSkyIsland(ctx, props, nature, skyGarden);
   const { buildSkyVilla } = createSkyVilla(ctx, kit, props, nature);
   const tropicIsland = createTropicIsland(ctx);
+  const { buildSde4 } = createSde4(ctx, kit, props, nature);
+  const tropicGarden = createTropicGarden(ctx, kit);
   const { buildGate, buildHall, buildStudio, buildArchive } = createBuildings(ctx, kit, nature, props);
   const { hotAirBalloon, buildTram, buildBoat, buildPlane, bicycle } = createMovers(ctx, kit);
   const { highlandPaddock, blackfaceSheep, standingStoneRing, pondDucks } = createCountry(ctx, kit);
@@ -303,6 +315,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   yield 'tropic ground';
 
   const models = new Map<BuildingId, Model>();
+  let sde4: Sde4Build | undefined;
   for (const b of buildings) {
     // The sky island is no model: it is built above, in groups of its own.
     if (b.model === 'sky') continue;
@@ -321,9 +334,9 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     else if (b.model === 'archive') buildArchive(shell, site);
     else if (b.model === 'residence') buildResidence(shell, site);
     else if (b.model === 'airport') buildAirport(shell, site);
-    // The tropic island's building, in the island's own frame (its root is at the island's middle):
-    // the stand-in holds the slot the SDE4 (town-sde4.ts's buildSde4) takes at the merge.
-    else if (b.model === 'tropic') tropicIsland.standIn(shell);
+    // The tropic island's building, SDE4, in the island's own frame (its root is at the island's
+    // middle), its podium's top 0.12 over the island's level terrace (SDE4_AT).
+    else if (b.model === 'tropic') sde4 = buildSde4(shell);
     else buildTerrace(shell, site, b.variant ?? 'villa', b.id === 'pengyuan-liu' ? 0 : b.id === 'yunlong-liu' ? 1 : 2);
     models.set(b.id, { root, shell, fade: [], center: new T.Vector3(site.x, 0, site.z) });
   }
@@ -444,6 +457,21 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   plane.rotation.y = plan.STAND.heading;
   city.add(plane);
   yield 'buildings and vehicles';
+  // The tropic island's garden and Filip, round SDE4 (its plan: tropicGardenSite), each in a group of
+  // its own in the island's frame (at its middle, unturned), handed to the island so they go and come
+  // with it; Filip one entry in the animated list, batched part by part with the island's ground.
+  const tropicGardenGroup = new T.Group(),
+    filipGroup = new T.Group();
+  tropicGardenGroup.name = 'tropic-garden';
+  filipGroup.name = 'tropic-figure';
+  for (const g of [tropicGardenGroup, filipGroup]) {
+    g.position.set(plan.TROPIC.x, 0, plan.TROPIC.z);
+    city.add(g);
+  }
+  tropicGarden.tropicGarden(tropicGardenGroup, tropicGardenSite(sde4!));
+  const filip = placeFilip(ctx, filipGroup).root;
+  tropic.join(tropicGardenGroup, filipGroup);
+  yield 'tropic garden';
 
   /* ---------------------------------------------------------------- */
   /* Static batching by surface family                                 */
@@ -461,8 +489,11 @@ export function* buildTownInPhases(options: TownOptions = {}) {
   // Alison, part by part as the town's figures are, so her joints still bend and her props still come and go.
   batchFigure(alison);
   yield 'batch sky';
-  // The tropic island's ground: contact shade from its own lawn (plan.tropicTop), not the sea.
+  // The tropic island's ground and its garden: contact shade from its own lawn (plan.tropicTop), not
+  // the sea; Filip part by part, as Alison.
   batch(tropicLand, { floor: plan.tropicTop });
+  batch(tropicGardenGroup, { floor: tropicGroundAt });
+  batchFigure(filip);
   yield 'batch tropic';
   batch(parkGroup);
   yield 'batch park';
@@ -509,6 +540,10 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     sky,
     tropicLand,
     tropic,
+    // SDE4's plan and height as built (town-sde4's Sde4Build), and the garden's and Filip's groups.
+    tropicSde4: sde4!,
+    tropicGarden: tropicGardenGroup,
+    filip: filipGroup,
     models,
     walkers,
     tram,

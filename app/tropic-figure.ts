@@ -1,13 +1,10 @@
 import * as T from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { blob, DEPTH, HEAD, lathe, paint, part, shade, TORSO } from './city-people';
 import {
   armState,
   AT_EASE,
   atEase,
   CUP_AXIS,
   cupOnSaucer,
-  cupPieces,
   easeArm,
   figureClock,
   figureHand,
@@ -17,7 +14,6 @@ import {
   LAP,
   lean,
   leaned,
-  limb,
   mix,
   mixV,
   putAway,
@@ -36,8 +32,10 @@ import {
   type Material,
   type V3,
 } from './figure-rig';
-import { angleDiff, blendDay, centripetal, pathFloor, planDay, polylineDistance, samplePolyline, smoothstep, walkProgress, type DayGait, type XZ } from './town-plan';
+import { angleDiff, blendDay, planDay, samplePolyline, smoothstep, TROPIC, TROPIC_PATHS, TROPIC_PLAZA, tropicFloor, tropicInland, tropicTop, walkProgress, type DayGait, type XZ } from './town-plan';
 import type { TownContext } from './town-shared';
+import { sde4Plan } from './town-sde4';
+import { createFilip, FILIP_FACE, FILIP_PHONE, FILIP_SCALE, type FilipJoints, type FilipProps } from './tropic-figure-look';
 
 /*
  * Filip Biljecki's figure on the tropic island (the neighbour island off the south shore, with the
@@ -50,15 +48,13 @@ import type { TownContext } from './town-shared';
  *
  * Everything here is in the island's own frame (its origin the island's middle on the sea's level, +x
  * east, +z south, y up), so the island's group (at its middle, unturned) takes his root as it is.
- * What the island's other builders own comes in from outside, with a STAND-IN here until they are
- * merged:
- * - his body: any builder of the look lane's shape (FilipBody: its root already scaled FILIP_SCALE,
- *   the rig's joints, his hand props, and his face, FilipFace, where his phone and cup go);
- *   filipStandIn until then;
+ * What the island's other builders own comes in from outside:
+ * - his body: tropic-figure-look's createFilip (FilipBody: its root already scaled FILIP_SCALE, the
+ *   rig's joints, his hand props, and his face, FILIP_FACE, where his phone and cup go);
  * - where his day happens (FilipSite: the floor he stands on, SDE4's desk and café anchors and the
  *   floors their sets stand on, the call stretch, his ways between them, the solids he keeps clear of
- *   and how far in from the turf's lip a point is); FILIP_SITE until then, laid out on SDE4's anchors and
- *   the land's plan as they stand in their lanes, on a stand-in floor (filipStandInFloor);
+ *   and how far in from the turf's lip a point is): FILIP_SITE, laid out on the land (town-plan's
+ *   tropic island: its lawn, walks and coast) and on SDE4's plan (town-sde4's sde4Plan);
  * - his furniture, which the garden builds to his measures (FILIP_DESK, FILIP_CAFE, FILIP_CHAIR and
  *   FILIP_RING: where his hands, his belly, his knees, his cup and his soles go; filipFurniture has it
  *   as solids for the checks).
@@ -67,29 +63,9 @@ import type { TownContext } from './town-shared';
 /* ------------------------------------------------------------------ */
 /* Who he is, and how big                                              */
 /* ------------------------------------------------------------------ */
-/** He is the rig (Alison's) scaled by this all over at his root: 1.0 tall to his crown, where she is 0.93. */
-export const FILIP_SCALE = 1.08;
-/**
- * STAND-IN colours (sRGB; design.md 3.2, from his public profile photo: short brown hair swept to the
- * side, clean-shaven, no glasses, light skin, a white open-collar shirt; navy chinos and brown shoes),
- * every one at or under the figures' saturation of 0.55: the stand-in body's and its props' (a graphite
- * phone; Alison's china, plain white with a warm grey band, and coffee in it). Lane figlook's
- * FILIP_LOOK is his own: at the merge it is the one source of his colours, and this goes with the
- * stand-in.
- */
-export const FILIP_STAND_IN_LOOK = {
-  hair: '#6e4c34',
-  skin: '#f0cba9',
-  shirt: '#ece8df',
-  trousers: '#3a4352',
-  belt: '#4b392e',
-  shoes: '#5b4232',
-  eyes: '#2b2622',
-  phone: '#2d2b2e',
-  china: '#efeae0',
-  band: '#9a9184',
-  coffee: '#5e4230',
-};
+/** He is the rig (Alison's) scaled by this all over at his root (tropic-figure-look's): 1.0 tall to his crown, where she is 0.93. */
+export { FILIP_SCALE };
+export type { FilipJoints, FilipProps };
 const S = FILIP_SCALE;
 
 /* ------------------------------------------------------------------ */
@@ -231,252 +207,83 @@ export type FilipSite = {
   solids: FilipSolid[];
   inland: (x: number, z: number) => number;
 };
+/** SDE4 as it stands on the island (town-sde4's sde4Plan): its podium, deck and ramp, its columns and what stands on its podium. */
+const SDE4_PLAN = sde4Plan();
 /**
- * STAND-IN for the island's floor, in its own frame, the same numbers as lane site's plan (TROPIC,
- * TROPIC_ROCKY, TROPIC_BUILDING, TROPIC_PAD, TROPIC_PLAZA, TROPIC_MOUND, TROPIC_PATHS, TROPIC_FLOOR)
- * and lane sde4's SDE4 (its podium 0.12 over the land's terrace, the veranda's deck flush on it, the
- * 1:6 ramp off its front):
- * - the waterline an ellipse `a` by `b`; the beach `beach` wide inside it, narrowing to `rocky` over
- *   the rocky `stretches` (bearings from the middle, 0 south); the turf's lip at the beach's inner edge;
- * - the lawn a dome `dome` over the lip, a level terrace `pad` round the podium and the court (each
- *   grown by `grow` and eased into the dome over `ease`), a soft `mound`, all drawn down to the dome
- *   over the last seventh of the way to the lip;
- * - the podium (x0..x1 by z0..z1) `rise` over the terrace, and its ramp (x0..x1, from the podium's
- *   front down to `foot`);
- * - the walks, `width` across and `lift` over the lawn (the call walk `branch`), each step up eased
- *   over `edge` of the lawn outside it: the south and front walks from the court's rim, the call walk
- *   from the front walk's second point to the call stretch (its last three points).
+ * The floor drawn at a point of the island's frame: SDE4's podium and deck (their top), its 1:6 ramp
+ * from the podium's front edge down to the lawn, and off them the lawn with its walks (town-plan's
+ * tropicFloor: each walk's lift over the lawn, eased over its edge).
  */
-export const FILIP_GROUND = {
-  a: 13,
-  b: 10.5,
-  beach: 2.89,
-  rocky: 1.15,
-  stretches: [
-    { bearing: Math.PI, half: 0.95, ease: 0.35 },
-    { bearing: -0.8, half: 0.2, ease: 0.28 },
-  ],
-  dome: 0.32,
-  pad: 0.26,
-  grow: 0.6,
-  ease: 1.4,
-  podium: { x0: -5.9, x1: 5.9, z0: -6.3, z1: 1.7, rise: 0.12 },
-  court: { x: -2.1, z: 2.3, r: 1.7 },
-  mound: { x: -6.4, z: 4.6, r: 2.6, h: 0.22 },
-  ramp: { x0: 3.35, x1: 4.3, foot: 2.42 },
-  walks: {
-    south: [[-1.25, 3.55], [-0.75, 4.75], [-1.35, 5.75], [-2.8, 6.15], [-4.2, 6.05], [-5.2, 6.6], [-5.6, 7.3]] as XZ[],
-    front: [[-0.6, 2.6], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as XZ[],
-    call: [[1.0, 2.75], [1.6, 3.55], [2.2, 4.6], [2.9, 5.3], [3.5, 5.3], [4.3, 5.3], [5.1, 5.3]] as XZ[],
-  },
-  width: 0.56,
-  lift: 0.03,
-  branch: 0.036,
-  edge: 0.15,
-};
-/** STAND-IN: where (x, z) lies on the island: the share of the way out from its middle to the turf's lip on its ray (1 on the lip), and the lip's distance out. */
-function standInLawn(x: number, z: number) {
-  const G = FILIP_GROUND,
-    bearing = Math.atan2(x, z),
-    reach = 1 / Math.hypot(Math.sin(bearing) / G.a, Math.cos(bearing) / G.b);
-  let rocky = 0;
-  for (const s of G.stretches) rocky = Math.max(rocky, 1 - smoothstep((Math.abs(angleDiff(bearing, s.bearing)) - s.half) / s.ease));
-  const turf = reach - (G.beach - (G.beach - G.rocky) * rocky);
-  return { lawn: Math.hypot(x, z) / turf, turf };
+export function filipFloor(x: number, z: number) {
+  const D = SDE4_PLAN,
+    P = D.podiumPlan,
+    R = D.ramp;
+  if (x >= P.x0 && x <= P.x1 && z >= P.z0 && z <= P.z1) return D.podium;
+  if (x >= R.x0 && x <= R.x1 && z > R.top.z && z < R.foot.z) return R.top.y + ((R.foot.y - R.top.y) * (z - R.top.z)) / (R.foot.z - R.top.z);
+  return tropicFloor(x + TROPIC.x, z + TROPIC.z);
 }
-/** STAND-IN: each walk's middle line (and the box round it, for a quick miss), cut square at the court's rim where it starts there. */
-const WALK_LINES = (() => {
-  const G = FILIP_GROUND,
-    line = (points: XZ[], fromRim: boolean) => {
-      let fine = Array.from({ length: 161 }, (_, k) => centripetal(points, k / 160));
-      if (fromRim) {
-        const out = (p: XZ) => Math.hypot(p[0] - G.court.x, p[1] - G.court.z) - G.court.r,
-          k = fine.findIndex((p) => out(p) >= 0),
-          [a, b] = [fine[k - 1], fine[k]],
-          f = -out(a) / (out(b) - out(a));
-        fine = [[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], ...fine.slice(k)];
-      }
-      const reach = G.width / 2 + G.edge;
-      return { fine, x0: Math.min(...fine.map((p) => p[0])) - reach, x1: Math.max(...fine.map((p) => p[0])) + reach, z0: Math.min(...fine.map((p) => p[1])) - reach, z1: Math.max(...fine.map((p) => p[1])) + reach };
-    };
-  return { south: line(FILIP_GROUND.walks.south, true), front: line(FILIP_GROUND.walks.front, true), call: line(FILIP_GROUND.walks.call, false) };
-})();
-/** STAND-IN: how far (x, z) is inside a walk (negative outside; -Infinity behind its start or well clear of it). */
-function standInWalk(walk: keyof typeof WALK_LINES, x: number, z: number) {
-  const { fine, x0, x1, z0, z1 } = WALK_LINES[walk],
-    [a, b] = fine;
-  if (x < x0 || x > x1 || z < z0 || z > z1 || (x - a[0]) * (b[0] - a[0]) + (z - a[1]) * (b[1] - a[1]) < 0) return -Infinity;
-  return FILIP_GROUND.width / 2 - polylineDistance(fine, x, z);
-}
-/** STAND-IN: the floor drawn at island-local (x, z) (FILIP_GROUND): the podium and its ramp, else the lawn with its walks. */
-export function filipStandInFloor(x: number, z: number) {
-  const G = FILIP_GROUND,
-    P = G.podium,
-    top = G.pad + P.rise;
-  if (x >= P.x0 && x <= P.x1 && z >= P.z0 && z <= P.z1) return top;
-  if (x >= G.ramp.x0 && x <= G.ramp.x1 && z > P.z1 && z < G.ramp.foot) return top - (P.rise * (z - P.z1)) / (G.ramp.foot - P.z1);
-  const { lawn } = standInLawn(x, z);
-  if (lawn >= 1) return 0;
-  const edge = 1 - smoothstep((lawn - 0.86) / 0.14),
-    dome = G.dome * (1 - lawn ** 2.4),
-    podium = Math.hypot(Math.max(0, P.x0 - G.grow - x, x - P.x1 - G.grow), Math.max(0, P.z0 - G.grow - z, z - P.z1 - G.grow)),
-    court = Math.max(0, Math.hypot(x - G.court.x, z - G.court.z) - G.court.r - G.grow),
-    terrace = (1 - smoothstep(Math.min(podium, court) / G.ease)) * edge,
-    m = Math.hypot(x - G.mound.x, z - G.mound.z) / G.mound.r,
-    mound = m < 1 ? G.mound.h * 0.5 * (1 + Math.cos(Math.PI * m)) * edge : 0,
-    lawnTop = dome + mound + (G.pad - dome - mound) * terrace;
-  return Math.max(pathFloor(lawnTop, Math.max(standInWalk('south', x, z), standInWalk('front', x, z)), G.lift, G.edge), pathFloor(lawnTop, standInWalk('call', x, z), G.branch, G.edge));
-}
-/** STAND-IN: the turf's lip all round (FILIP_GROUND), for how far a point is in from it. */
-const TURF_LIP = Array.from({ length: 361 }, (_, k): XZ => {
-  const b = (k / 360) * Math.PI * 2,
-    { turf } = standInLawn(Math.sin(b), Math.cos(b));
-  return [Math.sin(b) * turf, Math.cos(b) * turf];
-});
-/** STAND-IN: how far (x, z) is in from the turf's lip (negative off the lawn). */
-export const filipStandInInland = (x: number, z: number) => (standInLawn(x, z).lawn < 1 ? 1 : -1) * polylineDistance(TURF_LIP, x, z);
 /**
- * STAND-IN: SDE4's solids where he goes (lane sde4's and lane sde4alt's measures, the larger of the
- * two where they differ, on the stand-in podium): its eight columns (0.13 round, as sde4alt's) with
- * their collars and granite pads; its glazed stack (the ground floor's glass to the veranda's west
- * edge) and its fin block; the veranda's two planters either side of the way to the ramp, with their
- * planting (as high as sde4's beds and its broad-leaved plants, a little wider than the troughs); its
- * entrance steps; and the court's drum.
+ * What stands where he goes besides his furniture (FilipSite.solids), from SDE4's plan: its eight
+ * columns with their collars and granite pads; what stands on its podium (keepOut: the ground floor's
+ * glazed stack, the lobby, the fin block, the veranda's planters with the reach of their planting, the
+ * court's step); and the plaza's drum (the garden's, at the plaza's middle: a little wider than built).
  */
-export const FILIP_STAND_IN_SOLIDS: FilipSolid[] = (() => {
-  const G = FILIP_GROUND,
-    top = G.pad + G.podium.rise,
+export const FILIP_SOLIDS: FilipSolid[] = (() => {
+  const D = SDE4_PLAN,
     out: FilipSolid[] = [];
-  for (const x of [-2.4, 0, 2.4, 4.8])
-    for (const z of [-5.45, 0.85]) out.push(filipPost('column', x, z, 0.13, 0, 7.4), filipPost('column collar', x, z, 0.15, 0, top + 0.14), filipBox('column pad', x - 0.22, x + 0.22, 0, top + 0.04, z - 0.22, z + 0.22));
-  out.push(filipBox('glazed stack', -5.5, 2.6, 0, 7, -4.9, -0.4), filipBox('fin block', -5.5, -3.7, 0, 7.4, -5.9, 1.3));
-  for (const [x0, x1] of [[2.7, 3.35], [4.25, 5.3]]) out.push(filipBox('planter', x0, x1, 0, top + 0.5, -0.15, 0.55), filipBox('planter planting', x0 - 0.04, x1 + 0.04, top + 0.5, top + 0.85, -0.19, 0.59));
-  out.push(filipBox('entrance steps', -3.8, -0.4, 0, top - 0.06, G.podium.z1, 2.05), filipPost('court drum', G.court.x, G.court.z, 0.46, 0, G.pad + 0.09));
+  for (const c of D.columns)
+    out.push(
+      filipPost('column', c.x, c.z, c.r, 0, D.roof.soffit),
+      filipPost('column collar', c.x, c.z, D.collar.r, 0, D.collar.top),
+      filipBox('column pad', c.x - D.pad.half, c.x + D.pad.half, 0, D.pad.top, c.z - D.pad.half, c.z + D.pad.half),
+    );
+  for (const b of D.keepOut) out.push(filipBox(b.name, b.x0, b.x1, b.y0, b.y1, b.z0, b.z1));
+  out.push(filipPost('plaza drum', TROPIC_PLAZA.x, TROPIC_PLAZA.z, 0.46, 0, TROPIC.pad + 0.12));
   return out;
 })();
 /**
- * STAND-IN: where his day happens until the island's builders hand it over (FilipSite), laid out on
- * what the other lanes have built: SDE4 at the island's (0, -2.3) facing south (its desk anchor on the
- * veranda, its café anchor beside the court, its front columns at z 0.85, the veranda's planters
- * either side of x 3.35 to 4.25 and its 1:6 ramp at x 3.35 to 4.3 from z 1.7 to 2.42), the land's
- * walks, court and podium, and the call stretch at the end of the land's call walk. His ways keep 0.27
- * (the walkers' clearance) from every column, wall and piece of furniture, all of him clear of every
- * solid (his phone arm out to his side too), and 1 or more inside the turf's lip.
+ * Where his day happens on the island (FilipSite): the floor (filipFloor); SDE4's desk anchor on its
+ * veranda's deck (y the deck's top) and its café anchor beside the plaza (y the lawn there, where the
+ * garden stands the whole café set); the call stretch (the land's call walk's last 1.6, TROPIC_PATHS);
+ * his ways, through the gap between the veranda's planters (SDE4's `way`, where no leaf leans in) and
+ * down its ramp; the solids (FILIP_SOLIDS); and how far in from the turf's lip a point is (town-plan's
+ * tropicInland). His ways keep 0.27 (the walkers' clearance) from every column, wall and piece of
+ * furniture, all of him clear of every solid (his phone arm out to his side too), and 1.2 or more
+ * inside the turf's lip.
  */
-export const FILIP_SITE: FilipSite = {
-  floor: filipStandInFloor,
-  desk: { x: 3.9, z: -1.7, heading: 0 },
-  cafe: { x: -4.0, z: 3.7, heading: 1.18 },
-  call: { ends: [[3.5, 5.3], [5.1, 5.3]], turn: 0.3 },
-  ways: {
-    out: [[5.05, -1.85], [5.05, -1.0], [3.8, -0.42], [3.8, 1.4], [3.8, 2.6], [5.9, 3.9]],
-    across: [[1.8, 5.3], [-0.2, 5.3], [-2.4, 4.85], [-3.9, 4.75], [-5.35, 4.75], [-5.35, 3.85]],
-    home: [[-3.8, 4.75], [-2.0, 4.75], [0.5, 3.6], [2.6, 3.2], [3.8, 2.7], [3.8, 1.4], [3.8, -0.4], [5.15, -1.3], [5.15, -2.6]],
-  },
-  solids: FILIP_STAND_IN_SOLIDS,
-  inland: filipStandInInland,
-};
+export const FILIP_SITE: FilipSite = (() => {
+  const D = SDE4_PLAN,
+    way = (D.way.x0 + D.way.x1) / 2;
+  return {
+    floor: filipFloor,
+    desk: { x: D.desk.x, z: D.desk.z, heading: D.desk.heading, y: D.desk.y },
+    cafe: { x: D.cafe.x, z: D.cafe.z, heading: D.cafe.heading, y: tropicTop(D.cafe.x + TROPIC.x, D.cafe.z + TROPIC.z) },
+    call: { ends: TROPIC_PATHS.stretch, turn: 0.3 },
+    ways: {
+      out: [[5.05, -1.85], [5.05, -1.0], [way, -0.42], [way, 1.4], [way, 2.6], [5.9, 3.9]],
+      across: [[1.8, 5.3], [-0.2, 5.3], [-2.4, 4.85], [-3.9, 4.75], [-5.35, 4.75], [-5.35, 3.85]],
+      home: [[-3.8, 4.75], [-2.0, 4.75], [0.5, 3.6], [2.6, 3.2], [way, 2.7], [way, 1.4], [way, -0.4], [5.15, -1.3], [5.15, -2.6]],
+    },
+    solids: FILIP_SOLIDS,
+    inland: tropicInland,
+  };
+})();
 
 /* ------------------------------------------------------------------ */
-/* His body (STAND-IN) and his props                                   */
+/* His body and his props                                              */
 /* ------------------------------------------------------------------ */
-export type FilipJoints = FigureJoints;
 /**
- * His hand props, each a group of its own in his root (batched part by part, each one mesh), hidden
- * until a pose shows one: his `phone` (its middle at its origin, long along y, its face to +z) and his
- * coffee `cup` (Alison's teacup: its handle at its origin, its axis CUP_AXIS along +x). A builder may
- * bring a `saucer` too (lane figlook's does): the café table carries its own, so his stays hidden.
+ * A body for him, as tropic-figure-look's createFilip builds it: its root scaled FILIP_SCALE, the
+ * rig's joints in it, and his hand props (his `phone`, its middle at its origin, long along y, its face
+ * to +z; his coffee `cup`, Alison's teacup: its handle at its origin, its axis CUP_AXIS along +x; a
+ * `saucer` the island drops, the café table carrying its own); and his `face` (FilipFace:
+ * tropic-figure-look's FILIP_FACE), where the poses bring his phone and his cup.
  */
-export type FilipProps = { phone: T.Object3D; cup: T.Object3D; saucer?: T.Object3D };
-/**
- * A body for him, as lane figlook's createFilip builds it: its root scaled FILIP_SCALE, the rig's
- * joints in it, and his hand props; and his `face` (FilipFace: lane figlook's FILIP_FACE), where the
- * poses bring his phone and his cup (the stand-in's face, FILIP_STAND_IN_FACE, if not given).
- */
-export type FilipBody = { root: T.Group; joints: FilipJoints; props: FilipProps; face?: FilipFace };
-/** His phone, as built (the rig's units, so the town's 0.12 by 0.075 by 0.07 on him): long, wide and thick. */
-const PHONE = { long: 0.12 / S, wide: 0.075 / S, thick: 0.07 / S };
-/**
- * STAND-IN for lane figlook's builder, of its shape (FilipBody): the rig's body (Alison's pivots,
- * joints and measures, her limbs and torso) recoloured as his: a white shirt tucked into navy
- * trousers at a brown belt, the collar open in a V of skin, rolled sleeves (the forearms skin below
- * a white cuff), brown shoes; a resident's head with a short brown crop swept to the side, ears,
- * eyes and a nose. Its root is scaled FILIP_SCALE; his props (filipStandInProps) hang in it.
- */
-export function filipStandIn(material: Material): FilipBody {
-  const L = FILIP_STAND_IN_LOOK,
-    root = new T.Group(),
-    body = new T.Group();
-  root.name = 'filip';
-  body.name = 'body';
-  root.add(body);
-  const [a, b, c] = HEAD.r,
-    // A point on the head at (x, y), pushed out by `out` (city-people's onHead).
-    onHead = (x: number, y: number, out = 0): V3 => [x, y, 0.005 + c * Math.sqrt(Math.max(0, 1 - (x / a) ** 2 - ((y - HEAD.y) / b) ** 2)) + out],
-    shirt = (p: T.Vector3) => {
-      if (p.y < 0.298) return L.trousers;
-      if (p.y < 0.326) return L.belt;
-      // The open collar: skin in a V down to 0.53 at the front.
-      if (p.z > 0.02 && p.y > 0.53 && Math.abs(p.x) < 0.012 + (p.y - 0.53) * 0.85) return L.skin;
-      return L.shirt;
-    },
-    crop = new T.SphereGeometry(1, 16, 10, 0, Math.PI * 2, 0, 1.63)
-      .rotateX(-0.59)
-      .scale(a + 0.014, b + 0.014, c + 0.014)
-      .translate(0, HEAD.y, 0.005);
-  part(body, [
-    paint(lathe(TORSO, 14).scale(1, 1, DEPTH), shirt, [0.27, 0.6, 0.94, 1.03]),
-    // The collar's two points, lying open on his shoulders.
-    ...[-1, 1].map((s) => paint(blob([0.045, 0.036, 0.05], [s * 0.06, 0.612, 0.07], 8, [0.5, s * 0.3, s * 0.35]), L.shirt)),
-    paint(crop, L.hair),
-    // The swept top: more volume over the forehead, parted on his left and swept to his right.
-    paint(blob([0.11, 0.042, 0.1], [-0.02, HEAD.y + 0.118, 0.035], 12, [0.22, 0, 0.25]), shade(L.hair, 1.04)),
-  ], material, 'fabric');
-  const face: T.BufferGeometry[] = [
-    paint(blob(HEAD.r, [0, HEAD.y, 0.005], 16), L.skin),
-    paint(lathe([[0, 0.585], [0.05, 0.585], [0.05, 0.66], [0, 0.66]], 8), shade(L.skin, 0.96)),
-    paint(blob([0.022, 0.02, 0.02], onHead(0, 0.732, -0.006), 6), shade(L.skin, 0.97)),
-  ];
-  for (const s of [-1, 1]) {
-    face.push(paint(blob([0.02, 0.035, 0.026], [s * 0.147, 0.745, 0.0], 8), shade(L.skin, 0.95)));
-    face.push(paint(blob([0.013, 0.02, 0.008], onHead(s * 0.052, 0.772, -0.004), 8, [0, s * 0.36, 0]), L.eyes));
-  }
-  part(body, face, material, 'paint');
-  const legs: T.Object3D[] = [],
-    knees: T.Object3D[] = [],
-    arms: T.Object3D[] = [],
-    elbows: T.Object3D[] = [];
-  for (const side of [-1, 1]) {
-    const { hip, knee, arm, elbow } = limb(root, side, material, { trousers: L.trousers, shoes: L.shoes, sleeve: L.shirt, skin: L.skin, forearm: (p) => (p.y > -0.03 ? L.shirt : L.skin) });
-    legs.push(hip);
-    knees.push(knee);
-    arms.push(arm);
-    elbows.push(elbow);
-  }
-  root.userData.gait = { phase: 0, amount: 0 };
-  root.userData.sole = 0;
-  const props = filipStandInProps(material);
-  root.add(props.phone, props.cup);
-  root.scale.setScalar(S);
-  return { root, joints: { root, body, legs: legs as [T.Object3D, T.Object3D], knees: knees as [T.Object3D, T.Object3D], arms: arms as [T.Object3D, T.Object3D], elbows: elbows as [T.Object3D, T.Object3D] }, props };
-}
-/**
- * STAND-IN for the garden lane's phone() and cup() (or lane figlook's filipProps): his phone (a
- * rounded graphite slab, its middle at its origin, long along y, its face to +z; no logo, never lit)
- * and his coffee cup (Alison's teacup, plain white with a warm grey band, coffee in it), each a group
- * of its own, hidden.
- */
-export function filipStandInProps(material: Material): FilipProps {
-  const L = FILIP_STAND_IN_LOOK,
-    phone = new T.Group(),
-    cup = new T.Group();
-  phone.name = 'phone';
-  cup.name = 'coffee-cup';
-  part(phone, [paint(new RoundedBoxGeometry(PHONE.wide, PHONE.long, PHONE.thick, 2, 0.016), (p) => (p.z > PHONE.thick / 2 - 0.004 ? shade(L.phone, 0.86) : L.phone))], material, 'paint', 'phone');
-  part(cup, cupPieces({ china: L.china, band: L.band, drink: L.coffee }), material, 'paint', 'coffee-cup');
-  phone.visible = cup.visible = false;
-  return { phone, cup };
-}
+export type FilipBody = { root: T.Group; joints: FilipJoints; props: FilipProps; face: FilipFace };
+/** His body as the island builds him: tropic-figure-look's createFilip, with his face (FILIP_FACE). */
+export const filipBody = (material: Material): FilipBody => ({ ...createFilip(material), face: FILIP_FACE });
+/** His phone, as built (tropic-figure-look's FILIP_PHONE, the rig's units): long, wide and thick. */
+const PHONE = { long: FILIP_PHONE[1], wide: FILIP_PHONE[0], thick: FILIP_PHONE[2] };
 
 /* ------------------------------------------------------------------ */
 /* Poses                                                               */
@@ -517,6 +324,10 @@ const seatedY = (over: number) => (over - FILIP_CHAIR.height) / S + HIP - THIGH_
  * `lift` as they go out past the laptop's side (and `over` as they come onto the keys from his lap and
  * leave them); thinking he sits back to `back` (design.md's -0.04
  * leaves the desk out of his reach: his hands would leave it); the elbows bending the ways in `bend`.
+ * Between his lap and the keys his hands rise over the share `rise` of the way and come forward over
+ * `ahead` of it, bowed out `wide` to his sides halfway, and he leans in only over `leanIn` of it: so
+ * they come up outside his collar's points, which his leaning in would bring forward into their way,
+ * and then over the laptop's front edge (0.02 or more clear of both).
  */
 const DESK = (() => {
   const D = FILIP_DESK,
@@ -534,6 +345,10 @@ const DESK = (() => {
     stroke: 0.012,
     lift: 0.02,
     over: 0.02,
+    wide: 0.06,
+    leanIn: [0.5, 1] as [number, number],
+    rise: [0, 0.6] as [number, number],
+    ahead: [0.25, 1] as [number, number],
     bend: (k: 0 | 1): V3 => [(k ? 1 : -1) * 0.9, 0.25, -0.4],
     padBend: [-0.9, 0.35, -0.3] as V3,
   };
@@ -569,16 +384,21 @@ const LIPS: V3 = [0, -0.019, 0.081];
  * centre `hand`, the elbow out and down, `bend`); from `show` the phone is his (it shows, wholly inside
  * his chest); by `taken` hand and phone have come out and up before his shoulder (`glance`: the hand's
  * centre, within his short arm's reach, and the elbow's bend; the phone's screen tipped `tilt` up toward
- * his eyes, its middle `up` along it from the hand's centre), and he looks at it until `look`; then hand
- * and phone go up and out by `via` to his ear (EAR). Putting it away is the same backwards.
+ * his eyes, its middle `up` along it from the hand's centre): forward first (over `forward` of the
+ * way), rising only from `rise` of it, so phone and hand come out in front of his collar's point (0.03
+ * or more clear of it, his shirt buttoned up) before they come up past it; and he looks at it until
+ * `look`; then hand and phone go up and out by `via` to his ear (EAR). Putting it away is the same
+ * backwards.
  */
 const POCKET = {
-  at: [-0.07, 0.465, 0.035] as V3,
-  hand: [-0.085, 0.52, 0.13] as V3,
+  at: [-0.085, 0.45, 0.03] as V3,
+  hand: [-0.105, 0.505, 0.15] as V3,
+  forward: 0.6,
+  rise: 0.35,
   bend: [-0.85, -0.45, 0.2] as V3,
   reach: 0.3,
   show: 0.3,
-  taken: 0.52,
+  taken: 0.6,
   look: 0.66,
   glance: { hand: [-0.12, 0.6, 0.165] as V3, bend: [-0.75, -0.65, 0.1] as V3, tilt: 0.93, up: 0.07 },
   via: [-0.18, 0.67, 0.13] as V3,
@@ -588,17 +408,9 @@ const GESTURE = { hand: [0.13, 0.47, 0.18] as V3, bend: [0.85, -0.45, -0.25] as 
 /**
  * Where things are on his face, in his own frame (his root unscaled, the rig's units), for the poses
  * that bring something to it: each ear's middle (his right ear's first) and his mouth (where one would
- * be: none is drawn). Lane figlook's FILIP_FACE carries these (with more) for its head; the stand-in's
- * (the residents' head) are FILIP_STAND_IN_FACE.
+ * be: none is drawn): tropic-figure-look's FILIP_FACE carries these (with more) for his head.
  */
 export type FilipFace = { ears: [V3, V3]; mouth: V3 };
-export const FILIP_STAND_IN_FACE: FilipFace = {
-  ears: [
-    [-0.147, 0.745, 0],
-    [0.147, 0.745, 0],
-  ],
-  mouth: [0, 0.669, 0.124],
-};
 /** Where his poses bring things to his face (his frame, the rig's units): his right hand's centre with his phone at his ear, and his cup's middle at his lips. */
 export type FilipFaceTargets = { ear: V3; lips: V3 };
 const elbowFrame = new T.Matrix4(),
@@ -638,12 +450,12 @@ function gripAt(j: FigureJoints, out: T.Vector3) {
   return out.set(...EAR.grip).applyMatrix4(elbowFrame.multiplyMatrices(j.arms[0].matrix, j.elbows[0].matrix));
 }
 /**
- * Where his poses bring things to his face, for a body (FilipBody.face, or the stand-in's): his
+ * Where his poses bring things to his face, for a body (its face, FilipBody.face): his
  * phone's middle EAR.gap off the outermost point of his head (ear or hair) by his right ear, and the
  * hand's centre that puts it there, solved on a bare rig; his cup's middle LIPS from his mouth.
  */
 export function filipFaceTargets(body: FilipBody): FilipFaceTargets {
-  const face = body.face ?? FILIP_STAND_IN_FACE,
+  const face = body.face,
     [ex, ey, ez] = face.ears[0],
     v = new T.Vector3();
   let out = ex;
@@ -668,19 +480,6 @@ export function filipFaceTargets(body: FilipBody): FilipFaceTargets {
   }
   return { ear: [hand.x, hand.y, hand.z], lips: [face.mouth[0] + LIPS[0], face.mouth[1] + LIPS[1], face.mouth[2] + LIPS[2]] };
 }
-/** The stand-in's face targets (filipFaceTargets of the stand-in's face, its ear's outside 0.167 out). */
-const STAND_IN_TARGETS: FilipFaceTargets = (() => {
-  const phone = new T.Vector3(-0.167 - EAR.gap - PHONE.thick / 2, 0.745 - EAR.down, EAR.ahead),
-    j = bareRig(),
-    hand = phone.clone().add(new T.Vector3(0, -0.07, 0)),
-    at = new T.Vector3();
-  for (let k = 0; k < 8; k++) {
-    reach(j, 0, [hand.x, hand.y, hand.z], EAR.bend);
-    hand.add(phone.clone().sub(gripAt(j, at)));
-  }
-  const m = FILIP_STAND_IN_FACE.mouth;
-  return { ear: [hand.x, hand.y, hand.z], lips: [m[0] + LIPS[0], m[1] + LIPS[1], m[2] + LIPS[2]] };
-})();
 /**
  * His phone in his right hand as posed now: `glance` of the way from his grip at the ear (EAR.grip,
  * along his forearm) to held up before his chest to look at (POCKET.glance), and `taken` of the way out
@@ -705,7 +504,7 @@ function phoneInHand(j: FilipJoints, props: FilipProps, taken = 1, glance = 0) {
   pocketTurn.copy(j.body.quaternion).multiply(pocketGrip);
   // (Slerping into its own quaternion would read the pocket's turn back: three's slerpQuaternions copies the first.)
   gripTurn.copy(phone.quaternion);
-  phone.position.lerpVectors(pocketAt, phone.position, taken);
+  phone.position.set(mix(pocketAt.x, phone.position.x, taken), mix(pocketAt.y, phone.position.y, smooth(taken, POCKET.rise, 1)), mix(pocketAt.z, phone.position.z, smooth(taken, 0, POCKET.forward)));
   phone.quaternion.slerpQuaternions(pocketTurn, gripTurn, taken);
 }
 /**
@@ -762,7 +561,7 @@ export function cupAt(props: FilipProps, cup: [number, number, number, number], 
  * floor puts it back in the saucer by cupAt). A saucer his body brings stays hidden (the table has
  * its own).
  */
-export function poseFilip(j: FilipJoints, props: FilipProps, name: FilipPose, phase: number, opts: FilipPoseOptions = {}, face: FilipFaceTargets = STAND_IN_TARGETS) {
+export function poseFilip(j: FilipJoints, props: FilipProps, name: FilipPose, phase: number, opts: FilipPoseOptions, face: FilipFaceTargets) {
   const u = ((phase % 1) + 1) % 1,
     p = T.MathUtils.clamp(phase, 0, 1),
     unit = (v: number | undefined, d = 0) => T.MathUtils.clamp(v ?? d, 0, 1);
@@ -819,8 +618,10 @@ function answering(j: FilipJoints, props: FilipProps, p: number, ear: V3, from: 
     G = P.glance;
   if (p < P.look) {
     // Up to the pocket (eased from where the arm was), then out before his chest with the phone.
-    const out = smooth(p, P.show, P.taken);
-    reach(j, 0, mixV(P.hand, G.hand, out), mixV(P.bend, G.bend, out));
+    const out = smooth(p, P.show, P.taken),
+      up = smooth(out, P.rise, 1),
+      ahead = smooth(out, 0, P.forward);
+    reach(j, 0, [mix(P.hand[0], G.hand[0], out), mix(P.hand[1], G.hand[1], up), mix(P.hand[2], G.hand[2], ahead)], mixV(P.bend, G.bend, out));
     if (p < P.reach) easeArm(j, 0, from, armState(j, 0), smooth(p, 0, P.reach));
     if (p >= P.show) phoneInHand(j, props, out, out);
     return;
@@ -840,7 +641,7 @@ function answering(j: FilipJoints, props: FilipProps, p: number, ear: V3, from: 
 function atDesk(j: FilipJoints, t: number, keys: number, back: number, pad: number, tap: number, sway: number) {
   const D = DESK,
     // Leaned in to type as his hands come up to the keys, back to think; swaying as he types.
-    a = mix(mix(-0.03, D.lean, keys), D.back, back) + sway,
+    a = mix(mix(-0.03, D.lean, smooth(keys, D.leanIn[0], D.leanIn[1])), D.back, back) + sway,
     r = mixV([0, 0, 0], D.reach, keys);
   lean(j, a, r);
   for (const k of [0, 1] as const) {
@@ -861,7 +662,7 @@ function atDesk(j: FilipJoints, t: number, keys: number, back: number, pad: numb
       // From his lap up first, then forward over the desk's edge, lifted `over` as he goes (his forearms
       // clear of the laptop's front edge as his hands come onto the keys and leave them).
       over = D.over * smooth(keys, 0.25, 0.75) * (1 - smooth(keys, 0.85, 1)),
-      at: V3 = [mix(lap[0], onDesk[0], keys), mix(lap[1], onDesk[1], smooth(keys, 0, 0.6)) + over, mix(lap[2], onDesk[2], smooth(keys, 0.25, 1))];
+      at: V3 = [mix(lap[0], onDesk[0], keys) + side * D.wide * Math.sin(Math.PI * keys), mix(lap[1], onDesk[1], smooth(keys, D.rise[0], D.rise[1])) + over, mix(lap[2], onDesk[2], smooth(keys, D.ahead[0], D.ahead[1]))];
     reach(j, k, at, mixV(lapBend, k ? D.bend(k) : mixV(D.bend(k), D.padBend, pad), keys));
   }
 }
@@ -1124,7 +925,7 @@ function gestureAt(t: number, at: number[], seconds: number) {
 }
 
 /**
- * His day on a site (FilipSite), FILIP_DAY on the stand-in's: its acts, one after another, `period`
+ * His day on a site (FilipSite), FILIP_DAY on the island's: its acts, one after another, `period`
  * seconds round (Alison's is 127, so the two islands never fall into step); `seats`, where he sits and
  * stands (his root seated at the desk and at the café, and each chair's side, where getting up takes
  * him: the desk's on his left, east, the café's on his right); `saucer`, the café table's saucer's
@@ -1437,13 +1238,13 @@ export function filipFurniture(plan: FilipPlan): FilipSolid[] {
   }
   return out;
 }
-/** His day on the stand-in site (FILIP_SITE). */
+/** His day on the island (FILIP_SITE). */
 export const FILIP_DAY = filipDayOf(FILIP_SITE);
-/** Filip at time `time` of his day on the stand-in site (FILIP_DAY.day). */
+/** Filip at time `time` of his day on the island (FILIP_DAY.day). */
 export const filipDay = FILIP_DAY.day;
-/** The still pose he settles into, on the stand-in site (FILIP_DAY.still). */
+/** The still pose he settles into, on the island (FILIP_DAY.still). */
 export const filipStill = FILIP_DAY.still;
-/** Part of the way from one of his moments to another, on the stand-in site (FILIP_DAY.blend). */
+/** Part of the way from one of his moments to another, on the island (FILIP_DAY.blend). */
 export const filipBlend = FILIP_DAY.blend;
 
 /* ------------------------------------------------------------------ */
@@ -1550,19 +1351,20 @@ export function filipClock(body: FilipBody, plan: FilipPlan = FILIP_DAY) {
  * Filip on the tropic island, for its build (as town-sky's alison() stands Alison on hers): his
  * figure in `parent` (the island's group: its origin the island's middle, unturned), a pivot of its
  * own (`keepSeparate`, `prebatched`: the town batches it part by part, town-build's batchFigure, never
- * in a static batch), going about his day on `site` (FILIP_SITE's stand-ins by default), one entry in
- * the town's animated list, posed at time 0 as built. `body` builds him (lane figlook's createFilip,
- * with its FILIP_FACE as the body's `face`; filipStandIn by default); a saucer it brings is dropped.
- * Night and rain change nothing, as for the town's walkers. Returns his root, his day and his body.
+ * in a static batch), going about his day on `site` (FILIP_SITE, the island's, by default), one entry
+ * in the town's animated list, posed at time 0 as built. `body` builds him (filipBody: tropic-figure-
+ * look's createFilip, with its FILIP_FACE as the body's `face`, by default); the saucer it brings is
+ * dropped. Night and rain change nothing, as for the town's walkers. Returns his root, his day and his
+ * body.
  */
 export function placeFilip(ctx: { material: Material; animated: TownContext['animated'] }, parent: T.Object3D, o: { site?: FilipSite; body?: (m: Material) => FilipBody } = {}) {
   const plan = !o.site || o.site === FILIP_SITE ? FILIP_DAY : filipDayOf(o.site),
-    body = (o.body ?? filipStandIn)(ctx.material),
+    body = (o.body ?? filipBody)(ctx.material),
     { root } = body;
   // A saucer his body brings is never his to show (the café table carries its own): it goes, and its mesh with it.
   if (body.props.saucer) {
     body.props.saucer.removeFromParent();
-    body.props.saucer.traverse((m) => m instanceof T.Mesh && m.geometry.dispose());
+    body.props.saucer.traverse((m: T.Object3D) => m instanceof T.Mesh && m.geometry.dispose());
     delete body.props.saucer;
   }
   root.name = 'filip';

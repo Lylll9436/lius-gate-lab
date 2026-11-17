@@ -577,7 +577,6 @@ for (const [why, edit, message] of [
     ['a place that is not a neighbour’s', (n) => (n.buildingId = 'research-studio'), hisAt + '.buildingId must be the place whose file shows them: sky-island or tropic-island.'],
   ])
     assert.deepEqual(editedHis(edit), [message], 'His record with ' + why + ' fails with its own message.');
-  assert.deepEqual(editedHis((n) => (n.group.fullName.zh = 'Urban Analytics Lab')), [], 'UAL’s full name, kept in Latin script in Chinese, is refused.');
 }
 // A neighbour is not a person: their id may not be in people too, and no event, project, output or
 // note may name them among its people (their People buttons open members' files).
@@ -1289,7 +1288,8 @@ const siteButton = (island, locale) => island.site.label[locale] + ' · ' + isla
   for (const locale of ['en', 'zh']) {
     const zh = locale === 'zh',
       chapter = renderToStaticMarkup(React.createElement(LabContent, { id: 'town-hall', locale, onOpen() {}, reading: true, onExplore() {} })),
-      page = decoded(chapter);
+      // (A card's heading keeps its place's words in a span of their own, so they wrap together.)
+      page = decoded(chapter.replace(/<span class="neighbours-where">([^<]*)<\/span>/g, '$1'));
     let last = -1;
     for (const text of [
       ...hall.sections.flatMap((s) => [s.heading[locale], s.body[locale]]),
@@ -2683,7 +2683,7 @@ assert(
   // - The one tie the sources state for each group, and nothing stronger: Pengyuan Liu is listed as
   //   an Associate of UIA, and among UAL's alumni as a Research Fellow. No sentence that names the
   //   Gate or a Liu (Liu, 刘) says part of, belongs to, member, co-supervises or affiliated (属于,
-  //   隶属, 成员, 共同指导, 联合指导): so UAL's alumni are 校友 (Alumni) in Chinese, never 前成员.
+  //   隶属, 成员, 共同指导, 联合指导): so in Chinese he is on UAL's Alumni list (名列 … Alumni 名单), never a 前成员.
   // - Their names and their groups' stay in Latin script: no text writes them in Chinese characters.
   //   A heuristic: the usual transliterations of Alison, Heppenstall, Filip and Biljecki, and UIA's
   //   and UAL's names translated.

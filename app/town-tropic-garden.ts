@@ -2,9 +2,13 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { SurfaceKind } from './city-materials';
-import { blob as ball, lathe, paint, taper } from './city-people';
+import { taper } from './city-people';
 import { palette, hash, sstep, mix, type TownContext } from './town-shared';
-import { angleDiff } from './town-plan';
+import * as plan from './town-plan';
+import { saucerPieces, type ChinaLook } from './figure-rig';
+import { sde4Plan, type Sde4Plan } from './town-sde4';
+import { tropicGroundAt } from './town-tropic';
+import { FILIP_SITE } from './tropic-figure';
 import type { Kit } from './town-kit';
 import { crown, mergeCrown, noise3, paintCrown, trunkTube, type Look as CrownLook } from './town-nature';
 import { ellipsoid, roundBox, sculpt } from './town-sculpt';
@@ -13,17 +17,18 @@ import { AIRPORT_LOOK } from './town-airport';
 import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, type ChairLook, type Part, type TableLook, type Tint } from './town-sky-garden';
 
 /*
- * The tropic island's garden (Filip Biljecki's island, off the south shore): its planting and the
- * outdoor furniture and props of his three stations. Nothing in the town calls this module yet: the
- * island's own module hands it a group in the island's frame, the lawn's height and SDE4's anchors.
+ * The tropic island's garden (Filip Biljecki's island, off the south shore): its planting, the round
+ * plaza before SDE4's door and the outdoor furniture of his stations. town-build hands it a group in
+ * the island's frame and the site (tropicGardenSite: the island's ground and SDE4's plan).
  *
  * Every builder returns a group in a frame of its own (y 0 the ground the piece stands on, its front
  * or its lean along a stated axis) and never moves that group: whoever places it sets its position and
  * turn. tropicGarden() places the whole garden in the island's frame (origin at its middle, +x east, +z
  * south, y up from the water level the land's own ground is measured from) round SDE4 as the other
- * lanes build it: its roof's middle at z -2.3, its front due south, the land's round court before its
- * door and the land's two paths (TROPIC_LAND, TROPIC_GARDEN.building). The land builds the court, so
- * the garden builds no plaza unless it is asked to (TropicSite.plaza).
+ * lanes build it: its roof's middle at z -2.3, its front due south, the land's two walks and its coast
+ * (town-plan's tropic island), the round plaza on the land's level terrace before the door (the land
+ * lays no paving there: TropicSite.plaza) and SDE4 as its plan says (town-sde4's sde4Plan,
+ * TROPIC_GARDEN.building).
  *
  * Nothing moves, so nothing is animated and Pause and reduced motion have nothing to hold. Nothing is
  * two-sided, transparent or cut out, nothing glows, and the island is evergreen: Singapore has no
@@ -32,8 +37,9 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * materials are white), so each surface family batches as one mesh: foliage (the crowns, fronds, leaves
  * and shrubs, casting), the small foliage that casts nothing (the ferns, the frangipani's flowers and
  * the desk's plant), bark (trunks, limbs and coconuts), timber (the oak tops, seats and rails) and paint
- * (the bronze frames, the laptop, the café's saucer and the desk plant's pot); with a plaza of its own,
- * its stone (the drum and steps) and paving (flush, casting nothing).
+ * (the bronze frames, the laptop, the café's saucer and the desk plant's pot); and the plaza's stone
+ * (its drum) and paving (flush, casting nothing). Filip's own props (his phone and his cup) are his
+ * body's (tropic-figure-look's filipProps); the café's saucer is the figure rig's china (figure-rig).
  */
 
 /**
@@ -47,8 +53,8 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * green; a plaza of its own in the pale and grey granite (the kerb's and the residence's gravel) round
  * a dark granite drum (the airport's rubble) with a paler top ring; the furniture's light oak on dark
  * bronze (the residence's); the laptop's aluminium, its keyboard a shade darker and its screen's inner
- * face dark; the phone's graphite; the café's china white with a warm grey band, and coffee; the desk
- * plant's pale stone pot.
+ * face dark; the café's china white with a warm grey band, and coffee; the desk plant's pale stone
+ * pot.
  */
 export const TROPIC_GARDEN_LOOK = {
   rainBody: '#6b9440',
@@ -84,7 +90,6 @@ export const TROPIC_GARDEN_LOOK = {
   aluminium: '#b9bdbf',
   keys: '#9da1a3',
   screen: '#33383b',
-  graphite: '#2d2b2e',
   china: palette.white,
   chinaBand: '#a59d92',
   coffee: '#5e4230',
@@ -125,7 +130,6 @@ export const TROPIC_GARDEN_FAMILY: Record<keyof typeof TROPIC_GARDEN_LOOK, strin
   aluminium: palette.metal,
   keys: palette.metal,
   screen: palette.metal,
-  graphite: palette.metal,
   china: palette.white,
   chinaBand: palette.kerb,
   coffee: palette.woodDark,
@@ -262,10 +266,6 @@ export const SITTER = { setback: 0.09 * 1.08 };
 export const DESK = { w: 0.9, d: 0.5, slab: 0.07, leg: 0.07, rail: 0.07, near: 0.185, across: 0.15, inset: 0.015, plant: { pot: 0.065, height: 0.09, leaves: 0.11 } };
 /** The chunky toy laptop: base `w` by `d`, `base` thick, its lid as large and `lid` thick, opened `open` from the base (leaning back, away from its user). */
 export const LAPTOP = { w: 0.3, d: 0.21, base: 0.07, lid: 0.07, open: (105 * Math.PI) / 180 };
-/** The phone: a rounded slab `w` by `h` by `d`. */
-export const PHONE = { w: 0.075, h: 0.12, d: 0.07 };
-/** The cup's axis stands this far from its handle (the cup's origin), along its +x: the sky figure's teacup's (lane figure's figure-rig CUP_AXIS). */
-export const CUP_AXIS = 0.058;
 /**
  * The bistro chair (the desk's and the café's): the town's 0.44 seat in oak on a dark-bronze frame,
  * with a foot ring whose top is `ring` over the floor, where a seated figure's soles rest (the
@@ -445,29 +445,7 @@ function merged(list: T.BufferGeometry[]) {
   for (const g of new Set([...list, ...plain])) g.dispose();
   return out;
 }
-/**
- * A cup's and a saucer's colours: the china, the band at the rim and what is in the cup (lane figure's
- * figure-rig ChinaLook).
- */
-type ChinaLook = { china: string; band: string; drink: string };
-/**
- * The sky figure's teacup (its turned body CUP_AXIS from its handle, which is its origin, and a lug
- * on its -x side) and saucer (a dish 0.15 across with a well, its foot on the origin), in the given
- * china. These two are the same profiles as lane figure's figure-rig cupPieces and saucerPieces, with
- * the same signatures: at the merge, import those and delete these, so the china has one source.
- */
-function cupPieces(look: ChinaLook) {
-  const ring = (p: T.Vector3) => Math.hypot(p.x - CUP_AXIS, p.z);
-  return [
-    paint(lathe([[0, -0.037], [0.034, -0.037], [0.049, 0.014], [0.052, 0.037], [0.046, 0.039], [0.041, 0.024], [0, 0.024]], 9).translate(CUP_AXIS, 0, 0), (p) =>
-      p.y < 0.0245 && p.y > 0.02 && ring(p) < 0.0415 ? look.drink : p.y > 0.024 && ring(p) > 0.0485 ? look.band : look.china,
-    ),
-    paint(ball([0.037, 0.037, 0.037], [0, 0, 0], 8), look.china),
-  ];
-}
-function saucerPieces(look: Omit<ChinaLook, 'drink'>) {
-  return [paint(lathe([[0, 0], [0.04, 0], [0.06, 0.03], [0.075, 0.064], [0.071, 0.07], [0.056, 0.044], [0.044, 0.036], [0, 0.036]], 9), (p) => (p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? look.band : look.china))];
-}
+/** The café's china (figure-rig's cup and saucer): white with a warm grey band at the rim, and coffee. */
 const CHINA: ChinaLook = { china: L.china, band: L.chinaBand, drink: L.coffee };
 
 /** A lobe of a leafy mass: an ellipsoid's middle and radii, turned `rot` (an Euler, XYZ) when given. */
@@ -707,7 +685,7 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       h = (n: number) => hash(seed * 29.17 + n * 4.13),
       spin = h(1) * Math.PI * 2,
       bay = (a: number) => {
-        const t = Math.abs(angleDiff(a, facing)) / C.bay.half;
+        const t = Math.abs(plan.angleDiff(a, facing)) / C.bay.half;
         return t < 1 ? Math.cos((t * Math.PI) / 2) ** 2 : 0;
       },
       lobes: { c: V3; r: V3 }[] = [],
@@ -1235,36 +1213,6 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
     return g;
   }
   /**
-   * The phone, a hand prop: one rounded graphite slab (PHONE), its middle on the origin, its long side
-   * along y and its face to +z, a mesh of its own (the figure shows it only between taking it out of
-   * his pocket and putting it back). No logo, never lit.
-   */
-  function phone() {
-    const g = new T.Group();
-    g.name = 'tropic-phone';
-    const P = PHONE;
-    mesh(g, painted(new RoundedBoxGeometry(P.w, P.h, P.d, 2, 0.026).deleteAttribute('uv') as T.BufferGeometry, (_p, n) => between(L.graphite, L.graphite, 0, n.z > 0.7 ? 0.86 : 1)), 'paint', 'tropic-phone-body', ['graphite']);
-    return g;
-  }
-  /**
-   * The coffee cup, a hand prop: the sky figure's teacup (cupPieces: CUP_AXIS from its handle, which is
-   * its origin, a lug on its -x side) in plain white china with a warm grey band at the rim and coffee
-   * inside. One mesh of its own.
-   */
-  function cup() {
-    const g = new T.Group();
-    g.name = 'tropic-cup';
-    mesh(g, merged(cupPieces(CHINA)), 'paint', 'tropic-cup-body', ['china', 'chinaBand', 'coffee']);
-    return g;
-  }
-  /** The saucer on its own (the café set carries its own, batched with the table): a group with one mesh, its foot on the origin. */
-  function saucer() {
-    const g = new T.Group();
-    g.name = 'tropic-saucer';
-    mesh(g, merged(saucerPieces(CHINA)), 'paint', 'tropic-saucer-body', ['china', 'chinaBand']);
-    return g;
-  }
-  /**
    * The café set: the round bistro table (CAFE_TABLE: an oak top on a dark-bronze pedestal, two bistro
    * chairs with foot rings, no parasol) with a saucer standing on it in front of the -x chair, a little
    * to its sitter's right (CAFE_SAUCER); the saucer is batched with the frame. `userData.seats` (the
@@ -1369,7 +1317,10 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
         return !onFoot && !byColumn;
       };
     for (const t of G.rainTrees) stand(rainTree({ size: t.size, seed: t.seed, facing: facing(t.ry) }), t.x, t.z, t.ry, ground(t.x, t.z) - 0.04);
-    G.palms.forEach((p) => stand(coconutPalm({ height: p.height, lean: p.lean, seed: p.seed }), p.x, p.z, -p.toward, ground(p.x, p.z) - 0.05));
+    for (const p of G.palms) {
+      const { x, z, toward } = palmAt(p);
+      stand(coconutPalm({ height: p.height, lean: p.lean, seed: p.seed }), x, z, -toward, ground(x, z) - 0.05);
+    }
     G.frangipani.forEach((f) => stand(frangipani({ seed: f.seed, height: f.height }), f.x, f.z, f.ry, ground(f.x, f.z) - 0.04));
     const shrubs = new T.Group();
     shrubs.name = 'tropic-shrubs';
@@ -1404,19 +1355,19 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
     };
   }
 
-  return { rainTree, coconutPalm, frangipani, shrubGeometry, bedGeometry, fanGeometry, plaza, laptop, phone, cup, saucer, cafeSet, deskSet, tropicGarden };
+  return { rainTree, coconutPalm, frangipani, shrubGeometry, bedGeometry, fanGeometry, plaza, laptop, cafeSet, deskSet, tropicGarden };
 }
 export type TropicGarden = ReturnType<typeof createTropicGarden>;
 
 /** A rectangle in plan, in the island's frame. */
 export type TropicRect = { x0: number; x1: number; z0: number; z1: number };
 /**
- * What of SDE4 the garden lays itself out round, in the island's frame (TROPIC_GARDEN.building is the
- * stand-in): its roof's plan, soffit and top (over the podium's top), its fin block, its glazed stack
- * (slab edges to slab edges) and the glazed front's plane, its podium (its top over the terrace the
- * land lays for it), its steps and ramp, its veranda's deck and the deck's planters, its columns, and
- * the anchors it hands the garden: the desk's middle and the way its sitter faces, and the café table's
- * middle and the way its sitter faces. `footprint` is what stands on the ground (podium, steps, ramp).
+ * What of SDE4 the garden lays itself out round, in the island's frame (tropicBuilding reads it off
+ * SDE4's plan): its roof's plan, soffit and top (over the podium's top), its fin block, its glazed
+ * stack and the glazed front's plane, its podium (its top over the terrace the land lays for it), its
+ * steps and ramp, its veranda's deck and the deck's planters, its columns, and the anchors it hands
+ * the garden: the desk's middle and the way its sitter faces, and the café table's middle and the way
+ * its sitter faces. `footprint` is what stands on the ground (podium, steps, ramp).
  */
 export type TropicBuilding = {
   roof: TropicRect & { soffit: number; top: number };
@@ -1433,16 +1384,18 @@ export type TropicBuilding = {
 };
 /**
  * What tropicGarden needs of the island, in the island's frame:
- * - `ground`: the lawn's height at a point (lane site's plan.tropicTop, moved into the island's frame;
- *   tropicLawn is its stand-in);
+ * - `ground`: the ground's height at a point (town-tropic's tropicGroundAt, moved into the island's
+ *   frame: the lawn, or the beach's shore profile off it, where the palms stand);
  * - `desk`: SDE4's desk anchor, the desk's middle on the veranda's deck (y the deck's top) and the
  *   heading its sitter faces (0 is +z, south);
  * - `cafe`: SDE4's café anchor, the café table's middle on the lawn and the heading its sitter faces
- *   (east-south-east; lane sde4alt calls it `facing`);
+ *   (east-south-east);
  * - `building`: SDE4's measures the garden keeps its beds off (TropicBuilding: its footprint and
  *   columns; the checks read the rest), TROPIC_GARDEN.building when not given;
- * - `plaza`: only for land that builds no round court of its own (the tropic island's does): the
- *   plaza's middle, and the podium's front edge (z) and top (y) where its two steps go up.
+ * - `plaza`: where the round plaza goes, on land that lays no paving of its own there (the tropic
+ *   island's lays only its level terrace): its middle, and, where the building has no step of its own
+ *   down to it, the podium's front edge (z) and top (y) where the plaza's two steps go up (SDE4 has
+ *   its own step before its door, so the island passes none).
  */
 export type TropicSite = {
   ground: (x: number, z: number) => number;
@@ -1453,147 +1406,95 @@ export type TropicSite = {
 };
 
 /**
- * The land the garden is laid out on, in the island's frame: STAND-INS, the same numbers as lane site's
- * plan (TROPIC, TROPIC_ROCKY, TROPIC_BUILDING, TROPIC_PAD, TROPIC_PLAZA, TROPIC_MOUND, TROPIC_PATHS),
- * moved to the island's middle. check-town holds them to the plan's own once the plan has them.
- * - `waterline`: the ellipse of half-axes a (east-west) by b; the beach runs `beach` in from it where it
- *   is sand and `rocky` where its rocks stand (`stretches`: bearings, half-widths, eases);
- * - the lawn a dome `dome` over its lip, a level terrace `pad` high round the podium (`podium`, the
- *   building's plinth: its middle and half-sizes) and the court (`court`), each grown by `terrace.grow`
- *   and eased into the dome over `terrace.ease`; a soft `mound` on the south-west lawn;
- * - `paths`: the south walk and the front walk, `width` across, centripetal Catmull-Rom lines through
- *   their points; `court`: the round paved court before the entrance (the land builds it).
+ * SDE4 as the garden lays itself out round it (TropicBuilding), from its plan (town-sde4's sde4Plan,
+ * in the island's frame): its parasol, fin block, glazed stack and podium (their heights over the
+ * podium's top, the podium's over the lawn it assumes), what of it stands on the ground (podium, step,
+ * ramp), its veranda's deck and planters, its columns, and its desk and café anchors.
  */
-export const TROPIC_LAND = {
-  waterline: { a: 13, b: 10.5 },
-  beach: 2.89,
-  rocky: 1.15,
-  stretches: [
-    { bearing: Math.PI, half: 0.95, ease: 0.35 },
-    { bearing: -0.8, half: 0.2, ease: 0.28 },
-  ],
-  dome: 0.32,
-  pad: 0.26,
-  podium: { x: 0, z: -2.3, hw: 5.9, hd: 4.0 },
-  terrace: { grow: 0.6, ease: 1.4 },
-  court: { x: -2.1, z: 2.3, r: 1.7 },
-  mound: { x: -6.4, z: 4.6, r: 2.6, h: 0.22 },
-  paths: {
-    width: 0.56,
-    south: [[-1.75, 3.35], [-0.6, 5.0], [1.3, 5.5], [3.4, 5.1], [5.4, 4.3], [7.1, 3.7], [8.0, 3.4]] as [number, number][],
-    front: [[-0.85, 2.55], [1.0, 2.75], [2.3, 2.55], [3.1, 2.15]] as [number, number][],
-  },
-};
-const smooth01 = (u: number) => {
-  const x = Math.min(1, Math.max(0, u));
-  return x * x * (3 - 2 * x);
-};
-/**
- * Where a point of the island's frame lies on the stand-in land (lane site's plan.tropicAt): its
- * bearing from the middle (0 south, pi/2 east), how far out it is, the turf's edge on that ray and the
- * share of the way out to it (`lawn`, 1 on the edge).
- */
-export function tropicLand(x: number, z: number) {
-  const W = TROPIC_LAND,
-    bearing = Math.atan2(x, z),
-    out = Math.hypot(x, z),
-    reach = 1 / Math.hypot(Math.sin(bearing) / W.waterline.a, Math.cos(bearing) / W.waterline.b);
-  let rocky = 0;
-  for (const s of W.stretches) rocky = Math.max(rocky, 1 - smooth01((Math.abs(angleDiff(bearing, s.bearing)) - s.half) / s.ease));
-  const turf = reach - (W.beach - (W.beach - W.rocky) * rocky);
-  return { bearing, out, reach, turf, lawn: out / turf };
+export function tropicBuilding(p: Sde4Plan): TropicBuilding {
+  const rect = (r: TropicRect): TropicRect => ({ x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1 }),
+    up = (y: number) => y - p.podium;
+  return {
+    roof: { ...rect(p.roof), soffit: up(p.roof.soffit), top: up(p.roof.top) },
+    fin: { x0: p.fin.x0, x1: p.fin.x1, proud: p.fin.proud },
+    stack: { ...rect(p.stack), top: up(p.stack.top) },
+    glass: p.glass,
+    podium: { ...rect(p.podiumPlan), top: p.podium - p.lawn },
+    footprint: [rect(p.podiumPlan), rect(p.steps), { x0: p.ramp.x0, x1: p.ramp.x1, z0: p.podiumPlan.z1, z1: p.ramp.foot.z }],
+    veranda: rect(p.deck),
+    planters: p.keepOut.filter((b) => b.name === 'veranda planter').map(rect),
+    columns: p.columns.map((c) => ({ ...c })),
+    desk: { x: p.desk.x, z: p.desk.z, heading: p.desk.heading },
+    cafe: { x: p.cafe.x, z: p.cafe.z, heading: p.cafe.heading },
+  };
 }
 /**
- * The stand-in lawn's height at a point of the island's frame (lane site's plan.tropicTop, moved to
- * the island's middle): the dome, the mound and the level terrace round the podium and the court; 0
- * off the lawn. The island's module hands tropicGarden the land's real ground instead.
+ * The site the island hands tropicGarden (TropicSite), in its frame: its ground (the lawn, or the
+ * beach off it), SDE4's desk and café anchors and its measures (tropicBuilding, from what buildSde4
+ * handed back: its plan), and the round plaza on the land's level terrace (plan.TROPIC_PLAZA), with no
+ * steps of its own (SDE4 has its step down to it).
  */
-export function tropicLawn(x: number, z: number) {
-  const W = TROPIC_LAND,
-    { lawn } = tropicLand(x, z);
-  if (lawn >= 1) return 0;
-  const B = W.podium,
-    P = W.court,
-    M = W.mound,
-    G = W.terrace,
-    edge = 1 - smooth01((lawn - 0.86) / 0.14),
-    dome = W.dome * (1 - lawn ** 2.4),
-    podium = Math.hypot(Math.max(0, Math.abs(x - B.x) - B.hw - G.grow), Math.max(0, Math.abs(z - B.z) - B.hd - G.grow)),
-    court = Math.max(0, Math.hypot(x - P.x, z - P.z) - P.r - G.grow),
-    terrace = (1 - smooth01(Math.min(podium, court) / G.ease)) * edge,
-    m = Math.hypot(x - M.x, z - M.z) / M.r,
-    mound = m < 1 ? M.h * 0.5 * (1 + Math.cos(Math.PI * m)) * edge : 0;
-  return dome + mound + (W.pad - dome - mound) * terrace;
+export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
+  const P = plan.TROPIC;
+  return {
+    ground: (x, z) => tropicGroundAt(x + P.x, z + P.z),
+    desk: { ...sde4.desk },
+    cafe: { x: sde4.cafe.x, z: sde4.cafe.z, heading: sde4.cafe.heading },
+    building: tropicBuilding(sde4),
+    plaza: { x: plan.TROPIC_PLAZA.x, z: plan.TROPIC_PLAZA.z },
+  };
 }
 
 /**
  * The garden's layout, in the island's frame (origin at its middle, +x east, +z south), round the land
- * (TROPIC_LAND) and SDE4 as the other lanes build them:
+ * (town-plan's tropic island: its coast, lawn, walks and plaza) and SDE4 (its plan):
  * - `file`: the island's file's bearing (the gate's), toward which each rain tree's hem draws into its bay;
- * - `building`: SDE4's STAND-IN (design 2.2 with the SDE4 lanes' measures, its roof's middle at z -2.3,
- *   its podium's top 0.12 over the land's terrace): what TropicBuilding says, and SDE4's anchors (both
- *   takes hand the same: the desk's middle at (3.9, -1.7) facing south, the café table's middle at
- *   (-4.0, 3.7) facing east-south-east);
- * - `walks`: lane figure's STAND-IN for Filip's day (FILIP_SITE): the call stretch's middle line, and the
- *   points of his walks between his stations, which the planting keeps the walkers' clearance from;
+ * - `building`: SDE4 as its plan stands it (tropicBuilding of sde4Plan: its roof's middle at z -2.3, its
+ *   podium's top 0.12 over the land's terrace, the desk's middle at (3.9, -1.7) facing south, the café
+ *   table's middle at (-4.0, 3.7) facing east-south-east);
+ * - `walks`: Filip's day as tropic-figure lays it (FILIP_SITE): the call stretch's middle line and his
+ *   pacing turn, and the points of his walks between his stations, which the planting keeps the
+ *   walkers' clearance from;
  * - rain trees: the big one on the east lawn beside the veranda's open bay (photo 1's big trees stand to
  *   the building's right), its crown clear of the desk's lines of sight; the small one on the west lawn
  *   beside the fin block, the café at the rim of its shade, as near as keeps Filip in sight from all
  *   four of the file's Rotate stops (it is 45 degrees off the two that look past it);
- * - palms at the beach's edge (south-east, south, north-east, south-west), leaning out to sea
- *   (`toward`, the bearing they lean along, from +x toward +z), clear of every station's lines of sight;
- * - frangipani: one on the south lawn below the court (across Filip's walk from it: his walks keep the
- *   court's south side), one just south of the café;
+ * - palms on the sandy beach (two on the bay's crescent, two on the fuller south-east by the tail),
+ *   each at a bearing from the island's middle and `shore` out on the beach's profile from the turf's
+ *   edge (on the dry sand), leaning out to sea along the coast's own normal there, their crowns no more
+ *   than about a unit past the waterline (a third of one as they stand), clear of every station's
+ *   lines of sight (the bay's pair west of the call stretch's lines to the file's camera and to the
+ *   south-west stop's, the tail's pair east of them);
+ * - frangipani: two on the west lawn, one beside the fin block and one on the knoll west of the café
+ *   (the land's south walk takes the strip below the plaza, and its bay leaves no lawn beyond it);
  * - beds of massed leafy shrubs (bedGeometry: a line, its width and height, and which way their broad
  *   leaves arch out, away from what they stand against) along SDE4's foot: before
  *   the fin block, in the strip between the podium's front and the front walk, east of the veranda's
- *   ramp, along the back and the fin block's west face, and single shrubs at two palms' and the big
- *   rain tree's feet; heliconia fans as accents in the beds. The south lawn stays open, as photo 1's does.
+ *   ramp, along the back and the fin block's west face, and single shrubs on the lawn's edge by the
+ *   south-east and south-west beaches and at the big rain tree's foot; heliconia fans as accents in the
+ *   beds. The south lawn stays open, as photo 1's does.
  */
 export const TROPIC_GARDEN = {
   file: Math.PI / 4 - 0.18,
-  building: {
-    roof: { x0: -5.5, x1: 5.5, z0: -5.9, z1: 1.3, soffit: 6.95, top: 7.3 },
-    fin: { x0: -5.5, x1: -3.7, proud: 0.16 },
-    stack: { x0: -3.7, x1: 2.7, z0: -5.15, z1: 0.4, top: 6.15 },
-    glass: -0.35,
-    podium: { x0: -5.9, x1: 5.9, z0: -6.3, z1: 1.7, top: 0.12 },
-    footprint: [
-      { x0: -5.9, x1: 5.9, z0: -6.3, z1: 1.7 },
-      { x0: -3.8, x1: -0.4, z0: 1.7, z1: 2.05 },
-      { x0: 3.35, x1: 4.3, z0: 1.7, z1: 2.42 },
-    ],
-    veranda: { x0: 2.6, x1: 5.6, z0: -5.05, z1: 0.75 },
-    planters: [
-      { x0: 2.7, x1: 3.35, z0: -0.15, z1: 0.42 },
-      { x0: 4.3, x1: 5.25, z0: -0.15, z1: 0.42 },
-    ],
-    columns: [-2.4, 0, 2.4, 4.8].flatMap((x) => [0.85, -5.45].map((z) => ({ x, z, r: 0.13 }))),
-    desk: { x: 3.9, z: -1.7, heading: 0 },
-    cafe: { x: -4.0, z: 3.7, heading: Math.atan2(0.92, 0.38) },
-  } satisfies TropicBuilding as TropicBuilding,
+  building: tropicBuilding(sde4Plan()),
   walks: {
-    call: [[3.5, 5.25], [5.1, 5.25]] as [number, number][],
-    turn: 0.3,
-    ways: [
-      [[4.65, -1.4], [4.55, -0.6], [3.95, 0.65], [3.825, 1.4], [3.825, 2.6], [5.5, 3.9]],
-      [[1.8, 5.3], [-0.2, 5.3], [-2.4, 4.85], [-3.9, 4.75], [-5.35, 4.75], [-5.35, 3.85]],
-      [[-3.85, 4.55], [-2.0, 4.6], [0.5, 3.6], [2.6, 3.2], [3.825, 2.7], [3.825, 1.4], [4.1, 0.75], [5.15, -0.75], [5.15, -2.6]],
-    ] as [number, number][][],
+    call: FILIP_SITE.call.ends,
+    turn: FILIP_SITE.call.turn,
+    ways: [FILIP_SITE.ways.out, FILIP_SITE.ways.across, FILIP_SITE.ways.home],
   },
   rainTrees: [
     { size: 'big' as RainTreeSize, x: 8.9, z: -1.6, ry: 1.1, seed: 3 },
     { size: 'small' as RainTreeSize, x: -8.24, z: 2.81, ry: 0.3, seed: 5 },
   ],
   palms: [
-    { x: 8.4, z: 3.9, height: 3.6, lean: 0.27, toward: 0.62, seed: 1 },
-    { x: -0.3, z: 7.5, height: 3.15, lean: 0.22, toward: 1.6, seed: 2 },
-    { x: 6.5, z: -7.12, height: 3.85, lean: 0.24, toward: -0.8, seed: 3 },
-    { x: -7.3, z: 7.05, height: 3.35, lean: 0.26, toward: 2.3, seed: 4 },
+    { bearing: 1.0, shore: 1.0, height: 3.6, lean: 0.27, seed: 1 },
+    { bearing: -0.06, shore: 1.05, height: 3.15, lean: 0.22, seed: 2 },
+    { bearing: 1.32, shore: 1.1, height: 3.85, lean: 0.24, seed: 3 },
+    { bearing: -0.36, shore: 1.0, height: 3.35, lean: 0.26, seed: 4 },
   ],
   frangipani: [
-    { x: -2.5, z: 6.2, ry: 0.4, height: 2.05, seed: 1 },
-    { x: -4.7, z: 6.0, ry: 1.7, height: 1.95, seed: 2 },
+    { x: -7.3, z: 0.3, ry: 0.4, height: 2.05, seed: 1 },
+    { x: -6.6, z: 5.4, ry: 1.7, height: 1.95, seed: 2 },
   ],
   beds: [
     // Before the fin block, between the podium's edge and the café.
@@ -1619,3 +1520,13 @@ export const TROPIC_GARDEN = {
     { x: -6.5, z: -1.85, height: 1.0, ry: 1.5, seed: 4 },
   ],
 };
+/**
+ * Where a palm of TROPIC_GARDEN stands in the island's frame (its bearing from the island's middle,
+ * `shore` out on the beach's profile from the turf's edge: plan.tropicShorePoint) and `toward`, the
+ * bearing it leans along (from +x toward +z): the coast's own outward normal there.
+ */
+export function palmAt(p: { bearing: number; shore: number }) {
+  const [x, z] = plan.tropicShorePoint(p.bearing, p.shore),
+    [nx, nz] = plan.tropicNormal(p.bearing);
+  return { x: x - plan.TROPIC.x, z: z - plan.TROPIC.z, toward: Math.atan2(nz, nx) };
+}

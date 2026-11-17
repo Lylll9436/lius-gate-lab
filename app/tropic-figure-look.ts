@@ -1,13 +1,13 @@
 import * as T from 'three';
 import type { SurfaceKind } from './city-materials';
 import { blob, DEPTH, HEAD, lathe, paint, part, shade, TORSO, torsoAt } from './city-people';
-import type { AlisonJoints } from './sky-figure';
+import { cupPieces, FORE, HIP, hsv, saucerPieces, SHOULDER, smooth, TAU, THIGH_R, toHsv, UPPER, type FigureJoints } from './figure-rig';
 import { ellipsoid, sculpt, strand, type Shape } from './town-sculpt';
 
 /*
  * Filip Biljecki's little figure for the tropic island: his look only (his motion is the island's).
- * He is built on exactly Alison's rig (sky-figure.ts): the same parts, joint names, pivots and
- * hierarchy, so her pose maths and the residents' walk drive him unchanged; his root is scaled
+ * He is built on exactly Alison's rig (figure-rig.ts, her measures and china with it): the same parts,
+ * joint names, pivots and hierarchy, so her pose maths and the residents' walk drive him unchanged; his root is scaled
  * FILIP_SCALE all over (he is taller), so every pose's numbers stay hers in his root's frame. His
  * look is the public profile's: short brown hair parted on his left and swept across to his right,
  * clean-shaven, no glasses, light skin, a white shirt with its sleeves rolled to the elbow, tucked
@@ -50,16 +50,8 @@ export const FILIP_LOOK = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Measures: Alison's (sky-figure.ts), which are the residents'        */
+/* Measures: Alison's (figure-rig.ts), which are the residents'        */
 /* ------------------------------------------------------------------ */
-/** The hips' pivot height, the shoulders' pivots, the arm's two bones and the thigh's radius at the hip. */
-const HIP = 0.31,
-  SHOULDER = { x: 0.165, y: 0.6 },
-  UPPER = 0.095,
-  FORE = 0.12,
-  THIGH_R = 0.063;
-/** The cup's axis stands this far from its handle (the cup's origin), along its +x: Alison's teacup. */
-const CUP_AXIS = 0.058;
 /** The hair's distance grid: its triangles go as 1/h² (about 1,600 show at this spacing). */
 const HAIR_GRID = 0.02;
 /**
@@ -128,29 +120,8 @@ const NOSE = { y: 0.729, r: [0.022, 0.02, 0.02] as V3 };
 /* ------------------------------------------------------------------ */
 /* Colour                                                              */
 /* ------------------------------------------------------------------ */
+// (sRGB, HSV and the smooth step are figure-rig's: toHsv, hsv, smooth.)
 const srgb = new T.Color();
-/** A hex colour as sRGB components (0..1). */
-function sRGB(hex: string): V3 {
-  const n = parseInt(hex.slice(1), 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-/** A hex colour as HSV: hue in degrees, saturation and value 0..1. */
-function toHsv(hex: string): V3 {
-  const [r, g, b] = sRGB(hex),
-    max = Math.max(r, g, b),
-    min = Math.min(r, g, b);
-  return [max === min ? 0 : (60 * (g - b)) / (max - min), max ? (max - min) / max : 0, max];
-}
-/** HSV (hue in degrees, saturation and value 0..1) as sRGB components. */
-function hsv(h: number, sat: number, v: number): V3 {
-  const f = (k: number) => {
-    const m = (k + h / 60) % 6;
-    return v - v * sat * Math.max(0, Math.min(m, 4 - m, 1));
-  };
-  return [f(5), f(3), f(1)];
-}
-const smooth = T.MathUtils.smoothstep,
-  TAU = Math.PI * 2;
 
 /* ------------------------------------------------------------------ */
 /* Ring surfaces: smooth solids of revolution with crisp colour cells  */
@@ -952,8 +923,12 @@ function hair() {
 /* ------------------------------------------------------------------ */
 /* His hand props                                                      */
 /* ------------------------------------------------------------------ */
-/** His hand props, each a group of its own in his root (one mesh each, batched part by part), hidden until a pose shows one. */
-export type FilipProps = { phone: T.Group; cup: T.Group; saucer: T.Group };
+/**
+ * His hand props, each a group of its own in his root (one mesh each, batched part by part), hidden
+ * until a pose shows one. The island drops his saucer as it places him (the café table carries its
+ * own: tropic-figure's placeFilip), so it is his only as built.
+ */
+export type FilipProps = { phone: T.Group; cup: T.Group; saucer?: T.Group };
 /** A cushion: a sphere pushed out towards its box (a slab with soft corners and edges), r its half-sizes, at c. */
 function cushion(r: V3, c: V3) {
   const g = new T.SphereGeometry(1, 10, 8),
@@ -966,6 +941,8 @@ function cushion(r: V3, c: V3) {
   g.scale(...r);
   return g.translate(...c);
 }
+/** His phone's size in his own frame (across, long, thick: the town's 0.081 by 0.13 by 0.078 on him), its middle its origin. */
+export const FILIP_PHONE: V3 = [0.075, 0.12, 0.0724];
 /**
  * His hand props (each one's origin is where it is held, its pieces all 0.07 or more across):
  * - the phone: a chunky graphite slab 0.075 by 0.12 by 0.07, its screen (a shade darker) on its +z
@@ -982,19 +959,11 @@ export function filipProps(material: Material): FilipProps {
   cup.name = 'coffee-cup';
   saucer.name = 'saucer';
   // (Its sides' widest points fall between the sphere's columns: 0.0362 deep a side keeps it 0.07 through.)
-  part(phone, [paint(cushion([0.0375, 0.06, 0.0362], [0, 0, 0]), (p) => (p.z > 0.034 && Math.abs(p.x) < 0.03 && Math.abs(p.y) < 0.05 ? shade(L.phone, 0.82) : L.phone))], material, 'paint', 'phone');
-  const ring = (p: T.Vector3) => Math.hypot(p.x - CUP_AXIS, p.z);
-  part(cup, [
-    paint(lathe([[0, -0.037], [0.034, -0.037], [0.049, 0.014], [0.052, 0.037], [0.046, 0.039], [0.041, 0.024], [0, 0.024]], 9).translate(CUP_AXIS, 0, 0), (p) =>
-      p.y < 0.0245 && p.y > 0.02 && ring(p) < 0.0415 ? L.coffee : p.y > 0.024 && ring(p) > 0.0485 ? L.chinaBand : L.china,
-    ),
-    paint(blob([0.037, 0.037, 0.037], [0, 0, 0], 8), L.china),
-  ], material, 'paint', 'coffee-cup');
-  part(saucer, [
-    paint(lathe([[0, 0], [0.04, 0], [0.06, 0.03], [0.075, 0.064], [0.071, 0.07], [0.056, 0.044], [0.044, 0.036], [0, 0.036]], 9), (p) =>
-      p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? L.chinaBand : L.china,
-    ),
-  ], material, 'paint', 'saucer');
+  part(phone, [paint(cushion([FILIP_PHONE[0] / 2, FILIP_PHONE[1] / 2, FILIP_PHONE[2] / 2], [0, 0, 0]), (p) => (p.z > 0.034 && Math.abs(p.x) < 0.03 && Math.abs(p.y) < 0.05 ? shade(L.phone, 0.82) : L.phone))], material, 'paint', 'phone');
+  // The china: the figure rig's cup and saucer (Alison's), in his colours.
+  const china = { china: L.china, band: L.chinaBand, drink: L.coffee };
+  part(cup, cupPieces(china), material, 'paint', 'coffee-cup');
+  part(saucer, saucerPieces(china), material, 'paint', 'saucer');
   for (const g of [phone, cup, saucer]) g.visible = false;
   return { phone, cup, saucer };
 }
@@ -1011,8 +980,8 @@ export function filipProps(material: Material): FilipProps {
  * - `stride`: how far one 'walk' phase (two steps, the residents' gait) carries him.
  */
 export const FILIP = { scale: FILIP_SCALE, height: 0.948 * FILIP_SCALE, stride: ((Math.PI * 2) / 17) * FILIP_SCALE };
-/** His joints: exactly Alison's (sky-figure's AlisonJoints). */
-export type FilipJoints = AlisonJoints;
+/** His joints: exactly Alison's (figure-rig's FigureJoints). */
+export type FilipJoints = FigureJoints;
 
 /**
  * Filip Biljecki's figure, his root scaled FILIP_SCALE: inside it, exactly Alison's body and rig
@@ -1098,7 +1067,7 @@ export function createFilip(material: Material) {
     elbows.push(elbow);
   }
   const props = filipProps(material);
-  root.add(props.phone, props.cup, props.saucer);
+  root.add(props.phone, props.cup, props.saucer!);
   root.userData.gait = { phase: 0, amount: 0 };
   root.userData.sole = 0;
   root.userData.lift = 0;

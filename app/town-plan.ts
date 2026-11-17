@@ -423,11 +423,13 @@ export const TROPIC_SPAN = {
 /**
  * The building's ground on the tropic island, in the island's own frame (tropicLocal: x east, z
  * south, from its middle): the SDE4's podium, `hw` by `hd` either side of (x, z) (its roof's 11 by
- * 7.2 and the podium's 0.4 round it), front due south, and the top of its roof. The island's model
- * (plan.sites['tropic-island']) has its root at the island's middle, so the building is built in
- * this frame, its podium's foot on the terrace (TROPIC.pad).
+ * 7.2 and the podium's 0.4 round it), front due south, and `top`, the top of everything on it (the
+ * roof's plant housings' lids, 7.71 over the podium's top at 0.38: town-sde4's buildSde4 hands back
+ * its height, and check-town holds the two together). The island's model (plan.sites['tropic-island'])
+ * has its root at the island's middle, so the building is built in this frame, its podium's foot on
+ * the terrace (TROPIC.pad).
  */
-export const TROPIC_BUILDING = { x: 0, z: -2.3, hw: 5.9, hd: 4.0, top: 7.85 };
+export const TROPIC_BUILDING = { x: 0, z: -2.3, hw: 5.9, hd: 4.0, top: 8.1 };
 /**
  * The three homes stand side by side in a straight row, fronts in one line facing the ring
  * road (east), with a 2.4 gap between neighbours so each reads as its own house. Set back so
@@ -1974,6 +1976,22 @@ export function tropicDistance(x: number, z: number) {
     for (let i = r.from; i < r.from + run; i++) best = Math.min(best, distanceToSegment([x, z], line[i % n], line[(i + 1) % n]));
   }
   return out <= reach ? -best : best;
+}
+/**
+ * The turf's edge all round the tropic island (where its lawn meets its beach: tropicShorePoint at
+ * nought), a fine closed line in the island's own frame, for tropicInland.
+ */
+const TROPIC_TURF = Array.from({ length: 1441 }, (_, k): XZ => {
+  const [x, z] = tropicShorePoint(tropicBearingAround(k / 1440), 0);
+  return [x - TROPIC.x, z - TROPIC.z];
+});
+/**
+ * How far a point of the tropic island's own frame (x east, z south, from its middle) is in from its
+ * turf's edge (negative off the lawn): the true distance to the edge's fine line (TROPIC_TURF).
+ */
+export function tropicInland(x: number, z: number) {
+  const d = polylineDistance(TROPIC_TURF, x, z);
+  return tropicAt(x + TROPIC.x, z + TROPIC.z).lawn < 1 ? d : -d;
 }
 /**
  * On the tropic island (its lawn and beach), inside the `margin` level of tropicDistance (a signed

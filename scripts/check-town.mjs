@@ -3966,8 +3966,10 @@ assert.equal(lowSun(rad(-10)), 0);
   assert(birds.object.children.every((bird) => Math.abs(bird.scale.x - 0.4) < 1e-9), 'The gulls shrink with their presence.');
   birds.dispose();
 }
-// The rain falls over the airport's island too (a square of ±58 round the town's centre, out past
-// the deck's far edge at -55.2), as dense as it was over ±50: the scene asks for 1.35 times the streaks.
+// The rain falls over the airport's island too (out past the deck's far edge at -55.2) and over the
+// tropic island and its shallows (its south shore at 61.2, its shallows to about 64.1): a square of
+// ±66 round the town's centre, as dense as it was over ±50: the scene asks for (132 / 100)² times the
+// streaks.
 {
   const { createRain } = await load('city-atmosphere'),
     rain = createRain(),
@@ -3975,11 +3977,11 @@ assert.equal(lowSun(rad(-10)), 0);
     streaks = p.count / 2;
   let reach = 0;
   for (let i = 0; i < p.count; i++) reach = Math.max(reach, Math.abs(p.getX(i)), Math.abs(p.getZ(i)));
-  assert(reach > 57 && reach <= 58 && reach > -(plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour), `The rain reaches ${reach.toFixed(1)}, not over the airport.`);
-  assert(Math.abs(streaks / (2 * 58) ** 2 - 1700 / (2 * 50) ** 2) < 0.002, `The rain is thinner over ±58 (${streaks} streaks).`);
+  assert(reach > 65 && reach <= 66 && reach > -(plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour) && reach > plan.TROPIC_SPAN.z1 + 3, `The rain reaches ${reach.toFixed(1)}, not over the airport and the tropic island.`);
+  assert(Math.abs(streaks / (2 * 66) ** 2 - 1700 / (2 * 50) ** 2) < 0.002, `The rain is thinner over ±66 (${streaks} streaks).`);
   rain.dispose();
   const scene = await fs.readFile(path.join(root, 'app/city-scene.ts'), 'utf8');
-  assert(scene.includes('createRain(Math.round((tier === \'low\' ? 900 : 1700) * 1.35))'), 'The scene\'s rain is no longer 1.35 times as many streaks.');
+  assert(scene.includes('createRain(Math.round((tier === \'low\' ? 900 : 1700) * 1.7424))'), 'The scene\'s rain is no longer (132 / 100)² times as many streaks.');
 }
 // Manual Day is plain daylight at every hour: never the real sun's golden hour or its warm low
 // light, the key light high. Auto and Night keep the real sun.
@@ -6394,17 +6396,18 @@ function crossingEdges(X, Y) {
     for (const m of paleMeshes) assert.equal(m.material.color.getHex(), 0xffffff, 'The clouds are dimmed by day.');
   }
 }
-// The tropic island's garden kit (town-tropic-garden's createTropicGarden; nothing in the town calls it
-// yet), each piece built on its own with the check's own context, then the whole garden laid out in the
-// island's frame round the stand-ins it was planned on (TROPIC_LAND and tropicLawn, the land as lane
-// site's plan lays it; TROPIC_GARDEN.building, SDE4 as both SDE4 lanes build it, its roof's middle at
-// z -2.3; TROPIC_GARDEN.walks, Filip's day as lane figure lays it) and batched as the island will batch
-// it (one group, the lawn as its floor):
+// The tropic island's garden kit (town-tropic-garden's createTropicGarden), each piece built on its own
+// with the check's own context, then the whole garden laid out in the island's frame on the island's
+// own site (tropicGardenSite of SDE4's plan: the land's ground, lawn and beach, SDE4's anchors and
+// measures, the round plaza on the land's terrace; TROPIC_GARDEN.walks, Filip's day as FILIP_SITE lays
+// it) and batched as the town batches it (one group, the ground as its floor), and the town's own
+// garden held to it:
 // - every part has a surface kind; nothing is two-sided, transparent, cut out or glowing; its colours are
 //   on its vertices, in the kit's looks (TROPIC_GARDEN_LOOK, or the sky garden's for the shared table and
 //   chairs), none (nor any vertex) louder than its palette family; every joined piece of a solid is 0.07
 //   across or more every way, and no blade's keel is under 0.03; nothing moves, and nothing changes with
-//   the season (the island is evergreen);
+//   the season (the island is evergreen); Filip's own props (his phone and cup) are his body's, and the
+//   café's saucer the figure rig's china;
 // - the rain trees: crowns much wider than they are tall (the umbrella), their tops at the stated height
 //   and their undersides level near it but in the bay toward the file; their hem one continuous edge
 //   (no notch where a lobe is missing; the bay draws in no deeper than its own depth); every limb's tip
@@ -6416,21 +6419,28 @@ function crossingEdges(X, Y) {
 // - the budget: the whole garden in at most 10 meshes and 45,000 triangles once batched, on the solids'
 //   one program, its build and batch in time;
 // - the layout: no shrub left out for standing on SDE4; the trees, shrub beds and fans on the lawn,
-//   palms at the beach's edge, the café's table on SDE4's café anchor and its sitter a unit or more in
-//   from the turf's edge, the desk on the veranda clear of its planters; nothing of the planting or the
-//   furniture on the paths, the court, SDE4's footprint, mass or columns, no two crowns through one
-//   another, and the planting the walkers' clearance off Filip's walks and his call stretch;
+//   the palms on the sand (the beach's dry sand, its sandy stretches: none on the rocks) leaning out
+//   to sea, their crowns no more than a unit past the waterline and nothing of the garden standing in
+//   the water; the café's table on SDE4's café anchor and its sitter 1.2 or more in from the turf's
+//   edge, the desk on the veranda clear of its planters; nothing of the planting or the furniture on
+//   the walks, the plaza, SDE4's footprint, mass or columns, no two crowns through one another, and the
+//   planting the walkers' clearance off Filip's walks and his call stretch;
 // - the lines of sight: from the island's file and its other three Rotate stops, no crown, trunk or
 //   piece of furniture hides Filip at any of his stations (where SDE4's own mass does not), and the
 //   garden leaves at least 70% of the glazed front in view at every stop that sees it;
-// - once the plan has the land's own constants (lane site's, at the merge), the stand-ins are the same.
+// - the town's own garden is this one: as many meshes, as many triangles.
 {
   const TG = await load('town-tropic-garden'),
     { createKit } = await load('town-kit'),
     { createBatch } = await load('town-batch'),
     { createCityMaterials } = await load('city-materials'),
     { SKY_GARDEN_LOOK, SKY_GARDEN_FAMILY, TEA, FOOT_RING } = await load('town-sky-garden'),
-    { TROPIC_GARDEN_LOOK: LOOK, TROPIC_GARDEN_FAMILY: FAMILY, TROPIC_GARDEN: G, TROPIC_LAND: LAND, RAIN_TREE, RAIN_CROWN, PALM, DESK, LAPTOP, PHONE, CUP_AXIS, BISTRO_CHAIR, CAFE_TABLE, CAFE_SAUCER, SITTER, BLADES, tropicLawn, tropicLand } = TG;
+    { TROPIC_GARDEN_LOOK: LOOK, TROPIC_GARDEN_FAMILY: FAMILY, TROPIC_GARDEN: G, RAIN_TREE, RAIN_CROWN, PALM, DESK, LAPTOP, BISTRO_CHAIR, CAFE_TABLE, CAFE_SAUCER, SITTER, BLADES, palmAt } = TG,
+    { sde4Plan } = await load('town-sde4'),
+    { tropicGroundAt, TROPIC_SEEN, TROPIC_REACH } = await load('town-tropic'),
+    P = plan.TROPIC,
+    // The ground (the lawn, or the beach off it) at a point of the island's frame.
+    tropicLawn = (x, z) => tropicGroundAt(x + P.x, z + P.z);
   const fresh = (season = 'summer') => {
     const library = createCityMaterials(),
       ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
@@ -6499,9 +6509,6 @@ function crossingEdges(X, Y) {
       cafe: garden.cafeSet(),
       desk: garden.deskSet(),
       laptop: garden.laptop(),
-      phone: garden.phone(),
-      cup: garden.cup(),
-      saucer: garden.saucer(),
     };
   {
     const g = new T.Group();
@@ -6672,15 +6679,10 @@ function crossingEdges(X, Y) {
     const rings = pieces(frame).filter((p) => Math.abs(p.box.max.y - BISTRO_CHAIR.ring) < 1e-6 && p.box.max.y - p.box.min.y < 0.08);
     assert.equal(rings.length, 2, 'The desk\'s chair has no foot ring.');
   }
-  // The props, as the figure lanes hold them: the laptop's base on the origin, its keys on its top and
-  // its lid leaning back away from its user (its top edge further +z than its hinge); the phone round its
-  // middle, the cup's handle at its origin with its axis CUP_AXIS along +x, the saucer's foot on the
-  // origin; each one mesh.
+  // The laptop, as the figure holds his hands to it: its base on the origin, its keys on its top and
+  // its lid leaning back away from its user (its top edge further +z than its hinge); one mesh.
   {
-    const lap = new T.Box3().setFromObject(built.laptop),
-      phone = new T.Box3().setFromObject(built.phone),
-      cup = new T.Box3().setFromObject(built.cup),
-      saucer = new T.Box3().setFromObject(built.saucer);
+    const lap = new T.Box3().setFromObject(built.laptop);
     assert(Math.abs(lap.min.y) < 1e-6 && Math.abs(lap.max.x - LAPTOP.w / 2) < 1e-6 && lap.max.y > 0.2 && lap.max.y < 0.3 && built.laptop.userData.keys[1] > LAPTOP.base, 'The laptop does not stand on its base with its lid open over it.');
     // (Its lid's top edge, the band of it within 0.03 of the laptop's top, on average behind the hinge.)
     let lidZ = 0,
@@ -6688,36 +6690,13 @@ function crossingEdges(X, Y) {
     each(byName(built.laptop, 'tropic-laptop-body'), (p) => p.y > lap.max.y - 0.03 && ((lidZ += p.z), count++));
     lidZ /= count;
     assert(lidZ > LAPTOP.d / 2 + 0.01, `The laptop's lid leans over its keys (its top edge at z ${lidZ.toFixed(3)}, its hinge at ${(LAPTOP.d / 2).toFixed(3)}).`);
-    assert(phone.getSize(v).toArray().every((n, k) => Math.abs(n - [PHONE.w, PHONE.h, PHONE.d][k]) < 1e-6) && phone.getCenter(v).length() < 1e-6, 'The phone is not its rounded slab round its middle.');
-    assert(Math.abs((cup.max.x + cup.min.x) / 2 - (CUP_AXIS - 0.037 + 0.052) / 2) < 0.02 && Math.abs(saucer.min.y) < 1e-6 && Math.abs(saucer.max.y - 0.07) < 1e-3, 'The cup or the saucer is not the sky figure\'s china in its frame.');
-    for (const g of [built.laptop, built.phone, built.cup, built.saucer]) assert.equal(meshesOf(g).length, 1, `${g.name} is not one mesh.`);
+    assert.equal(meshesOf(built.laptop).length, 1, `${built.laptop.name} is not one mesh.`);
   }
 
-  // The stand-ins are the land's own once the plan has it (lane site's, after the merge).
-  if (plan.TROPIC_PATHS) {
-    const P = plan.TROPIC,
-      same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-    assert(
-      same([P.a, P.b, P.beach, P.rocky, P.dome, P.pad], [LAND.waterline.a, LAND.waterline.b, LAND.beach, LAND.rocky, LAND.dome, LAND.pad]) &&
-        same(plan.TROPIC_ROCKY, LAND.stretches) &&
-        same([plan.TROPIC_BUILDING.x, plan.TROPIC_BUILDING.z, plan.TROPIC_BUILDING.hw, plan.TROPIC_BUILDING.hd], [LAND.podium.x, LAND.podium.z, LAND.podium.hw, LAND.podium.hd]) &&
-        same([plan.TROPIC_PAD.grow, plan.TROPIC_PAD.ease], [LAND.terrace.grow, LAND.terrace.ease]) &&
-        same(plan.TROPIC_PLAZA, LAND.court) &&
-        same(plan.TROPIC_MOUND, LAND.mound) &&
-        same([plan.TROPIC_PATHS.width, plan.TROPIC_PATHS.south, plan.TROPIC_PATHS.front], [LAND.paths.width, LAND.paths.south, LAND.paths.front]),
-      'The tropic garden was laid out on a land that is no longer the plan\'s: bring TROPIC_LAND up to the plan and check the layout again.',
-    );
-    for (let k = 0; k < 200; k++) {
-      const x = (plan.hash(k * 1.7) - 0.5) * 22,
-        z = (plan.hash(k * 2.9 + 5) - 0.5) * 18;
-      assert(Math.abs(plan.tropicTop(x + P.x, z + P.z) - tropicLawn(x, z)) < 1e-9, `The tropic garden's stand-in lawn is not the plan's at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
-    }
-  }
-
-  // The whole garden, laid out in the island's frame on the stand-in land and batched as the island will
-  // batch it; built again in winter, it is the same garden (evergreen).
-  const island = { x: 19.5, z: 51 },
-    site = { ground: tropicLawn, building: G.building },
+  // The whole garden, laid out in the island's frame on the island's site and batched as the town
+  // batches it; built again in winter, it is the same garden (evergreen).
+  const island = { x: P.x, z: P.z },
+    site = TG.tropicGardenSite(sde4Plan()),
     layoutTime = timeBuild(fresh, ({ garden, batch }) => {
       const root = new T.Group();
       root.position.set(island.x, 0, island.z);
@@ -6725,11 +6704,13 @@ function crossingEdges(X, Y) {
       root.updateMatrixWorld(true);
       const raw = new T.Group();
       raw.copy(root, true);
-      batch(root, { floor: (x, z) => tropicLawn(x - island.x, z - island.z) });
+      batch(root, { floor: tropicGroundAt });
       return { root, raw, stations };
     }),
     { root, raw, stations } = layoutTime.built;
-  // (About 70 ms at the limits' pace when first measured: the limit is about three times that.)
+  // (About 70 ms at the limits' pace when first measured: the limit is about three times that. Its
+  // sculpted canopies and beds took it to 100 to 160 under load; the town builds it in a phase of its
+  // own, 'tropic garden', held to its own limit with the island's others.)
   inTime('The tropic garden\'s build and batch', layoutTime, 210);
   root.updateMatrixWorld(true);
   raw.updateMatrixWorld(true);
@@ -6752,38 +6733,66 @@ function crossingEdges(X, Y) {
     assert(a.length === b.length && a.every((m, k) => m.geometry.getAttribute('color').array.every((n, i) => n === b[k].geometry.getAttribute('color').array[i])), 'The tropic garden changes with the season.');
   }
 
-  // The layout. Distances in the island's frame, against the stand-ins the layout was planned on: the
-  // land's turf edge, paths (centripetal Catmull-Rom lines 0.56 wide) and court; SDE4's footprint, mass
-  // and columns; Filip's walks (centripetal lines through their points) and call stretch; his stations
-  // as tropicGarden returns them. (A piece's group stands in the island's frame; its vertices come out
-  // in the world's.)
+  // The town's own garden is this one (the same site: what the town's build hands tropicGarden).
+  {
+    const town = meshesOf(model.tropicGarden);
+    assert(town.length === all.length && Math.abs(trisOf(town) - tropicTriangles) < 1e-9, `The town's tropic garden (${town.length} meshes, ${trisOf(town)} triangles) is not the one checked (${all.length}, ${tropicTriangles}).`);
+  }
+
+  // The layout. Distances in the island's frame, against the land (its turf's edge, plan.tropicInland;
+  // its walks, plan.TROPIC_PATH_LINES, 0.56 wide; its plaza, the garden's own round paving), SDE4's
+  // footprint, mass and columns (its plan), Filip's walks (centripetal lines through their points) and
+  // call stretch, and his stations as tropicGarden returns them. (A piece's group stands in the island's
+  // frame; its vertices come out in the world's.)
   const B = G.building,
     W = G.walks,
     local = (p) => [p.x, p.z],
-    // How far in from the turf's edge, along the ray from the island's middle (negative on the beach).
-    turf = (x, z) => {
-      const at = tropicLand(x, z);
-      return at.turf - at.out;
-    },
+    // How far in from the turf's edge (negative on the beach).
+    turf = (x, z) => plan.tropicInland(x, z),
     curve = (points) => new T.CatmullRomCurve3(points.map(([x, z]) => new T.Vector3(x, 0, z)), false, 'centripetal').getSpacedPoints(160).map((p) => [p.x, p.z]),
     toLines = (lines) => (x, z) => Math.min(...lines.map((line) => Math.min(...line.slice(1).map((q, k) => plan.distanceToSegment([x, z], line[k], q))))),
-    toPaths = toLines([curve(LAND.paths.south), curve(LAND.paths.front)]),
+    walkLines = Object.values(plan.TROPIC_PATH_LINES).map((line) => line.filter((_, k) => k % 4 === 0 || k === line.length - 1).map(([x, z]) => [x - P.x, z - P.z])),
+    toPaths = toLines(walkLines),
     toWalks = toLines(W.ways.map(curve)),
     toCall = (x, z) => plan.distanceToSegment([x, z], W.call[0], W.call[1]),
-    toCourt = (x, z) => Math.hypot(x - LAND.court.x, z - LAND.court.z) - LAND.court.r,
+    toCourt = (x, z) => Math.hypot(x - plan.TROPIC_PLAZA.x, z - plan.TROPIC_PLAZA.z) - plan.TROPIC_PLAZA.r,
     inRect = (r, x, z, m = 0) => x > r.x0 - m && x < r.x1 + m && z > r.z0 - m && z < r.z1 + m,
     toColumns = (x, z) => Math.min(...B.columns.map((c) => Math.hypot(x - c.x, z - c.z) - c.r)),
     top = tropicLawn(B.desk.x, B.desk.z) + B.podium.top,
-    groups = raw.children.filter((o) => o.isGroup);
+    // (The plaza is the land's paving the garden lays: the planting and the furniture keep off it.)
+    groups = raw.children.filter((o) => o.isGroup && o.name !== 'tropic-plaza');
+  assert(raw.children.some((o) => o.name === 'tropic-plaza' && Math.hypot(o.position.x - plan.TROPIC_PLAZA.x, o.position.z - plan.TROPIC_PLAZA.z) < 1e-9), 'The tropic garden lays no plaza on the land\'s terrace before SDE4\'s door.');
   const kinds = (prefix) => groups.filter((o) => o.name.startsWith(prefix));
-  // Trees on the lawn (the rain trees and frangipani a unit or so in), palms at the beach's edge.
+  // Trees on the lawn (the rain trees and frangipani a unit or so in), palms on the sand: on its dry
+  // sand (its profile 0.32 to 1.9 out from the turf's edge) and its sandy stretches (none on the rocks),
+  // each leaning out to sea along the coast (its lean within a quarter turn of the coast's outward
+  // normal), its crown no more than a unit past the waterline, and inside TROPIC_SEEN's crowns' ring;
+  // nothing of the garden standing in the water.
   for (const t of [...kinds('tropic-rain-tree'), ...kinds('tropic-frangipani')]) {
     const [x, z] = local(t.position);
     assert(turf(x, z) > 0.8, `A tree stands ${turf(x, z).toFixed(2)} in from the turf's edge at ${x}, ${z}.`);
   }
-  for (const p of kinds('tropic-palm')) {
-    const [x, z] = local(p.position);
-    assert(turf(x, z) > -1.2 && turf(x, z) < 0.8, `A palm stands ${(-turf(x, z)).toFixed(2)} out from the turf's edge at ${x}, ${z}: not at the beach's edge.`);
+  const palms = kinds('tropic-palm');
+  assert.equal(palms.length, G.palms.length, 'The tropic garden has lost a palm.');
+  G.palms.forEach((spec, k) => {
+    const p = palms[k],
+      [x, z] = local(p.position),
+      at = plan.tropicAt(x + P.x, z + P.z),
+      [nx, nz] = plan.tropicNormal(spec.bearing),
+      lean = new T.Vector3(Math.cos(-p.rotation.y), 0, Math.sin(-p.rotation.y));
+    assert(at.shore > 0.32 && at.shore < 1.9 && plan.tropicRockiness(at.bearing) < 0.05, `A palm stands ${at.shore.toFixed(2)} out on the beach at ${x.toFixed(2)}, ${z.toFixed(2)} (rocky ${plan.tropicRockiness(at.bearing).toFixed(2)}): not on its dry sand.`);
+    assert(lean.x * nx + lean.z * nz > Math.cos(0.4) && Math.hypot(palmAt(spec).x - x, palmAt(spec).z - z) < 1e-9, `A palm at ${x.toFixed(2)}, ${z.toFixed(2)} does not lean out to sea.`);
+  });
+  {
+    let past = -Infinity;
+    for (const { m } of groups.flatMap((o) => meshesOf(o).map((m) => ({ m }))))
+      each(m, (q) => {
+        const d = plan.tropicDistance(q.x, q.z);
+        past = Math.max(past, d);
+        assert(d <= 0 || q.y > 1.2, `${m.name} stands in the water at ${fmt(q)}.`);
+      });
+    assert(past <= 1 && past < TROPIC_REACH.crowns, `The tropic garden's palms reach ${past.toFixed(2)} past the waterline.`);
+    assert(TROPIC_SEEN.length > 0, 'TROPIC_SEEN is empty.');
   }
   for (const bed of G.beds) for (const [x, z] of bed.line) assert(turf(x, z) > bed.width / 2 + 0.05, `A shrub bed stands ${turf(x, z).toFixed(2)} in from the turf's edge at ${x}, ${z}.`);
   for (const f of G.fans) assert(turf(f.x, f.z) > 0.3, `A fan stands ${turf(f.x, f.z).toFixed(2)} in from the turf's edge at ${f.x}, ${f.z}.`);
@@ -6812,9 +6821,9 @@ function crossingEdges(X, Y) {
         desk = group.name === 'tropic-desk',
         plant = !desk && group.name !== 'tropic-cafe-table';
       if (low && !desk) {
-        clearOf.paths = Math.min(clearOf.paths, toPaths(x, z) - LAND.paths.width / 2);
+        clearOf.paths = Math.min(clearOf.paths, toPaths(x, z) - plan.TROPIC_PATHS.width / 2);
         clearOf.court = Math.min(clearOf.court, toCourt(x, z));
-        assert(toPaths(x, z) > LAND.paths.width / 2 + 0.05, `${m.name} reaches a path at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+        assert(toPaths(x, z) > plan.TROPIC_PATHS.width / 2 + 0.05, `${m.name} reaches a path at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
         assert(toCourt(x, z) > 0.05, `${m.name} reaches the court at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
         for (const f of B.footprint) {
           assert(!inRect(f, x, z, 0.02), `${m.name} reaches SDE4's footprint at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
@@ -6858,13 +6867,13 @@ function crossingEdges(X, Y) {
     }
     assert(closest > 0.12, `Two of the island's trees run into one another (${closest.toFixed(3)} apart).`);
   }
-  // The stations: the café's table on SDE4's café anchor, its seats a unit or more in from the turf's
-  // edge, the café off the court; the desk's middle on SDE4's desk anchor on the veranda, its set the
+  // The stations: the café's table on SDE4's café anchor, its seats 1.2 or more in from the turf's
+  // edge, the café off the plaza; the desk's middle on SDE4's desk anchor on the veranda, its set the
   // walkers' clearance off the deck's planters; the sitters facing south and east-south-east.
   {
     const { desk, cafe } = stations,
       V = B.veranda;
-    assert(turf(cafe.seat.x, cafe.seat.z) > 1 && turf(cafe.guest.x, cafe.guest.z) > 1, `The café's seats are ${turf(cafe.seat.x, cafe.seat.z).toFixed(2)} and ${turf(cafe.guest.x, cafe.guest.z).toFixed(2)} in from the turf's edge.`);
+    assert(turf(cafe.seat.x, cafe.seat.z) > 1.2 && turf(cafe.guest.x, cafe.guest.z) > 1.2, `The café's seats are ${turf(cafe.seat.x, cafe.seat.z).toFixed(2)} and ${turf(cafe.guest.x, cafe.guest.z).toFixed(2)} in from the turf's edge.`);
     const table = groups.find((o) => o.name === 'tropic-cafe-table');
     assert(Math.hypot(table.position.x - B.cafe.x, table.position.z - B.cafe.z) < 1e-9, 'The café table is not on SDE4\'s café anchor.');
     for (const { m } of furniture.filter(({ group }) => group.name === 'tropic-cafe-table')) at(m, (x, y, z) => assert(toCourt(x, z) > 0.05, `The café stands on the court at ${x.toFixed(2)}, ${z.toFixed(2)}.`));
@@ -6874,6 +6883,9 @@ function crossingEdges(X, Y) {
         for (const p of B.planters) assert(!inRect(p, x, z, 0.27), `The desk set stands within 0.27 of a planter at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
       });
     assert(desk.seat.heading === 0 && Math.abs(desk.floor - top) < 1e-9 && cafe.seat.heading > 0.9 && cafe.seat.heading < 1.4, 'The desk\'s sitter does not face south on the deck, or the café\'s east-south-east.');
+    // And they are where Filip sits (FILIP_SITE's anchors, and the floors his sets stand on).
+    const F = (await load('tropic-figure')).FILIP_SITE;
+    assert(Math.abs(F.desk.x - B.desk.x) < 1e-9 && Math.abs(F.desk.z - B.desk.z) < 1e-9 && Math.abs(F.desk.y - desk.floor) < 1e-9 && Math.abs(F.cafe.x - B.cafe.x) < 1e-9 && Math.abs(F.cafe.z - B.cafe.z) < 1e-9 && Math.abs(F.cafe.y - cafe.floor) < 1e-9, 'The garden\'s desk and café are not where Filip sits.');
   }
   // The lines of sight. From the island's file (the gate's bearing) and its three other Rotate stops at the
   // town's pitch, every point of a stand-in Filip (his head, chest and lap seated at the desk and the café;
@@ -11279,8 +11291,9 @@ let tropicReport = '';
   // to 5 ms, measured under loads of 10 to 50 on 15 cores: no quiet machine was to be had), so that
   // one five times slower fails. The island's building, garden and figure join these phases at the
   // merge: the limits are set again then, on a quiet machine (uptime first), for what they cost.
-  const paced = ['tropic ground', 'batch tropic', 'batch tropic building'].map((name) => [name, phaseTimes.get(name)]);
-  for (const [name, limit] of [['tropic ground', 60], ['batch tropic', 18], ['batch tropic building', 15]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+  assert.equal(phaseNames[phaseNames.indexOf('buildings and vehicles') + 1], 'tropic garden', 'The tropic island\'s garden and Filip are not built in a phase of their own after the buildings.');
+  const paced = ['tropic ground', 'tropic garden', 'batch tropic', 'batch tropic building'].map((name) => [name, phaseTimes.get(name)]);
+  for (const [name, limit] of [['tropic ground', 60], ['tropic garden', 600], ['batch tropic', 120], ['batch tropic building', 80]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   // Nothing of its ground in the land's batch (only its tide line, in the shore's foam).
   each(model.land, (p, o) => assert(o === foam || !plan.onTropic(p.x, p.z, 2), 'Something of the tropic island is in the land\'s batch.'));
   // Its ground: at most four meshes (the lawn's grass, the beach's sand, and stone: the walks, which
@@ -11306,7 +11319,8 @@ let tropicReport = '';
   // (The island is every group setShown takes: its ground first, then its building's model root and
   // whatever else is joined to it, counted once each.)
   const parts = tropic.groups();
-  assert(parts[0] === land && parts.includes(hall.root) && new Set(parts).size === parts.length, 'The tropic island does not take its ground and its building with it.');
+  assert(parts[0] === land && parts.includes(hall.root) && parts.includes(model.tropicGarden) && parts.includes(model.filip) && new Set(parts).size === parts.length, 'The tropic island does not take its ground, its building, its garden and Filip with it.');
+  assert(model.tropicGarden.position.equals(new T.Vector3(P.x, 0, P.z)) && model.filip.position.equals(new T.Vector3(P.x, 0, P.z)) && model.filip.children.length === 1 && model.filip.children[0].name === 'filip', 'The tropic island\'s garden or Filip is not in a group of its own at the island\'s middle.');
   let islandMeshes = 0,
     islandTriangles = 0;
   for (const g of parts)
@@ -11641,30 +11655,35 @@ let tropicReport = '';
     assert(found > 100, `The pointer found the tropic island at only ${found} points.`);
   }
 
-  /* ---------------- its building's slot and its night ---------------- */
+  /* ---------------- its building and its night ---------------- */
   {
-    // The building (the SDE4's slot: the stand-in until the merge) stands in its footprint on the
-    // terrace, under its top, in the island's own frame; every pane of it lit by the 'campus' role
-    // (a role of its own, outside the rooms' shares), a few of them out by 02:30.
-    const box = new T.Box3().setFromObject(hall.shell);
-    assert(box.min.x >= P.x + B.x - B.hw - 1e-3 && box.max.x <= P.x + B.x + B.hw + 1e-3 && box.min.z >= P.z + B.z - B.hd - 1e-3 && box.max.z <= P.z + B.z + B.hd + 1e-3 && box.max.y <= B.top + 1e-3 && box.min.y >= P.pad - 0.1, `The tropic island's building leaves its footprint: ${box.min.toArray().map((n) => n.toFixed(2)).join(', ')} to ${box.max.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
+    // The building (SDE4, town-sde4's buildSde4: its own checks are below) stands in its plan's
+    // footprint (TROPIC_BUILDING's podium and the step and ramp before it) on the terrace, under its
+    // top, in the island's own frame, its podium's foot buried in the lawn; its panes lit in the
+    // 'campus' role (a role of its own, outside the rooms' shares) but its lobby's doors (the fixed
+    // 'entrance') and its balustrades ('clear', never lit), a few of the rooms out by 02:30.
+    const box = new T.Box3().setFromObject(hall.shell),
+      F = model.tropicSde4.footprint;
+    assert(F.x0 === B.x - B.hw && F.x1 === B.x + B.hw && F.z0 === B.z - B.hd && F.z1 > B.z + B.hd && F.z1 < B.z + B.hd + 1, 'SDE4\'s footprint is not TROPIC_BUILDING\'s podium and what stands before it.');
+    assert(box.min.x >= P.x + F.x0 - 1e-3 && box.max.x <= P.x + F.x1 + 1e-3 && box.min.z >= P.z + F.z0 - 1e-3 && box.max.z <= P.z + F.z1 + 1e-3 && box.max.y <= B.top + 1e-3 && box.min.y >= P.pad - 0.6 && box.min.y < P.pad, `The tropic island's building leaves its footprint: ${box.min.toArray().map((n) => n.toFixed(2)).join(', ')} to ${box.max.toArray().map((n) => n.toFixed(2)).join(', ')}.`);
     const own = model.windows.filter((p) => p.place === 'tropic-island'),
+      rooms = own.filter((p) => p.role === 'campus'),
       level = (p, h) => windowLevel(p.light, windowClock(h));
-    assert(own.length >= 8 && own.every((p) => p.role === 'campus'), `The tropic island's building has ${own.length} panes, not all of them 'campus'.`);
-    const evening = own.filter((p) => level(p, 20) > 0.1).length,
-      late = own.filter((p) => level(p, 2.5) > 0.1).length;
-    assert(evening >= 0.5 * own.length && late < evening, `${evening} of the tropic island's ${own.length} panes are lit at 20:00 and ${late} at 02:30.`);
-    tropicReport += `, its building's slot ${own.length} panes (${evening} lit at 20:00, ${late} at 02:30)`;
+    assert(rooms.length >= 30 && own.every((p) => ['campus', 'entrance', 'clear'].includes(p.role)) && own.filter((p) => p.role === 'entrance').length === 1, `The tropic island's building has ${own.length} panes, ${rooms.length} of them 'campus', or a pane in another role.`);
+    const evening = rooms.filter((p) => level(p, 20) > 0.1).length,
+      late = rooms.filter((p) => level(p, 2.5) > 0.1).length;
+    assert(evening >= 0.5 * rooms.length && late < evening, `${evening} of the tropic island's ${rooms.length} rooms are lit at 20:00 and ${late} at 02:30.`);
+    tropicReport += `, its building ${rooms.length} rooms (${evening} lit at 20:00, ${late} at 02:30)`;
   }
 
   /* ---------------- clearances: the town's shore and everything that moves ---------------- */
   {
-    // The island as points: its waterline, and what of its ground and its building stands out of the
-    // water (a share of their vertices: the rocks reach a little past the waterline; the beach's shelf
-    // runs on under the sea).
+    // The island as points: its waterline, and what of its ground, its building, its garden and Filip
+    // stands out of the water (a share of their vertices: the rocks reach a little past the waterline,
+    // the palms' crowns lean out over it; the beach's shelf runs on under the sea).
     const body = plan.tropicOutline(0, 240).map((p) => new T.Vector3(p.x, WATER, p.z));
     let k = 0;
-    for (const g of [land, hall.root]) each(g, (p) => p.y >= WATER && k++ % 9 === 0 && body.push(p.clone()));
+    for (const g of parts) each(g, (p) => p.y >= WATER && k++ % 9 === 0 && body.push(p.clone()));
     const flat2 = (x, z) => {
         let best = Infinity;
         for (const p of body) best = Math.min(best, Math.hypot(p.x - x, p.z - z));
@@ -11716,13 +11735,13 @@ let tropicReport = '';
     }
     for (const [name, least] of Object.entries({ boat: 5, gulls: 10, balloon: 24, plane: 30 }))
       assert(gaps[name] >= least, `The ${name} comes within ${gaps[name].toFixed(1)} of the tropic island (${least} at least).`);
-    tropicReport = `the tropic island off the south shore (its ground ${landMeshes} meshes and ${landTriangles} triangles, the island ${islandMeshes} and ${islandTriangles} so far; ${coast.toFixed(1)} of open water from the town's waterline, the lighthouse beam ${beamGap.toFixed(1)} clear, the boat ${gaps.boat.toFixed(1)}, the gulls ${gaps.gulls.toFixed(1)}, the balloon ${gaps.balloon.toFixed(1)}, the plane ${gaps.plane.toFixed(1)}${tropicReport}; its phases ${paced.map(([n, t]) => `${n} ${Math.round(t.paced)}`).join(', ')} ms at the limits' pace)`;
+    tropicReport = `the tropic island off the south shore (its ground ${landMeshes} meshes and ${landTriangles} triangles, the whole island ${islandMeshes} and ${islandTriangles}; ${coast.toFixed(1)} of open water from the town's waterline, the lighthouse beam ${beamGap.toFixed(1)} clear, the boat ${gaps.boat.toFixed(1)}, the gulls ${gaps.gulls.toFixed(1)}, the balloon ${gaps.balloon.toFixed(1)}, the plane ${gaps.plane.toFixed(1)}${tropicReport}; its phases ${paced.map(([n, t]) => `${n} ${Math.round(t.paced)}`).join(', ')} ms at the limits' pace)`;
   }
 }
-// SDE4 (town-sde4's buildSde4), the tropic island's building, built here on its own: the island and
-// its place join the town at the merge, which then holds the town's own copy to this one. It builds
-// into a group in the island's frame (the island's centre, decision 2: world 19.5, 0, 51; +z south;
-// y the sea's datum), as the merge does:
+// SDE4 (town-sde4's buildSde4), the tropic island's building, built here on its own, and the town's
+// own copy held to it (the same parts batched to the same meshes and triangles, the same plan and
+// height handed back). It builds into a group in the island's frame (its model's root: the island's
+// middle, plan.sites['tropic-island']; +z south; y the sea's datum), as the town does:
 // - its parts: each has a surface kind; nothing is two-sided, transparent or cut out; its colours are
 //   SDE4_LOOK's, none louder than its palette family (SDE4_FAMILY); its planting (leafy clump
 //   masses from the trees' crown kit and paddle-leaf fans) is the town's white foliage with its
@@ -11733,31 +11752,37 @@ let tropicReport = '';
 //   membrane about 7.3 over the podium and nothing over 7.8; all of it inside the footprint and
 //   under the height it hands back, nothing under the podium's foot; its middle low enough for the
 //   models' framing (under 7) and its top under their 14;
-// - its read (decision 14, never a bigger Visiting PhD Residence): eight slender white round columns
-//   (0.24 across or more) from the podium to the soffit, each with its base and capital, standing
-//   clear of every plate; the dark soffit band under the white rim, 0.25 deep or more and set back
+// - its read (decision 14, never a bigger Visiting PhD Residence): eight very slender white round
+//   columns (0.20 to 0.23 across: the owner's 'very slender', and never under the 0.18 at which a white
+//   shaft twinkles) from the podium to the soffit, each with a small plain collar at its foot and a disc
+//   under the soffit, each a step (0.06 or more) wider than the shaft, standing clear of every plate; the dark soffit band under the white rim, 0.25 deep or more and set back
 //   from it by a hair; rows of solar modules on the roof; bold champagne fins down the end block's
 //   west face; plates that step back as they rise; its planting one mesh of leaves over leafy
 //   clumps (a hundred pieces or more, 9,000 triangles at most), 0.15 or more off the top floor's
 //   glass and the slab over it;
 // - its anchors: the desk on the veranda's deck, clear of the columns, the planters and the glass,
 //   facing south; the entrance at the lobby's doors; the café beside the court, off the podium and
-//   its step and ramp, before the end block;
+//   its step and ramp, before the end block; its plan (sde4Plan) what it built: every column where the
+//   plan has it, the veranda's planting inside the reach the plan gives it, the way between its
+//   planters open from the ramp to the deck;
 // - batched as the merge batches it, at most 12 meshes and 30,000 triangles (decision 13), on the
 //   town's own programs (no new one), cutting no holes, every varying it reads declared;
 // - its night: a light a pane, in the 'campus' role, but the lobby's doors (one light, the fixed
-//   'entrance': warm and never out) and the balustrades ('clear', never lit); about three in four
-//   lit at 20:00, cool only an accent, about half of those going out one at a time between 22:30
-//   and 01:30, the rest lit till morning.
+//   'entrance': warm and never out) and the balustrades ('clear', never lit); the campus mix's shares
+//   (three in four lit at 20:00, cool only an accent, half of those going out one at a time between
+//   22:30 and 01:30, the rest lit till morning), each within three binomial standard deviations of its
+//   share of its own count (the panes' lights are drawn from their places, so a move of the building
+//   draws them again; the bounds hold for any draw but a three-sigma one).
 {
-  const { createSde4, SDE4, SDE4_LOOK, SDE4_FAMILY, SDE4_WINDOWS, SDE4_ENTRANCE, SDE4_RAILS } = await load('town-sde4'),
+  const { createSde4, sde4Plan, SDE4, SDE4_LOOK, SDE4_FAMILY, SDE4_VERANDA, SDE4_WINDOWS, SDE4_ENTRANCE, SDE4_RAILS } = await load('town-sde4'),
     { palette } = await load('town-shared'),
     { createProps } = await load('town-props'),
     { createNature } = await load('town-nature'),
     { createKit } = await load('town-kit'),
     { createBatch } = await load('town-batch'),
     { createCityMaterials } = await load('city-materials'),
-    ISLAND = new T.Vector3(19.5, 0, 51);
+    ISLAND = new T.Vector3(plan.sites['tropic-island'].x, 0, plan.sites['tropic-island'].z);
+  assert(plan.sites['tropic-island'].rotation === 0 && ISLAND.x === plan.TROPIC.x && ISLAND.z === plan.TROPIC.z, 'SDE4\'s model does not stand at the tropic island\'s middle, unturned.');
   const make = (season) => {
       const library = createCityMaterials(),
         ctx = { library, material: library.material, season, land: new T.Group(), lamps: [], clocks: [], animated: [] },
@@ -11866,8 +11891,8 @@ let tropicReport = '';
       plates = SDE4.plates.map((q) => new T.Box2(new T.Vector2(A.x + SDE4.west, A.z + q.back), new T.Vector2(A.x + q.east, A.z + q.front)));
     assert.equal(shafts.length, 8, `SDE4 has ${shafts.length} columns, not eight.`);
     for (const { b, s, c } of shafts) {
-      assert(Math.min(s.x, s.z) >= 0.24 - 1e-3 && Math.max(s.x, s.z) <= 0.3 && b.min.y <= A.y + 0.1 && b.max.y >= A.y + R.soffit - 0.2, `A column at ${fmt(c)} is ${fmt(s)}, not a slender column from the podium to the soffit.`);
-      assert(white.some((p) => p.s.x >= s.x + 0.12 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && p.b.min.y < A.y + 0.1) && white.some((p) => p.s.x >= s.x + 0.12 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && Math.abs(p.b.max.y - (A.y + R.soffit)) < 0.01), `The column at ${fmt(c)} lacks its base or its capital.`);
+      assert(Math.min(s.x, s.z) >= 0.2 - 1e-3 && Math.max(s.x, s.z) <= 0.23 && b.min.y <= A.y + 0.1 && b.max.y >= A.y + R.soffit - 0.2, `A column at ${fmt(c)} is ${fmt(s)}, not a very slender column from the podium to the soffit.`);
+      assert(white.some((p) => p.s.x >= s.x + 0.06 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && p.b.min.y < A.y + 0.1) && white.some((p) => p.s.x >= s.x + 0.06 && Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && Math.abs(p.b.max.y - (A.y + R.soffit)) < 0.01), `The column at ${fmt(c)} lacks its base or its capital.`);
       for (const q of plates) assert(q.distanceToPoint(new T.Vector2(c.x, c.z)) >= C.r + 0.1, `The column at ${fmt(c)} stands against a plate.`);
     }
     assert(hex(soffit.material.color) === hex(SDE4_LOOK.soffit) && Math.abs(sb.min.y - (A.y + R.soffit)) < 1e-3 && R.rim - R.soffit >= 0.25 && sb.max.z >= A.z + R.z1 - 0.05 && sb.max.z < A.z + R.z1 && sb.max.x >= A.x + R.x1 - 0.05 && sb.max.x < A.x + R.x1, 'SDE4\'s dark soffit band does not run under its white rim.');
@@ -11906,6 +11931,26 @@ let tropicReport = '';
     assert(front.length >= 2 && Math.abs(front.reduce((s, m) => s + m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).x, 0) / front.length - out.entrance.x) < 0.05 && out.entrance.heading === 0, 'The entrance anchor is not at the lobby\'s doors.');
     const cafe = out.cafe;
     assert(cafe.z >= out.footprint.z1 + 0.8 && cafe.x >= A.x + B.x0 - 0.6 && cafe.x <= A.x + B.x1 + 0.6 && Math.abs(cafe.y - (A.y - SDE4.lift)) < 1e-9, `The café at ${cafe.x.toFixed(2)}, ${cafe.z.toFixed(2)} is not before the end block, off the podium.`);
+    // Its plan is what it built: the plan it hands back is sde4Plan's at its `at` (the garden and the
+    // figure read that without building it); every column of the plan stands there, a white shaft of its
+    // radius; the veranda's planting lies inside the reach the plan gives each planter (what Filip and the
+    // garden keep clear of), and leaves the way between the planters open from the ramp to the deck.
+    const { height: _height, ...planned } = out,
+      shafts = pieces(parts.find((m) => m.name === 'sde4-white')).filter((p) => p.s.y > 5);
+    assert.deepEqual(planned, sde4Plan(A), 'SDE4 hands back a plan that is not sde4Plan\'s.');
+    for (const c of out.columns) assert(shafts.some((p) => Math.abs(p.c.x - c.x) < 1e-3 && Math.abs(p.c.z - c.z) < 1e-3 && Math.abs(Math.min(p.s.x, p.s.z) - 2 * c.r) < 2e-3), `No column of SDE4 stands at ${c.x.toFixed(2)}, ${c.z.toFixed(2)} as its plan has it.`);
+    const leaves = out.keepOut.filter((k) => k.name === 'veranda planting').map((k) => new T.Box3(new T.Vector3(k.x0, k.y0, k.z0), new T.Vector3(k.x1, k.y1, k.z1))),
+      planting = parts.find((m) => m.name === 'sde4-planting'),
+      q = planting.geometry.attributes.position,
+      m4 = toIsland.clone().multiply(planting.matrixWorld);
+    let open = Infinity;
+    for (let i = 0; i < q.count; i++) {
+      v.fromBufferAttribute(q, i).applyMatrix4(m4);
+      if (v.y > A.y + 1.7) continue;
+      assert(leaves.some((b) => b.containsPoint(v)), `SDE4's veranda planting reaches out of its plan's reach at ${fmt(v)}.`);
+      if (v.z > out.way.z0 - 0.3 && v.z < out.way.z1 + 0.3) open = Math.min(open, Math.max(out.way.x0 - v.x, v.x - out.way.x1));
+    }
+    assert(open >= 0 && out.way.x1 - out.way.x0 >= 0.95 && out.ramp.x0 < out.way.x0 + 0.05 && out.ramp.x1 > out.way.x1 - 0.15, `SDE4's veranda planting leans ${(-open).toFixed(3)} into the way between its planters, or the way does not meet its ramp.`);
   }
   // Batched, as the merge batches it (its contact shade from the lawn round the podium).
   const { batch, windows } = createBatch(ctx);
@@ -11940,13 +11985,33 @@ let tropicReport = '';
   assert(entrance.length === 1 && rooms.length === groups.size - 1 && rooms.length >= 30 && own.length === rooms.length + 1 + rails.length, `SDE4 has ${rooms.length} rooms, ${entrance.length} lobby lights and ${rails.length} balustrades for ${groups.size} lights.`);
   for (const h of [20, 23, 2.5, 4, 5.4]) assert(level(entrance[0], h) > 0.5 && Math.round(entrance[0].light[1] * 255) <= 128, `SDE4's lobby is dark or cool at ${h}.`);
   assert(rails.length >= 4 && rails.every((p) => [20, 23, 2.5].every((h) => level(p, h) === 0)), 'An SDE4 balustrade lights up.');
-  const evening = rooms.filter((p) => level(p, 20) > 0.1),
-    cool = evening.filter((p) => Math.round(p.light[1] * 255) === 255),
-    offs = evening.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255),
-    late = evening.filter((p) => level(p, 1.6) > 0.1);
-  assert(evening.length >= 0.6 * rooms.length && evening.length <= 0.9 * rooms.length && cool.length <= 0.25 * evening.length, `${evening.length} of SDE4's ${rooms.length} rooms are lit at 20:00, ${cool.length} of them cool.`);
-  assert(evening.every((p) => level(p, 22.4) > 0.1) && offs.every((b) => b >= Math.floor(0.11 * 255) && b <= Math.ceil(0.78 * 255)), 'An SDE4 room goes out before 22:30 or after 01:30.');
-  assert(offs.length >= 0.3 * evening.length && offs.length <= 0.7 * evening.length && new Set(offs).size === offs.length && late.length === evening.length - offs.length && late.every((p) => level(p, 5.4) > 0.1), `${offs.length} of SDE4's ${evening.length} lit rooms go out in the night, not about half one at a time.`);
+  // The campus mix's shares, each within three binomial standard deviations of its own count (a count
+  // k of n at share p: |k - n p| <= 3 sqrt(n p (1 - p))): lit at 20:00 of the rooms, cool of those lit,
+  // going out of those lit; held for this build and for the town's own copy (its lights claimed after
+  // every other building's).
+  const near = (k, n, share) => Math.abs(k - n * share) <= 3 * Math.sqrt(n * share * (1 - share)),
+    night = (list, who) => {
+      const rooms = list.filter((p) => p.role === SDE4_WINDOWS),
+        evening = rooms.filter((p) => level(p, 20) > 0.1),
+        cool = evening.filter((p) => Math.round(p.light[1] * 255) === 255),
+        offs = evening.map((p) => Math.round(p.light[2] * 255)).filter((b) => b < 255),
+        late = evening.filter((p) => level(p, 1.6) > 0.1);
+      assert(near(evening.length, rooms.length, 0.75) && near(cool.length, evening.length, 0.15), `${evening.length} of ${who} ${rooms.length} rooms are lit at 20:00, ${cool.length} of them cool.`);
+      assert(evening.every((p) => level(p, 22.4) > 0.1) && offs.every((b) => b >= Math.floor(0.11 * 255) && b <= Math.ceil(0.78 * 255)), `A room of ${who} goes out before 22:30 or after 01:30.`);
+      assert(near(offs.length, evening.length, 0.5) && new Set(offs).size === offs.length && late.length === evening.length - offs.length && late.every((p) => level(p, 5.4) > 0.1), `${offs.length} of ${who} ${evening.length} lit rooms go out in the night, not about half one at a time.`);
+      return { evening, late };
+    },
+    { evening, late } = night(own, 'SDE4\'s');
+  night(model.windows.filter((p) => p.place === 'tropic-island'), 'the town\'s SDE4\'s');
+  // The town's own SDE4 is this one: its model's shell batched to the same meshes and triangles, and
+  // the same plan and height handed back.
+  {
+    const town = meshesOf(models.get('tropic-island').shell),
+      townTris = town.reduce((n, m) => n + (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3, 0);
+    assert(town.length === batched.length && townTris === tris, `The town's SDE4 (${town.length} meshes, ${townTris} triangles) is not the one checked (${batched.length}, ${tris}).`);
+    assert.deepEqual(model.tropicSde4, out, 'The town\'s SDE4 hands back another plan or height.');
+    assert(Math.abs(plan.TROPIC_BUILDING.top - out.height) < 0.05 && out.height <= plan.TROPIC_BUILDING.top, `The tropic island's building tops out at ${out.height.toFixed(3)}, against TROPIC_BUILDING's ${plan.TROPIC_BUILDING.top} (the island's framing and its site's height).`);
+  }
   console.log(`SDE4 checks passed: ${parts.length} parts inside its ${(out.footprint.x1 - out.footprint.x0).toFixed(1)} x ${(out.footprint.z1 - out.footprint.z0).toFixed(1)} footprint, ${(out.height - A.y).toFixed(2)} over its podium, batched into ${batched.length} meshes and ${Math.round(tris)} triangles, built in ${Math.round(sde4Time.paced)} ms at the limits' pace; ${evening.length} of its ${rooms.length} rooms lit at 20:00 and ${late.length} at 01:36, its lobby lit all night.`);
 }
 // Alison is as she was before her rig was shared (lane figure: her joints, solves, china and the
@@ -12003,13 +12068,13 @@ let tropicReport = '';
   assert(count === 1580368 && pin === '8a4162e8', `Alison's day is no longer what it was (${count} numbers, hash ${pin}, pinned 8a4162e8): if that is meant, look at her day again and pin the new hash.`);
   skyReport += `; Alison exactly as she was before her rig was shared (${count.toLocaleString('en-GB')} numbers of her day hashed)`;
 }
-// Filip Biljecki on the tropic island (app/tropic-figure.ts, lane figure): his figure and his day, on
-// the shared rig (figure-rig.ts, Alison's) scaled 1.08 at his root. Until the island is merged he is
-// built here on his own, on the stand-in site (FILIP_SITE: SDE4's desk and café anchors and its solids
-// (columns, pads, stack, fin block, the veranda's planters, steps), the land's walks, court, mound and
-// podium with its ramp, the call stretch, as they stand in their lanes, on a stand-in floor) with the
-// stand-in body (filipStandIn, of lane figlook's shape); once it is, these checks are to read the
-// island's own Filip, his site (its floor, anchors, solids and turf) and his body. Alison's bars, his:
+// Filip Biljecki on the tropic island (app/tropic-figure.ts): his figure and his day, on the shared rig
+// (figure-rig.ts, Alison's) scaled 1.08 at his root, built here on his own as the town places him
+// (placeFilip's defaults: the island's site, FILIP_SITE, its floor the land's lawn and walks and SDE4's
+// podium, deck and ramp, its solids SDE4's columns, pads and what stands on its podium (the stack, the
+// lobby, the fin block, the veranda's planters with their planting's reach, the court's step) and the
+// plaza's drum, its turf the land's own; and his own body, tropic-figure-look's createFilip with his
+// face), and the town's own Filip held to him. Alison's bars, his:
 // - he is one entry in the animated list, a pivot of his own (keepSeparate, prebatched), his root
 //   scaled 1.08 all over, and inside it exactly Alison's joints, pivots and hierarchy; 14 meshes and
 //   5,500 triangles at most as built and as batched (each group's own meshes, a batch a kind and a
@@ -12033,8 +12098,8 @@ let tropicReport = '';
 //   ramp, over the paths' edges, across the dome); seated, on his chair's foot ring (FILIP_RING) within
 //   0.005;
 // - his ways: his root 0.27 (the walkers' clearance) in plan from every solid (SDE4's, the court's drum)
-//   and his furniture (but the chair or desk he stands beside, at a walk's ends), 1 or more in from the
-//   turf's lip (site.inland), onto the podium only by its ramp, and never an edge under his feet (the
+//   and his furniture (but the chair or desk he stands beside, at a walk's ends), 1.2 or more in from
+//   the turf's lip (site.inland), onto the podium only by its ramp, and never an edge under his feet (the
 //   floor 0.15 from his root no more than 0.06 off its own there: a walk's 0.036 lip on the lawn's
 //   slope passes, the ramp's sides and the podium's 0.12 do not);
 // - all of him (every other point of every mesh, his props too) against every solid where he goes
@@ -12076,6 +12141,20 @@ let filipReport = '';
     tri = (m) => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3,
     v = new T.Vector3();
   him.traverse((o) => o.isMesh && meshes.push(o));
+  // The town's own Filip is this one: the island's figure group holds him, one entry in the town's
+  // animated list, standing where this one stands at every moment asked (the same site and body).
+  {
+    const own = model.filip.children[0],
+      ownEntry = model.animated.find((e) => e.object === own);
+    assert(own?.name === 'filip' && ownEntry && own.userData.keepSeparate && own.userData.prebatched, 'The tropic island\'s Filip is not the town\'s, on a pivot of his own in its animated list.');
+    for (const t of [0, 17.3, 40.1, 63.7, 88.2, 101.9, 130.4]) {
+      ownEntry.update(t, 0, 0);
+      entry.update(t, 0, 0);
+      assert(own.position.distanceTo(him.position) < 1e-9 && Math.abs(own.rotation.y - him.rotation.y) < 1e-9, `The town's Filip is elsewhere at ${t} s.`);
+    }
+    ownEntry.update(0, 0, 0);
+    entry.update(0, 0, 0);
+  }
   // His build, his rig and his budget.
   assert(animated.length === 1 && entry.object === him && him.parent === parent && him.name === 'filip' && him.userData.keepSeparate && him.userData.prebatched, 'Filip is not one entry in the animated list on a pivot of his own.');
   assert(S === 1.08 && him.scale.x === S && him.scale.y === S && him.scale.z === S, `Filip's root is scaled ${him.scale.toArray()} (1.08 all over).`);
@@ -12337,8 +12416,8 @@ let filipReport = '';
       }
       walked += a.length;
     }
-    assert(lip >= 1, `Filip walks ${fmt(lip)} from the turf's lip.`);
-    filipReport = `Filip on the tropic island's stand-ins (lane figure; ${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of ${clearOf} in plan, ${fmt(lip)} in from the turf's lip and never over an edge (${fmt(edge)})`;
+    assert(lip >= 1.2, `Filip walks ${fmt(lip)} from the turf's lip.`);
+    filipReport = `Filip on the tropic island (${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of ${clearOf} in plan, ${fmt(lip)} in from the turf's lip and never over an edge (${fmt(edge)})`;
   }
   // All of him against every solid where he goes, every other frame (seated, every fourth).
   {

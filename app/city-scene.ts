@@ -1532,8 +1532,9 @@ export async function createCity(
     fogGolden: new T.Color('#ecc9a4'),
   };
   const shiftApplied = new T.Vector3();
-  // Over the island and the airport (a square of ±58, city-atmosphere's): as dense as it was over ±50.
-  const weather = createRain(Math.round((tier === 'low' ? 900 : 1700) * 1.35)),
+  // Over the island, the airport and the tropic island (a square of ±66, city-atmosphere's): as dense
+  // as it was over ±50, (132 / 100)² as many streaks.
+  const weather = createRain(Math.round((tier === 'low' ? 900 : 1700) * 1.7424)),
     gulls = createGulls();
   scene.add(weather.object, gulls.object);
   const target = new T.Vector3(),
