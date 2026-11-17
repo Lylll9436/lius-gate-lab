@@ -6422,8 +6422,8 @@ let tropicGardenWalks = '';
 //   back, nothing where his knees go, the saucer to his right; the seats, keys and saucer the garden
 //   builds where his day sits him, types and sets his cup), the bistro chairs' foot rings where seated
 //   soles rest; the props' frames as the figure holds them;
-// - the budget: the whole garden in at most 10 meshes and 45,000 triangles once batched, on the solids'
-//   one program, its build and batch in time;
+// - the budget: the whole garden in at most 10 meshes and 46,500 triangles once batched, on the solids'
+//   one program, its build and batch in time; and so is the town's, with the lamps' pools in it;
 // - the layout: no shrub left out for standing on SDE4; the trees, shrub beds and fans on the lawn,
 //   the palms on the sand (the beach's dry sand, its sandy stretches: none on the rocks) leaning out
 //   to sea, their crowns no more than a unit past the waterline and nothing of the garden standing in
@@ -6716,14 +6716,18 @@ let tropicGardenWalks = '';
     { root, raw, stations, lamps: gardenLamps } = layoutTime.built;
   // (About three times what it takes at the limits' pace: set at the merge from eight runs at loads of
   // 6 to 9 on 15 cores, median 169 ms, its sculpted canopies and beds and the plaza in it; made five
-  // times slower it failed twice, at 904 and 825 ms. The town builds it in a phase of its own, 'tropic
-  // garden', held to its own limit with the island's others.)
+  // times slower it failed twice, at 904 and 825 ms. At the close, with the walks' plaza, the planting
+  // and the lamps: median 181 ms (165 to 184) in three runs at loads of 3 to 4.2, 2.8 times under the
+  // limit; kept. The town builds it in a phase of its own, 'tropic garden', held to its own limit with
+  // the island's others.)
   inTime('The tropic garden\'s build and batch', layoutTime, 500);
   root.updateMatrixWorld(true);
   raw.updateMatrixWorld(true);
   const all = meshesOf(root),
     tropicTriangles = trisOf(all);
-  assert(all.length <= 10 && tropicTriangles <= 45000, `The tropic garden costs ${all.length} meshes and ${tropicTriangles} triangles.`);
+  // (46,500: the old 45,000 and the lamps' pools on top. Set at the close: the planting, the laid
+  // table and the lamps measured 44,838 here and 45,237 with the pools in the town.)
+  assert(all.length <= 10 && tropicTriangles <= 46500, `The tropic garden costs ${all.length} meshes and ${tropicTriangles} triangles.`);
   for (const m of all) {
     // (The lamps' globes are lamps: never batched, in the lamps' own glass; held below.)
     if (gardenLamps.includes(m)) continue;
@@ -6841,6 +6845,7 @@ let tropicGardenWalks = '';
       w = pool.geometry.getAttribute('aWash'),
       feet = stations.lamps.map((s) => [s.x + island.x, s.z + island.z]);
     poolTriangles = trisOf(pools);
+    assert(town.length <= 10 && trisOf(town) <= 46500, `The town's tropic garden, its lamps' pools in it, costs ${town.length} meshes and ${trisOf(town)} triangles.`);
     assert(poolTriangles > 50 * feet.length && poolTriangles <= 1200, `The tropic island's lamps' pools are ${poolTriangles} triangles.`);
     pool.updateMatrixWorld(true);
     for (let i = 0; i < p.count; i++) {
@@ -11663,20 +11668,22 @@ let tropicReport = '';
   assert.equal(phaseNames[phaseNames.indexOf('batch sky') + 1], 'batch tropic', 'The tropic island is not batched right after the sky island.');
   assert.equal(phaseNames[phaseNames.indexOf('batch sky villa') + 1], 'batch tropic building', 'The tropic island\'s building is not batched after every other building.');
   // Each held to its own limit (timed builds, above): about three times what each takes at the limits'
-  // pace, set at the merge with the island's building, garden and Filip in them, from eight runs of
-  // the town's phases at loads of 6 to 9 on 15 cores (medians 21.5, 150, 51 and 41 ms for its ground,
-  // its garden and Filip, its ground's batch with theirs, and its building's batch), so that one five
-  // times slower fails.
+  // pace, so that one five times slower fails. Set again at the close (2026-11-17), with the rebuilt
+  // SDE4, the walks' paving, the planting and the lamps in them, from three runs of check-town at loads
+  // of 3 to 4.2 on 15 cores: medians 41, 185, 69 and 58 ms for its ground, its garden and Filip, its
+  // ground's batch with theirs, and its building's batch (they had been 65, 450, 150 and 120, set on
+  // medians of 21.5, 150, 51 and 41 at the merge: 1.6 to 2.4 times by the close).
   assert.equal(phaseNames[phaseNames.indexOf('buildings and vehicles') + 1], 'tropic garden', 'The tropic island\'s garden and Filip are not built in a phase of their own after the buildings.');
   const paced = ['tropic ground', 'tropic garden', 'batch tropic', 'batch tropic building'].map((name) => [name, phaseTimes.get(name)]);
-  for (const [name, limit] of [['tropic ground', 65], ['tropic garden', 450], ['batch tropic', 150], ['batch tropic building', 120]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+  for (const [name, limit] of [['tropic ground', 120], ['tropic garden', 550], ['batch tropic', 210], ['batch tropic building', 175]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   // Nothing of its ground in the land's batch (only its tide line, in the shore's foam).
   each(model.land, (p, o) => assert(o === foam || !plan.onTropic(p.x, p.z, 2), 'Something of the tropic island is in the land\'s batch.'));
   // Its ground: at most four meshes (the lawn's grass, the beach's sand, and stone: the walks, which
-  // cast nothing, and the rocks) and 16,500 triangles (set again with the walks before SDE4: their one
-  // paving mesh, cut on its grid with fine cells along its curves, measured 15,872 for the whole ground,
-  // and a little over; decision 13's 9,500 was what the island's 90,000 left once its building, garden
-  // and figure had their caps, and the island's own 90,000 below still binds), every one batched with
+  // cast nothing, and the rocks) and 12,500 triangles (set at the close: the paving's quadtree and the
+  // regrouped rocks measured 11,985 for the whole ground, and about 4% over; it was 16,500 for the
+  // first paving's 15,872; decision 13's 9,500 was what the island's 90,000 left once its building,
+  // garden and figure had their caps, and the island's own 90,000 below still binds; the lamps' pools
+  // are the garden's, not the ground's), every one batched with
   // a surface kind, front-sided, opaque, cutting no holes; and the island as a whole (its ground, its
   // building and whatever is joined to it: its garden and its figure) within 36 meshes and 90,000
   // triangles.
@@ -11693,7 +11700,7 @@ let tropicReport = '';
     assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} on the tropic island cuts holes.`);
     assert(o.receiveShadow, 'A mesh of the tropic island\'s ground takes no shadow.');
   });
-  assert(landMeshes <= 4 && landTriangles <= 16500 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
+  assert(landMeshes <= 4 && landTriangles <= 12500 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
   // (The island is every group setShown takes: its ground first, then its building's model root and
   // whatever else is joined to it, counted once each.)
   const parts = tropic.groups();
@@ -12552,7 +12559,9 @@ let tropicReport = '';
   assert(batched.length <= 12 && tris <= 30000, `SDE4 costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
   // (About three times its build at the limits' pace: set at the merge from eight runs at loads of 6 to
   // 9 on 15 cores, median 31.5 ms (28 to 37), with its slimmer columns and its plan; 34 ms when the lane
-  // first set 100. A build made five times slower failed it twice, at 178 and 150 ms.)
+  // first set 100. A build made five times slower failed it twice, at 178 and 150 ms. At the close,
+  // rebuilt at the town's scale with its entrance and north face: median 36 ms (32 to 37) in three runs
+  // at loads of 3 to 4.2, 2.6 times under the limit; kept.)
   inTime('SDE4\'s build', sde4Time, 95);
   // Its night.
   const own = windows.filter((p) => p.place === 'tropic-island'),

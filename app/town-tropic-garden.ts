@@ -1679,8 +1679,9 @@ export function tropicGardenSite(sde4: Sde4Plan, land?: T.Object3D): TropicSite 
  * - `file`: the island's file's bearing (the gate's), toward which each rain tree's hem draws into its bay;
  * - `building`: SDE4 as its plan stands it (tropicBuilding of sde4Plan: its roof's middle at (1.2, -1.1),
  *   its podium's top 0.12 over the land's terrace, the desk's middle at (3.9, -1.7) facing south, the
- *   café table's middle on the walks' café terrace (town-plan's TROPIC_PATHS.cafe: 1.0 west of the
- *   plaza's rim, (-4.05, 2.48) on take b's plan) facing south-east);
+ *   café table's middle on the walks' café terrace (town-plan's TROPIC_PATHS.cafe: halfway between
+ *   the terrace's west end and the plaza's rim, at its mid-depth, (-4.22, 2.75) on take b's plan) facing
+ *   south-east);
  * - `walks`: Filip's day as tropic-figure lays it (FILIP_SITE): the call stretch's middle line and his
  *   pacing turn, and the points of his walks between his stations, which the planting keeps the
  *   walkers' clearance from;
@@ -1697,7 +1698,7 @@ export function tropicGardenSite(sde4: Sde4Plan, land?: T.Object3D): TropicSite 
  *   lines of sight (the bay's pair west of the call stretch's lines to the file's camera and to the
  *   south-west stop's, the tail's pair east of them);
  * - frangipani: two on the west lawn, one off the west screen's corner beside the café terrace and one
- *   on the knoll (the mound) to the south-west, and a third on the north-west lawn, framing it;
+ *   on the knoll (the mound) to the south-west;
  * - beds of massed leafy shrubs (bedGeometry: a line, its width and height, and which way their broad
  *   leaves arch out, away from what they stand against) along SDE4's foot: a low bed backing the café
  *   terrace's north side where it passes the building's south-west corner (its leaves arching north,
