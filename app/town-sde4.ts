@@ -682,6 +682,48 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
   }
 
   /**
+   * A low leafy cushion filling a planter's trough (x0..x1, z0..z1, its lip at `top`) flush to its
+   * lip: a row of soft overlapping mounds about `step` apart, each a little different in length and
+   * height, rising `rise` over the lip at most, in the shrubs' greens (darker low, lighter on top),
+   * so a planter reads as full of green and never as a pale empty box with a few sprigs (the final
+   * check's finding on the north face). The rosettes and spills stand out of it.
+   */
+  function cushion(x0: number, x1: number, z0: number, z1: number, top: number, seed: number, step = 0.42, rise = 0.2) {
+    const long = x1 - x0 >= z1 - z0,
+      a = long ? x0 : z0,
+      b = long ? x1 : z1,
+      across = (long ? z1 - z0 : x1 - x0) / 2,
+      mid = long ? (z0 + z1) / 2 : (x0 + x1) / 2,
+      n = Math.max(1, Math.round((b - a) / step)),
+      d = (b - a) / n,
+      out: T.BufferGeometry[] = [],
+      c = new T.Color();
+    for (let k = 0; k < n; k++) {
+      const h = (i: number) => hash(seed * 4.7 + k * 1.3 + i * 0.53),
+        g = GR.shrubs[(k + Math.floor(h(1) * 3)) % GR.shrubs.length],
+        t = a + d * (k + 0.5),
+        half = d * (0.62 + 0.12 * h(2)),
+        up = rise * (0.7 + 0.3 * h(3)),
+        lo = new T.Color(g.under),
+        mid2 = new T.Color(g.tones[k % 2]),
+        hi = new T.Color(g.tones[1]).lerp(new T.Color(g.top), 0.35),
+        geo = new T.SphereGeometry(1, 7, 4).deleteAttribute('uv') as T.BufferGeometry;
+      geo.scale(long ? half : across * 0.98, up + 0.06, long ? across * 0.98 : half);
+      geo.translate(long ? t : mid, top - 0.06, long ? mid : t);
+      const pos = geo.getAttribute('position'),
+        col: number[] = [];
+      for (let i = 0; i < pos.count; i++) {
+        const v = (pos.getY(i) - (top - 0.06)) / (up + 0.06);
+        c.copy(lo).lerp(mid2, sstep(v, -0.2, 0.5)).lerp(hi, sstep(v, 0.5, 1) * 0.8);
+        col.push(c.r, c.g, c.b);
+      }
+      geo.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+      out.push(geo);
+    }
+    return out;
+  }
+
+  /**
    * SDE4 (front +z; see SDE4), in the toy language of the town's Clash look at the main island's
    * scale: few, bold parts with rich secondary and tertiary structure at the town's own sizes, and
    * calm surfaces.
@@ -1171,6 +1213,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
           top = p3.y1 + RAIL - 0.04;
         S.north.forEach(([x0, x1], r) => {
           trough(x0, x1, z0, z1, p3.y1, RAIL - 0.04);
+          greenery.push(...cushion(x0 + 0.04, x1 - 0.04, z0 + 0.04, z1 - 0.04, top, 27 + r));
           greenery.push(...bed(x0 + 0.08, x1 - 0.08, z0, z1, top, 17 + r, { step: 0.66, scale: 0.9 }));
           const spills = x1 - x0 > 0.8 ? [x0 + 0.3, x1 - 0.35] : [(x0 + x1) / 2];
           spills.forEach((x, k) => greenery.push(...spill(x, top - 0.02, z0 + 0.12, Math.PI, (r + k) % 3, 170 + 3 * r + k, { size: 0.8, lean: 0.8, arch: 3.1 })));
@@ -1185,6 +1228,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
           top = p2.y1 + tall;
         S.ledge.forEach(([x0, x1], r) => {
           trough(x0, x1, z0, z1, p2.y1, tall);
+          greenery.push(...cushion(x0 + 0.04, x1 - 0.04, z0 + 0.04, z1 - 0.04, top, 47 + r));
           // Leafy plants turned out of the glass (their blades across the half facing north).
           const n = Math.max(1, Math.round((x1 - x0 - 0.2) / 0.55));
           for (let k = 0; k < n; k++) {
