@@ -10023,9 +10023,9 @@ let tropicReport = '';
   // the ellipse's on every side and about its middle; it is clearly not the ellipse (it swells more
   // than a unit out of it and goes half a unit into it), yet calm: its sides turn no tighter than a
   // radius of 2 outward (no spikes) and 3 inward (no notches), and lean no more than 35 degrees off
-  // square to the rays, so nothing is star-shaped. A low rocky point behind the building, a low rocky
-  // knoll on the south-west, a sandy bay in front, a short sandy tail on the east-south-east: the
-  // point, the knoll and the tail swell out, the bay goes in.
+  // square to the rays, so nothing is spiky or pointed. A low rocky point behind the building, a
+  // low rocky knoll on the south-west, a shallow sandy bay in front, a short sandy tail on the
+  // east-south-east: the point, the knoll and the tail swell out, the bay goes in.
   const C = plan.TROPIC_COAST,
     span = plan.TROPIC_SPAN,
     feature = (name) => C.features.find((f) => f.name === name),
@@ -10139,10 +10139,10 @@ let tropicReport = '';
         exact = sand + (P.rocky - sand) * plan.tropicRockiness(bearing);
       assert(Math.abs(plan.tropicBeach(bearing) - exact) < 1e-4, 'tropicBeach strays from the sand and the rocks\' beach.');
     }
-    for (const s of plan.TROPIC_ROCKY) assert(Math.abs(plan.tropicBeach(s.bearing) - P.rocky) < 1e-6 && Math.abs(plan.tropicBeach(s.bearing + s.half + s.ease + 0.01) - plan.tropicSand(s.bearing + s.half + s.ease + 0.01)) < 1e-6, 'A rocky stretch is not rocky, or does not ease back to the sand.');
+    for (const s of plan.TROPIC_ROCKY) assert(Math.abs(plan.tropicBeach(s.bearing) - P.rocky) < 1e-9 && Math.abs(plan.tropicBeach(s.bearing + s.half + s.ease + 0.01) - plan.tropicSand(s.bearing + s.half + s.ease + 0.01)) < 1e-9, 'A rocky stretch is not rocky, or does not ease back to the sand.');
     const sandAt = (name) => plan.tropicBeach(feature(name).bearing),
       beaches = Array.from({ length: 720 }, (_, j) => plan.tropicBeach((j / 720) * Math.PI * 2));
-    assert(sandAt('bay') > P.beach + 0.1 && sandAt('tail') > P.beach + 0.8 && Math.abs(sandAt('point') - P.rocky) < 1e-6 && Math.abs(sandAt('knoll') - P.rocky) < 1e-6, 'The tropic island\'s beach is not wider in its bay and on its tail, or not narrow on its rocky point and its knoll.');
+    assert(sandAt('bay') > P.beach + 0.1 && sandAt('tail') > P.beach + 0.8 && Math.abs(sandAt('point') - P.rocky) < 1e-9 && Math.abs(sandAt('knoll') - P.rocky) < 1e-9, 'The tropic island\'s beach is not wider in its bay and on its tail, or not narrow on its rocky point and its knoll.');
     assert(Math.max(...beaches) - Math.min(...beaches.filter((_, j) => plan.tropicRockiness((j / 720) * Math.PI * 2) === 0)) > 1, 'The tropic island\'s sand is all one width.');
     let tight = Infinity;
     for (let j = 0; j < 1440; j++) {
@@ -10295,8 +10295,10 @@ let tropicReport = '';
   /* ---------------- its rocks ---------------- */
   // Its rocks stand where its coast is rocky: every cluster and ledge on a rocky stretch (TROPIC_ROCKY:
   // the point behind the building and the knoll on the south-west, the north-west's cluster where the
-  // point's stretch eases off), three of them on the point and one on the knoll; the lone boulders on
-  // the sand; each on the beach, its middle out from the turf's edge and short of the waterline.
+  // point's stretch eases off), three of them on the point and one on the knoll; a stone by each end
+  // of each stretch's fully rocky part (a cluster or a ledge within 0.16 of it, in bearing), so its
+  // narrowest beach and its broken surf never run on bare of stones; the lone boulders on the sand;
+  // each on the beach, its middle out from the turf's edge and short of the waterline.
   {
     const R = TROPIC_ROCKS,
       rocky = (b) => plan.tropicRockiness(b),
@@ -10304,6 +10306,8 @@ let tropicReport = '';
       onKnoll = R.clusters.filter((c) => Math.abs(plan.angleDiff(c.bearing, plan.TROPIC_ROCKY[1].bearing)) <= plan.TROPIC_ROCKY[1].half);
     assert([...R.clusters, ...R.ledges].every((r) => rocky(r.bearing) > 0.3) && R.lone.every((r) => rocky(r.bearing) === 0), 'A rock of the tropic island stands off its rocky stretches, or a lone boulder on them.');
     assert(onPoint.length === 3 && onKnoll.length === 1, 'The tropic island\'s rocky point and knoll do not carry their clusters.');
+    for (const s of plan.TROPIC_ROCKY)
+      for (const end of [s.bearing - s.half, s.bearing + s.half]) assert([...R.clusters, ...R.ledges].some((r) => Math.abs(plan.angleDiff(r.bearing, end)) <= 0.16), `The tropic island's rocky stretch runs bare of stones at its end, bearing ${end.toFixed(2)}.`);
     assert([...R.clusters, ...R.ledges, ...R.lone].every((r) => r.at > 0.5 && r.at < P.beach), 'A rock of the tropic island stands off its beach.');
   }
 
