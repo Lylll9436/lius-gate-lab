@@ -286,8 +286,8 @@ const places: Building[] = [
   // The tropic island: a place of its own on the sea off the south shore. Its building is one of
   // the town's models (model 'tropic': town-build builds it on the island's own ground, airport-like,
   // so picking, the ring, framing and night windows are the town's), its root at the island's
-  // middle. It has no reading chapter. x, z, w, d and height are its site's (plan.sites: the island
-  // to its waterline, the roof's top). Its category and summary here are the island's own, for while
+  // middle. It has no reading chapter. x, z, w, d and height are its site's (plan.sites: the box
+  // about the island's middle that holds its waterline, to the hundredth, and the roof's top). Its category and summary here are the island's own, for while
   // no neighbour's record is published for it; while one is, buildingsOn names the neighbour instead.
   {
     id: 'tropic-island',
@@ -305,8 +305,8 @@ const places: Building[] = [
     ),
     x: 19.5,
     z: 51,
-    w: 26,
-    d: 21,
+    w: 27.5,
+    d: 23.36,
     height: 7.85,
     model: 'tropic',
     color: '#cbb790',

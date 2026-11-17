@@ -233,16 +233,18 @@ export function addAirportShallows(texture: T.DataTexture) {
  * `strength` at the waterline (the sea tints by G squared: 1 is the main island's full tint) easing
  * out to nothing `width` past it; where its rocks stand (plan.tropicRockiness) the airport's
  * fainter, narrower ring round its stones instead (`rocky`). Measured along the island's rays as its
- * shore is laid (plan.tropicAt's `shore`), so the ring follows the beach's own tide line.
+ * shore is laid (plan.tropicAt's `shore`), so the ring follows the coast, its bay, its tail, its
+ * knoll and its rocky point, and the beach's own tide line, and lies on its shelf.
  */
 export const TROPIC_SHALLOWS = { strength: 1, width: 3, rocky: { strength: 0.6, width: 1.8 } };
 /**
  * The tropic island's tide line wobbles as the town's does along its shore, two waves out and in:
  * the town's (0.12 sin 1.7i + 0.08 sin 4.3i at its stations, i, 0.897 apart) are waves of 3.3 and,
- * as its stations draw the second, 2.8 along the shore. Its own stations stand 0.661 apart, so by
+ * as its stations draw the second, 2.8 along the shore. Its own stations stand 0.68 apart, so by
  * the station the same waves would come a quarter shorter and sharper; so they are counted along
- * its waterline instead, `waves` whole waves the way round (74.0), so the line closes where it
- * starts: 22 of 3.4 and 26 of 2.8 (the second's sign as the town's stations draw it).
+ * its waterline instead, `waves` whole waves the way round (plan.TROPIC_ROUND, 77.0), so the line
+ * closes where it starts: 22 of 3.5 and 26 of 3.0, a shade longer than the town's, so never sharper
+ * (the second's sign as the town's stations draw it).
  */
 export const TROPIC_TIDE = { waves: [[0.12, 22], [-0.08, 26]] as [number, number][] };
 /**
@@ -258,11 +260,12 @@ export function addTropicShallows(texture: T.DataTexture) {
     texel = (2 * E) / N,
     data = texture.image.data as Uint8Array,
     P = plan.TROPIC,
+    box = plan.TROPIC_SPAN,
     S = TROPIC_SHALLOWS,
     reach = S.width + 1,
     cell = (v: number) => Math.floor((v + E) / texel),
-    [i0, i1] = [Math.max(1, cell(P.x - P.a - reach)), Math.min(N - 2, cell(P.x + P.a + reach))],
-    [j0, j1] = [Math.max(1, cell(P.z - P.b - reach)), Math.min(N - 2, cell(P.z + P.b + reach))],
+    [i0, i1] = [Math.max(1, cell(box.x0 - reach)), Math.min(N - 2, cell(box.x1 + reach))],
+    [j0, j1] = [Math.max(1, cell(box.z0 - reach)), Math.min(N - 2, cell(box.z1 + reach))],
     width = i1 - i0 + 1,
     hidden = new Uint8Array(width * (j1 - j0 + 1)),
     shown = new Uint8Array(hidden.length),

@@ -29,34 +29,39 @@ export const TROPIC_LOOK = {
  */
 const WALK_STEP = { step: 0.25, fine: 0.05, mouth: 0.9 };
 /**
- * The rocks on the shore (plan.TROPIC_ROCKY): clusters of the armour's chiselled boulders
- * (town-sky-garden's boulder, town-sky's chisel) along the rocky stretches, each placed by the
- * bearing it stands on and how far out on the shore profile its middle is (`at`: 0 the turf's
- * edge, plan.TROPIC.beach the waterline), with its stones' offsets in its own frame (t along the
- * shore, spread `spread` along it; n out to sea), sizes (half sizes, unit-free: `size` scales them)
- * and seeds; between the north clusters, a low ledge each (`ledges`: one long flat stone, `ledge` its
- * half sizes), so the north edge reads as one low outcrop broken into blocks, not piles on sand; and
- * two lone boulders on the sand, as the town's own beach has. Each stone is sunk a third of its
- * height, damp-darkened below the waterline as the armour is, lighter where it faces the sky.
+ * The rocks on the shore: clusters of the armour's chiselled boulders (town-sky-garden's boulder,
+ * town-sky's chisel) on the two rocky stretches (plan.TROPIC_ROCKY): three round the tip and along the
+ * flank of the low rocky point behind the building, one on the north-west where that stretch ends, and
+ * one on the knoll on the south-west, the bay's west end. Each is placed by the bearing it stands on
+ * and how far out on the shore profile its middle is (`at`: 0 the turf's edge, plan.TROPIC.beach the
+ * waterline), with its stones' offsets in its own frame (t along the shore, spread `spread` along it;
+ * n out to sea), sizes (half sizes, unit-free: `size` scales them) and seeds. Along the rocky
+ * stretches, low ledges (`ledges`: one long flat stone each, `ledge` its half sizes) lie between and
+ * beyond the clusters, so the point and the knoll read as low outcrops broken into blocks, not piles
+ * on sand; and two lone boulders lie on the sand (at the bay's east end, and on the tail at the
+ * hollow's south end), as the town's own beach has. Each stone is sunk a third of its height,
+ * damp-darkened below the waterline as the armour is, lighter where it faces the sky.
  */
 export const TROPIC_ROCKS = {
   clusters: [
-    { bearing: Math.PI - 0.72, at: 2.0, size: 0.9, seed: 3 },
-    { bearing: Math.PI - 0.28, at: 2.3, size: 1.05, seed: 11 },
-    { bearing: Math.PI + 0.18, at: 2.1, size: 0.95, seed: 19 },
-    { bearing: Math.PI + 0.62, at: 2.2, size: 0.85, seed: 29 },
-    { bearing: -0.8, at: 2.2, size: 1.1, seed: 41 },
+    { bearing: Math.PI - 0.7, at: 2.05, size: 0.9, seed: 3 },
+    { bearing: Math.PI - 0.38, at: 2.3, size: 1.08, seed: 11 },
+    { bearing: Math.PI - 0.02, at: 2.1, size: 0.92, seed: 19 },
+    { bearing: -0.98, at: 2.15, size: 0.86, seed: 29 },
+    { bearing: -2.12, at: 2.25, size: 0.8, seed: 41 },
   ],
   spread: 1.35,
   ledges: [
-    { bearing: Math.PI - 0.5, at: 1.75, size: 1.05, seed: 71 },
-    { bearing: Math.PI - 0.05, at: 1.85, size: 1.15, seed: 79 },
-    { bearing: Math.PI + 0.4, at: 1.8, size: 1.0, seed: 83 },
+    { bearing: Math.PI - 0.54, at: 1.75, size: 1.0, seed: 71 },
+    { bearing: Math.PI - 0.2, at: 1.85, size: 1.12, seed: 79 },
+    { bearing: Math.PI + 0.28, at: 1.8, size: 1.02, seed: 83 },
+    { bearing: Math.PI + 0.62, at: 1.75, size: 0.9, seed: 89 },
+    { bearing: -1.13, at: 1.8, size: 0.85, seed: 97 },
   ],
   ledge: { half: [0.62, 0.17, 0.34] as [number, number, number], cuts: [[0, 1, 0.1, 0.62]] as [number, number, number, number][] },
   lone: [
     { bearing: 0.42, at: 1.3, size: 0.42, seed: 53 },
-    { bearing: 1.95, at: 1.6, size: 0.36, seed: 61 },
+    { bearing: 1.5, at: 1.7, size: 0.36, seed: 61 },
   ],
   stones: [
     { t: 0, n: 0, half: [0.62, 0.44, 0.52], detail: 2, cuts: [[0, 0.75, 0.66, 0.72], [0.7, 0.2, 0.68, 0.78]] },
@@ -68,15 +73,16 @@ export const TROPIC_ROCKS = {
 };
 /**
  * How far the tropic island's two bounds reach, as rings of `points` round its waterline (32, so a
- * ring's points span its ellipse's axes exactly):
- * - TROPIC_EXTENT's: its waterline at the water's level, and over it a ring as high as any of its
- *   crowns rise (`crown`: the rain trees' umbrellas and the palms' crowns, the palms leaning out over
- *   the beach, every one inside the waterline);
+ * ring's sides include the four axes):
+ * - TROPIC_EXTENT's: a polygon round its waterline at the water's level, and over it the same as high
+ *   as any of its crowns rise (`crown`: the rain trees' umbrellas and the palms' crowns, the palms
+ *   leaning out over the beach, every one inside the waterline);
  * - TROPIC_SEEN's, on the sea round it as well: a ring `sea` past the waterline (its beach's shelf
- *   under the water reaches 4.31 past it, its shallows 3, its foam less; the stones that stand in the
- *   water a few tenths) at the water's level and again at the shelf's floor (`floor`, the shore
- *   profile's foot, seen through the water from a low camera); and its crowns' ring `crowns` past the
- *   waterline (a palm that leans further out than planned still stays inside it).
+ *   under the water reaches 4.31 past it along the rays, so no further from it; its shallows 3, its
+ *   foam less; the stones that stand in the water a few tenths) at the water's level and again at the
+ *   shelf's floor (`floor`, the shore profile's foot, seen through the water from a low camera); and
+ *   its crowns' ring `crowns` past the waterline (a palm that leans further out than planned still
+ *   stays inside it).
  */
 export const TROPIC_REACH = { sea: 4.6, floor: SHORE_PROFILE[SHORE_PROFILE.length - 1].height, crown: 4.6, crowns: 0.7, points: 32 };
 /** The building's corners at its top, over its whole footprint (TROPIC_BUILDING: the podium's plan, the roof's 11 by 7.2 inside it). */
@@ -86,43 +92,61 @@ const ROOF_CORNERS = (() => {
   return [-1, 1].flatMap((sx) => [-1, 1].map((sz) => new T.Vector3(P.x + B.x + sx * B.hw, B.top, P.z + B.z + sz * B.hd)));
 })();
 /**
- * The tropic island as the camera frames it (decision 16's TROPIC_EXTENT), world points: its outline
- * at the water (its waterline, the sand ellipse with its beach: x 6.5 to 32.5, z 40.5 to 61.5, as the
- * corners of a polygon round it whose sides touch it, so the polygon spans exactly that and nothing
- * of the waterline lies outside it, its corners at most 0.07 out), the tops of its trees (that ring
- * again, TROPIC_REACH.crown up) and of its building (its corners at its top, 7.85 up). Everything of
- * the island that stands on it, at or over the water and inside its waterline, lies inside these
- * points' hull, so their box on screen holds it from any side and pitch (check-town). What lies on
- * the sea round it (its shelf under the water, its shallows, its foam, the feet of the stones that
- * stand in the water) is not in it: that is TROPIC_SEEN's.
+ * A polygon round the tropic island's waterline `out` past it, world x, z: TROPIC_REACH.points sides,
+ * each on a line `out` beyond one that touches the waterline from outside (plan.tropicSupport), their
+ * outward normals evenly round from the east (the four axes among them), clockwise seen from above;
+ * its corners are where neighbouring sides meet. Everything within `out` of the waterline lies inside
+ * it, whatever the coast's shape (it holds the waterline's hull, grown by `out`: over the bay and the
+ * hollow it bridges the shore). At `out` nought (WATERLINE_HULL) its box is exactly the waterline's
+ * (plan.TROPIC_SPAN) and its corners stand a little out.
  */
-export const TROPIC_EXTENT: T.Vector3[] = (() => {
-  const R = TROPIC_REACH,
+function hullRing(out: number) {
+  const n = TROPIC_REACH.points,
     P = plan.TROPIC,
-    out = 1 / Math.cos(Math.PI / R.points),
-    ring = Array.from({ length: R.points }, (_, k) => {
-      const u = ((k + 0.5) / R.points) * Math.PI * 2;
-      return { x: P.x + P.a * Math.cos(u) * out, z: P.z + P.b * Math.sin(u) * out };
-    });
-  return [...ring.map((p) => new T.Vector3(p.x, WATER, p.z)), ...ring.map((p) => new T.Vector3(p.x, R.crown, p.z)), ...ROOF_CORNERS.map((p) => p.clone())];
-})();
+    step = (Math.PI * 2) / n,
+    h = Array.from({ length: n }, (_, k) => plan.tropicSupport(Math.cos(k * step), Math.sin(k * step)) + out);
+  return Array.from({ length: n }, (_, k) => {
+    const a = k * step,
+      b = (k + 1) * step,
+      ha = h[k],
+      hb = h[(k + 1) % n],
+      det = Math.sin(step);
+    return { x: P.x + (ha * Math.sin(b) - hb * Math.sin(a)) / det, z: P.z + (Math.cos(a) * hb - Math.cos(b) * ha) / det };
+  });
+}
+const WATERLINE_HULL = hullRing(0);
+/**
+ * The tropic island as the camera frames it (decision 16's TROPIC_EXTENT), world points: its outline
+ * at the water (WATERLINE_HULL, round its waterline: its box is the waterline's, plan.TROPIC_SPAN), the
+ * tops of its trees (that ring again, TROPIC_REACH.crown up) and of its building (its corners at its
+ * top, 7.85 up). Everything of the island that stands on it, at or over the water and inside its
+ * waterline, lies inside these points' hull, so their box on screen holds it from any side and pitch
+ * (check-town). What lies on the sea round it (its shelf under the water, its shallows, its foam, the
+ * feet of the stones that stand in the water) is not in it: that is TROPIC_SEEN's.
+ */
+export const TROPIC_EXTENT: T.Vector3[] = [
+  ...WATERLINE_HULL.map((p) => new T.Vector3(p.x, WATER, p.z)),
+  ...WATERLINE_HULL.map((p) => new T.Vector3(p.x, TROPIC_REACH.crown, p.z)),
+  ...ROOF_CORNERS.map((p) => p.clone()),
+];
 /**
  * Everything of the tropic island that can show on screen, world points: TROPIC_EXTENT, and the sea
- * round it that goes and comes with it (TROPIC_REACH: rings past its waterline at the water's level
- * and at its shelf's floor, and its crowns' ring past it). Everything of the island, its shelf, foam
- * and shallows included, lies inside these points' hull, so their box on screen (as the scene
- * measures the sky island's: skyOnScreen) holds all of it from any side and pitch (check-town): a
- * frame that box misses shows nothing of it. The scene's rule for when the island may go measures
- * this (decision 4: never taken away while any of it is in view); its framings use TROPIC_EXTENT.
+ * round it that goes and comes with it (TROPIC_REACH: the polygon round the waterline grown to rings
+ * past it at the water's level and at its shelf's floor, and its crowns' ring past it). Everything
+ * of the island, its shelf, foam and shallows included, lies inside these points' hull, so their box
+ * on screen (as the scene measures the sky island's: skyOnScreen) holds all of it from any side and
+ * pitch (check-town): a frame that box misses shows nothing of it. The scene's rule for when the
+ * island may go measures this (decision 4: never taken away while any of it is in view); its
+ * framings use TROPIC_EXTENT.
  */
 export const TROPIC_SEEN: T.Vector3[] = (() => {
   const R = TROPIC_REACH,
-    sea = plan.tropicOutline(R.sea, R.points);
+    sea = hullRing(R.sea);
   return [
     ...TROPIC_EXTENT.map((p) => p.clone()),
     ...sea.map((p) => new T.Vector3(p.x, WATER, p.z)),
     ...sea.map((p) => new T.Vector3(p.x, R.floor, p.z)),
-    ...plan.tropicOutline(R.crowns, R.points).map((p) => new T.Vector3(p.x, R.crown, p.z)),
+    ...hullRing(R.crowns).map((p) => new T.Vector3(p.x, R.crown, p.z)),
   ];
 })();
 /**
@@ -203,7 +227,7 @@ export function createTropicIsland(ctx: TownContext) {
   /* ---------------------------------------------------------------- */
   /**
    * The lawn: rings from the middle out to the turf's edge along the shore's stations
-   * (plan.tropicBearings), so its rim is the shore's own inner edge; at the dome's, the mound's and
+   * (plan.tropicBearings, evenly along the waterline), so its rim is the shore's own inner edge; at the dome's, the mound's and
    * the terrace's heights (plan.tropicTop) and normals, toned with low noise from the town's two
    * lawn greens. No stripes: the ground masks' lawn checker is not drawn here (B is nought), and
    * the ground shader's lawn tint is (as on the airport's deck).
@@ -253,8 +277,9 @@ export function createTropicIsland(ctx: TownContext) {
    * The beach: the town's own shore profile (SHORE_PROFILE: the turf's lip, dry sand, wet sand,
    * the waterline, the pale shelf and the drop) on every station's ray, as the main island's shore
    * is laid on its outline, in the same sand (its uv.x the profile's own width, so the sand's wet
-   * band falls just short of the waterline wherever the beach is narrower). Along the rocky
-   * stretches the narrow beach's dry sand is a damp strip under the stones.
+   * band falls just short of the waterline wherever the beach is narrower or wider: a wide beach, the
+   * bay's or the tail's, is the profile drawn out). Along the rocky stretches the narrow beach's dry
+   * sand is a damp strip under the stones.
    */
   function shore(g: T.Object3D) {
     const stations = plan.tropicBearings,

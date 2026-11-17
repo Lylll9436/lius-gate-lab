@@ -213,12 +213,34 @@ export const AIRPORT_EXTRAS = [
  * would stand 7 high over all of it, and its slack would reach several units out over the sea.
  * So are the hangar and the windsock: their boxes (AIRPORT_EXTRAS) hang there too. Without them
  * the hangar's west end, which a ray reaches past the deck's edge, and the sock answered nothing.
- * The tropic island's ground is part of the tropic island in the same way: an elliptic slab of its
- * waterline's footprint (plan.TROPIC), from just under the water to TROPIC_HIT.top over it (its
- * lawn's highest, on the mound, is 0.40), hung on its building's box; pointing at its lawn, its
- * paths or its beach finds it, the open sea beside it does not. See pickTarget.
+ * The tropic island's ground is part of the tropic island in the same way: a slab of its
+ * waterline's own outline (tropicSlab: `sides` points evenly along it), from just under the water to
+ * TROPIC_HIT.top over it (its lawn's highest, on the mound, is 0.40), hung on its building's box;
+ * pointing at its lawn, its paths or its beach finds it, the open sea beside it does not. See
+ * pickTarget.
  */
-export const TROPIC_HIT = { top: 0.56, below: 0.1, sides: 48 };
+export const TROPIC_HIT = { top: 0.56, below: 0.1, sides: 96 };
+/**
+ * The tropic island's pointer slab (TROPIC_HIT), world coordinates: a prism of its waterline's
+ * outline (plan.tropicOutline), its top and floor fanned from the island's middle (every ray from
+ * there crosses the waterline once), every face turned out (a ray meets front faces only).
+ */
+function tropicSlab() {
+  const H = TROPIC_HIT,
+    P = plan.TROPIC,
+    ring = plan.tropicOutline(0, H.sides),
+    n = ring.length,
+    position: number[] = [P.x, H.top, P.z, P.x, -H.below, P.z],
+    index: number[] = [];
+  for (const p of ring) position.push(p.x, H.top, p.z, p.x, -H.below, p.z);
+  const top = (i: number) => 2 + 2 * (i % n),
+    floor = (i: number) => 3 + 2 * (i % n);
+  for (let i = 0; i < n; i++) index.push(0, top(i + 1), top(i), 1, floor(i), floor(i + 1), top(i), top(i + 1), floor(i), top(i + 1), floor(i + 1), floor(i));
+  const geometry = new T.BufferGeometry();
+  geometry.setAttribute('position', new T.Float32BufferAttribute(position, 3));
+  geometry.setIndex(index);
+  return geometry;
+}
 export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) {
   const A = plan.AIRPORT;
   for (const [id, m] of models) {
@@ -244,10 +266,8 @@ export function addHitBoxes(parent: T.Object3D, models: Map<BuildingId, Model>) 
       }
     }
     if (id === 'tropic-island') {
-      const P = plan.TROPIC,
-        tall = TROPIC_HIT.top + TROPIC_HIT.below,
-        ground = new T.Mesh(new T.CylinderGeometry(1, 1, tall, TROPIC_HIT.sides).scale(P.a, 1, P.b), hit.material);
-      ground.position.set(P.x - centre.x, tall / 2 - TROPIC_HIT.below - centre.y, P.z - centre.z);
+      const ground = new T.Mesh(tropicSlab(), hit.material);
+      ground.position.set(-centre.x, -centre.y, -centre.z);
       ground.userData.buildingId = id;
       hit.add(ground);
     }
