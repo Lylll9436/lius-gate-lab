@@ -245,7 +245,7 @@ export const SHRUB = {
  * RAIN_CROWN's), each lobe's height varied `vary` either way, and for about every `tuft.every` of its
  * length and width a tuft of `tuft.leaves` leaves (the shrubs' own ovate leaves, `tuft.length` long,
  * `tuft.width` of that across) standing up and out of its top (`tuft.rise` radians up at the foot,
- * drooping `tuft.droop`): one leafy border, massed, never a row of balls, a clipped hedge or smooth
+ * drooping `tuft.droop`; none on a single shrub, which stays one leafy mound): one leafy border, massed, never a row of balls, a clipped hedge or smooth
  * putty with leaf-shaped chips stamped on it (the final check's finding against the old arching flaps). A bed `wide.from` or more across is massed two deep (`wide`): its
  * field on a coarser `grid` (its lobes are big enough for it) with a broader `fillet`, its lobes `spacing` of its width apart,
  * `across` as wide, staggered `stagger` of its half-width either side of its line by turns and their
@@ -1112,6 +1112,7 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       // of more varied heights, so it reads as shrubs two deep, never one long cushion.
       W = width >= B.wide.from ? B.wide : null,
       n = length > 0 ? Math.max(2, Math.round(length / ((W ? W.spacing : B.spacing) * width)) + 1) : 1,
+      lone = n === 1,
       side: [number, number] = length > 0 ? [-(b[1] - a[1]) / length, (b[0] - a[0]) / length] : [0, 0],
       lobes: Lobe[] = [];
     let floor = Infinity,
@@ -1139,7 +1140,9 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       // either side of it, so it reads as massed leafy shrubs, not a clipped hedge or smooth putty.
       leaves: T.BufferGeometry[] = [mass],
       U = B.tuft,
-      count = fan ? Math.max(1, Math.round((length + width) / U.every)) : 0,
+      // (None on a single shrub: one tuft out of its crown reads as a sprout or a fruit's sepals, so it
+      // stays one leafy mound, its florets its leaves.)
+      count = fan && !lone ? Math.max(1, Math.round((length + width) / U.every)) : 0,
       us = [0, 0.45, 1];
     for (let k = 0; k < count; k++) {
       const t = count === 1 ? 0.5 : (k + 0.5) / count,
@@ -1147,10 +1150,11 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
         x = a[0] + (b[0] - a[0]) * t + side[0] * off,
         z = a[1] + (b[1] - a[1]) * t + side[1] * off,
         foot = new T.Vector3(x, ground(x, z) + height * (U.foot + 0.1 * h(k + 120)), z),
-        spin = h(k + 100) * Math.PI * 2;
-      for (let n = 0; n < U.leaves; n++) {
+        spin = h(k + 100) * Math.PI * 2,
+        many = U.leaves;
+      for (let n = 0; n < many; n++) {
         // (Round the tuft for a bed with room all round; else fanned within its spread of `toward`.)
-        const heading = fan!.spread >= Math.PI ? spin + (n / U.leaves) * Math.PI * 2 + (h(k * 7 + n + 300) - 0.5) * 0.6 : fan!.toward + fan!.spread * ((2 * n + 1) / U.leaves - 1) + (h(k * 7 + n + 300) - 0.5) * 0.3,
+        const heading = fan!.spread >= Math.PI ? spin + (n / many) * Math.PI * 2 + (h(k * 7 + n + 300) - 0.5) * 0.6 : fan!.toward + fan!.spread * ((2 * n + 1) / many - 1) + (h(k * 7 + n + 300) - 0.5) * 0.3,
           long = U.length * (0.85 + 0.3 * h(k * 7 + n + 140)),
           W = U.width * long,
           tint = 0.96 + 0.1 * h(k * 7 + n + 160),
