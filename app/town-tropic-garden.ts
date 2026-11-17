@@ -25,7 +25,7 @@ import { TEA, chairParts, placed, solidMesh, tableSet, toned, turned, turns, typ
  * or its lean along a stated axis) and never moves that group: whoever places it sets its position and
  * turn. tropicGarden() places the whole garden in the island's frame (origin at its middle, +x east, +z
  * south, y up from the water level the land's own ground is measured from) round SDE4 as the other
- * lanes build it: its roof's middle at (1.2, -1.1), its front due south, the land's two walks and its coast
+ * lanes build it: its roof's middle at (1.2, -1.1), its front due south, the land's walks and its coast
  * (town-plan's tropic island), the round plaza on the land's level terrace before the door (the land
  * lays no paving there: TropicSite.plaza) and SDE4 as its plan says (town-sde4's sde4Plan,
  * TROPIC_GARDEN.building).
@@ -1485,8 +1485,8 @@ export type TropicBuilding = {
  *   frame: the lawn, or the beach's shore profile off it, where the palms stand);
  * - `desk`: SDE4's desk anchor, the desk's middle on the veranda's deck (y the deck's top) and the
  *   heading its sitter faces (0 is +z, south);
- * - `cafe`: SDE4's café anchor, the café table's middle on the lawn and the heading its sitter faces
- *   (east-south-east);
+ * - `cafe`: SDE4's café anchor, the café table's middle on the walks' café terrace and the heading its
+ *   sitter faces (south-east, over the lawn to the bay); the set stands on the terrace's paving;
  * - `building`: SDE4's measures the garden keeps its beds off (TropicBuilding: its footprint and
  *   columns; the checks read the rest), TROPIC_GARDEN.building when not given;
  * - `plaza`: where the round plaza goes, on land that lays no paving of its own there (the tropic
@@ -1549,28 +1549,34 @@ export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
  * - `file`: the island's file's bearing (the gate's), toward which each rain tree's hem draws into its bay;
  * - `building`: SDE4 as its plan stands it (tropicBuilding of sde4Plan: its roof's middle at (1.2, -1.1),
  *   its podium's top 0.12 over the land's terrace, the desk's middle at (3.9, -1.7) facing south, the
- *   café table's middle at (-3.25, 3.7) facing east-south-east);
+ *   café table's middle on the walks' café terrace (town-plan's TROPIC_PATHS.cafe: 1.0 west of the
+ *   plaza's rim, (-4.05, 2.48) on take b's plan) facing south-east);
  * - `walks`: Filip's day as tropic-figure lays it (FILIP_SITE): the call stretch's middle line and his
  *   pacing turn, and the points of his walks between his stations, which the planting keeps the
  *   walkers' clearance from;
  * - rain trees: the big one on the east lawn beside the veranda's open bay (photo 1's big trees stand to
- *   the building's right), its crown clear of the desk's lines of sight; the small one on the west lawn
- *   west of the café (the café at the rim of its shade), as near as keeps Filip in sight from all
- *   four of the file's Rotate stops (it is 45 degrees off the two that look past it);
- * - palms on the sandy beach (two on the bay's crescent, two on the fuller south-east by the tail),
+ *   the building's right), its crown clear of the desk's lines of sight and its hem over the tree walk's
+ *   seat (the seat and its bench in sight from the file); the small one on the west lawn north-west of
+ *   the café terrace, its shade reaching the terrace's west end (the café at the rim of its shade), as
+ *   near as keeps Filip in sight at the café from all four of the file's Rotate stops;
+ * - palms on the sandy beach (two on the bay's crescent, one each side of the bay walk's axis framing
+ *   its landing, two on the fuller south-east by the tail),
  *   each at a bearing from the island's middle and `shore` out on the beach's profile from the turf's
  *   edge (on the dry sand), leaning out to sea along the coast's own normal there, their crowns no more
  *   than about a unit past the waterline (a third of one as they stand), clear of every station's
  *   lines of sight (the bay's pair west of the call stretch's lines to the file's camera and to the
  *   south-west stop's, the tail's pair east of them);
- * - frangipani: two on the west lawn, one off the west screen's corner and one on the knoll west of the café
- *   (the land's south walk takes the strip below the plaza, and its bay leaves no lawn beyond it);
+ * - frangipani: two on the west lawn, one off the west screen's corner beside the café terrace and one
+ *   on the knoll (the mound) to the south-west;
  * - beds of massed leafy shrubs (bedGeometry: a line, its width and height, and which way their broad
- *   leaves arch out, away from what they stand against) along SDE4's foot: before
- *   the west screen, in the strip between the plaza and the front walk, east of the veranda's
- *   ramp, along the back and the podium's west edge, and single shrubs on the lawn's edge by the
- *   south-east and south-west beaches, at the big rain tree's foot and two on the north lawn with a low bed between them; heliconia
- *   fans as accents in the beds. The south lawn stays open, as photo 1's does.
+ *   leaves arch out, away from what they stand against) along SDE4's foot: a low bed backing the café
+ *   terrace's north side where it passes the building's south-west corner (its leaves arching north,
+ *   away from the paving), one inside the tree walk's arc along the podium's east face, along the back
+ *   and the podium's west edge, and single shrubs on the lawn's edge by the south-east and south-west
+ *   beaches, at the big rain tree's foot and two on the north lawn with a low bed between them;
+ *   heliconia fans as accents in the beds. The forecourt is the building's front edge (no bed between
+ *   it and the podium), and the south lawn between the bay walk and the tree walk stays one open panel,
+ *   as photo 1's does.
  */
 export const TROPIC_GARDEN = {
   file: Math.PI / 4 - 0.18,

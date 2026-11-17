@@ -182,16 +182,17 @@ export function filipSolidReach(s: FilipSolid) {
  * - `desk`: the veranda desk's middle (SDE4's desk anchor), the heading its sitter faces (south, over
  *   the lawn) and `y`, the deck the desk and its chair stand on (floor there if not given); his chair
  *   stands behind it (FILIP_DESK);
- * - `cafe`: the café table's middle (SDE4's café anchor), the heading its sitter faces (east-south-
- *   east, his profile to the island's file) and `y`, the ground the café set stands on (the garden
+ * - `cafe`: the café table's middle (SDE4's café anchor), the heading its sitter faces (south-east,
+ *   over the lawn to the bay and toward the island's file) and `y`, the ground the café set stands on (the garden
  *   stands the table and both its chairs at one height: floor at the table's middle if not given);
  *   his chair stands on the far side of it (FILIP_CAFE);
  * - `call`: the call stretch (its two ends: the garden's), along which he paces on the phone: along a
- *   line 2·`turn` to its left (toward the building), round a U-curve `turn` in radius at its end and
- *   back along the stretch itself, and so on;
+ *   line 2·`turn` to its left, round a U-curve `turn` in radius at its end and back along the stretch
+ *   itself, and so on;
  * - `ways`: the points his walks go through, their ends left out: `out`, from his desk's side down the
- *   veranda's ramp to the call stretch's far end; `across`, from the call stretch's near end over the
- *   lawn to his café chair's side; `home`, from there back up the ramp to his desk's side;
+ *   veranda's ramp to the call stretch's far end (its last points on the stretch's left line, heading
+ *   down it); `across`, from the call stretch's near end (a sliver on, then round onto the stretch's own
+ *   line) to his café chair's side; `home`, from there back up the ramp to his desk's side;
  * - `solids`: what stands where he goes besides his furniture (SDE4's columns, their collars and pads,
  *   its stack and fin block, the veranda's planters with their planting, its entrance steps; the
  *   court's drum), and `inland`, how far (x, z) is in from the turf's lip (negative off the lawn):
@@ -244,10 +245,12 @@ export const FILIP_SOLIDS: FilipSolid[] = (() => {
 })();
 /**
  * Where his day happens on the island (FilipSite): the floor (filipFloor); SDE4's desk anchor on its
- * veranda's deck (y the deck's top) and its café anchor beside the plaza (y the lawn there, where the
- * garden stands the whole café set); the call stretch (the land's call walk's last 1.6, TROPIC_PATHS);
- * his ways, through the gap between the veranda's planters (SDE4's `way`, where no leaf leans in) and
- * down its ramp; the solids (FILIP_SOLIDS); and how far in from the turf's lip a point is (town-plan's
+ * veranda's deck (y the deck's top) and its café anchor on the walks' café terrace (y the terrace's
+ * paving, where the garden stands the whole café set); the call stretch on the bay walk
+ * (TROPIC_PATHS.stretch); his ways, through the gap between the veranda's planters (SDE4's `way`, where
+ * no leaf leans in) and down its ramp, then on the walks' paving, worked out from the plan (TROPIC_PATHS
+ * and TROPIC_PLAZA: his line along the forecourt, his ring round the plaza's drum and the turns onto
+ * and off it, his line across the plaza's south half onto the café terrace), never hand-placed; the solids (FILIP_SOLIDS); and how far in from the turf's lip a point is (town-plan's
  * tropicInland). His ways keep 0.27 (the walkers' clearance) from every column, wall and piece of
  * furniture, all of him clear of every solid (his phone arm out to his side too), and 1.2 or more
  * inside the turf's lip.
@@ -992,11 +995,12 @@ function gestureAt(t: number, at: number[], seconds: number) {
  * The day: at the desk working (the day's start: time 0 is his hands at rest on the keys, the frozen
  * frame); up out of his chair to its side and a little back from the desk; off round the desk's end,
  * taking his phone from his pocket to his ear as he goes (a look at its screen on the way), and on the
- * phone down the veranda's ramp and over the lawn to the call stretch's far end; pacing it (a length along its
+ * phone down the veranda's ramp, west along the forecourt and round the plaza's drum to the call
+ * stretch's far end on the bay walk; pacing it (a length along its
  * near side, round a U-curve and back along its far side, a moment standing to listen, round again
- * and a last length), his phone back in his pocket; over the lawn to the café table and round to his
- * chair's side, into his chair, coffee (three drinks, a look out over the sea between them), up
- * again; back over the lawn, up the ramp, round behind his desk to its side, into his chair, and his
+ * and a last length), his phone back in his pocket; up the bay walk, across the plaza onto the café
+ * terrace and round the table to his chair's side, into his chair, coffee (three drinks, a look out
+ * over the sea between them), up again; back over the terrace, the plaza and the forecourt, up the ramp, round behind his desk to its side, into his chair, and his
  * hands back up to the keys. His cup stays in the café table's saucer all day but while he drinks;
  * his phone is in his pocket but from his answering it, as he sets off, to his putting it away.
  */

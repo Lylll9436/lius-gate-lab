@@ -210,8 +210,10 @@ export type Sde4Box = Sde4Rect & { y0: number; y1: number; name: string };
  * - `desk`: the veranda desk's middle on the deck (y the deck's top), heading the way he looks
  *   from his chair behind it (south, over the lawn to the file's camera);
  * - `entrance`: the middle of the entrance doors on the floor, heading out of them;
- * - `cafe`: the café table's middle beside the court, in front of the west screen (y the lawn the
- *   podium assumes beside it: at.y - lift), heading the way he looks from his chair (east-south-east);
+ * - `cafe`: the café table's middle on the walks' café terrace west of the plaza (town-plan's
+ *   TROPIC_PATHS.cafe, solved from the plaza and the podium: so it moves with them; y the lawn the
+ *   podium assumes beside it: at.y - lift, the garden standing the set on the terrace's paving over
+ *   it), heading the way he looks from his chair (south-east, over the lawn to the bay);
  * - `court`: the step's foot before the entrance, where the court's paving is to meet it (y the lawn level);
  * - `ramp`: the veranda's 1:6 ramp off the podium's front: its top on the podium's kerb and its foot
  *   on the lawn (each in the middle of its width, heading up it, north), its width and its sides (x0, x1);
