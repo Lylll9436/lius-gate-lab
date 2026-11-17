@@ -23,7 +23,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 
 中央广场上的拱门立在倒影池中，四条大道通向环路；北侧是带钟楼的市政厅，西侧是并排而立、彼此留有间距的三栋联排住宅（三位成员的家），联排北端是一栋浅色石灰石的现代访问博士公寓，东侧是玻璃研究工作室和带塔吊的预留地块，南侧港口旁是红砖档案馆、街角公园、码头、港湾里的小船和近海的灯塔；北岸外一座人工小岛上是机场（跑道、出发大厅、塔台和登机桥，登机桥旁停着一架涂着电车配色的小飞机，每三分钟推出、滑行、向西起飞，从东边飞回降落再滑回登机桥；西边一座机库，跑道东头一只随风摆动的风向袋；停机坪南边停着一辆行李牵引车和两节行李车，登机桥旁一排三个路锥），由一条穿过市政厅后面的小路和石砌堤道与小城相连；码头边系着小艇，沙滩上有渔笼、晾着的渔网、礁石水洼、海藻和浮木，靠水的一侧是湿沙。另有热气球、海鸥、有轨电车、行人、浮标和外围的山丘林地；还有几处苏格兰的小细节：西南干石墙围栏里的两头高地牛和一头小牛，山上的石楠与黑脸羊，西北岬角的立石圈，公园里的格子呢野餐毯，外围与公园里的白桦和挂红果的花楸（随季节开花、结果、落叶），以及市政厅西侧戴着交通锥的威灵顿公爵骑马像。广场铺成绕拱门的花岗岩石板环和一圈小方石，斑马线处路缘降低并铺上导盲砖，路面上有井盖、雨水口、补丁和淡淡的车辙；住宅和小屋的窗台上有花箱，档案馆南墙和一间小屋的山墙爬着常春藤，联排后院各有一条晾衣绳，研究工作室的玻璃上有麦金托什式的细竖棂与小方格。九栋建筑都可以在小城视图中单独近看外观。
 
-造型借鉴《部落冲突》（Clash of Clans）：敦实夸张的比例、大屋顶与厚基座、粗框门窗、圆润的两色树冠；渲染取 C4D 式的干净柔和：工作室环境光、柔边阴影、烘焙在顶点上的接触阴影与檐下阴影、圆角几何、哑光材质，不描边。整体饱和度由一个调色参数统一压低到 0.72，呈现更克制的现代配色。整座城约 72 万三角面、369 个网格（其中天空之岛 45 个网格、8.68 万三角面），带设备分级（低端设备降低像素比与多重采样）和帧率调节，目标是在大多数设备上流畅。
+造型借鉴《部落冲突》（Clash of Clans）：敦实夸张的比例、大屋顶与厚基座、粗框门窗、圆润的两色树冠；渲染取 C4D 式的干净柔和：工作室环境光、柔边阴影、烘焙在顶点上的接触阴影与檐下阴影、圆角几何、哑光材质，不描边。整体饱和度由一个调色参数统一压低到 0.72，呈现更克制的现代配色。整座城约 79.7 万三角面、399 个网格（其中天空之岛 45 个网格、8.68 万三角面，热带之岛 30 个网格、7.7 万三角面），带设备分级（低端设备降低像素比与多重采样）和帧率调节，目标是在大多数设备上流畅。
 
 ## 代码地图
 
@@ -36,12 +36,12 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/fonts.css` | 自托管字体（Fontsource 的 Fraunces、Inter、IBM Plex Mono），不依赖 Google Fonts；不要在 globals.css 里 @import（check-pages 会校验） |
 | `app/town-plan.ts` | 小城规划：岛屿轮廓、山丘、街道、建筑位置、港口、植栽（含白桦与花楸）与路灯布置、红绿灯的位置与配时、电车与骑车人遵守信号灯的行驶时刻表、飞机三分钟一圈的滑行与起降航程、井盖雨水口与降低路缘等街道细节 |
 | `app/town-build.ts` | 程序化建模的装配：分阶段调用各部件模块，再按材质家族合批 |
-| `app/town-shared.ts` `app/town-kit.ts` `app/town-ground.ts` `app/town-streets.ts` `app/town-nature.ts` `app/town-props.ts` `app/town-harbour.ts` `app/town-homes.ts` `app/town-residence.ts` `app/town-airport.ts` `app/town-sky.ts` `app/town-sky-garden.ts` `app/town-sky-villa.ts` `app/town-buildings.ts` `app/town-movers.ts` `app/town-country.ts` `app/town-batch.ts` | 小城的各类部件：配色与公用布局、建筑零件、地形与地面贴图、街道与广场、树木与花草、街具与红绿灯、自行车架与塔吊、码头、海滩小景与灯塔、成员住宅与小屋、访问博士公寓、机场小岛（堤道、跑道与出发大厅）、天空之岛（草坪、土石岩体、红砖别墅与花园：茶桌、望远镜、花境、园灯与夜里灯下的光斑、从岛缘缺口漫下的短瀑布与云团、浮云和浮石）、拱门与公共建筑、热气球、车船与自行车、高地牛、池中鸭子与苏格兰小景、合批（含每块玻璃自己的夜间窗灯） |
+| `app/town-shared.ts` `app/town-kit.ts` `app/town-ground.ts` `app/town-streets.ts` `app/town-nature.ts` `app/town-props.ts` `app/town-harbour.ts` `app/town-homes.ts` `app/town-residence.ts` `app/town-airport.ts` `app/town-sky.ts` `app/town-sky-garden.ts` `app/town-sky-villa.ts` `app/town-tropic.ts` `app/town-sde4.ts` `app/town-tropic-garden.ts` `app/town-buildings.ts` `app/town-movers.ts` `app/town-country.ts` `app/town-batch.ts` | 小城的各类部件：配色与公用布局、建筑零件、地形与地面贴图、街道与广场、树木与花草、街具与红绿灯、自行车架与塔吊、码头、海滩小景与灯塔、成员住宅与小屋、访问博士公寓、机场小岛（堤道、跑道与出发大厅）、天空之岛（草坪、土石岩体、红砖别墅与花园：茶桌、望远镜、花境、园灯与夜里灯下的光斑、从岛缘缺口漫下的短瀑布与云团、浮云和浮石）、热带之岛（不规则的沙岸与岩岸、草坪与小路、卡通的 SDE4 楼，雨树、椰子树和鸡蛋花的花园，咖啡桌与书桌）、拱门与公共建筑、热气球、车船与自行车、高地牛、池中鸭子与苏格兰小景、合批（含每块玻璃自己的夜间窗灯） |
 | `app/city-scene.ts` | 渲染器、镜头、光照、昼夜 / 天气、悬停与点击、单栋建筑近看 |
 | `app/glasgow-sun.ts` | 格拉斯哥太阳位置、当地时间与季节，以及夜间窗灯随当地时间逐扇熄灭的时钟（`windowClock`）；首屏直接使用，不得引入 three（check-pages 会校验） |
 | `app/city-atmosphere.ts` | 雨、海鸥、主光方向（含晨昏的低角度日光） |
 | `app/city-water.ts` `app/city-ink.ts` | 水面着色器与天空之岛在海上的影子；最终合成（多重采样、接触阴影、选中光圈），深度方法参考 xi4u，MIT，见 THIRD_PARTY_NOTICES.md |
-| `app/city-materials.ts` `app/city-people.ts` `app/sky-figure.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、天空之岛上的 Alison（她的样子与姿势；她的一天在 `town-plan.ts` 的 `alisonDay`）、路灯、近看取景、悬停状态 |
+| `app/city-materials.ts` `app/city-people.ts` `app/figure-rig.ts` `app/sky-figure.ts` `app/tropic-figure-look.ts` `app/tropic-figure.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、两位近邻小人共用的骨架、量度和瓷器（`figure-rig.ts`）、天空之岛上的 Alison（她的样子与姿势；她的一天在 `town-plan.ts` 的 `alisonDay`）、热带之岛上的 Filip（他的样子在 `tropic-figure-look.ts`，他的一天：书桌、打电话、咖啡，在 `tropic-figure.ts`）、路灯、近看取景、悬停状态 |
 | `app/city-data.ts` `app/city-districts.ts` `app/lab-navigation.ts` `app/lab-records.ts` `app/content-schema.ts` | 建筑文案、分区、地址与章节映射、内容目录与校验 |
 | `content/lab.json` | 人员、研究、活动、成果、研究记录，以及近邻（`neighbours`：Alison Heppenstall 和她的团队 UIA、Filip Biljecki 和他的团队 UAL，不是成员；显示在天空之岛、热带之岛的小城资料和「关于」一章的「近邻」卡片上，草稿示例是 `content/examples/neighbour.json`）；见 MAINTENANCE.md「近邻」 |
 

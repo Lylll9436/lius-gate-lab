@@ -539,12 +539,12 @@ export function skyExtent(marks: T.Vector3[]) {
   return points;
 }
 /**
- * The tropic island, a neighbour's island on the sea off the south shore (town-tropic's
- * TROPIC_EXTENT: the outline of its sand and beach at the water, the tops of its roof and its trees):
- * its middle on the water, the middle of the box round the extent's points at the water (under half a
- * unit up), where its pan pocket stands (PAN.tropic).
+ * The tropic island, a neighbour's island on the sea off the south shore: its middle on the water
+ * (plan.TROPIC, decision 2's (19.5, 51): its natural coast reaches 14.1 from it at the most, its tail
+ * on the east-south-east), where its pan pocket stands (PAN.tropic) and from which the town's shadow
+ * box pushes TROPIC_EXTENT's points out.
  */
-export const TROPIC_MIDDLE = new T.Box3().setFromPoints(TROPIC_EXTENT.filter((p) => p.y < 0.5)).getCenter(new T.Vector3()).setY(0);
+export const TROPIC_MIDDLE = new T.Vector3(plan.TROPIC.x, 0, plan.TROPIC.z);
 /** The smallest circle round points on the ground plan (incremental, as Welzl's): its middle and radius. */
 export function enclosingCircle(points: readonly { x: number; z: number }[]) {
   type Circle = { x: number; z: number; r: number };

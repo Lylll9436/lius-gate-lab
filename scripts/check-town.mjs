@@ -6708,10 +6708,11 @@ function crossingEdges(X, Y) {
       return { root, raw, stations };
     }),
     { root, raw, stations } = layoutTime.built;
-  // (About 70 ms at the limits' pace when first measured: the limit is about three times that. Its
-  // sculpted canopies and beds took it to 100 to 160 under load; the town builds it in a phase of its
-  // own, 'tropic garden', held to its own limit with the island's others.)
-  inTime('The tropic garden\'s build and batch', layoutTime, 210);
+  // (About three times what it takes at the limits' pace: set at the merge from eight runs at loads of
+  // 6 to 9 on 15 cores, median 169 ms, its sculpted canopies and beds and the plaza in it; made five
+  // times slower it failed twice, at 904 and 825 ms. The town builds it in a phase of its own, 'tropic
+  // garden', held to its own limit with the island's others.)
+  inTime('The tropic garden\'s build and batch', layoutTime, 500);
   root.updateMatrixWorld(true);
   raw.updateMatrixWorld(true);
   const all = meshesOf(root),
@@ -11286,14 +11287,14 @@ let tropicReport = '';
   assert.equal(phaseNames[phaseNames.indexOf('sky rock') + 1], 'tropic ground', 'The tropic island\'s ground is not built after the sky island\'s.');
   assert.equal(phaseNames[phaseNames.indexOf('batch sky') + 1], 'batch tropic', 'The tropic island is not batched right after the sky island.');
   assert.equal(phaseNames[phaseNames.indexOf('batch sky villa') + 1], 'batch tropic building', 'The tropic island\'s building is not batched after every other building.');
-  // Each held to its own limit (timed builds, above), set at the land lane for its ground and the
-  // building's stand-in, about three times what each takes at the limits' pace (19 to 25, 5 to 6 and 4
-  // to 5 ms, measured under loads of 10 to 50 on 15 cores: no quiet machine was to be had), so that
-  // one five times slower fails. The island's building, garden and figure join these phases at the
-  // merge: the limits are set again then, on a quiet machine (uptime first), for what they cost.
+  // Each held to its own limit (timed builds, above): about three times what each takes at the limits'
+  // pace, set at the merge with the island's building, garden and Filip in them, from eight runs of
+  // the town's phases at loads of 6 to 9 on 15 cores (medians 21.5, 150, 51 and 41 ms for its ground,
+  // its garden and Filip, its ground's batch with theirs, and its building's batch), so that one five
+  // times slower fails.
   assert.equal(phaseNames[phaseNames.indexOf('buildings and vehicles') + 1], 'tropic garden', 'The tropic island\'s garden and Filip are not built in a phase of their own after the buildings.');
   const paced = ['tropic ground', 'tropic garden', 'batch tropic', 'batch tropic building'].map((name) => [name, phaseTimes.get(name)]);
-  for (const [name, limit] of [['tropic ground', 60], ['tropic garden', 600], ['batch tropic', 120], ['batch tropic building', 80]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
+  for (const [name, limit] of [['tropic ground', 65], ['tropic garden', 450], ['batch tropic', 150], ['batch tropic building', 120]]) inTime(`The '${name}' phase`, phaseTimes.get(name), limit);
   // Nothing of its ground in the land's batch (only its tide line, in the shore's foam).
   each(model.land, (p, o) => assert(o === foam || !plan.onTropic(p.x, p.z, 2), 'Something of the tropic island is in the land\'s batch.'));
   // Its ground: at most four meshes (the lawn's grass, the beach's sand, and stone: the walks, which
@@ -11774,7 +11775,7 @@ let tropicReport = '';
 //   share of its own count (the panes' lights are drawn from their places, so a move of the building
 //   draws them again; the bounds hold for any draw but a three-sigma one).
 {
-  const { createSde4, sde4Plan, SDE4, SDE4_LOOK, SDE4_FAMILY, SDE4_VERANDA, SDE4_WINDOWS, SDE4_ENTRANCE, SDE4_RAILS } = await load('town-sde4'),
+  const { createSde4, sde4Plan, SDE4, SDE4_LOOK, SDE4_FAMILY, SDE4_WINDOWS, SDE4_ENTRANCE, SDE4_RAILS } = await load('town-sde4'),
     { palette } = await load('town-shared'),
     { createProps } = await load('town-props'),
     { createNature } = await load('town-nature'),
@@ -11969,10 +11970,10 @@ let tropicReport = '';
     for (const name of varyings(s.vertexShader)) assert(!new RegExp('\\b' + name + '\\b').test(s.fragmentShader) || fv.has(name), `${m.material.name}: ${name} read but not declared`);
   }
   assert(batched.length <= 12 && tris <= 30000, `SDE4 costs ${batched.length} meshes and ${Math.round(tris)} triangles.`);
-  // (About three times its build at the limits' pace when this was written: 34 ms. Since its
-  // planting turned from clipped balls to leaves it takes 24 ms at that pace, and 51 ms in a run
-  // with the machine at a load of 30.)
-  inTime('SDE4\'s build', sde4Time, 100);
+  // (About three times its build at the limits' pace: set at the merge from eight runs at loads of 6 to
+  // 9 on 15 cores, median 31.5 ms (28 to 37), with its slimmer columns and its plan; 34 ms when the lane
+  // first set 100. A build made five times slower failed it twice, at 178 and 150 ms.)
+  inTime('SDE4\'s build', sde4Time, 95);
   // Its night.
   const own = windows.filter((p) => p.place === 'tropic-island'),
     panes = parts.filter((m) => m.material.userData.surfaceKind === 'glass' && m.userData.window !== SDE4_RAILS),
