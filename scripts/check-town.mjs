@@ -5319,22 +5319,36 @@ function crossingEdges(X, Y) {
 //   60% of the way up, where an ellipsoid's are alike), and the head he is built with is that one
 //   (every vertex of it on FILIP_HEAD's surface). What sits on it is measured on it: his ears, nose
 //   and eyes where FILIP_FACE says, his ears standing 0.015 or more out of it.
-// - Likeness (work/ual-design/facts.md: short brown hair swept to the side, clean-shaven, no glasses,
-//   light skin, a white open-collar shirt): his hair short (nowhere under 0.68, so his nape shows,
-//   and clear of his ears), never bald (its top 0.02 or more over his skull), parted on his left (at
-//   0.02 and 0.06 ahead of his crown its top steps down 0.008 or more somewhere between x 0.04 and
-//   0.09, those on HEAD's width and carried to his as his hair is: times FILIP_HEAD.r[0] / HEAD.r[0])
-//   and swept across to his right (his right side, at 0.1 out so carried, 0.01 or more higher than
-//   his left); no glasses (his face is his head, neck, nose and two ears, nothing but his head lies
-//   across his eyes, and nothing but his skin and features is over them: from the town camera's
-//   height, in front and 40 degrees either side, a ray at each eye meets his face at a cell of
-//   FILIP_LOOK.eyes, not his hair); his open collar a V of skin on his chest, its point at 0.53; his
-//   sleeves rolled to the elbow (a white cuff standing 0.006 or more proud of the sleeve, his
-//   forearm bare below it).
+// - Likeness (work/ual-design/facts.md: short brown hair swept to the side, clean-shaven, no
+//   glasses, light skin, a white shirt, open at the neck in his photo and buttoned up here: the
+//   owner, 2026-11-17, found the open neck a little indecent): his hair short (nowhere under 0.68,
+//   so his nape shows, and clear of his ears), never bald (its top 0.02 or more over his skull),
+//   parted on his left (at 0.02 and 0.06 ahead of his crown its top steps down 0.008 or more
+//   somewhere between x 0.04 and 0.09, those on HEAD's width and carried to his as his hair is:
+//   times FILIP_HEAD.r[0] / HEAD.r[0]) and swept across to his right (his right side, at 0.1 out so
+//   carried, 0.01 or more higher than his left); no glasses (his face is his head, neck, nose and
+//   two ears, nothing but his head lies across his eyes, and nothing but his skin and features is
+//   over them: from the town camera's height, in front and 40 degrees either side, a ray at each
+//   eye meets his face at a cell of FILIP_LOOK.eyes, not his hair); his sleeves rolled to the elbow
+//   (a white cuff standing 0.006 or more proud of the sleeve, his forearm bare below it).
+// - His shirt buttoned up: no skin on it anywhere (every corner of his shirt's mesh is cloth); its
+//   collar one joined piece round his neck, covering the crease where his head meets his shoulders
+//   all round (looking in square to the torso 0.004 under the crease, every 5 degrees round, the
+//   collar comes first: no gap between it and his jaw), standing at most 0.015 up his head over
+//   that crease and not at all under his chin (within 0.3 of straight ahead, none of it out of his
+//   head is over the crease: his chin rests on it, not in it); its two points meeting under his
+//   chin (down his middle, from in front, the collar from the crease 0.005 to 0.02 down) and
+//   parting there, their tips (mirrored) lying on his chest 0.03 to 0.07 either side of his middle,
+//   0.03 or more under where they part; four or five buttons (cells of FILIP_LOOK.button, a muted
+//   warm shade 0.05 or more under the shirt's white, saturation 0.15 at most) down the placket's
+//   middle, each 0.016 across or less and inside the placket's 0.011 either side, evenly spaced,
+//   the top one 0.003 to 0.02 under where the points part and seen between them from in front and
+//   from the town camera's pitch, the lowest above the belt; and the placket a shade deeper (0.88
+//   to 0.97 of the shirt beside it) down his middle from the belt up to where the points part.
 {
   const { createFilip, FILIP, FILIP_FACE, FILIP_HEAD, FILIP_LOOK, FILIP_SCALE, filipHeadReach } = await load('tropic-figure-look'),
     { createAlison, poseAlison, ALISON_POSES } = await load('sky-figure'),
-    { createResident, HEAD } = await load('city-people'),
+    { createResident, HEAD, DEPTH, torsoAt } = await load('city-people'),
     { createCityMaterials } = await load('city-materials'),
     library = createCityMaterials(),
     { root, joints, props } = createFilip(library.material),
@@ -5555,24 +5569,122 @@ function crossingEdges(X, Y) {
         assert(first && first.object === face && first.point.distanceTo(eye) < 0.012 && Math.abs(drawn.r - eyes.r) + Math.abs(drawn.g - eyes.g) + Math.abs(drawn.b - eyes.b) < 1e-3, `From ${deg} degrees his ${side < 0 ? 'right' : 'left'} eye is not to be seen.`);
       }
   }
-  // His open collar: a V of skin on his chest (on the torso, between the collar and its point at
-  // 0.53); his sleeves rolled to the elbow.
+  // His shirt, buttoned up: no skin on it, its collar closed round his neck, his buttons down the
+  // placket; his sleeves rolled to the elbow.
   {
-    const torso = joints.body.children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'fabric' && !m.name),
-      q = torso.geometry.getAttribute('position'),
-      c = torso.geometry.getAttribute('color'),
-      skinLike = (k) => (colour.fromBufferAttribute(c, k).convertLinearToSRGB(), saturation(colour) > 0.2 && value(colour) > 0.6);
-    let point = Infinity,
-      skin = 0;
-    for (let i = 0; i < q.count; i += 3) {
-      if (![0, 1, 2].every((k) => skinLike(i + k))) continue;
-      const y = (q.getY(i) + q.getY(i + 1) + q.getY(i + 2)) / 3;
-      if (q.getZ(i) + q.getZ(i + 1) + q.getZ(i + 2) <= 0) continue;
-      skin++;
-      point = Math.min(point, q.getY(i), q.getY(i + 1), q.getY(i + 2));
-      assert(y > 0.53 && y < 0.645, `A cell of skin on his shirt at ${y.toFixed(3)} up, outside his collar's V.`);
+    const shirt = joints.body.children.find((m) => m.isMesh && m.material.userData.surfaceKind === 'fabric' && !m.name),
+      q = shirt.geometry.getAttribute('position'),
+      c = shirt.geometry.getAttribute('color'),
+      at = (k) => v.fromBufferAttribute(q, k).toArray().map((n) => n.toFixed(3)).join(', ');
+    for (let k = 0; k < c.count; k++) {
+      colour.fromBufferAttribute(c, k).convertLinearToSRGB();
+      assert(saturation(colour) <= 0.2 || value(colour) <= 0.6, `His shirt shows skin at ${at(k)} (${colour.getHexString()}): it is not buttoned up.`);
     }
-    assert(skin >= 10 && Math.abs(point - 0.53) < 0.002, `His open collar's V is ${skin} cells down to ${point.toFixed(3)}, not a V of skin to 0.53.`);
+    const collars = pieces(shirt).filter((p) => p.centre.y > 0.55 && p.size.y < 0.12 && p.size.x > 0.15 && p.size.z > 0.15);
+    assert.equal(collars.length, 1, `His collar is ${collars.length} pieces round his neck, not one.`);
+    const collar = new Set(collars[0].points),
+      onTorso = (a, y) => new T.Vector3(torsoAt(y) * Math.sin(a), y, torsoAt(y) * Math.cos(a) * DEPTH),
+      // Where his head meets his shoulders at azimuth a (0 ahead): where the torso comes out of his head.
+      crease = (a) => {
+        let lo = 0.58,
+          hi = 0.642;
+        for (let k = 0; k < 40; k++) {
+          const m = (lo + hi) / 2,
+            p = onTorso(a, m);
+          if (filipHeadReach(p.x, p.y, p.z) > 1) lo = m;
+          else hi = m;
+        }
+        return (lo + hi) / 2;
+      },
+      ray = new T.Raycaster(),
+      // What of his shirt a ray from `from` towards `to` meets first: its triangle's first corner and whose it is.
+      meets = (from, to) => {
+        ray.set(from, to.clone().sub(from).normalize());
+        const hit = ray.intersectObject(shirt)[0];
+        return hit ? { k: hit.face.a, of: collar.has(hit.face.a) ? 'collar' : 'shirt' } : { k: -1, of: 'nothing' };
+      };
+    // The collar meets his jaw all round: 0.004 under the crease, looking in square to the torso, it comes first.
+    for (let deg = 0; deg < 360; deg += 5) {
+      const a = (deg * Math.PI) / 180,
+        y = crease(a) - 0.004,
+        p = onTorso(a, y),
+        r = torsoAt(y),
+        n = new T.Vector3(p.x / r, -(torsoAt(y + 1e-4) - torsoAt(y - 1e-4)) / 2e-4, p.z / (r * DEPTH * DEPTH)).normalize();
+      assert.equal(meets(p.clone().addScaledVector(n, 0.05), p).of, 'collar', `At ${deg} degrees round his neck his collar does not reach the crease under his jaw: a gap between them.`);
+    }
+    // It stands up his head no more than a band does, and under his chin not at all: his chin rests on it.
+    for (const k of collar) {
+      v.fromBufferAttribute(q, k);
+      if (filipHeadReach(v.x, v.y, v.z) <= 1) continue;
+      const a = Math.atan2(v.x, v.z / DEPTH),
+        over = v.y - crease(a);
+      assert(over <= 0.015 && (Math.abs(a) > 0.3 || over <= 0.001), `His collar stands ${over.toFixed(4)} up his head at ${at(k)}${Math.abs(a) <= 0.3 ? ': his chin sinks into it' : ''}.`);
+    }
+    // Its points meet under his chin, down his middle, then part.
+    const front = crease(0);
+    let parted = NaN;
+    for (let y = front - 0.0005; y > 0.55; y -= 0.0005)
+      if (meets(new T.Vector3(0, y, 1), new T.Vector3(0, y, 0)).of !== 'collar') {
+        parted = y;
+        break;
+      }
+    assert(front - parted >= 0.005 && front - parted <= 0.02, `His collar's points meet ${(front - parted).toFixed(4)} down his middle under his chin: closed there 0.005 to 0.02, then parting.`);
+    const tips = [-1, 1].map((s) => {
+      let low = null;
+      for (const k of collar) {
+        v.fromBufferAttribute(q, k);
+        if (Math.sign(v.x) === s && v.z > 0 && (!low || v.y < low.y)) low = v.clone();
+      }
+      return low;
+    });
+    for (const tip of tips) assert(Math.abs(tip.x) > 0.03 && Math.abs(tip.x) < 0.07 && tip.y > 0.54 && tip.y < parted - 0.03 && tip.z > 0.1, `A point of his collar ends at ${tip.toArray().map((n) => n.toFixed(3)).join(', ')}: not lying on his chest beside his top button.`);
+    assert(Math.abs(tips[0].x + tips[1].x) < 1e-4 && Math.abs(tips[0].y - tips[1].y) < 1e-4 && Math.abs(tips[0].z - tips[1].z) < 1e-4, 'His collar\u2019s points are not a mirrored pair.');
+    // His buttons: the cells of his shirt in FILIP_LOOK.button (its colour's direction: the torso's
+    // tone only darkens it), grouped by height.
+    const tint = new T.Color(L.button),
+      way = new T.Vector3(tint.r, tint.g, tint.b).normalize(),
+      buttonLike = (k) => new T.Vector3(c.getX(k), c.getY(k), c.getZ(k)).normalize().distanceTo(way) < 1e-3,
+      cells = new Set(),
+      buttons = [];
+    for (let i = 0; i < q.count; i += 3) {
+      if (![0, 1, 2].every((k) => buttonLike(i + k))) continue;
+      cells.add(i);
+      const box = new T.Box3();
+      for (const k of [0, 1, 2]) box.expandByPoint(v.fromBufferAttribute(q, i + k));
+      const same = buttons.find((b) => box.min.y <= b.box.max.y + 0.002 && box.max.y >= b.box.min.y - 0.002);
+      if (same) same.box.union(box);
+      else buttons.push({ box });
+    }
+    buttons.sort((a, b) => b.box.max.y - a.box.max.y);
+    assert(buttons.length >= 4 && buttons.length <= 5, `He has ${buttons.length} buttons, not a top one and three or four more.`);
+    for (const { box } of buttons) {
+      const size = box.getSize(new T.Vector3()),
+        mid = box.getCenter(new T.Vector3());
+      assert(Math.abs(mid.x) < 1e-3 && box.min.x > -0.011 && box.max.x < 0.011 && mid.z > 0.08, `His button at ${mid.y.toFixed(3)} is not on his placket.`);
+      assert(size.x >= 0.008 && size.x <= 0.016 && size.y >= 0.006 && size.y <= 0.014, `His button at ${mid.y.toFixed(3)} is ${size.x.toFixed(4)} by ${size.y.toFixed(4)}: not a small button.`);
+    }
+    const top = buttons[0].box,
+      gaps = buttons.slice(1).map((b, i) => buttons[i].box.getCenter(new T.Vector3()).y - b.box.getCenter(new T.Vector3()).y);
+    assert(parted - top.max.y >= 0.003 && parted - top.max.y <= 0.02, `His top button's top is ${(parted - top.max.y).toFixed(4)} under where his collar's points part: not just under the collar.`);
+    for (const rise of [0, Math.atan2(35, 38)]) {
+      const mid = top.getCenter(new T.Vector3()),
+        hit = meets(mid.clone().add(new T.Vector3(0, Math.sin(rise), Math.cos(rise))), mid);
+      assert(cells.has(hit.k), `From ${rise ? 'the town camera\u2019s pitch' : 'in front'} his top button is hidden (the ray meets his ${hit.of}).`);
+    }
+    assert(Math.max(...gaps) - Math.min(...gaps) < 0.005 && buttons[buttons.length - 1].box.min.y > 0.4, `His buttons are not evenly down his placket to above his belt (gaps ${gaps.map((g) => g.toFixed(4)).join(', ')}).`);
+    assert(saturation(parse(L.button)) <= 0.15 && hueOf(parse(L.button)) >= 20 && hueOf(parse(L.button)) <= 50 && value(parse(L.button)) >= 0.7 && value(parse(L.button)) <= value(parse(L.shirt)) - 0.05, 'His buttons are not a muted warm shade off his shirt\u2019s white.');
+    // The placket: a shade deeper down his middle than his shirt beside it (in linear light, as the
+    // shade is taken), from the belt up to where the points part.
+    const shadeAt = (x, y) => {
+      const { k } = meets(new T.Vector3(x, y, 1), new T.Vector3(x, y, 0));
+      let sum = 0;
+      for (const j of [0, 1, 2]) sum += value(colour.fromBufferAttribute(c, k - (k % 3) + j));
+      return sum / 3;
+    };
+    for (const y of [0.395, ...buttons.map((b, i) => (i ? (b.box.max.y + buttons[i - 1].box.min.y) / 2 : null)).filter((y) => y), (top.max.y + parted) / 2]) {
+      const ratio = shadeAt(0, y) / shadeAt(0.03, y);
+      assert(ratio >= 0.88 && ratio <= 0.97, `At ${y.toFixed(3)} up his middle is ${ratio.toFixed(3)} of his shirt beside it: no placket there.`);
+    }
     for (const k of [0, 1]) {
       const fore = joints.elbows[k].children.find((m) => m.isMesh),
         sleeve = joints.arms[k].children.find((m) => m.isMesh),

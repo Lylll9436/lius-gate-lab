@@ -10,12 +10,14 @@ import { ellipsoid, sculpt, strand, type Shape } from './town-sculpt';
  * hierarchy, so her pose maths and the residents' walk drive him unchanged; his root is scaled
  * FILIP_SCALE all over (he is taller), so every pose's numbers stay hers in his root's frame. His
  * look is the public profile's: short brown hair parted on his left and swept across to his right,
- * clean-shaven, no glasses, light skin, a white open-collar shirt with its sleeves rolled to the
- * elbow, tucked into navy chinos with a brown belt, and brown shoes. His head is his own
- * (FILIP_HEAD): a little longer and leaner than the residents' nearly round one, which read too
- * full on him. Every part is one mesh per surface kind with its colours on its vertices, as hers
- * are; features are drawn as flat colour cells whose edges are the triangles' own (the eyes and
- * brows, the open collar's skin, the placket, the buckle), so nothing thin stands free to twinkle.
+ * clean-shaven, no glasses, light skin, a white shirt with its sleeves rolled to the elbow, tucked
+ * into navy chinos with a brown belt, and brown shoes. His photo has the shirt open at the neck;
+ * here it is buttoned up (the owner, 2026-11-17: the open neck looked a little indecent), its collar
+ * closed round his neck and its buttons down the placket. His head is his own (FILIP_HEAD): a
+ * little longer and leaner than the residents' nearly round one, which read too full on him. Every
+ * part is one mesh per surface kind with its colours on its vertices, as hers are; features are
+ * drawn as flat colour cells whose edges are the triangles' own (the eyes and brows, the placket
+ * and its buttons, the buckle), so nothing thin stands free to twinkle.
  */
 type Material = (c: string, k?: SurfaceKind) => T.MeshStandardMaterial;
 type V3 = [number, number, number];
@@ -26,14 +28,16 @@ export const FILIP_SCALE = 1.08;
  * His colours (sRGB), every one at or under the figures' HSV saturation 0.55 (no exception: the
  * hair's brown is 0.53 and keeps that saturation in every shade). The shirt is a calm white a hair
  * cooler than the china (its brightest pixel under the strongest key light 242, 230, 212: it never
- * clips); the chinos a dark navy that anchors it at the overview; the eyes the residents' dark
- * brown and the brows a step deeper than the hair, both drawn on the face.
+ * clips); its buttons a pale warm grey a shade off it; the chinos a dark navy that anchors it at
+ * the overview; the eyes the residents' dark brown and the brows a step deeper than the hair, both
+ * drawn on the face.
  */
 export const FILIP_LOOK = {
   hair: '#6e4c34',
   brows: '#5a3e2b',
   skin: '#f0cba9',
   shirt: '#ece8df',
+  button: '#cfc6b8',
   trousers: '#3a4352',
   belt: '#4b392e',
   buckle: '#857152',
@@ -59,12 +63,38 @@ const CUP_AXIS = 0.058;
 /** The hair's distance grid: its triangles go as 1/h² (about 1,600 show at this spacing). */
 const HAIR_GRID = 0.02;
 /**
- * Where the open collar's V of skin runs on the torso: from its point (`tip`) up to the neck, its
- * half-width growing by `spread` over its first `rise` (then held, as the torso closes in to the
- * neck), never more than `turn` radians round from straight ahead. The placket runs from the belt
- * up to the V's point, `placket` either side of the middle.
+ * His collar, buttoned up, on the torso (azimuths from straight ahead, + to his left; heights; and
+ * distances along the torso's surface):
+ * - the band, all round his neck: its top edge `tuck` up from the crease where his head meets his
+ *   shoulders (so it is up in his head, and meets his jaw all round with no gap), its foot `band`
+ *   down his shoulders from the crease;
+ * - its two points: from `turn` round from ahead the band widens down into each, its foot running
+ *   on (bowed out through `bow`) to the point's `tip` [azimuth, height], its top edge on round the
+ *   crease to `meet`, a little past the middle, so the two front edges cross under his chin and the
+ *   points touch there, then part down and out either side of his top button;
+ * - its section: half `thick` thick round the band, `leaf` in the points, its middle `raise` of that
+ *   over his shirt; the band is `split` of the way from behind his neck to a front edge.
+ * The placket runs from the belt up under the collar, `placket` either side of the middle.
  */
-const COLLAR = { tip: 0.53, spread: 0.046, rise: 0.088, turn: 0.489, placket: 0.011 };
+const COLLAR = {
+  tuck: 0.006,
+  band: 0.026,
+  turn: 0.62,
+  meet: -0.04,
+  bow: [0.48, 0.59] as [number, number],
+  tip: [0.34, 0.552] as [number, number],
+  thick: 0.0105,
+  leaf: 0.0075,
+  raise: 0.6,
+  split: 0.62,
+  placket: 0.011,
+};
+/**
+ * His shirt's buttons, down the placket's middle: the top one just under the collar, where the
+ * points part, and four more below; each `h` either side of its middle up and down and `w` across,
+ * a small rounded cell of the placket (narrower at its top and bottom rows) in FILIP_LOOK.button.
+ */
+const BUTTONS = { at: [0.588, 0.5485, 0.509, 0.4695, 0.43], h: 0.0055, w: 0.0062 };
 /** The belt: its foot and head on the torso, how far it stands proud, and the buckle's half-width. */
 const BELT = { foot: 0.316, head: 0.388, proud: 0.008, buckle: 0.022 };
 /**
@@ -134,6 +164,8 @@ type Column = { a: number; tag?: string };
 type Corner = { p: T.Vector3; n: T.Vector3 };
 /** A ring of a surface: its columns, and the surface's point and normal at an angle. A ring of one column is a pole. */
 type Ring = { cols: Column[]; at: (a: number) => Corner };
+/** Hands a triangle (its corners) and the cell it lies in to a surface being built. */
+type Emit = (q: Corner[], cell: string) => void;
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 /**
@@ -155,7 +187,7 @@ function columns(n: number, tags: Column[] = [], gap = 0.035): Column[] {
  * each column is), so no triangle crosses a tagged edge: the stretch between two tags is a cell
  * of its own, whatever its shape. A pole (a ring of one column) is a fan.
  */
-function bridge(A: Ring, B: Ring, emit: (q: Corner[], cell: string) => void) {
+function bridge(A: Ring, B: Ring, emit: Emit) {
   const nA = A.cols.length,
     nB = B.cols.length,
     ang = (R: Ring, k: number) => {
@@ -208,9 +240,10 @@ function bridge(A: Ring, B: Ring, emit: (q: Corner[], cell: string) => void) {
 /**
  * The surface through `rings` (bottom to top), un-indexed: each triangle turned out (as its
  * corners' normals face), coloured by `colour` from its middle and the cell it lies in (its
- * stretch's two tags, 'a|b'), each corner's colour times `tone` there.
+ * stretch's two tags, 'a|b'; a cell coloured '' is left out, for `more` to fill), each corner's
+ * colour times `tone` there; `more` may add triangles of its own, through the same emit.
  */
-function ringMesh(rings: Ring[], colour: (middle: T.Vector3, cell: string) => string, tone: (p: T.Vector3) => number = () => 1) {
+function ringMesh(rings: Ring[], colour: (middle: T.Vector3, cell: string) => string, tone: (p: T.Vector3) => number = () => 1, more?: (emit: Emit) => void) {
   const pos: number[] = [],
     nor: number[] = [],
     col: number[] = [],
@@ -218,7 +251,7 @@ function ringMesh(rings: Ring[], colour: (middle: T.Vector3, cell: string) => st
     w = new T.Vector3(),
     middle = new T.Vector3(),
     c = new T.Color();
-  const emit = (q: Corner[], cell: string) => {
+  const emit: Emit = (q, cell) => {
     u.subVectors(q[1].p, q[0].p);
     w.subVectors(q[2].p, q[0].p);
     const face = u.clone().cross(w);
@@ -226,6 +259,7 @@ function ringMesh(rings: Ring[], colour: (middle: T.Vector3, cell: string) => st
     if (face.dot(q[0].n.clone().add(q[1].n).add(q[2].n)) < 0) q = [q[0], q[2], q[1]];
     middle.copy(q[0].p).add(q[1].p).add(q[2].p).multiplyScalar(1 / 3);
     const hex = colour(middle, cell);
+    if (!hex) return;
     for (const k of q) {
       pos.push(k.p.x, k.p.y, k.p.z);
       nor.push(k.n.x, k.n.y, k.n.z);
@@ -234,6 +268,7 @@ function ringMesh(rings: Ring[], colour: (middle: T.Vector3, cell: string) => st
     }
   };
   for (let i = 0; i + 1 < rings.length; i++) bridge(rings[i], rings[i + 1], emit);
+  more?.(emit);
   const g = new T.BufferGeometry();
   g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
@@ -291,34 +326,76 @@ function latheRings(P: number[][], N: [number, number][], depth: number, extra: 
 /* ------------------------------------------------------------------ */
 /* The shirt: torso, belt and collar                                   */
 /* ------------------------------------------------------------------ */
-/** How far round from straight ahead the V of his open collar reaches at height y (its edge), on the torso. */
-function collarTurn(y: number) {
-  const w = (COLLAR.spread * T.MathUtils.clamp(y - COLLAR.tip, 0, COLLAR.rise)) / COLLAR.rise,
-    r = torsoAt(y);
-  return r > 1e-6 ? Math.min(COLLAR.turn, Math.asin(Math.min(0.999, w / r))) : COLLAR.turn;
-}
+/**
+ * The torso's row the placket runs up to: the first above the crease under his chin (0.6134), so
+ * the placket's top is up in his head, under the collar's points where they meet.
+ */
+const PLACKET_TOP = 0.618;
 /**
  * The torso: a resident's (city-people's TORSO, 0.86 as deep as wide), as one smooth surface in the
- * white shirt, with the open collar's V of skin from his collarbones down to COLLAR.tip, the placket
- * a shade deeper from there down to the belt, and the chinos below it; each an exact cell of the
- * surface (its edges are the triangles'), so the V keeps a clean edge at any size. Darker a little
- * towards the waist.
+ * white shirt, white all the way up to the collar (no skin on it anywhere), the chinos below the
+ * belt, and the placket a shade deeper down its front from under the collar to the belt (between
+ * the tags pL and pR): that cell is left to placket(), which fills it more finely, its buttons cells
+ * of their own. Darker a little towards the waist.
  */
 function torsoGeometry() {
   const L = FILIP_LOOK,
     P = TORSO,
     N = profileNormals(P),
-    rings = latheRings(P, N, DEPTH, [0.352, BELT.head - 0.003, 0.5575, 0.6015], (y, r) => {
-      const tags: Column[] = [];
-      if (y > BELT.head - 0.004 && y <= COLLAR.tip + 1e-9) tags.push({ a: -COLLAR.placket / r, tag: 'pL' }, { a: COLLAR.placket / r, tag: 'pR' });
-      if (y >= COLLAR.tip - 1e-9) tags.push({ a: -collarTurn(y), tag: 'vL' }, { a: collarTurn(y), tag: 'vR' });
-      return columns(16, tags);
-    });
+    rings = latheRings(P, N, DEPTH, [0.352, BELT.head - 0.003], (y, r) =>
+      columns(16, y > BELT.head - 0.004 && y <= PLACKET_TOP + 1e-9 ? [{ a: -COLLAR.placket / r, tag: 'pL' }, { a: COLLAR.placket / r, tag: 'pR' }] : []),
+    );
   return ringMesh(
     rings,
-    (m, cell) => (cell === 'vL|vR' ? shade(L.skin, 0.96) : cell === 'pL|pR' ? shade(L.shirt, 0.93) : m.y < 0.352 ? L.trousers : m.y < BELT.head ? L.belt : L.shirt),
+    (m, cell) => (cell === 'pL|pR' ? '' : cell === 'button' ? L.button : cell === 'placket' ? shade(L.shirt, 0.93) : m.y < 0.352 ? L.trousers : m.y < BELT.head ? L.belt : L.shirt),
     (p) => T.MathUtils.lerp(0.94, 1, smooth(p.y, 0.4, 0.62)),
+    (emit) => placket(rings, emit),
   );
+}
+/**
+ * The placket, filling the torso's cell between its tags pL and pR, from under the belt up under
+ * the collar, finer than the torso's rings, so its buttons (BUTTONS) are cells of their own: each a
+ * small rounded cell between two inner columns (narrower at its top and bottom rows). Its edges are
+ * the torso's own corners there, at the torso's rows only, and the inner columns start above its
+ * foot and end below its top, so every edge it shares with the torso is the torso's (nothing is
+ * left unjoined to open a crack); the margins between the edges and the inner columns are fanned by
+ * height, and below the lowest button and above the highest it closes to its foot and top.
+ */
+function placket(rings: Ring[], emit: Emit) {
+  const edges = rings.flatMap((R) => {
+      const l = R.cols.find((c) => c.tag === 'pL'),
+        r = R.cols.find((c) => c.tag === 'pR');
+      return l && r ? [{ y: R.at(l.a).p.y, l: R.at(l.a), r: R.at(r.a) }] : [];
+    }),
+    inner = [...BUTTONS.at]
+      .sort((p, q) => p - q)
+      .flatMap((y) => [[y - BUTTONS.h, 0.6, true], [y - BUTTONS.h / 3, 1, true], [y + BUTTONS.h / 3, 1, true], [y + BUTTONS.h, 0.6, false]] as const)
+      .map(([y, k, button]) => {
+        const a = (BUTTONS.w * k) / torsoAt(y);
+        return { y, l: onTorso(-a, y), r: onTorso(a, y), button };
+      }),
+    foot = edges[0],
+    top = edges[edges.length - 1],
+    [low, high] = [inner[0], inner[inner.length - 1]];
+  // Down its middle, between the inner columns: a button's cell from its bottom row to its top.
+  for (let j = 0; j + 1 < inner.length; j++) {
+    const A = inner[j],
+      B = inner[j + 1],
+      cell = A.button ? 'button' : 'placket';
+    emit([A.l, A.r, B.r], cell);
+    emit([A.l, B.r, B.l], cell);
+  }
+  emit([foot.l, foot.r, low.r], 'placket');
+  emit([foot.l, low.r, low.l], 'placket');
+  emit([top.l, top.r, high.r], 'placket');
+  emit([top.l, high.r, high.l], 'placket');
+  for (const side of ['l', 'r'] as const) {
+    let i = 0,
+      j = 0;
+    while (i + 1 < edges.length || j + 1 < inner.length)
+      if (j + 1 >= inner.length || (i + 1 < edges.length && edges[i + 1].y <= inner[j + 1].y)) emit([edges[i][side], inner[j][side], edges[++i][side]], 'placket');
+      else emit([edges[i][side], inner[j][side], inner[++j][side]], 'placket');
+  }
 }
 /**
  * The belt round his waist: a band standing BELT.proud out from the torso, its edges rounded, its
@@ -339,10 +416,12 @@ function beltGeometry() {
     );
   return ringMesh(rings, (_, cell) => (cell === 'bL|bR' ? FILIP_LOOK.buckle : FILIP_LOOK.belt));
 }
-/** The torso's surface point and its normal at angle a (0 ahead) and height y. */
+/** The torso's profile normals ([outward, up] at each of TORSO's points), as latheRings shades it. */
+const TORSO_N = profileNormals(TORSO);
+/** The torso's surface point and its normal at angle a (0 ahead) and height y (as the torso's own rings have them). */
 function onTorso(a: number, y: number): Corner {
   const r = torsoAt(y),
-    N = profileNormals(TORSO);
+    N = TORSO_N;
   let nr = 1,
     ny = 0;
   for (let k = 1; k < TORSO.length; k++) {
@@ -360,107 +439,160 @@ function onTorso(a: number, y: number): Corner {
     n: new T.Vector3(nr * Math.sin(a), ny, (nr * Math.cos(a)) / DEPTH).normalize(),
   };
 }
+/** The crease where his head meets his shoulders: the height at azimuth a where the torso's surface comes out of his head. */
+function crease(a: number) {
+  let lo = 0.58,
+    hi = 0.642;
+  for (let k = 0; k < 40; k++) {
+    const m = (lo + hi) / 2,
+      { p } = onTorso(a, m);
+    if (filipHeadReach(p.x, p.y, p.z) > 1) lo = m;
+    else hi = m;
+  }
+  return (lo + hi) / 2;
+}
+/** The height `d` down the torso's surface from height y at azimuth a (down its meridian, over his shoulder). */
+function downTorso(a: number, y: number, d: number) {
+  const step = 0.0005;
+  let at = onTorso(a, y).p;
+  for (let k = 0; k < 1000; k++) {
+    const next = onTorso(a, y - step).p,
+      l = next.distanceTo(at);
+    if (l >= d) return y - (step * d) / l;
+    d -= l;
+    y -= step;
+    at = next;
+  }
+  return y;
+}
 /**
- * A smooth tube along a centripetal Catmull-Rom curve through `p`, its section an ellipse lying on
- * what it rests on (half-width `a` across it, half-thickness `b` along `out`, each running through
- * its list), closed at each end by a half ellipsoid as deep as it is thick; rings about `step` apart,
- * `radial` points round each, every normal the ellipse's own.
+ * A closed solid through `rings` (each the same number of corners round, in the same order), each
+ * end closed by a fan to its pole; un-indexed, each triangle turned out (as its corners' normals face).
  */
-function sweep(p: V3[], a: number[], b: number[], out: V3[], radial = 8, step = 0.022) {
-  const curve = new T.CatmullRomCurve3(p.map((q) => new T.Vector3(...q)), false, 'centripetal'),
-    length = curve.getLength(),
-    n = Math.max(3, Math.ceil(length / step)),
-    m = p.length - 1,
-    along = (list: number[], t: number) => {
-      const f = Math.min(m - 1e-9, Math.max(0, t * m)),
-        i = Math.floor(f);
-      return list[i] + (list[i + 1] - list[i]) * (f - i);
-    },
-    pos: number[] = [],
+function closedSolid(rings: Corner[][], first: Corner, last: Corner) {
+  const pos: number[] = [],
     nor: number[] = [],
-    idx: number[] = [],
-    starts: number[] = [];
-  const frames = Array.from({ length: n + 1 }, (_, i) => {
-    const u = i / n,
-      t = curve.getUtoTmapping(u, u * length),
-      c = curve.getPointAt(u),
-      tt = curve.getTangentAt(u),
-      o = new T.Vector3(along(out.map((v) => v[0]), t), along(out.map((v) => v[1]), t), along(out.map((v) => v[2]), t));
-    o.addScaledVector(tt, -o.dot(tt)).normalize();
-    return { c, t: tt, N: o, S: new T.Vector3().crossVectors(o, tt), A: along(a, t), B: along(b, t) };
-  });
-  const ring = (f: (typeof frames)[number], lat: number, end: number) => {
-    starts.push(pos.length / 3);
-    const ca = Math.cos(lat),
-      sa = Math.sin(lat);
-    for (let j = 0; j < radial; j++) {
-      const th = (j / radial) * TAU,
-        x = Math.cos(th),
-        y = Math.sin(th),
-        q = f.c.clone().addScaledVector(f.S, f.A * x * ca).addScaledVector(f.N, f.B * y * ca).addScaledVector(f.t, f.B * sa * end),
-        nn = f.S.clone().multiplyScalar((x * ca) / f.A).addScaledVector(f.N, (y * ca) / f.B).addScaledVector(f.t, (sa * end) / f.B).normalize();
-      pos.push(q.x, q.y, q.z);
-      nor.push(nn.x, nn.y, nn.z);
+    u = new T.Vector3(),
+    w = new T.Vector3(),
+    emit = (q: Corner[]) => {
+      u.subVectors(q[1].p, q[0].p);
+      w.subVectors(q[2].p, q[0].p);
+      const face = u.clone().cross(w);
+      if (face.lengthSq() < 1e-16) return;
+      if (face.dot(q[0].n.clone().add(q[1].n).add(q[2].n)) < 0) q = [q[0], q[2], q[1]];
+      for (const k of q) {
+        pos.push(k.p.x, k.p.y, k.p.z);
+        nor.push(k.n.x, k.n.y, k.n.z);
+      }
+    },
+    n = rings[0].length;
+  for (let j = 0; j < n; j++) {
+    emit([first, rings[0][j], rings[0][(j + 1) % n]]);
+    emit([last, rings[rings.length - 1][j], rings[rings.length - 1][(j + 1) % n]]);
+    for (let i = 0; i + 1 < rings.length; i++) {
+      const [A, B] = [rings[i], rings[i + 1]];
+      emit([A[j], A[(j + 1) % n], B[(j + 1) % n]]);
+      emit([A[j], B[(j + 1) % n], B[j]]);
     }
-  };
-  const pole = (f: (typeof frames)[number], end: number) => {
-    pos.push(f.c.x + f.t.x * f.B * end, f.c.y + f.t.y * f.B * end, f.c.z + f.t.z * f.B * end);
-    nor.push(f.t.x * end, f.t.y * end, f.t.z * end);
-    return pos.length / 3 - 1;
-  };
-  const first = pole(frames[0], -1);
-  for (const lat of [(Math.PI * 3) / 8, Math.PI / 5]) ring(frames[0], lat, -1);
-  for (const f of frames) ring(f, 0, 1);
-  for (const lat of [Math.PI / 5, (Math.PI * 3) / 8]) ring(frames[n], lat, 1);
-  const last = pole(frames[n], 1);
-  for (let k = 0; k < starts.length; k++)
-    for (let j = 0; j < radial; j++) {
-      const v0 = starts[k] + j,
-        v1 = starts[k] + ((j + 1) % radial);
-      if (k === 0) idx.push(first, v1, v0);
-      if (k === starts.length - 1) idx.push(v0, v1, last);
-      else idx.push(v0, v1, v1 + radial, v0, v1 + radial, v0 + radial);
-    }
+  }
   const g = new T.BufferGeometry();
   g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
-  g.setIndex(idx);
   return g;
 }
+/** A rib of the collar: the line across it on the torso from its top edge to its foot ([azimuth, height] each), and its section's half-thickness. */
+type Rib = { top: [number, number]; foot: [number, number]; half: number };
 /**
- * His open collar: a soft rolled band lying round the crease where his head meets his shoulders,
- * open at the front, each end turning down into a broad collar point lying on his chest beside the
- * V of skin (whose edge it covers), as an open-collar shirt's do. Two halves, meeting behind his neck.
+ * His collar, buttoned up (COLLAR): one smooth closed solid round his neck, from the front edge of
+ * the point on his right, round behind his neck, to the front edge of the point on his left. Its
+ * section, on each rib across it, is an ellipse laid along the torso's surface from the rib's top
+ * edge (up in his head) to its foot, its middle `raise` of its half-thickness over the shirt: its
+ * upper half stands on the shirt as a soft rolled band, its lower half is sunk in the torso.
+ * - Round behind his neck and his sides, the band: each rib straight down from the crease, `band`
+ *   down his shoulders.
+ * - From `turn` round to the front, each point: the ribs' tops run on round the crease to `meet`
+ *   (past the middle, so the two points cross under his chin) while their feet run down the point's
+ *   outer edge (from the band's foot, bowed out through `bow`) to its `tip`, so the ribs fan out to
+ *   its front edge, which runs from under his chin down and out to the tip. The points are thinner
+ *   (`leaf`) than the band: they lie flat on his chest, and his chin rests on them, not in them.
+ * - Each front edge is closed by a half ellipsoid as deep as the point is thick.
+ * Every normal is the surface's own (from its derivatives), not the triangles'. What his head and
+ * torso hide of it is left out. The points are a shade deeper than the band, as cloth lying flat in
+ * the shade of his chin.
  */
 function collarGeometry() {
-  // [angle round from ahead, height] on the torso, and the section's half-width there, from the back
-  // of his neck (in the crease where head and shoulders meet, about 0.626 up all round) round his
-  // side to the front, where it turns down beside the V (its inner edge on the V's), the point
-  // flaring out a little from it.
-  const path: [number, number, number][] = [
-    [Math.PI, 0.627, 0.017],
-    [2.35, 0.627, 0.018],
-    [1.55, 0.626, 0.019],
-    [0.95, 0.622, 0.021],
-    [0.62, 0.611, 0.028],
-    [0.47, 0.593, 0.027],
-    [0.4, 0.575, 0.016],
-    [0.39, 0.566, 0.009],
-  ];
-  const halves = [-1, 1].map((s) => {
-    const on = path.map(([a, y]) => onTorso(s * a, y)),
-      b = 0.0105;
-    return sweep(
-      on.map((c) => c.p.clone().addScaledVector(c.n, b * 0.8).toArray() as V3),
-      path.map((q) => q[2]),
-      path.map(() => b),
-      on.map((c) => c.n.toArray() as V3),
-      7,
-      0.02,
-    );
-  });
-  // (What the head and the torso hide of it is left out.)
-  return halves.map((g) => shownOnly(paint(g, (p) => (p.y < 0.6 ? shade(FILIP_LOOK.shirt, 0.97) : FILIP_LOOK.shirt)), insideBody));
+  const C = COLLAR,
+    radial = 7,
+    e = 1e-4,
+    turnFoot = downTorso(C.turn, crease(C.turn), C.band),
+    cache = new Map<number, Rib>(),
+    // The rib at u: 0 behind his neck, 1 the front edge of the point on his left (+x), -1 his right's.
+    rib = (u: number): Rib => {
+      const known = cache.get(u);
+      if (known) return known;
+      const s = u < 0 ? -1 : 1,
+        w = Math.abs(u);
+      let top: [number, number], foot: [number, number];
+      if (w <= C.split) {
+        const a = Math.PI + ((C.turn - Math.PI) * w) / C.split,
+          c = crease(a);
+        top = [a, c + C.tuck];
+        foot = [a, downTorso(a, c, C.band)];
+      } else {
+        const t = (w - C.split) / (1 - C.split),
+          a = C.turn + (C.meet - C.turn) * t,
+          bezier = (k: 0 | 1) => (1 - t) ** 2 * (k ? turnFoot : C.turn) + 2 * t * (1 - t) * C.bow[k] + t * t * C.tip[k];
+        top = [a, crease(a) + C.tuck];
+        foot = [bezier(0), bezier(1)];
+      }
+      const r: Rib = { top: [s * top[0], top[1]], foot: [s * foot[0], foot[1]], half: T.MathUtils.lerp(C.thick, C.leaf, smooth(w, C.split * 0.8, 1)) };
+      cache.set(u, r);
+      return r;
+    },
+    // The surface on rib r at phi round its section (0 at the top edge, pi at the foot, its upper
+    // half over the shirt), the section shrunk by k about its middle (k 0: its middle).
+    at = (r: Rib, phi: number, k = 1) => {
+      const v = 0.5 - 0.5 * Math.cos(phi) * k,
+        { p, n } = onTorso(r.top[0] + (r.foot[0] - r.top[0]) * v, r.top[1] + (r.foot[1] - r.top[1]) * v);
+      return p.addScaledVector(n, r.half * (C.raise + Math.sin(phi) * k));
+    },
+    // A normal turned away from the section's middle.
+    outward = (n: T.Vector3, p: T.Vector3, middle: T.Vector3) => (n.dot(p.clone().sub(middle)) < 0 ? n.negate() : n),
+    phis = Array.from({ length: radial }, (_, j) => Math.PI + (TAU * j) / radial),
+    tube = (u: number) =>
+      phis.map((phi): Corner => {
+        const r = rib(u),
+          p = at(r, phi),
+          n = at(rib(u + e), phi).sub(at(rib(u - e), phi)).cross(at(r, phi + e).sub(at(r, phi - e))).normalize();
+        return { p, n: outward(n, p, at(r, Math.PI / 2, 0)) };
+      }),
+    // A front edge's cap (end 1 his left, -1 his right): its rings out from the edge (at `lats`), and its pole.
+    cap = (end: 1 | -1, lats: number[]) => {
+      const r = rib(end),
+        middle = at(r, Math.PI / 2, 0),
+        across = onTorso(...r.foot).p.sub(onTorso(...r.top).p).normalize(),
+        { n } = onTorso((r.top[0] + r.foot[0]) / 2, (r.top[1] + r.foot[1]) / 2),
+        out = middle.clone().sub(at(rib(end * 0.98), Math.PI / 2, 0));
+      out.addScaledVector(across, -out.dot(across)).addScaledVector(n, -out.dot(n)).normalize();
+      const q = (lat: number, phi: number) => at(r, phi, Math.cos(lat)).addScaledVector(out, r.half * Math.sin(lat));
+      return {
+        rings: lats.map((lat) =>
+          phis.map((phi): Corner => {
+            const p = q(lat, phi),
+              nn = q(lat + e, phi).sub(q(lat - e, phi)).cross(q(lat, phi + e).sub(q(lat, phi - e))).normalize();
+            return { p, n: outward(nn, p, middle) };
+          }),
+        ),
+        pole: { p: q(Math.PI / 2, 0), n: out.clone() },
+      };
+    };
+  // Round behind his neck to `split` in ten steps, then each point in six.
+  const side = [...Array.from({ length: 11 }, (_, k) => (C.split * k) / 10), ...Array.from({ length: 6 }, (_, k) => C.split + ((1 - C.split) * (k + 1)) / 6)],
+    us = [...side.slice(1).reverse().map((u) => -u), ...side],
+    right = cap(-1, [(Math.PI * 3) / 8, Math.PI / 5]),
+    left = cap(1, [Math.PI / 5, (Math.PI * 3) / 8]),
+    solid = closedSolid([...right.rings, ...us.map(tube), ...left.rings], right.pole, left.pole);
+  return shownOnly(paint(solid, (p) => shade(FILIP_LOOK.shirt, T.MathUtils.lerp(0.97, 1, smooth(p.y, 0.575, 0.615)))), insideBody);
 }
 
 /* ------------------------------------------------------------------ */
@@ -898,9 +1030,9 @@ export function createFilip(material: Material) {
   root.scale.setScalar(FILIP_SCALE);
   body.name = 'body';
   root.add(body);
-  // The shirt: the torso (its open V, placket and the chinos at the waist), the belt and the collar;
-  // then the hair (on its own, as Alison's is).
-  part(body, [torsoGeometry(), beltGeometry(), ...collarGeometry()], material, 'fabric');
+  // The shirt: the torso (its placket and buttons, and the chinos at the waist), the belt and the
+  // buttoned collar; then the hair (on its own, as Alison's is).
+  part(body, [torsoGeometry(), beltGeometry(), collarGeometry()], material, 'fabric');
   const locks = hair();
   part(body, [locks.cap], material, 'fabric', 'filip-hair');
   // Skin: his head with his eyes and brows drawn on it (less what the hair covers), the neck (hidden
