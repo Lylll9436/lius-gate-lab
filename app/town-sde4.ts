@@ -7,7 +7,7 @@ import { TROPIC, TROPIC_BUILDING, TROPIC_PATHS } from './town-plan';
 import { RESIDENCE_LOOK } from './town-residence';
 import type { WindowRole } from './town-batch';
 import type { Kit } from './town-kit';
-import { crown, mergeCrown, paintCrown, softenNormals, type Clump, type Nature } from './town-nature';
+import type { Nature } from './town-nature';
 import type { Props } from './town-props';
 
 /**
@@ -60,7 +60,7 @@ export const SDE4_FAMILY: Record<keyof typeof SDE4_LOOK, string> = {
 export const SDE4_SHADE = { tray: 1.55, band: 0.88, membrane: 0.86, body: 0.95, narrow: 0.95, kerb: 0.8, planter: 0.95, pad: 0.84, concrete: 0.93, panel: 0.9, spandrel: 0.84 };
 /**
  * The planting's greens, painted (vertex colour) on the town's white foliage as its trees are, none
- * louder than the hedge's green (check-town). `shrubs`: three looks for the leafy clump masses, in
+ * louder than the hedge's green (check-town). `shrubs`: three looks for the leafy plants' blades, in
  * the crown paint's form (two body tones, a warm lit top, a cool dark underside): a mid hedge green,
  * a deeper cool green and a fresher yellow-green, so neighbouring shrubs never match. `fan`: the
  * heliconia fans' broad leaves, a cooler leaf green from the stalk (`base`) to the tip, their
@@ -120,13 +120,24 @@ export const SDE4_GREENS = {
  * - `west`: where the stack meets the west screen; `storeys` (floor and ceiling of G, L1 and L2),
  *   `plates` (each slab's y span and edges: front, back, east; each front 0.4 behind the one under
  *   it, so the terraces step back as they rise; the second's front steps back to `notch.front` east
- *   of `notch.x0`, the double-height bay the stair climbs) and `glass` (each storey's glass lines);
+ *   of `notch.x0`, the double-height bay the stair climbs; each back 0.35 out of the north glass, so
+ *   the north face reads as platforms with a shadow line under each, not one flat curtain wall) and
+ *   `glass` (each storey's glass lines);
  *   `BAY`, the widest the glazing's bay may be (its bays 0.8 to 0.95 wide: the town's window, not a curtain wall).
  * - `stair`: the open straight flight from the first floor's terrace (its foot at x1) up to the
  *   second's (its head at x0), z0..z1 its width.
  * - `box`: the roof terrace's one glazed box, set back, and its cap's top.
- * - `entrance`: the lobby's vestibule under the first slab: its doors' span and line and the
- *   canopy's foot (its doors 1.1 tall, life-size to Filip); `veranda`: the open east bay's deck;
+ * - `entrance`: the lobby's vestibule under the first slab: its doors' span and line, the
+ *   vestibule's top; `door`, the leaves' head (1.22: about 1.2 times Filip's height, as the villa's
+ *   are to Alison's; the town draws its doors big); `frame`, the paint of the doors' frame (the
+ *   soffit's dark bronze: a dark portal on the walk's axis in the pale front, the side lights' frames
+ *   staying pale); `canopy`, the white blade over the doors (its plan's x, its foot and top under the
+ *   first slab with a shadow gap, out to `z1`, the column line, clear of the shafts either side), so
+ *   it shows from the town's camera 0.25 proud of the slab's face;
+ * - `north`: the roof terrace's north planter, its two runs (x0..x1) either side of the glazed box
+ *   behind the back balustrade, leaves spilling over the back rail where the north stops see them;
+ *   `ledge`: the second slab's north ledge planter, its two runs, the middle bays left clear;
+ * - `veranda`: the open east bay's deck;
  *   `desk`, `cafe`: the anchors handed to the garden and the figure (see Sde4Build).
  */
 const LIFT = 0.12;
@@ -145,9 +156,9 @@ export const SDE4 = {
   west: -3.5,
   storeys: [[0, 1.5], [1.7, 2.95], [3.15, 4.4]] as [number, number][],
   plates: [
-    { y0: 1.5, y1: 1.7, front: 1.75, back: -2.2, east: 1.35 },
-    { y0: 2.95, y1: 3.15, front: 1.35, back: -2.2, east: 1.35, notch: { x0: -0.65, front: 0.6 } },
-    { y0: 4.4, y1: 4.6, front: 0.95, back: -2.2, east: 1.35 },
+    { y0: 1.5, y1: 1.7, front: 1.75, back: -2.35, east: 1.35 },
+    { y0: 2.95, y1: 3.15, front: 1.35, back: -2.35, east: 1.35, notch: { x0: -0.65, front: 0.6 } },
+    { y0: 4.4, y1: 4.6, front: 0.95, back: -2.35, east: 1.35 },
   ] as { y0: number; y1: number; front: number; back: number; east: number; notch?: { x0: number; front: number } }[],
   glass: [
     { front: 0.8, back: -2.0, east: 1.35 },
@@ -157,7 +168,9 @@ export const SDE4 = {
   BAY: 0.95,
   stair: { x0: -0.65, x1: 1.2, z0: 0.68, z1: 1.28 },
   box: { x0: -2.0, x1: 0.4, z0: -2.0, z1: -1.0, top: 5.6, cap: 5.72 },
-  entrance: { x0: -3.05, x1: -2.05, z: 1.4, top: 1.4 },
+  entrance: { x0: -3.05, x1: -2.05, z: 1.4, top: 1.4, door: 1.22, frame: 'soffit' as keyof typeof SDE4_LOOK, canopy: { x0: -2.98, x1: -2.12, y0: 1.38, y1: 1.48, z1: 2.0 } },
+  north: [[-3.4, -2.25], [0.62, 1.15]] as [number, number][],
+  ledge: [[-3.3, -1.75], [-0.2, 1.2]] as [number, number][],
   veranda: { x0: 1.4, x1: 4.4, z0: -2.5, z1: 2.5 },
   desk: { x: 2.7, z: -0.6, heading: 0 },
 };
@@ -329,8 +342,7 @@ export function sde4Plan(at: { x: number; y: number; z: number } = SDE4.at): Sde
  * SDE4 takes no street furniture of its own and no tree from the town's planting kit, so `_props`
  * and `_nature` go unused; they stay in the signature, which is every building factory's. Its
  * terrace planting is built here, evergreen, from leaves of its own (plants of broad or lance
- * blades, heliconia fans of paddle leaves) and a heart of leafy clumps from town-nature's crown kit
- * (the town's trees' cauliflower clumps: crown, paintCrown, softenNormals, mergeCrown).
+ * blades, heliconia fans of paddle leaves).
  */
 export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: Nature) {
   const { material } = ctx;
@@ -495,55 +507,6 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
     // The rosettes' blades in the shrubs' three greens: a step deeper at the foot, a little lit toward the tip.
     BLADE: LeafLook[] = GR.shrubs.map((g) => ({ base: new T.Color(g.tones[0]).multiplyScalar(0.8), tip: new T.Color(g.tones[1]).lerp(new T.Color(g.top), 0.3), under: new T.Color(g.under) })),
     LEAF_STEPS = 24;
-  /** A leafy clump of the crown kit at a shrub's scale: few, deep florets (the trees' cauliflower, never a clipped ball). */
-  const clump = (x: number, y: number, z: number, r: number, seed: number, sy = 0.85): Clump => ({ x, y, z, r, sy, florets: 9, amp: 0.17, detail: 2, seed });
-  /** A plant for mass(): its leafy clumps and its green (an index into SDE4_GREENS.shrubs). */
-  type Plant = { clumps: Clump[]; green: number };
-  /**
-   * Plants as one leafy geometry: their clumps' hidden insides culled across the whole mass (so
-   * neighbours run into each other), then each plant painted in its own green, dark low down and
-   * lit on top between y0 and y1, darker in the creases between its clumps and its florets' valleys,
-   * and its normals eased toward its own round, so it reads as one soft shrub with leafy lumps.
-   */
-  function mass(plants: Plant[], y0: number, y1: number, seed: number) {
-    const { built } = crown(plants.flatMap((p) => p.clumps));
-    let k = 0;
-    plants.forEach((p, i) => {
-      const own = built.slice(k, (k += p.clumps.length)),
-        weight = p.clumps.reduce((s, c) => s + c.r, 0),
-        centre = p.clumps.reduce((v, c) => v.add(new T.Vector3(c.x, c.y, c.z).multiplyScalar(c.r / weight)), new T.Vector3());
-      paintCrown(own, GR.shrubs[p.green], y0, y1, centre, seed * 13 + i, { floor: 0.55, valley: 0.8, crease: 0.24, inner: 0.2 });
-      softenNormals(own, centre, 0.85, 0.3);
-    });
-    return compact(mergeCrown(built));
-  }
-  /** An indexed geometry without the vertices no triangle uses (the crown kit's culling leaves them behind). */
-  function compact(g: T.BufferGeometry) {
-    const index = g.getIndex()!,
-      slot = new Int32Array(g.getAttribute('position').count).fill(-1),
-      order: number[] = [],
-      out = new T.BufferGeometry();
-    for (let i = 0; i < index.count; i++) {
-      const k = index.getX(i);
-      if (slot[k] < 0) {
-        slot[k] = order.length;
-        order.push(k);
-      }
-    }
-    for (const name of Object.keys(g.attributes)) {
-      const a = g.getAttribute(name) as T.BufferAttribute,
-        size = a.itemSize,
-        from = a.array,
-        to = new Float32Array(order.length * size);
-      order.forEach((k, j) => {
-        for (let c = 0; c < size; c++) to[j * size + c] = from[k * size + c];
-      });
-      out.setAttribute(name, new T.BufferAttribute(to, size));
-    }
-    out.setIndex(Array.from({ length: index.count }, (_, i) => slot[index.getX(i)]));
-    g.dispose();
-    return out;
-  }
   /**
    * A leaf on its stalk, a closed smooth solid from its foot: the stalk 0.07 round for `stalk` of its
    * `length`, then a blade `half` its half width and 0.07 thick at the midrib, its edges lifted
@@ -745,15 +708,17 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
    *   mid-mullion halving the vision light above it (0.07 each, a hair proud, casting nothing). Glass
    *   balustrades on a pale kerb under one grey-blue top rail along every terrace edge.
    * - The roof terrace, open under the roof's tall void: one small set-back glazed box under a white
-   *   cap, and a long planter along its front.
-   * - The planting, evergreen: the first floor's and the roof terrace's planters along their rails,
-   *   leafy plants of broad and lance blades in three greens (over a heart of leafy clumps on the
-   *   roof terrace) rising over the rail, heliconia fans of paddle leaves standing out of them and
-   *   leaves spilling over the rail; in the veranda's planters a heliconia fan, and a leafy bush
-   *   spilling over its lip.
+   *   cap, a long planter's trough along its front and a planter in two runs along its back.
+   * - The planting, evergreen, only where the town's camera sees it: the first floor's planter along
+   *   its front rail and the roof terrace's north planter along its back rail, leafy plants of broad
+   *   and lance blades in three greens rising over the rail, a heliconia fan standing out of them and
+   *   leaves spilling over the rail (on the north, down over the slab's edge); in the veranda's
+   *   planters a heliconia fan, and a leafy bush spilling over its lip.
+   * - The north face: each slab standing 0.35 out of the glass, a platform edge with its shadow line.
    * - The entrance: a shallow glazed lobby standing out of the ground floor under the first slab: a
-   *   framed pair of doors (stiles, a kick rail, pulls) under a transom light and a thin white canopy,
-   *   a side light to the west; its lights warm at night; a step down to the court before it. Solid
+   *   pair of doors 1.22 tall (stiles, a kick rail, pulls) in a dark bronze frame under a transom
+   *   light, a white canopy blade over them standing out past the slab's face to the column line, a
+   *   side light to the west; its lights warm at night; a step down to the court before it. Solid
    *   spandrel panels along the ground floor's back.
    * - The veranda: the open east bay under the roof, a tall portico: a timber deck flush with the
    *   podium, two big planters at its south edge leaving the way from the ramp to the desk open, the
@@ -1068,21 +1033,27 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         const E = S.entrance,
           lobby = { role: SDE4_ENTRANCE, group: `${id}-entrance` },
           mid = (E.x0 + E.x1) / 2,
-          DOOR = 1.12, // the leaves' head over the floor: 1.1 times Filip's height, as the villa's are to Alison
-          doors = faceAt(frame, 0, E.z, 0);
+          DOOR = E.door,
+          doors = faceAt(frame, 0, E.z, 0),
+          // The doors' frame in its own paint (the soffit's dark bronze: a dark portal), never the side lights'.
+          portal = E.frame === 'soffit' ? soffit : bars;
         glaze(front, west, E.x0, y0, y1, { ...lobby, n: 1, spandrel: 0 });
         glaze(front, E.x1, G.east, y0, y1);
-        // Its two leaves (each a light of the lobby), the transom light over them, their frame: the
-        // jambs and the meeting stiles, a kick rail and the transom; a pull on each meeting stile.
+        // Its two leaves (each a light of the lobby), the transom light over them, their frame (the
+        // portal): the jambs and the meeting stiles, a kick rail and the transom; a pull on each meeting stile.
         for (const s2 of [-1, 1]) pane(doors, mid + (s2 * (E.x1 - E.x0)) / 4, (0.07 + DOOR) / 2, (E.x1 - E.x0) / 2 - 0.06, DOOR - 0.05, lobby.role, lobby.group);
         pane(doors, mid, (DOOR + LIGHT + E.top) / 2, E.x1 - E.x0 - 0.06, E.top - DOOR - LIGHT + 0.02, lobby.role, lobby.group);
-        for (const x of [E.x0, mid, E.x1]) bars.push(block(x - (x === mid ? 0.05 : BAR / 2), x + (x === mid ? 0.05 : BAR / 2), 0, E.top, -0.02, PROUD, 0.02, doors));
-        bars.push(block(E.x0, E.x1, 0, 0.09, -0.02, PROUD, 0.02, doors), block(E.x0, E.x1, DOOR, DOOR + LIGHT, -0.02, PROUD, 0.02, doors));
+        for (const x of [E.x0, mid, E.x1]) portal.push(block(x - (x === mid ? 0.05 : BAR / 2), x + (x === mid ? 0.05 : BAR / 2), 0, E.top, -0.02, PROUD, 0.02, doors));
+        portal.push(block(E.x0, E.x1, 0, 0.09, -0.02, PROUD, 0.02, doors), block(E.x0, E.x1, DOOR, DOOR + LIGHT, -0.02, PROUD, 0.02, doors));
         for (const s2 of [-1, 1]) fins.push(block(mid + s2 * 0.09 - 0.035, mid + s2 * 0.09 + 0.035, 0.36, 0.7, PROUD, PROUD + 0.07, 0.015, doors));
-        // Its sides, a light each, and the thin white canopy over it all, standing out over the doors.
+        // Its sides, a light each (their frames pale), and the white canopy blade over the doors:
+        // from the vestibule's head out past the first slab's face to the column line, between the
+        // two shafts, a shadow gap under the slab over it, so the town's camera sees its white top
+        // and edge and the shadow it casts on the court.
         glaze(faceAt(frame, E.x0, 0, -Math.PI / 2), G.front, E.z, y0, E.top, { ...lobby, n: 1, spandrel: 0 }); // x along it runs south
         glaze(faceAt(frame, E.x1, 0, Math.PI / 2), -E.z, -G.front, y0, E.top, { ...lobby, n: 1, spandrel: 0 }); // x along it runs north
-        solid(frame, E.x0 - 0.12, E.x1 + 0.12, E.top, y1 + 0.02, G.front - 0.05, E.z + 0.2, L.paint, 'paint', { bevel: 0.025, band: true, name: 'sde4-entrance' });
+        const CA = E.canopy;
+        solid(frame, CA.x0, CA.x1, CA.y0, CA.y1, E.z - 0.05, CA.z1, L.paint, 'paint', { bevel: 0.025, band: true, name: 'sde4-entrance' });
       } else glaze(front, west, G.east, y0, y1, { shade: s === 2 ? 0.9 : 1 });
       // The back: the same bays, the ground floor's spandrels solid panels.
       glaze(back, -G.east, -west, y0, y1, { solid: s === 0, spandrel: s === 0 ? 0.34 : 0.27 });
@@ -1183,22 +1154,45 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         greenery.push(...fan(-2.2, top - 0.04, (z0 + z1) / 2, 0.2, 0.5, 3, 61));
         greenery.push(...spill(-1.5, top - 0.02, z0 + 0.18, 0, 2, 160, { n: 2, size: 0.7, lean: 0.8, arch: 3.1 }));
       }
-      // The roof terrace's planter along its front rail: leafy plants of broad and lance blades in
-      // the three greens over a heart of leafy clumps, heliconia fans standing out of them, leaves
-      // spilling over the rail at two places and hanging down its face. (Under the rail's top it
-      // all keeps a hair behind its glass, and clear of the glazed box.)
+      // The roof terrace's planter along its front rail: its trough alone. (Under the roof's soffit,
+      // 1.4 back from its edge, nothing on the terrace's floor shows from the town's pitch at any
+      // bearing, so its planting went to the north planter, below, where it is seen.)
       {
-        const x0 = west + 0.15,
-          x1 = p3.east - 0.15,
-          z1 = p3.front - K - GAP,
-          z0 = z1 - 0.34,
-          top = p3.y1 + RAIL - 0.04,
-          mid = (z0 + z1) / 2;
-        trough(x0, x1, z0, z1, p3.y1, RAIL - 0.04);
-        greenery.push(mass(Array.from({ length: 4 }, (_, k) => ({ clumps: [{ ...clump(x0 + 0.55 + k * 1.15 + (hash(k + 0.1) - 0.5) * 0.12, top + 0.02 + 0.04 * hash(k + 0.2), z0 + 0.15, 0.19 + 0.03 * hash(k + 0.3), 130 + k), florets: 9, long: 1.6, heading: 0 }], green: [1, 0, 2, 1][k] })), top - 0.05, top + 0.3, 13));
-        greenery.push(...bed(x0 + 0.08, x1 - 0.08, z0, z1, top, 13, { step: 0.66 }));
-        [-2.75, 0.75].forEach((x, k) => greenery.push(...fan(x, top - 0.04, mid + 0.02, (hash(k * 3.7 + 1) - 0.5) * 0.5, 0.6, 4, 71 + k)));
-        for (const [x, k] of [[-1.6, 0], [-0.1, 1]]) greenery.push(...spill(x, top - 0.02, z0 + 0.22, 0, k + 1, 150 + k, { size: 0.8, lean: 0.8, arch: 3.1 }));
+        const z1 = p3.front - K - GAP;
+        trough(west + 0.15, p3.east - 0.15, z1 - 0.34, z1, p3.y1, RAIL - 0.04);
+      }
+      // The roof terrace's north planter behind the back balustrade, in two runs either side of the
+      // glazed box (S.north): leafy plants in the three greens, and long blades spilling over the
+      // back rail and down over the slab's edge toward the north, so the north face carries SDE4's
+      // planting where the north stops and the opposite overview see it.
+      {
+        const z0 = p3.back + K + GAP,
+          z1 = z0 + 0.3,
+          top = p3.y1 + RAIL - 0.04;
+        S.north.forEach(([x0, x1], r) => {
+          trough(x0, x1, z0, z1, p3.y1, RAIL - 0.04);
+          greenery.push(...bed(x0 + 0.08, x1 - 0.08, z0, z1, top, 17 + r, { step: 0.66, scale: 0.9 }));
+          const spills = x1 - x0 > 0.8 ? [x0 + 0.3, x1 - 0.35] : [(x0 + x1) / 2];
+          spills.forEach((x, k) => greenery.push(...spill(x, top - 0.02, z0 + 0.12, Math.PI, (r + k) % 3, 170 + 3 * r + k, { size: 0.8, lean: 0.8, arch: 3.1 })));
+        });
+      }
+      // The second slab's north ledge (S.ledge): a low planter box in two runs, the middle bays
+      // left clear, in the light mid-facade where every north stop sees it, leaves spilling north.
+      {
+        const z0 = p2.back + 0.02,
+          z1 = S.glass[1].back - 0.1,
+          tall = 0.22,
+          top = p2.y1 + tall;
+        S.ledge.forEach(([x0, x1], r) => {
+          trough(x0, x1, z0, z1, p2.y1, tall);
+          // Leafy plants turned out of the glass (their blades across the half facing north).
+          const n = Math.max(1, Math.round((x1 - x0 - 0.2) / 0.55));
+          for (let k = 0; k < n; k++) {
+            const kind = PLANTS[(k + r) % 3];
+            greenery.push(...rosette(x0 + 0.1 + ((x1 - x0 - 0.2) * (k + 0.5)) / n, top - 0.03, (z0 + z1) / 2, (k + r) % 3, 41 + 7 * r + k, { ...kind, size: kind.size * 0.95, turn: Math.PI, arc: 2.6 }));
+          }
+          [x0 + 0.35, x1 - 0.4].forEach((x, k) => greenery.push(...spill(x, top - 0.02, z0 + 0.08, Math.PI, (r + k + 1) % 3, 190 + 3 * r + k, { n: 2, size: 0.62, lean: 0.8, arch: 3.1 })));
+        });
       }
       // The veranda's two big planters at its south edge, the way from the ramp to the desk between
       // them (Filip walks it, on the phone: no leaf leans into it, SDE4_VERANDA's `way`): a heliconia
