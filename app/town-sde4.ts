@@ -56,7 +56,7 @@ export const SDE4_FAMILY: Record<keyof typeof SDE4_LOOK, string> = {
  * pads, the round concrete columns and the stair's treads, the ground floor's solid spandrel panels,
  * and the spandrel lights under each bay's transom.
  */
-export const SDE4_SHADE = { membrane: 0.86, body: 0.95, narrow: 0.95, kerb: 0.8, planter: 0.95, pad: 0.84, concrete: 0.93, panel: 0.9, spandrel: 0.84 };
+export const SDE4_SHADE = { tray: 1.55, band: 0.88, membrane: 0.86, body: 0.95, narrow: 0.95, kerb: 0.8, planter: 0.95, pad: 0.84, concrete: 0.93, panel: 0.9, spandrel: 0.84 };
 /**
  * The planting's greens, painted (vertex colour) on the town's white foliage as its trees are, none
  * louder than the hedge's green (check-town). `shrubs`: three looks for the leafy clump masses, in
@@ -98,13 +98,18 @@ export const SDE4_GREENS = {
  *   (x0..x1, z0..z1), the underside of its dark soffit band (`soffit`), where its white rim begins
  *   (`rim`), its top (the membrane's) and its parapet's top (the edge 0.36 in all, 0.28 of it the
  *   white rim); the rim's width and plan corners' radius; the solar field's `margin` in from the
- *   rim, `rows` long rows `deep` each.
+ *   rim, `rows` long rows `deep` each, each a light aluminium tray the field's length holding
+ *   `panels` dark modules `seam` apart inside a `frame` of the tray (the seams and the frame the
+ *   tray's paler grey: a few long, bold lines, nothing to crawl); a dark `gutter` round the field at
+ *   the parapet's foot.
  * - `block`: the west screen, as tall as the soffit, its fins' faces flush with the roof's edge, its
  *   body inset `fin.proud` behind them; `east`: the east screen (the stack's east end, its south
  *   face behind the veranda's planters, so Filip at his desk is open to the south and the east);
  *   `fin`: the fins (a wide one and a narrow one a step deeper by turns, `pair` the pitch of the
  *   two), their depth, and the storey joints where the screens' panels meet: a `joint`-wide cut
- *   through every fin and a groove across the body at each, one band across the whole face.
+ *   through every fin and a groove across the body at each, covered by one continuous string band
+ *   `band` tall wrapped round the whole screen a hair proud of the fins (one clean line across the
+ *   face, never a row of notches).
  * - `columns`: radius (0.21 across: very slender, over the 0.18 under which a white shaft twinkles
  *   as the view moves), the x of each (evenly 1.28 apart, the veranda's way between two of them) and
  *   their z (the roof's front, 0.4 in, clear of every slab); `inner`: the round concrete columns
@@ -128,10 +133,10 @@ export const SDE4 = {
   podium: { x0: -4.7, x1: 4.7, z0: -2.8, z1: 2.8, kerb: 0.3, foot: -0.6 },
   steps: { x0: -3.3, x1: -1.8, run: 0.34, rise: 0.06 },
   ramp: { x0: 2.05, x1: 2.95, run: 0.72, drop: 0.12 },
-  roof: { x0: -4.3, x1: 4.3, z0: -2.4, z1: 2.4, soffit: 6.02, rim: 6.1, top: 6.3, parapet: 6.38, width: 0.16, corner: 0.12, margin: 0.26, rows: 3, deep: 1.2 },
+  roof: { x0: -4.3, x1: 4.3, z0: -2.4, z1: 2.4, soffit: 6.02, rim: 6.1, top: 6.3, parapet: 6.38, width: 0.16, corner: 0.12, margin: 0.26, rows: 3, deep: 1.2, panels: 5, seam: 0.14, frame: 0.09, gutter: 0.1 },
   block: { x0: -4.3, x1: -3.5, z0: -2.4, z1: 2.4 },
   east: { x0: 1.35, x1: 2.0, z0: -2.4, z1: 0.8 },
-  fin: { pair: 0.84, w: 0.24, narrow: 0.14, proud: 0.16, corner: 0.24, joints: [1.6, 3.05, 4.5], joint: 0.07 },
+  fin: { pair: 0.84, w: 0.24, narrow: 0.14, proud: 0.16, corner: 0.24, joints: [1.6, 3.05, 4.5], joint: 0.07, band: 0.1 },
   columns: { r: 0.105, x: [-3.205, -1.925, -0.645, 0.635, 1.915, 3.195], z: 2.0 },
   inner: { r: 0.12, at: [[-0.9, 1.25, 0, 1.5], [0.4, 1.25, 0, 1.5], [-2.9, 0.2, 4.6, 6.02], [1.0, 0.2, 4.6, 6.02]] as [number, number, number, number][] },
   west: -3.5,
@@ -276,8 +281,9 @@ export function sde4Plan(at: { x: number; y: number; z: number } = SDE4.at): Sde
     keepOut: Sde4Box[] = [
       box('glazed stack', S.west, G0.east, 0, S.plates[2].y1, G0.back - frames, G0.front + frames),
       box('lobby', E.x0 - 0.13, E.x1 + 0.13, 0, E.top + 0.1, G0.front - 0.05, E.z + 0.22),
-      box('fin block', B.x0, B.x1, P.foot, R.soffit, B.z0, B.z1),
-      box('east screen', EB.x0, EB.x1, P.foot, R.soffit, EB.z0, EB.z1),
+      // The screens with their string bands (0.02 proud of the fins).
+      box('fin block', B.x0 - 0.02, B.x1, P.foot, R.soffit, B.z0 - 0.02, B.z1 + 0.02),
+      box('east screen', EB.x0, EB.x1 + 0.02, P.foot, R.soffit, EB.z0 - 0.02, EB.z1 + 0.02),
     ];
   for (const [x, z, y0, y1] of S.inner.at) if (y0 === 0) keepOut.push(box('inner column', x - S.inner.r, x + S.inner.r, 0, y1, z - S.inner.r, z + S.inner.r));
   for (const t of SDE4_VERANDA.planters) {
@@ -722,7 +728,8 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
    * - The champagne screens at both ends, as tall as the soffit: corner piers and fluted fins (a wide
    *   one and a narrow one a step deeper by turns, their front corners chamfered) on every face the
    *   town sees, their storey panels (body and fins, each a shade of its own) meeting in a joint at
-   *   every storey, one band across the face, the fins cut square there.
+   *   every storey, the fins cut square there, and over each joint one continuous string band
+   *   wrapped round the screen a hair proud of the fins: one clean line across every face.
    * - Three glazed storeys, each a box set back behind its terrace, the slabs stepping back as they
    *   rise: each slab a white band over a dark underside set in from it (a shadow line under every
    *   band), the ground floor set back under the first slab (the undercroft); the second slab
@@ -837,9 +844,11 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       // of shade runs under the white edge seen from every side (the photos' dark soffit). An
       // overhang to batch(): the columns' heads and the screens' tops darken up into it.
       solid(frame, R.x0 + 0.02, R.x1 - 0.02, R.soffit, R.rim + 0.002, R.z0 + 0.02, R.z1 - 0.02, L.soffit, 'wood', { bevel: 0.025, name: 'sde4-soffit' });
-      // The solar field: `rows` long continuous rows, each one panel the field's length, tilted 5
-      // degrees to the south on a dark rail under its high (north) edge, the membrane showing
-      // between them (few, long edges: nothing to crawl).
+      // The solar field: `rows` long continuous rows tilted 5 degrees to the south on a dark rail
+      // under each one's high (north) edge, the membrane showing between them. Each row a light
+      // aluminium tray the field's length, and on it `panels` dark modules standing a hair proud of
+      // it, inside a `frame` of the tray and `seam` apart, so each row reads as a framed run of
+      // modules (few, long, bold lines: nothing to crawl); the rows a slight step of tone apart.
       const inner = R.width + R.margin,
         zA = R.z0 + inner,
         zB = R.z1 - inner,
@@ -849,13 +858,33 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         deep = R.deep,
         gap = (zB - zA - R.rows * deep) / (R.rows - 1),
         tilt = (5 * Math.PI) / 180,
-        // The panel's middle stands so its low (south) edge clears the membrane by 0.02.
-        rise = 0.02 + 0.04 * Math.cos(tilt) + (deep / 2) * Math.sin(tilt);
+        // The tray's middle stands so its low (south) edge clears the membrane by 0.01.
+        rise = 0.01 + 0.04 * Math.cos(tilt) + (deep / 2) * Math.sin(tilt),
+        fr = R.frame,
+        pw = (w - 2 * fr - (R.panels - 1) * R.seam) / R.panels;
       for (let r = 0; r < R.rows; r++) {
         const zc = zA + r * (deep + gap) + deep / 2,
-          north = zc - deep / 2;
+          north = zc - deep / 2,
+          at = placed((x0 + x1) / 2, R.top + rise, zc, tilt, 0, 0);
         pv.push(block(x0 + 0.1, x1 - 0.1, R.top - 0.02, R.top + rise + 0.05, north + 0.05, north + 0.17, 0.02, undefined, 0.8));
-        pv.push({ geometry: prism([[-w / 2, -0.04], [w / 2, -0.04], [w / 2, 0.04], [-w / 2, 0.04]], deep, 0.02, -deep / 2), matrix: placed((x0 + x1) / 2, R.top + rise, zc, tilt, 0, 0), shade: 1 + 0.04 * (r - 1) });
+        pv.push({ geometry: prism([[-w / 2, -0.04], [w / 2, -0.04], [w / 2, 0.04], [-w / 2, 0.04]], deep, 0.02, -deep / 2), matrix: at, shade: SH.tray });
+        // The modules, their feet sunk in the tray, their tops 0.018 over it.
+        for (let k = 0; k < R.panels; k++) {
+          const a = -w / 2 + fr + k * (pw + R.seam);
+          pv.push({ geometry: prism([[a, -0.015], [a + pw, -0.015], [a + pw, 0.058], [a, 0.058]], deep - 2 * fr, 0.015, -(deep - 2 * fr) / 2), matrix: at, shade: 0.96 + 0.04 * (r - 1) });
+        }
+      }
+      // The gutter: a dark line round the field at the parapet's inner foot, framing it in the rim.
+      {
+        const g = R.gutter,
+          a = R.x0 + R.width - 0.02,
+          b = R.x1 - R.width + 0.02,
+          c = R.z0 + R.width - 0.02,
+          d = R.z1 - R.width + 0.02,
+          y0 = R.top - 0.04,
+          y1 = R.top + 0.03;
+        pv.push(block(a, b, y0, y1, c, c + g, 0.02, undefined, 0.85), block(a, b, y0, y1, d - g, d, 0.02, undefined, 0.85));
+        pv.push(block(a, a + g, y0, y1, c + g - 0.01, d - g + 0.01, 0.02, undefined, 0.85), block(b - g, b, y0, y1, c + g - 0.01, d - g + 0.01, 0.02, undefined, 0.85));
       }
     }
 
@@ -926,6 +955,15 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
           for (let i = 0; i + 1 < levels.length; i++) solid(frame, x0, x1, levels[i], levels[i + 1], z0, z1, L.fin, 'paint', { bevel: 0.035, shade: SH.body * tones[i], band: true, name: 'sde4-block' });
         },
         pier = (x0: number, x1: number, z0: number, z1: number) => solid(frame, x0, x1, 0.02, R.soffit - 0.005, z0, z1, L.fin, 'paint', { bevel: 0.04, band: true, name: 'sde4-block' });
+      /**
+       * The string bands: at every storey joint one band `band` tall wrapped round the screen's plan
+       * (x0..x1, z0..z1: the faces its fins stand on, 0.02 proud of them; a flush party face left
+       * flush), a step deeper than the fins, covering the fins' cuts and the body's groove, so each
+       * joint is one continuous line across the whole face, lit on top with a shadow line under it.
+       */
+      const strings = (x0: number, x1: number, z0: number, z1: number) => {
+        if (F.band > 0) for (const j of F.joints) fins.push(block(x0, x1, j - F.band / 2, j + F.band / 2, z0, z1, 0.02, undefined, SH.band));
+      };
       // The west screen: its body inset behind its fins on the south, west and north (its east face
       // the stack's party wall, flush), a panel a storey, their bevels meeting in a shallow groove at
       // each joint, which runs on through the fins' cuts; square piers at its west corners and
@@ -946,6 +984,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         fluted(faceAt(frame, bx0, 0, -Math.PI / 2), B.z0 + c, B.z1 - c); // x along it runs south (+z)
         // Its east face shows over the roof terrace: fins there too, on the top storey's run.
         fluted(faceAt(frame, B.x1, 0, Math.PI / 2), -1.5, 2.1, top); // x along it runs north (-z)
+        strings(B.x0 - 0.02, B.x1, B.z0 - 0.02, B.z1 + 0.02);
       }
       // The east screen, the stack's east end beside the veranda: its body inset behind the fins on
       // the east (toward the veranda and the desk) and at its south and north faces, square piers at
@@ -964,6 +1003,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
         const east = faceAt(frame, bx1, 0, Math.PI / 2); // x along it runs north (-z)
         runs.forEach((_, r) => rhythm(EB.z0 + c, EB.z1 - c).forEach((f) => fins.push({ geometry: prism(section(f.w), runs[r][1] - runs[r][0], 0, 0), matrix: on(east, placed(-f.x, runs[r][0], 0).multiply(upright)), shade: tones[r] * f.shade })));
         fluted(faceAt(frame, EB.x0, 0, -Math.PI / 2), -2.1, -0.2, top); // x along it runs south (+z)
+        strings(EB.x0, EB.x1 + 0.02, EB.z0 - 0.02, EB.z1 + 0.02);
       }
     }
 

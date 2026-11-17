@@ -1473,7 +1473,7 @@ export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
  *   leaves arch out, away from what they stand against) along SDE4's foot: before
  *   the west screen, in the strip between the plaza and the front walk, east of the veranda's
  *   ramp, along the back and the podium's west edge, and single shrubs on the lawn's edge by the
- *   south-east and south-west beaches, at the big rain tree's foot and two on the north lawn; heliconia
+ *   south-east and south-west beaches, at the big rain tree's foot and two on the north lawn with a low bed between them; heliconia
  *   fans as accents in the beds. The south lawn stays open, as photo 1's does.
  */
 export const TROPIC_GARDEN = {
@@ -1517,6 +1517,7 @@ export const TROPIC_GARDEN = {
     // On the north lawn the shorter plan left open behind the building.
     { line: [[-1.9, -6.6]], width: 0.66, height: 0.54, seed: 10 },
     { line: [[4.3, -6.1]], width: 0.6, height: 0.5, seed: 11 },
+    { line: [[0.3, -6.35], [1.9, -6.6]], width: 0.6, height: 0.5, seed: 12, leaves: null },
   ] as { line: [number, number][]; width: number; height: number; seed: number; leaves?: { toward: number; spread: number } | null }[],
   fans: [
     { x: -4.15, z: 2.05, height: 1.0, ry: 0.1, seed: 1 },

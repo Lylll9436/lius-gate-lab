@@ -11941,6 +11941,14 @@ let tropicReport = '';
       const rows = pieces(named(list, 'sde4-solar')).filter((p) => p.s.z > 0.8 && p.s.x >= 0.85 * (R.x1 - R.x0 - 2 * R.width)),
         cover = rows.reduce((n, p) => n + p.s.x * p.s.z, 0) / ((R.x1 - R.x0) * (R.z1 - R.z0));
       if (!(rows.length >= 2 && rows.length <= 4 && cover >= 0.6)) bad.push(`${rows.length} solar rows covering ${Math.round(100 * cover)}% of the roof`);
+      // Each row a framed run of 4 to 6 modules (never a blank slab): the modules each over 0.8 deep
+      // and 0.9 long, inside the row's tray by its frame (0.08 or more) and 0.12 or more apart.
+      const modules = pieces(named(list, 'sde4-solar')).filter((p) => p.s.z > 0.8 && p.s.x > 0.9 && p.s.x < 0.85 * (R.x1 - R.x0 - 2 * R.width));
+      for (const row of rows) {
+        const own = modules.filter((p) => Math.abs(p.c.z - row.c.z) < 0.2).sort((a, b) => a.c.x - b.c.x),
+          seams = own.slice(1).map((p, i) => p.b.min.x - own[i].b.max.x);
+        if (!(own.length >= 4 && own.length <= 6 && seams.every((g) => g >= 0.12 - 1e-3) && own[0].b.min.x - row.b.min.x >= 0.08 - 1e-3 && row.b.max.x - own[own.length - 1].b.max.x >= 0.08 - 1e-3 && own.every((p) => row.s.z - p.s.z >= 0.15))) bad.push(`a solar row of ${own.length} modules (seams ${seams.map((g) => g.toFixed(2)).join(', ')})`);
+      }
       const fins = pieces(named(list, 'sde4-fins')),
         westFins = fins.filter((p) => p.b.min.x <= A.x + S.block.x0 + 1e-3 && p.s.y > 1),
         eastFins = fins.filter((p) => p.b.max.x >= A.x + S.east.x1 - 1e-3 && p.s.y > 1),
@@ -11948,6 +11956,14 @@ let tropicReport = '';
       if (westFins.length < 20 || eastFins.length < 10 || !widths.has(S.fin.w.toFixed(2)) || !widths.has(S.fin.narrow.toFixed(2))) bad.push(`${westFins.length} fins down the west screen and ${eastFins.length} down the east one, ${[...widths].join(' and ')} wide`);
       const J = S.fin.joints;
       if (!(S.fin.joint >= 0.07 && J.every((j, i) => (i ? j - J[i - 1] : j) >= 1.3 && (i ? j - J[i - 1] : j) <= 1.7) && westFins.every((p) => !J.some((j) => p.b.min.y < A.y + j + S.fin.joint / 2 - 1e-3 && p.b.max.y > A.y + j - S.fin.joint / 2 + 1e-3)))) bad.push('fins not cut at storey joints 0.07 wide');
+      // Each joint one continuous band (never a row of notches): a string band 0.08 to 0.12 tall over
+      // the cut, wrapped round each whole screen, standing proud of its fins on every fluted face.
+      for (const [name, sc, faces] of [['west', S.block, { x0: true, z0: true, z1: true }], ['east', S.east, { x1: true, z0: true, z1: true }]])
+        for (const j of J) {
+          const y = A.y + j,
+            band = fins.find((p) => Math.abs(p.c.y - y) < 0.01 && p.s.y >= Math.max(0.08, S.fin.joint + 0.01) - 1e-3 && p.s.y <= 0.12 + 1e-3 && p.b.min.x <= A.x + sc.x0 - (faces.x0 ? 0.01 : -1e-3) && p.b.max.x >= A.x + sc.x1 + (faces.x1 ? 0.01 : -1e-3) && p.b.min.z <= A.z + sc.z0 - 0.01 && p.b.max.z >= A.z + sc.z1 + 0.01);
+          if (!band) bad.push(`no continuous band round the ${name} screen at its joint ${j}`);
+        }
       const [g0, g1, g2] = S.glass,
         [q0, q1, q2] = S.plates;
       if (!(q0.front >= q1.front && q1.front > q2.front && g2.front < g1.front && g1.front < q0.front && g2.front < q1.front && g0.front < q0.front - 0.5)) bad.push('slabs not stepping back over an undercroft');
@@ -11983,6 +11999,8 @@ let tropicReport = '';
       ['the old solar modules', (S) => Object.assign(S.roof, { rows: 6, deep: 0.5 }), readOf],
       ['a column out of step', (S) => (S.columns.x = S.columns.x.map((x, i) => (i === 2 ? x + 0.3 : x))), readOf],
       ['the old 0.04 joints', (S) => (S.fin.joint = 0.04), readOf],
+      ['blank solar slabs', (S) => (S.roof.panels = 1), readOf],
+      ['joints as notches in each fin', (S) => (S.fin.band = 0), readOf],
     ];
     for (const [what, change, check] of variants) {
       const saved = structuredClone(SDE4);
