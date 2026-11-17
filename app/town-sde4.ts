@@ -178,9 +178,9 @@ export type Sde4Build = {
 /**
  * SDE4 takes no street furniture of its own and no tree from the town's planting kit, so `_props`
  * and `_nature` go unused; they stay in the signature, which is every building factory's. Its
- * terrace planting is built here, evergreen, from leaves of its own (lance blades in rosettes,
- * heliconia fans of paddle leaves) over hearts of leafy clumps from town-nature's crown kit (the
- * town's trees' cauliflower clumps: crown, paintCrown, softenNormals, mergeCrown).
+ * terrace planting is built here, evergreen, from leaves of its own (plants of broad or lance
+ * blades, heliconia fans of paddle leaves) and a heart of leafy clumps from town-nature's crown kit
+ * (the town's trees' cauliflower clumps: crown, paintCrown, softenNormals, mergeCrown).
  */
 export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: Nature) {
   const { material } = ctx;
@@ -602,10 +602,11 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
    *   0.1 proud of the glass (deep reveals), the frames' rails and corner posts as fat as their
    *   uprights; the east ends cascade under the open east bay. Glass balustrades (no posts) with a
    *   grey-blue rail round the terraces.
-   * - The planting, evergreen: the top terrace's planters against its rails, leafy rosettes of lance
-   *   blades in three greens over a heart of leafy clumps, rising over the rail, heliconia fans of
-   *   paddle leaves standing out of them and, on the file's front, leaves spilling over the rail at
-   *   two places; in the veranda's planters a heliconia fan, and a leafy shrub spilling over its lip.
+   * - The planting, evergreen: the top terrace's planters against its rails, leafy plants of broad
+   *   and lance blades in three greens (over a heart of leafy clumps along the front) rising over
+   *   the rail, heliconia fans of paddle leaves standing out of them and, on the file's front,
+   *   leaves spilling over the rail at two places; in the veranda's planters a heliconia fan, and a
+   *   leafy bush spilling over its lip.
    * - The entrance: the lobby's glass vestibule standing out of the ground floor under the first
    *   slab, under a white cap, its doors warm at night; a step down to the court before it.
    * - The veranda: the open east bay, a timber deck flush with the podium, two big planters at its
@@ -918,10 +919,11 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       balustrade(p1.east - 0.115, p1.east - 0.045, p1.back + 0.1, p1.front - 0.045, y1);
       // The top floor's terrace wraps round its front, its east end and its back: railed all round,
       // a planter against each rail, its lip a hair under the rail's top. Its planting rises over
-      // the rail: leafy rosettes of lance blades in the three greens, packed so their blades run
-      // together, over a heart of leafy clumps; heliconia fans standing out of them; along the
-      // file's front, leaves spilling over the rail at two places. (Under the rail's top it all keeps
-      // a hair behind its glass, and 0.15 or more off the top floor's own glass.)
+      // the rail: leafy plants of broad and lance blades in the three greens, packed so their
+      // leaves run together, over a heart of leafy clumps along the front; heliconia fans standing
+      // out of them; along the file's front, leaves spilling over the rail at two places and hanging
+      // down its face. (Under the rail's top it all keeps a hair behind its glass, and 0.15 or more
+      // off the top floor's own glass.)
       balustrade(west, p2.east - 0.045, p2.front - 0.115, p2.front - 0.045, y2);
       balustrade(p2.east - 0.115, p2.east - 0.045, p2.back + 0.045, p2.front - 0.045, y2);
       balustrade(west, p2.east - 0.045, p2.back + 0.045, p2.back + 0.115, y2);
@@ -964,7 +966,7 @@ export function createSde4(ctx: TownContext, kit: Kit, _props: Props, _nature: N
       }
       // The veranda's two big planters at its south edge, the way from the ramp to the desk between
       // them: a heliconia fan in the west one (turned off the column beside it); in the east one a
-      // leafy bush (two broad-leaved plants side by side) spilling over its front either side of the
+      // leafy bush (three leafy plants side by side) spilling over its front either side of the
       // column before it.
       const V = S.veranda,
         PT = 0.42;
