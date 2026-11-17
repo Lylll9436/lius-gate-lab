@@ -251,10 +251,10 @@ export const FILIP_SOLIDS: FilipSolid[] = (() => {
  * veranda's deck (y the deck's top) and its café anchor on the walks' café terrace (y the terrace's
  * paving, where the garden stands the whole café set); the call stretch on the bay walk
  * (TROPIC_PATHS.stretch); his ways, worked out from the plan (TROPIC_PATHS and TROPIC_PLAZA, SDE4's
- * plan), never hand-placed: on the veranda down the desk's east side `VERANDA.clear` off its end (in
+ * plan), never hand-placed: on the veranda down the desk's east side `FILIP_WAYS.veranda.clear` off its end (in
  * sight from the island's file: further east the big rain tree's crown hides him), through the gap
  * between the veranda's planters (SDE4's `way`, where no leaf leans in) and down its ramp; then along
- * the forecourt's line and, on one left arc (`CALL_ARC` round), onto the stretch itself heading down
+ * the forecourt's line and, on one left arc (`FILIP_WAYS.arc` round), onto the stretch itself heading down
  * it; from the call across the plaza (its medallion is flush: he walks over it) and along the café
  * room's north side to his café chair's side; and home the same way back. The solids (FILIP_SOLIDS);
  * and how far in from the turf's lip a point is (town-plan's tropicInland). His ways keep 0.27 (the
@@ -263,10 +263,23 @@ export const FILIP_SOLIDS: FilipSolid[] = (() => {
  */
 /** How far to the side of his chair he gets up to (FILIP_GAIT.slide, declared with his gait below). */
 const SLIDE = 0.5;
-/** His line down the veranda: `clear` east of the desk's east end (its top's 0.27 for walkers and a little). */
-export const VERANDA = { clear: 0.35 };
-/** The radius of his one left arc off the forecourt's line onto the call stretch. */
-export const CALL_ARC = 0.75;
+/**
+ * The measures his ways are solved with (FILIP_SITE), each off the plan's own lines:
+ * - `veranda`: his line down the veranda `clear` east of the desk's east end (its top's 0.27 for
+ *   walkers and a little), from `from` to `to` along it past the desk's middle (z, the island's frame);
+ *   home he comes down it `home` further west and on to `end` past the desk's middle, by its side;
+ * - `arc`: the radius of his one left arc off the forecourt's line onto the call stretch;
+ * - `plaza`: his way across the plaza's west half, `west` of its middle and `south` of it (out to the
+ *   café; home, `home` south), onto the forecourt's line `onto` east of its middle (home);
+ * - `room`: his line along the café room's north side, `past` east of the table's middle and `in`
+ *   from the room's north edge (his chair's side is on it).
+ */
+export const FILIP_WAYS = {
+  veranda: { clear: 0.35, from: -0.15, to: 0.7, home: [0.02, 0.08] as XZ, end: -0.2 },
+  arc: 0.75,
+  plaza: { west: 1.25, south: 0.3, home: 0.15, onto: 0.5 },
+  room: { past: 0.55, in: 0.38 },
+};
 export const FILIP_SITE: FilipSite = (() => {
   const D = SDE4_PLAN,
     way = (D.way.x0 + D.way.x1) / 2,
@@ -280,7 +293,9 @@ export const FILIP_SITE: FilipSite = (() => {
     // His line along the forecourt, between the ramp's foot and the forecourt's south edge.
     zw = (W.rampFoot + W.forecourt.z1) / 2,
     // His line down the veranda, east of the desk (the desk faces south: its width runs east and west).
-    east = D.desk.x + FILIP_DESK.width / 2 + VERANDA.clear,
+    V = FILIP_WAYS.veranda,
+    A = FILIP_WAYS.plaza,
+    east = D.desk.x + FILIP_DESK.width / 2 + V.clear,
     /** Points `step` apart along a circle about c, radius r, from bearing a0 to a1. */
     circle = (c: XZ, r: number, a0: number, to: number, step = 0.05): XZ[] => {
       // (The shorter way round.)
@@ -292,12 +307,12 @@ export const FILIP_SITE: FilipSite = (() => {
       });
     },
     // Off the forecourt's line heading west, one left arc onto the stretch heading down it (south).
-    centre: XZ = [xb + CALL_ARC, zw + CALL_ARC],
-    onto = circle(centre, CALL_ARC, Math.PI, -Math.PI / 2),
+    centre: XZ = [xb + FILIP_WAYS.arc, zw + FILIP_WAYS.arc],
+    onto = circle(centre, FILIP_WAYS.arc, Math.PI, -Math.PI / 2),
     // Across the plaza's west half, clear of the entrance's step, to the café room's north side: his
-    // line there `C.z0 + 0.38`, between the podium's line and the table (his chair's side is on it).
-    plazaWest: XZ = [Q.x - 1.25, Q.z + 0.3],
-    room: XZ = [C.tableX + 0.55, C.z0 + 0.38];
+    // line there between the podium's line and the table (his chair's side is on it).
+    plazaWest: XZ = [Q.x - A.west, Q.z + A.south],
+    room: XZ = [C.tableX + FILIP_WAYS.room.past, C.z0 + FILIP_WAYS.room.in];
   return {
     floor: filipFloor,
     desk: { x: D.desk.x, z: D.desk.z, heading: D.desk.heading, y: D.desk.y },
@@ -307,13 +322,13 @@ export const FILIP_SITE: FilipSite = (() => {
       // Down the veranda east of the desk, through the planters' gap and down the ramp onto the
       // forecourt, west along it and round one left arc onto the stretch, heading down it (the day
       // walks him on to its far end, where his pacing starts).
-      out: [[east, D.desk.z - 0.15], [east, D.desk.z + 0.7], [way, -0.42], [way, 1.4], [way, zw], ...onto],
+      out: [[east, D.desk.z + V.from], [east, D.desk.z + V.to], [way, -0.42], [way, 1.4], [way, zw], ...onto],
       // From the stretch's far end (heading north, his phone away) across the plaza's west half and
       // along the café room's north side (the day ends it at his chair's side).
       across: [plazaWest, room],
       // Back along the room's north side, across the plaza onto the forecourt's line, east along it to
       // the ramp, up it and the veranda east of the desk (the day ends it at his chair's side).
-      home: [[room[0] + 0.07, room[1]], [Q.x - 1.25, Q.z + 0.15], [Q.x + 0.5, zw], [way, zw], [way, 1.4], [way, -0.4], [east - 0.02, D.desk.z + 0.7], [east - 0.08, D.desk.z - 0.2]],
+      home: [room, [Q.x - A.west, Q.z + A.home], [Q.x + A.onto, zw], [way, zw], [way, 1.4], [way, -0.4], [east - V.home[0], D.desk.z + V.to], [east - V.home[1], D.desk.z + V.end]],
     },
     solids: FILIP_SOLIDS,
     inland: tropicInland,
