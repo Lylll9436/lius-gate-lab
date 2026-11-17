@@ -191,19 +191,23 @@ export const RAIN_CROWN = {
  * `ring` by gentle swellings (`swell` of its radius, toned `tone` either way, never dark stripes).
  * `fronds` arching fronds about `frond` times the height long, each a closed keeled solid (a shallow
  * V, its edges `cup` of the half-width over the midrib, `keel` deep at the midrib and never under
- * `floor`) `width` wide at its widest, notched into `fingers` broad rounded leaflet fingers a side (a
- * notch `notch` of the blade's width, a shoulder, a tip carried `ahead` of a finger's pitch toward the
- * frond's tip), its normals leant `soften` of the way to the frond's own up so the V shades softly;
+ * `floor`) `width` wide at its widest, cut deep into `fingers` strap-like leaflets a side (a notch
+ * `notch` of the blade's width, a shoulder `shoulder` of it, a tip carried `ahead` of a finger's pitch toward the
+ * frond's tip), each leaflet hanging below the rachis (`hang`: its shoulder and its tip that share of
+ * their half-width under it, so seen from above the crown's outline softens into hanging pinnae, never
+ * a saw edge), its normals leant `soften` of the way to the frond's own up so it shades as one soft
+ * drooping surface, never a two-tone fold;
  * `nuts` coconuts under the crown.
  */
-export const PALM = { fronds: 11, frond: 0.44, width: 0.5, cup: 0.25, keel: 0.07, floor: 0.045, fingers: 6, notch: 0.18, ahead: 0.38, soften: 0.55, ring: 0.22, swell: 0.07, tone: 0.04, nuts: 4 };
+export const PALM = { fronds: 11, frond: 0.44, width: 0.42, cup: 0.12, keel: 0.07, floor: 0.045, fingers: 6, notch: 0.17, shoulder: 0.6, ahead: 0.62, hang: { shoulder: 0.15, tip: 0.35 }, soften: 0.85, ring: 0.22, swell: 0.07, tone: 0.04, nuts: 4 };
 /**
  * The frangipani (Plumeria): a stout pale trunk `trunk` in radius up to `fork`, forking into three
  * thick blunt limbs and each of those into two (a candelabra of `tips` tips about `height` tall), a
  * rosette of `leaves` paddle leaves (`leaf` long, closed solids) at every tip and on half the tips a
- * cluster of `flowers` five-lobed flowers (`flower` across, a soft cup), all year.
+ * cluster of `flowers` five-lobed flowers (`flower` across, a soft cup), all year; the leaves' normals
+ * leant `soften` of the way to their own up, so each reads as one soft paddle.
  */
-export const FRANGIPANI = { height: 2.0, trunk: 0.09, fork: 0.55, tips: 6, leaves: 7, leaf: 0.3, flowers: 5, flower: 0.12 };
+export const FRANGIPANI = { height: 2.0, trunk: 0.09, fork: 0.55, tips: 6, leaves: 7, leaf: 0.3, flowers: 5, flower: 0.12, soften: 0.85 };
 /**
  * A leafy shrub's mound (shrubGeometry): its leaves in three tiers over a small dark leafy heart, each
  * tier its share of the leaves, how high its leaves start up the heart, how far out, their rise and
@@ -227,9 +231,12 @@ export const SHRUB = {
  * (leafyMass), its surface given florets (`florets`: their pitch, reach, push, level and softening, as
  * RAIN_CROWN's), and a broad leaf arching out over its edges for about every `leaf.every` of its length
  * and width (`leaf`: their length and their width as a share of it): one leafy border, massed, never a
- * row of balls or a clipped hedge.
+ * row of balls or a clipped hedge. A bed `wide.from` or more across is massed two deep (`wide`): its
+ * field on a coarser `grid` (its lobes are big enough for it) with a broader `fillet`, its lobes `spacing` of its width apart,
+ * `across` as wide, staggered `stagger` of its half-width either side of its line by turns and their
+ * tops `low` to all of its height.
  */
-export const SHRUB_BED = { spacing: 0.6, fillet: 0.1, grid: 0.1, single: 0.075, round: 0.05, sink: 0.05, florets: { pitch: 0.3, reach: 0.9, amp: 0.05, level: 0.62, soften: 0.45 }, leaf: { every: 0.55, length: 0.3, width: 0.42 } };
+export const SHRUB_BED = { spacing: 0.6, fillet: 0.1, grid: 0.1, single: 0.075, wide: { from: 1.0, grid: 0.17, fillet: 0.22, spacing: 0.45, across: 0.8, stagger: 0.34, low: 0.62 }, round: 0.05, sink: 0.05, florets: { pitch: 0.3, reach: 0.9, amp: 0.05, level: 0.62, soften: 0.45 }, leaf: { every: 0.55, length: 0.3, width: 0.42 } };
 /**
  * A round plaza of the garden's own (design 1.6), built only where the land builds no court of its own
  * (TropicSite.plaza): `radius` across, in rings `rings` wide each from the outside in (pale and grey
@@ -796,9 +803,9 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
    * crown's heart. The trunk is one smooth tapering tube, swollen at its foot, ringed by gentle
    * swellings toned a shade either way; at its top a green-brown boot the fronds spring from. The
    * fronds arch out round it on a seeded spiral, the upper ones rising, the middle ones level, the
-   * lower ones hanging; each a closed keeled solid (bladeGeometry), notched into broad rounded fingers
-   * (a notch, a shoulder and a tip each) that lean toward its tip, its green yellowing toward the tip
-   * over a darker underside, its V softened. A cluster of coconuts hangs under the boot.
+   * lower ones hanging; each a closed keeled solid (bladeGeometry), cut deep into strap-like leaflets
+   * (a notch, a shoulder and a tip each) that lean toward its tip and hang below the rachis, its green
+   * yellowing toward the tip over a darker underside, softly shaded. A cluster of coconuts hangs under the boot.
    * `userData.crown` gives the crown's heart and its reach.
    */
   function coconutPalm({ height = 3.5, lean = 0.26, seed = 1 } = {}) {
@@ -864,9 +871,10 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
           const { u, kind } = marks[i],
             body = W * Math.sin(Math.PI * Math.min(1, 0.04 + u)) ** 0.7,
             // The stalk, then notch, shoulder and tip by turns along the leaflets; the frond's tip closes it.
-            w = kind === -1 ? 0.03 * k : kind === 0 ? body * P.notch : kind === 1 ? body * 0.72 : kind === 2 ? body : 0,
+            w = kind === -1 ? 0.03 * k : kind === 0 ? body * P.notch : kind === 1 ? body * P.shoulder : kind === 2 ? body : 0,
             ahead = kind === 1 ? 0.12 * pitch : kind === 2 ? P.ahead * pitch : 0;
-          return { ...s, w, v: P.cup * w, t: Math.max(P.floor, P.keel * (1 - 0.5 * u)), ahead };
+          // (The notches keep the shallow V; the leaflets hang below the rachis.)
+          return { ...s, w, v: kind === 1 ? -P.hang.shoulder * w : kind === 2 ? -P.hang.tip * w : P.cup * w, t: Math.max(P.floor, P.keel * (1 - 0.5 * u)), ahead };
         });
       fronds.push(
         bladeGeometry(
@@ -933,7 +941,7 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
             const u = us[i];
             return { ...st, w: 0.058 * s * Math.sin(Math.PI * Math.min(0.97, 0.06 + u * 0.94)) ** 0.6 + 0.006, v: 0.008, t: 0.036 * s * (1 - 0.3 * u) + 0.006 };
           });
-        leaves.push(bladeGeometry(stations, (u, side) => (side > 0 ? between(L.frangiLeaf, L.frangiLit, sstep(u, 0.2, 1) * 0.6, 0.98 + 0.06 * hash(seed + k * 3.1 + n)) : between(L.frangiLeaf, L.frangiLeaf, 0, 0.8)), 0.3));
+        leaves.push(bladeGeometry(stations, (u, side) => (side > 0 ? between(L.frangiLeaf, L.frangiLit, sstep(u, 0.2, 1) * 0.6, 0.98 + 0.06 * hash(seed + k * 3.1 + n)) : between(L.frangiLeaf, L.frangiLeaf, 0, 0.8)), FRANGIPANI.soften));
       }
       if (k % 2) return;
       // The flowers: a small dome of them over the rosette's heart.
@@ -1060,25 +1068,31 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       [a, b] = [line[0], line[line.length - 1]],
       length = Math.hypot(b[0] - a[0], b[1] - a[1]),
       turn = Math.atan2(b[1] - a[1], b[0] - a[0]),
-      n = length > 0 ? Math.max(2, Math.round(length / (B.spacing * width)) + 1) : 1,
+      // A wide bed is massed: its lobes closer, smaller across, staggered either side of its line and
+      // of more varied heights, so it reads as shrubs two deep, never one long cushion.
+      W = width >= B.wide.from ? B.wide : null,
+      n = length > 0 ? Math.max(2, Math.round(length / ((W ? W.spacing : B.spacing) * width)) + 1) : 1,
+      side: [number, number] = length > 0 ? [-(b[1] - a[1]) / length, (b[0] - a[0]) / length] : [0, 0],
       lobes: Lobe[] = [];
     let floor = Infinity,
       roof = -Infinity;
     for (let k = 0; k < n; k++) {
       const t = n === 1 ? 0 : k / (n - 1),
-        x = a[0] + (b[0] - a[0]) * t + (h(k) - 0.5) * 0.08 * width,
-        z = a[1] + (b[1] - a[1]) * t + (h(k + 20) - 0.5) * 0.08 * width,
+        off = W ? (k % 2 ? 1 : -1) * W.stagger * (width / 2) * (0.7 + 0.6 * h(k + 90)) : 0,
+        x = a[0] + (b[0] - a[0]) * t + (h(k) - 0.5) * 0.08 * width + side[0] * off,
+        z = a[1] + (b[1] - a[1]) * t + (h(k + 20) - 0.5) * 0.08 * width + side[1] * off,
         end = n > 1 && (k === 0 || k === n - 1) ? 0.86 : 1,
-        across = (width / 2) * end * (0.92 + 0.16 * h(k + 40)),
+        across = (width / 2) * end * (0.92 + 0.16 * h(k + 40)) * (W ? W.across : 1),
         tall = height * end * (0.44 + 0.2 * h(k + 60)),
+        rise = W ? W.low + (1 - W.low) * h(k + 80) : 0.86 + 0.14 * h(k + 80),
         y = ground(x, z);
       floor = Math.min(floor, y);
       roof = Math.max(roof, y + height);
-      lobes.push({ c: [x, y + height * end * (0.86 + 0.14 * h(k + 80)) - tall, z], r: [across * (n > 1 ? 1.06 : 1), tall, across], rot: [0, -turn, 0] });
+      lobes.push({ c: [x, y + height * end * rise - tall, z], r: [across * (n > 1 ? 1.06 : 1), tall, across], rot: [0, -turn, 0] });
     }
     const F = B.florets,
       // (A single shrub on a finer grid: it is small, and its outline is all of it.)
-      mass = leafyMass(lobes, { fillet: B.fillet, grid: n === 1 ? B.single : B.grid, floor: floor - B.sink, round: B.round, pitch: F.pitch, reach: F.reach, amp: F.amp, level: F.level, soften: F.soften, look: { body: L.shrub, body2: L.shrub2, under: L.shrubUnder, lit: L.shrubLit }, y0: floor, y1: roof, seed }).geometry,
+      mass = leafyMass(lobes, { fillet: W ? W.fillet : B.fillet, grid: n === 1 ? B.single : width >= B.wide.from ? B.wide.grid : B.grid, floor: floor - B.sink, round: B.round, pitch: F.pitch, reach: F.reach, amp: F.amp, level: F.level, soften: F.soften, look: { body: L.shrub, body2: L.shrub2, under: L.shrubUnder, lit: L.shrubLit }, y0: floor, y1: roof, seed }).geometry,
       // A few broad leaves arching out over its edges from under its top (the tropical shrubs' own
       // leaves, ovate with a rounded tip), so it reads as massed leafy shrubs, not a clipped hedge.
       leaves: T.BufferGeometry[] = [mass],
@@ -1568,14 +1582,15 @@ export function tropicGardenSite(sde4: Sde4Plan): TropicSite {
  *   lines of sight (the bay's pair west of the call stretch's lines to the file's camera and to the
  *   south-west stop's, the tail's pair east of them);
  * - frangipani: two on the west lawn, one off the west screen's corner beside the café terrace and one
- *   on the knoll (the mound) to the south-west;
+ *   on the knoll (the mound) to the south-west, and a third on the north-west lawn, framing it;
  * - beds of massed leafy shrubs (bedGeometry: a line, its width and height, and which way their broad
  *   leaves arch out, away from what they stand against) along SDE4's foot: a low bed backing the café
  *   terrace's north side where it passes the building's south-west corner (its leaves arching north,
  *   away from the paving), one inside the tree walk's arc along the podium's east face, along the back
- *   and the podium's west edge, and single shrubs on the lawn's edge by the south-east and south-west
- *   beaches, at the big rain tree's foot and two on the north lawn with a low bed between them;
- *   heliconia fans as accents in the beds. The forecourt is the building's front edge (no bed between
+ *   (one foundation bed the building's length) and the podium's west edge, single shrubs on the
+ *   lawn's edge by the south-east and south-west beaches and at the big rain tree's foot, and one
+ *   informal drift along the north lawn's rim (three massed parts), leaving the
+ *   lawn between it and the building open; heliconia fans as accents in the beds. The forecourt is the building's front edge (no bed between
  *   it and the podium), and the south lawn between the bay walk and the tree walk stays one open panel,
  *   as photo 1's does.
  */
@@ -1606,24 +1621,25 @@ export const TROPIC_GARDEN = {
     { line: [[-5.05, 1.27], [-4.05, 1.25]], width: 0.6, height: 0.5, seed: 1, leaves: { toward: -Math.PI / 2, spread: 0.55 } },
     // Inside the tree walk's arc, along the podium's east face.
     { line: [[6.5, -0.55], [6.55, 0.95]], width: 0.62, height: 0.56, seed: 3, leaves: { toward: 0, spread: 0.6 } },
-    // Along the back.
-    { line: [[-3.05, -4.42], [-1.45, -4.34]], width: 0.72, height: 0.62, seed: 4, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
-    { line: [[1.32, -4.42], [2.3, -4.34]], width: 0.62, height: 0.56, seed: 5, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
+    // Along the back: one foundation bed the building's length, its fan inside it.
+    { line: [[-3.05, -4.46], [2.35, -4.4]], width: 1.0, height: 0.62, seed: 4, leaves: { toward: -Math.PI / 2, spread: 0.7 } },
     // Along the fin block's west face.
     { line: [[-4.1, -3.15], [-4.05, -1.05]], width: 0.68, height: 0.6, seed: 6, leaves: { toward: Math.PI, spread: 0.7 } },
     // At the palms' and the big rain tree's feet.
     { line: [[8.65, 2.95]], width: 0.6, height: 0.5, seed: 7 },
     { line: [[-6.75, 6.45]], width: 0.64, height: 0.52, seed: 8 },
     { line: [[7.75, -0.6]], width: 0.68, height: 0.56, seed: 9 },
-    // On the north lawn the shorter plan left open behind the building.
-    { line: [[-1.9, -6.6]], width: 0.66, height: 0.54, seed: 10 },
-    { line: [[4.3, -6.1]], width: 0.6, height: 0.5, seed: 11 },
-    { line: [[0.3, -6.35], [1.9, -6.6]], width: 0.6, height: 0.5, seed: 12, leaves: null },
+    // One drift along the north lawn's rim, about 1.2 in from the turf's lip and following it, in
+    // three massed parts (two gaps of lawn), heights varied; a fan in its east part. The lawn between it and the back bed stays open.
+    { line: [[-3.7, -7.85], [-1.95, -8.38]], width: 1.45, height: 0.8, seed: 10, leaves: { toward: -Math.PI / 2, spread: 0.6 } },
+    { line: [[-0.55, -8.75], [0.75, -9.1]], width: 1.2, height: 0.58, seed: 11, leaves: { toward: -Math.PI / 2, spread: 0.6 } },
+    { line: [[2.05, -9.3], [3.7, -9.22]], width: 1.45, height: 0.76, seed: 12, leaves: { toward: -Math.PI / 2, spread: 0.6 } },
   ] as { line: [number, number][]; width: number; height: number; seed: number; leaves?: { toward: number; spread: number } | null }[],
   fans: [
     { x: -4.2, z: 1.22, height: 0.9, ry: 0.1, seed: 1 },
     { x: 6.55, z: 0.25, height: 0.95, ry: -0.2, seed: 2 },
-    { x: -0.95, z: -4.42, height: 1.05, ry: 0.05, seed: 3 },
+    { x: -0.95, z: -4.45, height: 1.05, ry: 0.05, seed: 3 },
+    { x: 2.65, z: -9.05, height: 1.1, ry: 0.1, seed: 5 },
     { x: -4.1, z: -2.05, height: 1.0, ry: 1.5, seed: 4 },
   ],
 };
