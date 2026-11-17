@@ -11577,7 +11577,12 @@ let tropicReport = '';
   ])
     assert(hsv(colour).s <= hsv(family).s + 1e-9, `The tropic island's ${name} (${colour}) is more saturated than its family.`);
   const value = (hex) => Math.max(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255));
-  assert(TROPIC_LOOK.granite.every((c) => hsv(c).s < 0.15) && TROPIC_LOOK.granite.filter((c) => value(c) < 0.5).length >= 2, 'The tropic island\'s rocks are not greys, two of them dark.');
+  // Its rocks are pale warm greys (the town's kerb granite's family) with a little spread between them
+  // and none dark, so they stay grey at night beside the town's pebbles, never black lumps round the
+  // rim (the review's night finding); the rule refuses the old greys, two of which were dark.
+  const paleGranite = (greys) => greys.every((c) => hsv(c).s < 0.15 && value(c) >= 0.58) && Math.max(...greys.map(value)) - Math.min(...greys.map(value)) >= 0.04;
+  assert(paleGranite(TROPIC_LOOK.granite), `The tropic island's rocks (${TROPIC_LOOK.granite.join(', ')}) are not pale greys with a spread, or one is dark.`);
+  assert(!paleGranite(['#958f84', '#8b867d', '#9e978a', '#7d7871', '#706c66']) && !paleGranite(['#aaa397', '#aaa397']), 'The tropic island\'s granite rule lets dark or uniform greys through.');
   // Its lawn is the town's (no stripes, no texture of its own) and lies on plan.tropicTop; its beach is
   // the shore's profile on its stations' rays; its rocks stand on the shore, sunk a third of their height.
   {
