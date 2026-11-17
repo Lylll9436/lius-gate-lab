@@ -1,6 +1,47 @@
 import * as T from 'three';
-import type { SurfaceKind } from './city-materials';
-import { animateResident, blob, DEPTH, HEAD, lathe, paint, part, shade, taper, TORSO, torsoAt } from './city-people';
+import { blob, DEPTH, HEAD, lathe, paint, part, shade, taper, TORSO, torsoAt } from './city-people';
+import {
+  armState,
+  AT_EASE,
+  atEase,
+  CUP_AXIS,
+  cupOnSaucer,
+  cupPieces,
+  easeArm,
+  EYE,
+  figureHand,
+  handsInLap,
+  hsv,
+  insideBody,
+  kept,
+  LAP,
+  lean,
+  leaned,
+  LEG,
+  limb,
+  mix,
+  mixV,
+  putAway,
+  reach,
+  rising,
+  saucerPieces,
+  SEAT,
+  seated,
+  shown,
+  smooth,
+  sole,
+  soleOf,
+  sRGB,
+  STRIDE,
+  TAU,
+  toHsv,
+  UPPER,
+  walking,
+  type ArmState,
+  type FigureJoints,
+  type Material,
+  type V3,
+} from './figure-rig';
 import { ellipsoid, sculpt } from './town-sculpt';
 
 /*
@@ -10,10 +51,11 @@ import { ellipsoid, sculpt } from './town-sculpt';
  * small pale pendant, fair skin, dark trousers. Her hands carry a watering can, or a teacup and its
  * saucer; poseAlison() sets every joint and prop for a pose and a phase, from nothing
  * else, so town time can drive it and a paused town holds it. The sky island (town-sky's alison())
- * stands her on its deck and poses her through her day from town-plan's alisonDay.
+ * stands her on its deck and poses her through her day from town-plan's alisonDay. Her rig (the
+ * joints, the solves, the poses every figure has, her china and the clock that holds her) is the
+ * one the town's named figures share (figure-rig.ts); her look, her can and its water, and her own
+ * poses are hers.
  */
-type Material = (c: string, k?: SurfaceKind) => T.MeshStandardMaterial;
-type V3 = [number, number, number];
 
 /**
  * Her colours (sRGB). Like the residents', every one stays at or under HSV saturation 0.55, but for
@@ -57,87 +99,17 @@ const HAIR_TURN = [5, 8, 10],
   HAIR_HUES = [16, 32];
 
 /* ------------------------------------------------------------------ */
-/* Measures (the residents', see city-people.ts)                       */
+/* Measures (the rig's are the residents', see figure-rig.ts)          */
 /* ------------------------------------------------------------------ */
-/** The hips' pivot height (each leg's group), and the arms' pivots (shoulders). */
-const HIP = 0.31,
-  SHOULDER = { x: 0.165, y: 0.6 };
-/** The arm's two bones: shoulder to elbow, and elbow to the hand's (mitten's) centre (0.215 in all, as a resident's). */
-const UPPER = 0.095,
-  FORE = 0.12;
-/** The thigh's radius at the hip: seated, its underside rests this far below the hip line. */
-const THIGH_R = 0.063;
-/** An eye's point on the face (where a resident's eyes sit), behind the glasses. */
-const EYE: V3 = [0, 0.772, 0.137];
 /** The pendant's middle, just under the top's collar. */
 const PENDANT_Y = 0.565;
-/** The teacup's axis stands this far from its handle (the cup's origin), along its +x. */
-const CUP_AXIS = 0.058;
 /** The spacing of the distance grid the hair's crown is meshed on: its triangles go as 1/h² (about 460 show at this spacing). */
 const HAIR_GRID = 0.034;
-
-/**
- * The seat she sits on, its top above her floor: the town's park bench (town-props' bench: slats
- * centred 0.405 up, 0.07 thick, so 0.44; the residence's oak bench is 0.40 and the airport's 0.38).
- * Seated, her hip line is 0.193 over her floor (`lift`), her thighs rest on the seat, and her
- * short legs hang from the knee with her soles 0.33 clear of the floor, as a resident's would. Any
- * seat from 0.11 (where her soles just clear the floor) works: pass `seat` to poseAlison.
- */
-const SEAT = 0.44;
-/** A stride (one 'walk' phase, two steps) in units: animateResident's gait turns 17 radians a unit. */
-const STRIDE = (Math.PI * 2) / 17;
 
 /* ------------------------------------------------------------------ */
 /* Builders                                                            */
 /* ------------------------------------------------------------------ */
 const srgb = new T.Color();
-/** A hex colour as sRGB components (0..1). */
-function sRGB(hex: string): V3 {
-  const n = parseInt(hex.slice(1), 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
-/** A hex colour as HSV: hue in degrees, saturation and value 0..1. */
-function toHsv(hex: string): V3 {
-  const [r, g, b] = sRGB(hex),
-    max = Math.max(r, g, b),
-    min = Math.min(r, g, b);
-  return [max === min ? 0 : (60 * (g - b)) / (max - min), max ? (max - min) / max : 0, max];
-}
-/** HSV (hue in degrees, saturation and value 0..1) as sRGB components. */
-function hsv(h: number, sat: number, v: number): V3 {
-  const f = (k: number) => {
-    const m = (k + h / 60) % 6;
-    return v - v * sat * Math.max(0, Math.min(m, 4 - m, 1));
-  };
-  return [f(5), f(3), f(1)];
-}
-/** Whether a point is hidden inside her head or her torso (a little under their surfaces). */
-function insideBody(x: number, y: number, z: number) {
-  const [a, b, c] = HEAD.r;
-  if (Math.hypot(x / a, (y - HEAD.y) / b, (z - 0.005) / c) < 0.94) return true;
-  const r = torsoAt(y);
-  return r > 0 && Math.hypot(x / r, z / (r * DEPTH)) < 0.9;
-}
-/** A geometry (un-indexed, its positions and normals only) without the triangles whose three corners are all `hidden`. */
-function shown(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean) {
-  const flat = geometry.index ? geometry.toNonIndexed() : geometry,
-    p = flat.getAttribute('position'),
-    n = flat.getAttribute('normal'),
-    pos: number[] = [],
-    nor: number[] = [];
-  for (let i = 0; i < p.count; i += 3) {
-    if ([0, 1, 2].every((k) => hidden(p.getX(i + k), p.getY(i + k), p.getZ(i + k)))) continue;
-    for (let k = 0; k < 3; k++) {
-      pos.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k));
-      nor.push(n.getX(i + k), n.getY(i + k), n.getZ(i + k));
-    }
-  }
-  const g = new T.BufferGeometry();
-  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
-  return g;
-}
 /**
  * Which way a point of the hair faces: out from the head's middle above it and the body's upright
  * axis below, or, below the jaw, towards `face` if a lock is given one (a lock hanging in front of
@@ -297,41 +269,6 @@ function lock(p: V3[], a: number[], b: number[], out: V3[], radial = 10, step = 
     max: hi as unknown as V3,
   };
   return { geometry, shape };
-}
-/**
- * The triangles of an indexed geometry that are not wholly `hidden`, un-indexed, with colours on
- * their vertices from `colour` (sRGB, from each vertex's position and normal).
- */
-function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean, colour: (p: T.Vector3, n: T.Vector3) => V3) {
-  const p = geometry.getAttribute('position'),
-    nrm = geometry.getAttribute('normal'),
-    index = geometry.index!,
-    gone = new Uint8Array(p.count),
-    rgb = new Float32Array(p.count * 3),
-    v = new T.Vector3(),
-    n = new T.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    gone[i] = hidden(p.getX(i), p.getY(i), p.getZ(i)) ? 1 : 0;
-    const [r, g, b] = colour(v.fromBufferAttribute(p, i), n.fromBufferAttribute(nrm, i));
-    srgb.setRGB(r, g, b, T.SRGBColorSpace).toArray(rgb, i * 3);
-  }
-  const pos: number[] = [],
-    nor: number[] = [],
-    col: number[] = [];
-  for (let k = 0; k < index.count; k += 3) {
-    const tri = [index.getX(k), index.getX(k + 1), index.getX(k + 2)];
-    if (tri.every((i) => gone[i])) continue;
-    for (const i of tri) {
-      pos.push(p.getX(i), p.getY(i), p.getZ(i));
-      nor.push(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
-      col.push(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
-    }
-  }
-  const g = new T.BufferGeometry();
-  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
-  return g;
 }
 /**
  * A lock's line and section, from its spine `p` (inside the crown down to where its curl begins)
@@ -605,16 +542,8 @@ function glassesGeometry() {
   return g;
 }
 
-export type AlisonJoints = {
-  root: T.Group;
-  body: T.Object3D;
-  /** leg-left (-x) and leg-right (+x), and their knees. */
-  legs: [T.Object3D, T.Object3D];
-  knees: [T.Object3D, T.Object3D];
-  /** arm-left (-x: her right hand; the residents name their sides by the viewer's left) and arm-right (+x), and their elbows. */
-  arms: [T.Object3D, T.Object3D];
-  elbows: [T.Object3D, T.Object3D];
-};
+/** Her joints: the shared rig's (arm-left, -x, is her right hand). */
+export type AlisonJoints = FigureJoints;
 export type AlisonProps = { can: T.Group; cup: T.Group; saucer: T.Group; water: T.Group };
 
 /** The watering can's drum: its axis this far ahead of the handle's grip (the can's origin, +z towards the spout). */
@@ -679,20 +608,10 @@ function createProps(material: Material): AlisonProps {
     paint(outward(taper([[0, 0.032, DRUM - 0.062], [0, 0.044, 0.04], [0, 0.028, 0.004], [0, -0.024, 0.002], [0, -0.062, 0.034], [0, -0.066, DRUM - 0.062]], [TUBE, TUBE, TUBE, TUBE, TUBE, TUBE], 6, 6)), shade(L.zinc, 0.9)),
     paint(outward(taper([[0, -0.054, DRUM + 0.04], [0, -0.034, DRUM + 0.105], [0, -0.012, DRUM + 0.165], ROSE], [TUBE, TUBE, TUBE, 0.062], 5, 6)), shade(L.zinc, 0.96)),
   ], material, 'paint', 'watering-can');
-  // The teacup, its handle (a lug) at the origin on its -x side; milky tea inside, a blue band at the rim.
-  const ring = (p: T.Vector3) => Math.hypot(p.x - CUP_AXIS, p.z);
-  part(cup, [
-    paint(lathe([[0, -0.037], [0.034, -0.037], [0.049, 0.014], [0.052, 0.037], [0.046, 0.039], [0.041, 0.024], [0, 0.024]], 9).translate(CUP_AXIS, 0, 0), (p) =>
-      p.y < 0.0245 && p.y > 0.02 && ring(p) < 0.0415 ? L.tea : p.y > 0.024 && ring(p) > 0.0485 ? L.chinaBand : L.china,
-    ),
-    paint(blob([0.037, 0.037, 0.037], [0, 0, 0], 8), L.china),
-  ], material, 'paint', 'teacup');
-  // The saucer, its foot at the origin: a dish 0.15 across with a well for the cup.
-  part(saucer, [
-    paint(lathe([[0, 0], [0.04, 0], [0.06, 0.03], [0.075, 0.064], [0.071, 0.07], [0.056, 0.044], [0.044, 0.036], [0, 0.036]], 9), (p) =>
-      p.y > 0.055 && Math.hypot(p.x, p.z) > 0.066 ? L.chinaBand : L.china,
-    ),
-  ], material, 'paint', 'saucer');
+  // The teacup, its handle (a lug) at the origin on its -x side; milky tea inside, a blue band at the
+  // rim; and its saucer, its foot at the origin: a dish 0.15 across with a well for the cup (the rig's china).
+  part(cup, cupPieces({ china: L.china, band: L.chinaBand, drink: L.tea }), material, 'paint', 'teacup');
+  part(saucer, saucerPieces({ china: L.china, band: L.chinaBand }), material, 'paint', 'saucer');
   // The water, its origin its top ring's middle, falling along its -y (ahead along its +z), opaque.
   const tube = streamGeometry(),
     stream = part(water, [tube], material, 'paint', 'water-stream');
@@ -819,41 +738,9 @@ export function createAlison(material: Material) {
     arms: T.Object3D[] = [],
     elbows: T.Object3D[] = [];
   for (const side of [-1, 1]) {
-    // The legs are a resident's, in dark trousers over plain shoes.
-    const hip = new T.Group();
-    hip.name = side < 0 ? 'leg-left' : 'leg-right';
-    hip.position.set(side * 0.065, HIP, 0);
-    root.add(hip);
-    part(hip, [paint(lathe([[0, 0.03], [0.05, 0.025], [THIGH_R, 0.0], [0.06, -0.07], [0.055, -0.14], [0.03, -0.165], [0, -0.17]], 10), L.trousers, [-0.17, 0.02, 0.92, 1.02])], material, 'fabric');
-    const knee = new T.Group();
-    knee.name = 'knee';
-    knee.position.y = -0.14;
-    hip.add(knee);
-    const shoe = blob([0.058, 0.044, 0.09], [0, 0, 0], 10),
-      sp = shoe.getAttribute('position');
-    for (let i = 0; i < sp.count; i++) if (sp.getY(i) < 0) sp.setY(i, sp.getY(i) * 0.8); // a flatter sole
-    shoe.computeVertexNormals();
-    shoe.translate(0, -0.135, 0.025);
-    part(knee, [
-      paint(lathe([[0, 0.02], [0.055, 0.01], [0.052, -0.07], [0.053, -0.094], [0.04, -0.106], [0, -0.108]], 10), L.trousers, [-0.1, 0.02, 0.84, 0.94]),
-      paint(shoe, (p) => (p.y < -0.157 ? shade(L.shoes, 1.35) : L.shoes)),
-    ], material, 'fabric', 'shoe');
-    // The arms: a resident's sleeve and mitten hand, split at an elbow (0.095 down) so a hand can
-    // reach a cup or a can; each half is capped round at the elbow, so the joint stays whole bent.
-    const arm = new T.Group();
-    arm.name = side < 0 ? 'arm-left' : 'arm-right';
-    arm.position.set(side * SHOULDER.x, SHOULDER.y, 0);
-    arm.rotation.z = side * 0.12;
-    root.add(arm);
-    part(arm, [paint(lathe([[0, 0.045], [0.04, 0.035], [0.055, 0.0], [0.051, -0.05], [0.048, -UPPER], [0.034, -0.129], [0, -0.143]], 10), L.top, [-0.14, 0.03, 0.9, 1.04])], material, 'fabric');
-    const elbow = new T.Group();
-    elbow.name = 'elbow';
-    elbow.position.y = -UPPER;
-    arm.add(elbow);
-    part(elbow, [
-      paint(lathe([[0, 0.048], [0.034, 0.034], [0.047, 0.0], [0.045, -0.04], [0.043, -0.072], [0.03, -0.083], [0, -0.088]], 10), L.top, [-0.08, 0.04, 0.88, 1.0]),
-      paint(blob([0.043, 0.05, 0.046], [0, -FORE, 0], 8), L.skin),
-    ], material, 'fabric');
+    // The legs are a resident's, in dark trousers over plain shoes; the arms a resident's sleeve and
+    // mitten hand, split at an elbow so a hand can reach a cup or a can (the rig's limb()).
+    const { hip, knee, arm, elbow } = limb(root, side, material, { trousers: L.trousers, shoes: L.shoes, sleeve: L.top, skin: L.skin });
     legs.push(hip);
     knees.push(knee);
     arms.push(arm);
@@ -883,82 +770,8 @@ export type AlisonPose = (typeof ALISON_POSES)[number];
 
 const tmp = new T.Vector3(),
   basis = new T.Matrix4();
-/** A body-frame point after the body leans forward by `a` about the hip line (as seatRider leans the rider). */
-function leaned([x, y, z]: V3, a: number): V3 {
-  const dy = y - HIP;
-  return [x, HIP + dy * Math.cos(a) - z * Math.sin(a), dy * Math.sin(a) + z * Math.cos(a)];
-}
-/**
- * Lean the body forward by `a` about the hip line (y 0.31), carrying the shoulders with it; `reach`
- * draws each shoulder in, up and forward (the shoulder blade sliding round as an arm reaches out);
- * `back` moves her hips, and all of her over them, back over her feet (as her knees bend).
- */
-function lean(j: AlisonJoints, a: number, reach: V3 = [0, 0, 0], back = 0) {
-  j.body.rotation.set(a, 0, 0);
-  j.body.position.set(0, HIP - HIP * Math.cos(a), -HIP * Math.sin(a) - back);
-  j.arms.forEach((arm, k) => {
-    arm.position.set(...leaned([(k ? 1 : -1) * (SHOULDER.x - reach[0]), SHOULDER.y + reach[1], reach[2]], a));
-    arm.position.z -= back;
-  });
-  j.legs.forEach((leg) => (leg.position.z = -back));
-}
-/** A hand's centre (the mitten's) in her root's frame, from its arm and elbow as posed. */
-export function alisonHand(j: AlisonJoints, k: 0 | 1, out = new T.Vector3()) {
-  const arm = j.arms[k],
-    elbow = j.elbows[k];
-  return out.set(0, -FORE, 0).applyQuaternion(elbow.quaternion).add(elbow.position).applyQuaternion(arm.quaternion).add(arm.position);
-}
-/**
- * Put hand k's centre on `target` (her root's frame) by a two-bone solve from the shoulder, the
- * elbow pointing along `bend` as far as it can (out and down, so the arm folds as an arm does), the
- * forearm folding forward about the elbow. A target out of reach leaves the arm straight towards
- * it, and the checks catch that.
- */
-function reach(j: AlisonJoints, k: 0 | 1, target: V3, bend: V3) {
-  const S = j.arms[k].position,
-    d = new T.Vector3(target[0] - S.x, target[1] - S.y, target[2] - S.z),
-    dist = T.MathUtils.clamp(d.length(), FORE - UPPER + 1e-4, UPPER + FORE - 1e-4),
-    a = d.normalize(),
-    cosA = (UPPER * UPPER + dist * dist - FORE * FORE) / (2 * UPPER * dist),
-    e = new T.Vector3(...bend);
-  e.addScaledVector(a, -e.dot(a)).normalize();
-  // The upper arm's direction, then the forearm's.
-  const u = a.clone().multiplyScalar(cosA).addScaledVector(e, Math.sqrt(Math.max(0, 1 - cosA * cosA))),
-    f = a.clone().multiplyScalar(dist).addScaledVector(u, -UPPER).normalize(),
-    cosE = T.MathUtils.clamp(f.dot(u), -1, 1);
-  // The arm's frame: -y down the upper arm, z the way the forearm folds, x across.
-  const ly = u.clone().negate(),
-    lz = f.clone().addScaledVector(u, -cosE);
-  if (lz.lengthSq() < 1e-10) lz.set(0, 0, 1).addScaledVector(u, -u.z);
-  lz.normalize();
-  j.arms[k].quaternion.setFromRotationMatrix(basis.makeBasis(new T.Vector3().crossVectors(ly, lz), ly, lz));
-  j.elbows[k].rotation.set(-Math.acos(cosE), 0, 0);
-}
-/** The lowest point of a leg's shoe above the floor its hip stands over, for a hip swing a and a knee bend b (animateResident's sole). */
-function sole(a: number, b: number) {
-  const c = a + b;
-  return HIP - 0.14 * Math.cos(a) - 0.135 * Math.cos(c) - 0.025 * Math.sin(c) - Math.hypot(0.035 * Math.cos(c), 0.09 * Math.sin(c));
-}
-/** From the hip to the middle of the shoe, down a straight leg (thigh 0.14, shin 0.135); and the shoe's half sizes under its middle (its sole is flattened). */
-const LEG = 0.275,
-  SHOE: V3 = [0.058, 0.0352, 0.09];
-const kneeFrame = new T.Matrix4(),
-  shoeAt = new T.Vector3();
-/**
- * The lowest point of a leg's shoe over the floor under her root, however the leg is turned (its
- * hip, `leg`, and its `knee`, as posed): the bottom of the shoe's ellipsoid, carried by both joints.
- */
-function soleOf(leg: T.Object3D, knee: T.Object3D) {
-  leg.updateMatrix();
-  knee.updateMatrix();
-  const m = kneeFrame.multiplyMatrices(leg.matrix, knee.matrix),
-    e = m.elements;
-  shoeAt.set(0, -0.135, 0.025).applyMatrix4(m);
-  // The ellipsoid's lowest point: its middle less its reach straight down (the y row of its turn).
-  return shoeAt.y - Math.hypot(SHOE[0] * e[1], SHOE[1] * e[5], SHOE[2] * e[9]);
-}
-const smooth = T.MathUtils.smoothstep,
-  TAU = Math.PI * 2;
+/** A hand's centre (the mitten's) in her root's frame, from its arm and elbow as posed (the rig's figureHand). */
+export const alisonHand = figureHand;
 
 /**
  * The 'water' pose: her lean, how far her shoulders reach in, up and forward, the can's grip in her -x
@@ -989,8 +802,6 @@ export const ALISON_TABLE = { x: 0.03, z: 0.3, up: 0.225 };
  * hand under it never dips into the table's top.
  */
 const SET = { lean: 0.2, over: 0.035 };
-/** The 'rise' pose: how far she leans forward at its middle, as anyone does to stand up. */
-const RISE = { lean: 0.16 };
 /**
  * Carrying the watering can (poseAlison's `carry`): her -x arm hangs at her side `out` from plumb
  * (a little further out than at ease, so the can's drum clears her leg), its elbow `elbow` bent,
@@ -1009,27 +820,6 @@ export const ALISON_CARRY = { out: 0.2, elbow: 0.16, yaw: -0.06 };
  * at the most, half way, so the can comes up wide of her hair.
  */
 const TAKE = { lean: 0.55, reach: [0.012, 0, 0.04] as V3, knee: 1.1, down: 0.42, arm: 0.2, out: 0.05 };
-/** Hand k's place in her lap seated, and the way its elbow bends there ('sit'). */
-const LAP = (k: 0 | 1): [V3, V3] => [
-  [(k ? 1 : -1) * 0.1, 0.42, 0.075],
-  [(k ? 1 : -1) * 0.8, -0.2, -0.6],
-];
-/** A mix of a and b, exact at both ends. */
-const mix = (a: number, b: number, t: number) => a * (1 - t) + b * t,
-  mixV = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
-/**
- * Her cup resting in its saucer's well, as between sips (the cup's handle back and to her -x, as she
- * holds it): the saucer's foot at `at`, both turned `ry` about the upright.
- */
-function cupOnSaucer(props: AlisonProps, at: V3, ry: number) {
-  const { cup, saucer } = props;
-  saucer.visible = cup.visible = true;
-  saucer.position.set(...at);
-  saucer.rotation.set(0, ry, 0);
-  cup.rotation.set(0, ry - 0.5, 0, 'YXZ');
-  const lug = tmp.set(-CUP_AXIS, 0, 0).applyQuaternion(cup.quaternion);
-  cup.position.set(at[0] + lug.x, at[1] + 0.036 + 0.037 + lug.y, at[2] + lug.z);
-}
 /**
  * Where a hand holds each prop, in the prop's own frame: the can's handle and the cup's lug in her
  * -x hand (hand 0), the saucer's near rim in her +x hand (hand 1).
@@ -1071,17 +861,8 @@ export type AlisonPoseOptions = {
   tail?: number;
   stoop?: number;
 };
-/** An arm as a pose leaves it: its turn at the shoulder and its elbow's bend. */
-type ArmState = { q: T.Quaternion; bend: number };
-const armState = (j: AlisonJoints, k: 0 | 1): ArmState => ({ q: j.arms[k].quaternion.clone(), bend: j.elbows[k].rotation.x });
-/** Arm k part of the way `t` from one state to another (exactly each at 0 and 1). */
-function easeArm(j: AlisonJoints, k: 0 | 1, a: ArmState, b: ArmState, t: number) {
-  j.arms[k].quaternion.slerpQuaternions(a.q, b.q, t);
-  j.elbows[k].rotation.set(mix(a.bend, b.bend, t), 0, 0);
-}
-/** Each arm at ease, as poseAlison leaves it; her -x arm carrying the can (ALISON_CARRY). */
-const AT_EASE = [-1, 1].map((s) => ({ q: new T.Quaternion().setFromEuler(new T.Euler(0, 0, s * 0.12)), bend: -0.12 })) as [ArmState, ArmState],
-  CARRYING: ArmState = { q: new T.Quaternion().setFromEuler(new T.Euler(0, 0, -ALISON_CARRY.out)), bend: -ALISON_CARRY.elbow },
+/** Her -x arm carrying the can (ALISON_CARRY). */
+const CARRYING: ArmState = { q: new T.Quaternion().setFromEuler(new T.Euler(0, 0, -ALISON_CARRY.out)), bend: -ALISON_CARRY.elbow },
   /** The can's turn as she carries it, and level at a turn of `ry` about the upright. */
   CAN_CARRIED = new T.Quaternion().setFromEuler(new T.Euler(0, ALISON_CARRY.yaw, 0)),
   level = (ry: number) => new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), ry);
@@ -1202,38 +983,21 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
     p = T.MathUtils.clamp(phase, 0, 1),
     unit = (v: number | undefined, d: number) => T.MathUtils.clamp(v ?? d, 0, 1);
   // At ease: upright, legs straight, arms down and a little out, elbows soft, no props.
-  lean(j, 0);
-  j.legs.forEach((leg) => leg.rotation.set(0, 0, 0));
-  j.knees.forEach((knee) => knee.rotation.set(0, 0, 0));
-  j.arms.forEach((arm, k) => arm.rotation.set(0, 0, (k ? 1 : -1) * 0.12));
-  j.elbows.forEach((elbow) => elbow.rotation.set(-0.12, 0, 0));
-  for (const p of Object.values(props)) {
-    p.visible = false;
-    p.position.set(0, 0, 0);
-    p.rotation.set(0, 0, 0, 'XYZ');
-  }
+  atEase(j);
+  putAway(props);
   let lift = 0;
   const carry = () => {
     easeArm(j, 0, CARRYING, CARRYING, 0);
     canInHand(j, props, CAN_CARRIED);
   };
-  if (name === 'sit' || name === 'sip' || name === 'set') {
-    // Thighs level and a little apart, shins hanging just forward of plumb, sitting up.
-    lift = Math.max(0.11, opts.seat ?? SEAT) + THIGH_R - HIP;
-    j.legs.forEach((leg, k) => leg.rotation.set(-Math.PI / 2, 0, (k ? 1 : -1) * 0.07));
-    j.knees.forEach((knee) => knee.rotation.set(Math.PI / 2 - 0.12, 0, 0));
-    lean(j, -0.03);
-  }
+  // Thighs level and a little apart, shins hanging just forward of plumb, sitting up.
+  if (name === 'sit' || name === 'sip' || name === 'set') lift = seated(j, opts.seat);
   if (name === 'stand') {
     if (opts.carry) carry();
   } else if (name === 'walk') {
     // The residents' own walk, one stride a phase; the elbows fold a little more as each arm swings
     // forward. Carrying the can, that arm hangs still.
-    const amount = T.MathUtils.clamp(opts.amount ?? 1, 0, 1);
-    j.root.userData.gait = { phase: u * TAU, amount };
-    animateResident(j.root, 0, 0, false);
-    lift = -j.root.userData.sole;
-    j.arms.forEach((arm, k) => j.elbows[k].rotation.set(-0.12 - 0.04 * amount - 0.5 * Math.max(0, -arm.rotation.x), 0, 0));
+    lift = walking(j, u, opts.amount);
     if (opts.carry) carry();
   } else if (name === 'water') {
     const held = unit(opts.lift, 1),
@@ -1323,7 +1087,7 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
       canInHand(j, props, level(at[3]).slerp(CAN_CARRIED, 1 - bend));
     }
   } else if (name === 'sit') {
-    for (const k of [0, 1] as const) reach(j, k, [(k ? 1 : -1) * 0.1, 0.42, 0.075], [(k ? 1 : -1) * 0.8, -0.2, -0.6]);
+    handsInLap(j);
   } else if (name === 'sip') {
     // The saucer held level in front of her; the cup lifted from its well to her lips and back,
     // on an arc that swings it clear of her chin.
@@ -1360,22 +1124,7 @@ export function poseAlison(j: AlisonJoints, props: AlisonProps, name: AlisonPose
   } else if (name === 'rise') {
     // From 'sit' (0) to 'stand' (1): every joint goes from the one to the other by the same smoothstep
     // that slides her root, her seat's lift comes down to her floor, and she leans into it midway.
-    const e = smooth(p, 0, 1),
-      seated = Math.max(0.11, opts.seat ?? SEAT) + THIGH_R - HIP;
-    lift = seated * (1 - e);
-    j.legs.forEach((leg, k) => leg.rotation.set((-Math.PI / 2) * (1 - e), 0, (k ? 1 : -1) * 0.07 * (1 - e)));
-    j.knees.forEach((knee) => knee.rotation.set((Math.PI / 2 - 0.12) * (1 - e), 0, 0));
-    lean(j, -0.03 * (1 - e) + RISE.lean * 4 * e * (1 - e));
-    // Her arms from her lap (as 'sit' reaches them, from her shoulders as they are now) to at ease.
-    const easy = new T.Quaternion();
-    for (const k of [0, 1] as const) {
-      const [lap, bend] = LAP(k);
-      reach(j, k, lap, bend);
-      const bent = j.elbows[k].rotation.x;
-      easy.setFromEuler(new T.Euler(0, 0, (k ? 1 : -1) * 0.12));
-      j.arms[k].quaternion.slerp(easy, e);
-      j.elbows[k].rotation.set(mix(bent, -0.12, e), 0, 0);
-    }
+    lift = rising(j, p, opts.seat);
   } else if (name === 'set') {
     // From 'sip' at rest (0) to 'sit' (1): her -x hand lets go of the cup's handle and goes to her
     // lap; her +x hand carries the saucer (the cup resting in it) from where she holds it to drink to
