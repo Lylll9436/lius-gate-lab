@@ -1130,14 +1130,14 @@ export async function createCity(
   sun.castShadow = true;
   const shadowBase = tier === 'low' ? 1024 : 1536;
   /**
-   * The town's shadow box, its home focus (TOWN_SHADOW): the island, the airport's island and the
-   * tropic island whole for every sun and yaw (the smallest circle round them, its rim at the airport's
-   * armour's north-west corner and a unit past the tropic island's south-east beach, and half a unit
-   * more: 62.7 round (4.48, 2.86) as the camera lane's stub lays the tropic island out), in a map twice
-   * `shadowBase` (3072, 2048 on the low tier), the size Inspect's and the sky island's boxes take: 24.5
-   * texels a unit, sharper than the old box round the island and the airport alone (centre (-3.5,
-   * -13.5), ±46 in 2048: 22.3), and on the low tier 16.3, a fiftieth softer than its old 16.7 (±46 in
-   * 1536); and the same map wherever the box goes, so a hand-over never replaces it. The light stands
+   * The town's shadow box, its home focus (TOWN_SHADOW, worked out from the plan when the page loads):
+   * the island, the airport's island and the tropic island whole for every sun and yaw (the smallest
+   * circle round them, its rim at the airport's armour's north-west corner and a unit past the tropic
+   * island's south-east beach, and half a unit more: 62.95 round (5.04, 2.94) with the island's natural
+   * coast), in a map twice `shadowBase` (3072, 2048 on the low tier), the size Inspect's and the sky
+   * island's boxes take: 24.4 texels a unit, sharper than the old box round the island and the
+   * airport alone (centre (-3.5, -13.5), ±46 in 2048: 22.3), and on the low tier 16.3, a fiftieth
+   * softer than its old 16.7 (±46 in 1536); and the same map wherever the box goes, so a hand-over never replaces it. The light stands
    * `reach` back along the key light (60: the key's own offset, 41, would leave the box's near side
    * behind the light) and its far plane is `far` out (110).
    */
@@ -1653,6 +1653,18 @@ export async function createCity(
    */
   /** How far (px) a group fitted beside a panel that starts at its own edge keeps from it, and from the frame's left edge. */
   const PANEL_CLEAR = 24;
+  /** How far (px) the tropic island keeps from the controls of a phone on its side in City mode's overview (fitOverview). */
+  const CONTROLS_CLEAR = 8;
+  /**
+   * What covers the scene on a phone on its side (fitOverview), px: the masthead's wordmark from the
+   * frame's left edge (to 299) and its mode and language switches from the right edge (209 in English,
+   * 172 in Chinese), and the tool pills and the bar under the scene from the left edge (the pills to
+   * 300, the bar to 278 in Chinese and 312 in English), the same at every width from 667 to 932. And
+   * how far out the overview may go there to keep the tropic island off them (`floor`): the plane's
+   * last and first moments stay out of the frame at the widest zoom over the town down to 0.27 at
+   * 667 x 375 and 0.30 at 844 x 390 and 932 x 430 (check-navigation).
+   */
+  const SIDE_HUD = { wordmark: 299, switches: 209, controls: 312, floor: 0.3 };
   const AIRPORT_FIT = new T.Box3(
     new T.Vector3(plan.AIRPORT.x - plan.AIRPORT.hw - plan.AIRPORT.armour, 0, plan.AIRPORT.z - plan.AIRPORT.hd - plan.AIRPORT.armour),
     new T.Vector3(plan.AIRPORT.x + plan.AIRPORT.hw + plan.AIRPORT.armour, 7, -35),
@@ -1769,7 +1781,10 @@ export async function createCity(
       freeHeight = Math.max(shownHeight * 0.6, shownHeight - 152),
       fit = (box: typeof all) =>
         Math.min(((freeWidth / width) * (camera.right - camera.left)) / (box.maxX - box.minX), ((freeHeight / height) * (camera.top - camera.bottom)) / (box.maxY - box.minY));
-    targetZoom = T.MathUtils.clamp(fit(all), controls.minZoom, 1);
+    // (The frame's own widest zoom, as resize() sets it: a phone on its side may have gone further out
+    // for the tropic island below, and the fit at another stop must not start from there.)
+    const widest = width >= height ? WIDEST.wide : WIDEST.tall;
+    targetZoom = T.MathUtils.clamp(fit(all), widest, 1);
     // What stays whole, across and down: all of it where it fits at the zoom, else the town, the
     // airport's island and the sky island (the tropic island then takes what is cut: City mode beside
     // the file on a 1024 to 1280 px window at the second and fourth Rotate stops, a phone on its side).
@@ -1837,6 +1852,120 @@ export async function createCity(
       lay([PANEL_CLEAR + swing[0] - at.x, file - PANEL_CLEAR - swing[1] - at.x]);
     };
     place();
+    // A phone on its side in City mode (the bars in a row of their own under the scene: frameFoot under
+    // 1), where even the widest zoom cannot hold it all: the tropic island landed wherever the centring
+    // put it, on the default bearing half under the tool pills and the bar with a slice of its roof
+    // between two pills (the review's finding at 844 x 390). What covers the scene there (SIDE_HUD): the
+    // masthead's two pills from its top to its foot, the caption's chip (182 by 102, as below), the tool
+    // pills and the bar from the pills' top (the foot: setFrameShift) down, and the file. The island's
+    // box (TROPIC_SEEN) lies clear of all of them and in the frame, CONTROLS_CLEAR from them at rest
+    // and two pixels through the idle drift (a move measured at rest shifts a turned view's box by a
+    // pixel or two less or more), or wholly out of the frame at rest and through the drift;
+    // never part under them. Where it does neither, the view moves as little as does it, the town, the
+    // airport's island and the sky island kept between the masthead's foot and the pills' top and
+    // PANEL_CLEAR inside the frame and the file (or no further out than they were); where no move does,
+    // the view goes out a step at a time (2% a step, never past SIDE_HUD.floor) until one does, and
+    // the visitor's own floor (controls.minZoom) comes down with it until the frame is resized, so the
+    // camera can get there and no later fit starts with a jump. Where none does even there (beside
+    // the file at 667 x 375 at the first three Rotate stops and at 844 x 390 at the first two, which
+    // would want 0.24 to 0.30, where the plane's return from the east comes into the frame), the
+    // framing stays as it was.
+    if (cityMode && width > height && frameFoot < 1) {
+      const foot = frameFoot * height,
+        mast = 2 * (height / 2 + frameDrop * height) - foot,
+        edge = frameShift > 0 ? width * (1 - 2 * frameShift) + 16 : width,
+        covers = [
+          [0, 0, SIDE_HUD.wordmark, mast],
+          [width - SIDE_HUD.switches, 0, width, mast],
+          [0, 0, 182, 102],
+          [0, foot, SIDE_HUD.controls, height],
+        ],
+        // The screen box (px from the frame's top left) of points, the view turned `turn` about its target.
+        boxAt = (points: readonly T.Vector3[], turn: number, perUnit: number) => {
+          const toward = new T.Vector3(Math.cos(targetYaw + turn), 0, -Math.sin(targetYaw + turn)),
+            upward = new T.Vector3().crossVectors(viewOffset(targetYaw + turn, new T.Vector3(), 0).normalize(), toward);
+          let x0 = Infinity,
+            x1 = -Infinity,
+            y0 = Infinity,
+            y1 = -Infinity;
+          for (const point of points) {
+            const x = width / 2 + (point.dot(toward) - target.dot(toward)) * perUnit,
+              y = height / 2 - (point.dot(upward) - target.dot(upward)) * perUnit;
+            x0 = Math.min(x0, x);
+            x1 = Math.max(x1, x);
+            y0 = Math.min(y0, y);
+            y1 = Math.max(y1, y);
+          }
+          return [x0, y0, x1, y1];
+        },
+        // The least move (px across and down the screen) of the view's content that leaves the island
+        // clear of what covers the scene or out of the frame, at rest and through the drift, what stays
+        // whole kept where it may be; or null. Moves are boxes [across from, down from, across to, down
+        // to]: the island in the frame and to one side of each cover (every choice of sides), or past
+        // one of the frame's edges, at every turn of the drift, met with the moves what stays whole allows.
+        settle = (perUnit: number) => {
+          const meet = (a: number[], b: number[]) => [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])],
+            open = (m: number[]) => m[0] <= m[2] && m[1] <= m[3],
+            kept = [islandMarks, SKY_MARKS].map((points) => boxAt(points, 0, perUnit)).reduce(
+              (moves, [x0, y0, x1, y1]) =>
+                meet(moves, [
+                  Math.min(PANEL_CLEAR, x0) - x0,
+                  Math.min(mast + CONTROLS_CLEAR, y0) - y0,
+                  Math.max(edge - PANEL_CLEAR, x1) - x1,
+                  Math.max(foot - CONTROLS_CLEAR, y1) - y1,
+                ]),
+              [-Infinity, -Infinity, Infinity, Infinity],
+            ),
+            boxes = [0, -0.16, -0.08, 0.08, 0.16].map((turn) => ({ box: boxAt(TROPIC_SEEN, turn, perUnit), m: turn ? 2 : CONTROLS_CLEAR })),
+            all = (moves: (b: number[], m: number) => number[]) => boxes.reduce((sum, { box, m }) => meet(sum, moves(box, m)), kept),
+            ways = [
+              all(([, , x1]) => [-Infinity, -Infinity, -x1, Infinity]),
+              all(([x0]) => [width - x0, -Infinity, Infinity, Infinity]),
+              all(([, , , y1]) => [-Infinity, -Infinity, Infinity, -y1]),
+              all(([, y0]) => [-Infinity, height - y0, Infinity, Infinity]),
+            ];
+          // In the frame, and beside, over or under each cover in turn.
+          const sides = (i: number, moves: number[]) => {
+            if (!open(moves)) return;
+            if (i === covers.length) {
+              ways.push(moves);
+              return;
+            }
+            const [cx0, cy0, cx1, cy1] = covers[i];
+            for (const side of [
+              ([, , x1]: number[], m: number) => [-Infinity, -Infinity, cx0 - m - x1, Infinity],
+              ([x0]: number[], m: number) => [cx1 + m - x0, -Infinity, Infinity, Infinity],
+              ([, , , y1]: number[], m: number) => [-Infinity, -Infinity, Infinity, cy0 - m - y1],
+              ([, y0]: number[], m: number) => [-Infinity, cy1 + m - y0, Infinity, Infinity],
+            ])
+              sides(i + 1, boxes.reduce((sum, { box, m }) => meet(sum, side(box, m)), moves));
+          };
+          sides(0, all(([x0, y0, x1, y1], m) => [m - x0, m - y0, edge - m - x1, height - m - y1]));
+          let best: number[] | null = null;
+          for (const way of ways)
+            if (open(way)) {
+              const move = [T.MathUtils.clamp(0, way[0], way[2]), T.MathUtils.clamp(0, way[1], way[3])];
+              if (!best || Math.hypot(move[0], move[1]) < Math.hypot(best[0], best[1])) best = move;
+            }
+          return best;
+        },
+        perUnitAt = () => (width * targetZoom) / (camera.right - camera.left),
+        from = targetZoom;
+      let move = settle(perUnitAt());
+      for (let step = 1; !move && from * 0.98 ** (step - 1) > SIDE_HUD.floor; step++) {
+        targetZoom = Math.max(SIDE_HUD.floor, from * 0.98 ** step);
+        place();
+        move = settle(perUnitAt());
+      }
+      if (!move) {
+        targetZoom = from;
+        place();
+      } else {
+        const [across, down] = move.map((px) => px / perUnitAt());
+        target.addScaledVector(right, -across).addScaledVector(up, down).addScaledVector(back, -(up.y * down) / back.y);
+        controls.minZoom = Math.min(controls.minZoom, targetZoom);
+      }
+    }
     // City mode, where the sky island lands at the box's top left (the opening bearing): it stood
     // under or right beside the caption's sky chip (16 px in, 166 wide with its longest caption, its
     // foot 102 down; the chip naming the place under the pointer is hidden in City mode). The view
@@ -1914,8 +2043,8 @@ export async function createCity(
       if (m.touching.length && m.aside > m.room && !frameDrop && m.down > m.under) {
         const below = m.foot - height / 2,
           k = Math.min(...m.touching.map((e) => (height - 178 - e.margin) / (height / 2 - e.top + below)));
-        if (k < 1 && targetZoom > controls.minZoom) {
-          targetZoom = Math.max(controls.minZoom, targetZoom * k);
+        if (k < 1 && targetZoom > widest) {
+          targetZoom = Math.max(widest, targetZoom * k);
           place();
           m = measure();
         }
