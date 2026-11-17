@@ -71,19 +71,26 @@ export type NoteRecord = RecordBase & {
 /** A link off the site: a label in en and zh, and an HTTPS address. */
 export type OutboundLink = { label: Localized; url: string };
 /**
- * A neighbour's group, as its own site describes it (UIA, for Alison Heppenstall). It may be called
- * a group, its own word; Liu’s Gate never is: it is a 师门, never a lab or a research group.
+ * A neighbour's group, as its own site describes it (UIA, for Alison Heppenstall; UAL, for Filip
+ * Biljecki). It may be called a group or a lab, its own words; Liu’s Gate never is: it is a 师门,
+ * never a lab or a research group.
  */
 export type NeighbourGroup = {
-  /** Its short name as it writes it, the same in both languages: UIA. */
+  /** Its short name as it writes it, the same in both languages: UIA, UAL. */
   name: Localized;
   /** Its full name as it writes it, kept in English in the Chinese copy too. */
   fullName: Localized;
   /**
-   * It in one sentence, for the reading page's Neighbours card, which goes on with the neighbour as
-   * one of its leaders: a sentence that stands on its own, ending in a full stop.
+   * It in one sentence, for the reading page's Neighbours card, which goes on with `lead`: a
+   * sentence that stands on its own, ending in a full stop.
    */
   intro: Localized;
+  /**
+   * The neighbour's place in it, in one sentence of its own that follows `intro` on the Neighbours
+   * card, as its own site states it: "Alison Heppenstall is one of its Group Leaders.", "UAL was
+   * established by Filip Biljecki, who directs it."
+   */
+  lead: Localized;
   /** What it does, in its own site's terms: its own line quoted, the rest a short summary. */
   summary: Localized;
   /** Its tie to Liu’s Gate as the sources state it, and nothing stronger. */
@@ -92,18 +99,18 @@ export type NeighbourGroup = {
   site: OutboundLink;
 };
 /**
- * A neighbour of the town: a researcher beside it who is not part of Liu’s Gate, with her group
- * (Alison Heppenstall and UIA, on the sky island). Not a person: never a member, a leaver, a
- * resident or someone with a home, and no address of her own (getRecord does not know
- * neighbours). Her place's file shows her (lab-records' neighbourFor). Her links are HTTPS only,
- * and there are no properties.
+ * A neighbour of the town: a researcher beside it who is not part of Liu’s Gate, with their group
+ * (Alison Heppenstall and UIA, on the sky island; Filip Biljecki and UAL, on the tropic island).
+ * Not a person: never a member, a leaver, a resident or someone with a home, and no address of
+ * their own (getRecord does not know neighbours). Their place's file shows them (lab-records'
+ * neighbourFor). Their links are HTTPS only, and there are no properties.
  */
 export type NeighbourRecord = Omit<RecordBase, 'properties'> & {
   role: Localized;
   affiliation: Localized;
-  /** An image under /people/ or /media/, or null. Alison Heppenstall's is null: the site shows no photo of her. */
+  /** An image under /people/ or /media/, or null. Both neighbours' are null: the site shows no photo of either. */
   photo: string | null;
-  /** The place whose City file shows them: one of neighbourPlaces (the sky island). */
+  /** The place whose City file shows them: one of neighbourPlaces (the sky island, the tropic island). */
   buildingId: BuildingId;
   group: NeighbourGroup;
 };
@@ -153,17 +160,19 @@ export const buildingIds: readonly string[] = [
   'city-archive',
 ] satisfies BuildingId[];
 /**
- * The places that may hold a neighbour, whose City file shows them: the sky island. Never a
- * member's home or the residence. Each is one of buildingIds (check-content checks it), and none of
- * the Gate's own work is filed there: the island's file is the neighbour's.
+ * The places that may hold a neighbour, whose City file shows them: the sky island and the tropic
+ * island, each with at most one published neighbour. Never a member's home or the residence. Each
+ * is one of buildingIds (check-content checks it), and none of the Gate's own work is filed there:
+ * an island's file is its neighbour's.
  */
 export const neighbourPlaces: readonly string[] = [
   'sky-island',
+  'tropic-island',
 ] satisfies BuildingId[];
 /**
  * What is wrong with the place a project, an output or a note is filed at: it is none (null) or one
- * of the town's places, never a neighbour's, so the Gate's work never reads as UIA's. `unknownError`
- * is the collection's own message for a place the town does not have.
+ * of the town's places, never a neighbour's, so the Gate's work never reads as UIA's or UAL's.
+ * `unknownError` is the collection's own message for a place the town does not have.
  */
 function workPlaceErrors(
   at: string,
@@ -315,6 +324,7 @@ const groupKeys = [
   'name',
   'fullName',
   'intro',
+  'lead',
   'summary',
   'connection',
   'site',
@@ -323,7 +333,8 @@ const groupKeys = [
  * What is wrong with a neighbour's text, each fault in words of its own: a language missing or
  * blank, Chinese in the English, a Chinese text with no Chinese in it (the English pasted in,
  * untranslated), or a field that is neither en nor zh. `latin`: a name that stays in Latin script
- * in Chinese too (hers, UIA's and its full name), so its zh needs no Han character.
+ * in Chinese too (a neighbour's own, their group's and its full name), so its zh needs no Han
+ * character.
  */
 function textErrors(at: string, v: unknown, latin = false): string[] {
   if (!object(v)) return [at + ' must be a text with en and zh.'];
@@ -429,15 +440,17 @@ function neighbourErrors(value: Record<string, unknown>): string[] {
     if (!object(group))
       errors.push(
         at +
-          '.group must be an object with name, fullName, intro, summary, connection and site.',
+          '.group must be an object with name, fullName, intro, lead, summary, connection and site.',
       );
     else {
       errors.push(...unknownKeys(at + '.group', group, groupKeys));
-      // The group's names stay as it writes them (UIA, Urban Intelligence & Analytics).
+      // The group's names stay as it writes them (UIA, Urban Intelligence & Analytics; UAL, Urban
+      // Analytics Lab).
       for (const field of [
         'name',
         'fullName',
         'intro',
+        'lead',
         'summary',
         'connection',
       ])

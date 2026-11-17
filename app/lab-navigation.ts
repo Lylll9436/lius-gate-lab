@@ -36,18 +36,18 @@ export const readingChapters = [
 ];
 /**
  * Places with a City file of their own but no chapter on the reading page, each with the chapter
- * that hosts it: the sky island and the tropic island, neighbours of the town, are filed under
- * About (the Town Hall's). A hosted place lights its host's chip in the masthead in City mode, and
- * a reading address for it reads its host chapter; City mode still faces it from its own bearing
- * (facingChapter).
+ * that hosts it: the sky island and the tropic island, the town's neighbours, are filed under About
+ * (the Town Hall's), whose Neighbours cards are their reading addresses. A hosted place lights its
+ * host's chip in the masthead in City mode, and a reading address for it reads its host chapter;
+ * City mode still faces it from its own bearing (facingChapter).
  */
 const HOSTED: Partial<Record<BuildingId, ContentId>> = { 'sky-island': 'town-hall', 'tropic-island': 'town-hall' };
 /** The chapter that hosts an address's place, if it is a hosted one. */
 const hostOf = (id: ContentId) => HOSTED[id.replace(/^place:/, '') as BuildingId];
 /**
- * The mode a place picked on the model opens in: the mode it was picked in, but a hosted place (a
- * neighbour island) opens its City file from the reading page too. It has no chapter of its own, so on
- * the page the pick would only scroll to its host chapter.
+ * The mode a place picked on the model opens in: the mode it was picked in, but a hosted place (the
+ * sky island, the tropic island) opens its City file from the reading page too. It has no chapter
+ * of its own, so on the page the pick would only scroll to its host chapter.
  */
 export const modeForPick = (mode: BrowseMode, id: ContentId): BrowseMode =>
   mode === 'reading' && hostOf(id) ? 'city' : mode;
@@ -191,7 +191,7 @@ export function contentForBuilding(id: BuildingId, today: Date = pageDay) {
 }
 /**
  * Where a place picked on the model goes, picked in `mode`: the mode to open (modeForPick: the
- * mode it was picked in, but the sky island opens its City file from the reading page too) and
+ * mode it was picked in, but a hosted island opens its City file from the reading page too) and
  * the address its place opens (contentForBuilding). The page sends every pick through it.
  */
 export function pickRoute(

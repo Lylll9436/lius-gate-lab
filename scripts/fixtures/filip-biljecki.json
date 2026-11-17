@@ -1,0 +1,87 @@
+{
+  "id": "filip-biljecki",
+  "title": {
+    "en": "Filip Biljecki",
+    "zh": "Filip Biljecki"
+  },
+  "summary": {
+    "en": "Associate Professor at the National University of Singapore and the founder and principal investigator of UAL (Urban Analytics Lab). His interests are urban informatics, 3D city modelling and 3D GIS, and GeoAI.",
+    "zh": "新加坡国立大学副教授，UAL（Urban Analytics Lab）的创立者和首席研究员（principal investigator）。他的研究兴趣是城市信息学（Urban informatics）、三维城市建模与三维 GIS（3D city modelling, 3D GIS），以及 GeoAI。"
+  },
+  "visibility": "published",
+  "order": 1,
+  "role": {
+    "en": "ASSOCIATE PROFESSOR",
+    "zh": "副教授"
+  },
+  "affiliation": {
+    "en": "Department of Architecture, College of Design and Engineering, National University of Singapore",
+    "zh": "新加坡国立大学设计与工程学院 · 建筑系"
+  },
+  "photo": null,
+  "buildingId": "tropic-island",
+  "group": {
+    "name": {
+      "en": "UAL",
+      "zh": "UAL"
+    },
+    "fullName": {
+      "en": "Urban Analytics Lab",
+      "zh": "Urban Analytics Lab"
+    },
+    "intro": {
+      "en": "UAL describes itself as “A GeoAI research group at the National University of Singapore”: it develops quantitative methods and tools that use emerging urban and geospatial data and AI to sense the form, function and human experience of cities.",
+      "zh": "UAL 用“A GeoAI research group at the National University of Singapore”（新加坡国立大学的一个 GeoAI 研究团队）来介绍自己：它开发定量的方法与工具，借助新兴的城市与地理空间数据和人工智能，感知城市的形态、功能以及人在城市中的体验。"
+    },
+    "lead": {
+      "en": "UAL was established by Filip Biljecki, who directs it.",
+      "zh": "UAL 由 Filip Biljecki 创立并领导。"
+    },
+    "summary": {
+      "en": "UAL describes itself as “A GeoAI research group at the National University of Singapore”: it develops quantitative methods and tools that use emerging urban and geospatial data and AI to sense the form, function and human experience of cities. Its research spans six themes: street-level imagery, new urban data, urban dynamics and change, trustworthy urban data and AI, the human experience of cities, and 3D city models and digital twins. Across these themes it develops GeoAI methods and releases open data and software, among them Global Streetscapes, ZenSVI, VoxCity and OpenFACADES.",
+      "zh": "UAL 用“A GeoAI research group at the National University of Singapore”（新加坡国立大学的一个 GeoAI 研究团队）来介绍自己：它开发定量的方法与工具，借助新兴的城市与地理空间数据和人工智能，感知城市的形态、功能以及人在城市中的体验。它的研究分为六个主题：街景影像（Street-level imagery）、新型城市数据（New urban data）、城市动态与变化（Urban dynamics and change）、可信的城市数据与人工智能（Trustworthy urban data and AI）、人对城市的体验（Human experience of cities），以及三维城市模型与数字孪生（3D city models and digital twins）。围绕这些主题，它开发 GeoAI 方法，发布开放数据与软件，其中有 Global Streetscapes、ZenSVI、VoxCity 和 OpenFACADES。"
+    },
+    "connection": {
+      "en": "Pengyuan Liu, the supervisor of Liu’s Gate, is listed among UAL’s alumni, as a Research Fellow.",
+      "zh": "刘家门的导师刘鹏远，在 UAL 官网上列为校友（Alumni），身份是 Research Fellow。"
+    },
+    "site": {
+      "label": {
+        "en": "UAL website",
+        "zh": "UAL 官网"
+      },
+      "url": "https://ual.sg/"
+    }
+  },
+  "sections": [
+    {
+      "heading": {
+        "en": "Background",
+        "zh": "经历"
+      },
+      "body": {
+        "en": "His background is in geomatic engineering. He holds a PhD, with highest honours, and an MSc from the Delft University of Technology in the Netherlands, and a BSc in Geodesy and Geoinformatics from the University of Zagreb. He was previously an NUS Presidential Young Professor. His awards include the Young Researcher Award in GIScience from the Austrian Academy of Sciences, the Gill Memorial Award from the Royal Geographical Society (with the Institute of British Geographers) in 2026, and the NUS Annual Teaching Excellence Award in 2025.",
+        "zh": "他的专业背景是测绘工程（Geomatic engineering）。他在荷兰代尔夫特理工大学（Delft University of Technology）获得博士学位（最高荣誉，with highest honours）和硕士学位，在萨格勒布大学（University of Zagreb）获得大地测量与地理信息学（Geodesy and Geoinformatics）学士学位。他此前曾任新加坡国立大学校长青年教授（NUS Presidential Young Professor）。他获得的奖项包括奥地利科学院（Austrian Academy of Sciences）的 GIScience 青年研究者奖（Young Researcher Award in GIScience）、2026 年英国皇家地理学会（Royal Geographical Society with IBG）颁发的吉尔纪念奖（Gill Memorial Award），以及 2025 年新加坡国立大学年度卓越教学奖（Annual Teaching Excellence Award）。"
+      }
+    },
+    {
+      "heading": {
+        "en": "Research",
+        "zh": "研究"
+      },
+      "body": {
+        "en": "He works on urban informatics, 3D city modelling and 3D GIS, and GeoAI, and leads UAL as its principal investigator. He is an associate editor of two journals: Computers, Environment and Urban Systems, and Landscape and Urban Planning.",
+        "zh": "他的研究方向是城市信息学、三维城市建模与三维 GIS 以及 GeoAI，并以首席研究员的身份领导 UAL。他还担任两份期刊的副主编（associate editor）：Computers, Environment and Urban Systems 和 Landscape and Urban Planning。"
+      }
+    }
+  ],
+  "links": [
+    {
+      "label": {
+        "en": "Profile on the UAL website",
+        "zh": "UAL 官网个人主页"
+      },
+      "url": "https://ual.sg/author/filip-biljecki/"
+    }
+  ]
+}

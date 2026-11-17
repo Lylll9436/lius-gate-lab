@@ -31,7 +31,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | --- | --- |
 | `app/page.tsx` | 页面状态、地址解析、两种模式、滚动驱动镜头 |
 | `app/chapters.tsx` `app/site-chrome.tsx` `app/city-stage.tsx` | 首屏与章节、页眉页脚、舞台与 HUD |
-| `app/lab-content.tsx` | 人员、研究、成果、活动等共用的内容组件，以及天空之岛的小城资料（近邻 Alison Heppenstall 与 UIA，`NeighbourFile`）和「关于」一章末尾的「近邻」卡片（`NeighboursCard`） |
+| `app/lab-content.tsx` | 人员、研究、成果、活动等共用的内容组件，以及两座近邻岛的小城资料（天空之岛：Alison Heppenstall 与 UIA；热带之岛：Filip Biljecki 与 UAL；`NeighbourFile`）和「关于」一章末尾每位近邻一张的「近邻」卡片（`NeighboursCard`） |
 | `app/globals.css` | 设计系统：字体、昼夜主题、布局与响应式 |
 | `app/fonts.css` | 自托管字体（Fontsource 的 Fraunces、Inter、IBM Plex Mono），不依赖 Google Fonts；不要在 globals.css 里 @import（check-pages 会校验） |
 | `app/town-plan.ts` | 小城规划：岛屿轮廓、山丘、街道、建筑位置、港口、植栽（含白桦与花楸）与路灯布置、红绿灯的位置与配时、电车与骑车人遵守信号灯的行驶时刻表、飞机三分钟一圈的滑行与起降航程、井盖雨水口与降低路缘等街道细节 |
@@ -43,7 +43,7 @@ Node.js ≥ 22.13，依赖版本以 `pnpm-lock.yaml` 为准。只预览 Pages �
 | `app/city-water.ts` `app/city-ink.ts` | 水面着色器与天空之岛在海上的影子；最终合成（多重采样、接触阴影、选中光圈），深度方法参考 xi4u，MIT，见 THIRD_PARTY_NOTICES.md |
 | `app/city-materials.ts` `app/city-people.ts` `app/sky-figure.ts` `app/city-lighting.ts` `app/city-inspection.ts` `app/city-hover.ts` | 材质与合批、行人、天空之岛上的 Alison（她的样子与姿势；她的一天在 `town-plan.ts` 的 `alisonDay`）、路灯、近看取景、悬停状态 |
 | `app/city-data.ts` `app/city-districts.ts` `app/lab-navigation.ts` `app/lab-records.ts` `app/content-schema.ts` | 建筑文案、分区、地址与章节映射、内容目录与校验 |
-| `content/lab.json` | 人员、研究、活动、成果、研究记录，以及近邻（`neighbours`：Alison Heppenstall 和她的团队 UIA，不是成员；显示在天空之岛的小城资料和「关于」一章的「近邻」卡片上，草稿示例是 `content/examples/neighbour.json`）；见 MAINTENANCE.md「近邻」 |
+| `content/lab.json` | 人员、研究、活动、成果、研究记录，以及近邻（`neighbours`：Alison Heppenstall 和她的团队 UIA、Filip Biljecki 和他的团队 UAL，不是成员；显示在天空之岛、热带之岛的小城资料和「关于」一章的「近邻」卡片上，草稿示例是 `content/examples/neighbour.json`）；见 MAINTENANCE.md「近邻」 |
 
 ## 校验
 

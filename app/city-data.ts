@@ -32,6 +32,12 @@ export type Building = {
   variant?: 'villa' | 'red-tenement' | 'gabled-house';
   sections: { heading: Text; body: Text }[];
   related: BuildingId[];
+  /**
+   * A neighbour's place only (content-schema's neighbourPlaces): where it lies, in words, for the
+   * heading of its Neighbours card on the reading page ("Neighbours · Above the town"). The same
+   * words as its own category, which it shows while no neighbour is published for it.
+   */
+  where?: Text;
 };
 const t = (en: string, zh: string): Text => ({ en, zh });
 const places: Building[] = [
@@ -60,8 +66,8 @@ const places: Building[] = [
       {
         heading: t('Layout', '布局'),
         body: t(
-          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. A sky island with a red-brick villa floats above the town. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
-          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。小城上空还漂浮着一座带红砖别墅的天空之岛。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
+          'The Town Hall (about Liu’s Gate) stands north of the plaza. The row of terrace houses (people) is to the west, the Research Studio to the east, and the Archive and the corner park are by the harbour in the south. A sky island with a red-brick villa floats above the town. A tropical island with a flat-roofed campus building lies off the south shore. Behind the Town Hall, a lane and a causeway lead to the airport (alumni) on its own island off the north shore.',
+          '广场北侧是市政厅（关于刘家门），西侧是联排住宅（成员），东侧是研究工作室，南侧港口旁是档案馆和街角公园。小城上空还漂浮着一座带红砖别墅的天空之岛。南岸外的海上则有一座带平顶校园建筑的热带之岛。市政厅背后，一条小路和一道堤道通往北岸外小岛上的机场（去向）。',
         ),
       },
       {
@@ -258,7 +264,7 @@ const places: Building[] = [
   // About) and no Inspect. x, z, w, d and height are its villa's site (plan.sites). Its category and
   // summary here are the island's own, for while no neighbour's record is published for it; while
   // one is (Alison Heppenstall's), buildingsOn names her and her group instead, and its file is
-  // hers (lab-content's NeighbourFile).
+  // hers (lab-content's NeighbourFile). `where` heads her Neighbours card in About.
   {
     id: 'sky-island',
     name: t('Sky Island', '天空之岛'),
@@ -282,26 +288,29 @@ const places: Building[] = [
     color: '#a4452e',
     sections: [],
     related: ['town-hall', 'pengyuan-liu'],
+    where: t('Above the town', '小城上空'),
   },
-  // The tropic island: a place of its own on the sea off the south shore. Its building is one of
-  // the town's models (model 'tropic': town-build builds it on the island's own ground, airport-like,
-  // so picking, the ring, framing and night windows are the town's), its root at the island's
-  // middle. It has no reading chapter. x, z, w, d and height are its site's (plan.sites: the box
-  // about the island's middle that holds its waterline, to the hundredth, and the roof's top). Its category and summary here are the island's own, for while
-  // no neighbour's record is published for it; while one is, buildingsOn names the neighbour instead.
+  // The tropic island: a place of its own on the sea off the south shore, a neighbour's as the sky
+  // island is (no reading chapter: lab-navigation files it under About), but a model of the town's
+  // like the airport's hall (model 'tropic': its building, after SDE4 at NUS, stands on an island
+  // of its own, its model's root at the island's middle). x, z, w, d and height are its site's
+  // (plan.sites: the box about the island's middle that holds its waterline, and its building's top).
+  // Its category and summary are the island's own, for while no neighbour's record is published for it; while one
+  // is (Filip Biljecki's), buildingsOn names him and his group instead, and its file is his
+  // (lab-content's NeighbourFile). `where` heads his Neighbours card in About.
   {
     id: 'tropic-island',
-    name: t('Tropic island', '热带岛'),
-    short: t('Tropic island', '热带岛'),
+    name: t('Tropic Island', '热带之岛'),
+    short: t('Tropic Island', '热带之岛'),
     category: t('OFF THE SOUTH SHORE', '南岸外海上'),
     summary: t(
-      'A small tropical island on the sea off the south shore, its building under one wide, flat roof.',
-      '南岸外海上的一座热带小岛，岛上的建筑撑着一片宽大的平屋顶。',
+      'A small tropical island on the sea off the south shore, with a campus building under one wide flat roof among palms and rain trees.',
+      '南岸外海面上的一座热带小岛，棕榈与雨树之间立着一栋校园建筑，上面是一整片宽大的平屋顶。',
     ),
-    style: t('Tropical island', '热带小岛'),
+    style: t('Tropical campus building', '热带校园建筑'),
     architecture: t(
-      'A long, low building under one wide, flat white roof on slender columns, on a lawn with curving paths, ringed by a sandy beach.',
-      '细柱撑起一片宽大的白色平屋顶，下面是一栋长而低的建筑；草坪上有弯曲的小路，四周是沙滩。',
+      'Modelled on SDE4 at the National University of Singapore: one huge flat roof, dark underneath and laid with solar panels on top, floats over the building on very slender white round columns. Under it, glazed floors step back in planted terraces, and one end is a solid block of champagne vertical fins. Around it are a lawn, rain trees, palms and a sandy beach.',
+      '原型是新加坡国立大学的 SDE4：一整片巨大的平屋顶，底面深色、顶上铺着太阳能板，由一根根极细的白色圆柱托着，浮在整栋楼上方。屋顶下，玻璃幕墙的楼层逐层退台，露台上种着绿植；楼的一端是一整块覆着香槟色竖向格栅的实体。四周是草坪、雨树、棕榈和沙滩。',
     ),
     x: 19.5,
     z: 51,
@@ -312,6 +321,7 @@ const places: Building[] = [
     color: '#cbb790',
     sections: [],
     related: ['town-hall', 'pengyuan-liu'],
+    where: t('Off the south shore', '南岸外海上'),
   },
   {
     id: 'airport',
@@ -420,9 +430,10 @@ export const residentsOf = (id: BuildingId, today: Date = pageDay) =>
 /** Where people live: the members' homes and the Visiting PhD Residence (the People chapter's places). */
 export const dwelling = (b: Building | undefined) => !!b && (!!b.variant || b.model === 'residence');
 /**
- * The category of a place a neighbour's record is published for: her name and her group's, as a
- * home's is its resident's role ("ALISON HEPPENSTALL · UIA" / "Alison Heppenstall · UIA"). Both
- * names stay in Latin script in Chinese, as her record writes them.
+ * The category of a place a neighbour's record is published for: their name and their group's, as
+ * a home's is its resident's role ("ALISON HEPPENSTALL · UIA" / "Alison Heppenstall · UIA",
+ * "FILIP BILJECKI · UAL" / "Filip Biljecki · UAL"). Both names stay in Latin script in Chinese, as
+ * their records write them.
  */
 const neighbourCategory = (n: NeighbourRecord): Text => ({
   en: `${n.title.en} · ${n.group.name.en}`.toUpperCase(),
@@ -432,9 +443,10 @@ const neighbourCategory = (n: NeighbourRecord): Text => ({
  * The places on `today` (the page's day unless given). Building slots are independent of their
  * occupants: a home takes the name and file of its first current resident, and reads as an
  * unoccupied terrace house once its resident has left, until someone moves in. The residence
- * keeps its own and lists its residents (lab-content). The sky island keeps its name, and its
- * category names the neighbour published for it (her file is lab-content's NeighbourFile); with
- * none, it is the island's own (ABOVE THE TOWN), with its own summary.
+ * keeps its own and lists its residents (lab-content). A neighbour's island (the sky island, the
+ * tropic island) keeps its name, and its category names the neighbour published for it (their file
+ * is lab-content's NeighbourFile); with none, it is the island's own (ABOVE THE TOWN, OFF THE SOUTH
+ * SHORE), with its own summary.
  */
 export function buildingsOn(today: Date = pageDay): Building[] {
   return places.map((building) => {

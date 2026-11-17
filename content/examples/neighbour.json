@@ -33,6 +33,10 @@
       "en": "Example: the group in one sentence — replace before publishing.",
       "zh": "示例：用一句话介绍这个团队，请替换。"
     },
+    "lead": {
+      "en": "Example: the neighbour’s place in the group, in one sentence — replace before publishing.",
+      "zh": "示例：用一句话说明这位近邻在团队中的身份，请替换。"
+    },
     "summary": {
       "en": "Example description of what the group does — replace before publishing",
       "zh": "示例：这个团队做什么，请替换"
