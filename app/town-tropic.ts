@@ -88,7 +88,7 @@ export const TROPIC_ROCKS = {
  *   stays inside it).
  */
 export const TROPIC_REACH = { sea: 4.6, floor: SHORE_PROFILE[SHORE_PROFILE.length - 1].height, crown: 4.6, crowns: 0.7, points: 32 };
-/** The building's corners at its top, over its whole footprint (TROPIC_BUILDING: the podium's plan, the roof's 11 by 7.2 inside it). */
+/** The building's corners at its top, over its whole footprint (TROPIC_BUILDING: the podium's plan, the roof's 8.6 by 4.8 inside it). */
 const ROOF_CORNERS = (() => {
   const B = plan.TROPIC_BUILDING,
     P = plan.TROPIC;
@@ -122,7 +122,7 @@ const WATERLINE_HULL = hullRing(0);
  * The tropic island as the camera frames it (decision 16's TROPIC_EXTENT), world points: its outline
  * at the water (WATERLINE_HULL, round its waterline: its box is the waterline's, plan.TROPIC_SPAN), the
  * tops of its trees (that ring again, TROPIC_REACH.crown up) and of its building (its corners at its
- * top, 8.1 up). Everything of the island that stands on it, at or over the water and inside its
+ * top, 6.9 up). Everything of the island that stands on it, at or over the water and inside its
  * waterline, lies inside these points' hull, so their box on screen holds it from any side and pitch
  * (check-town). What lies on the sea round it (its shelf under the water, its shallows, its foam, the
  * feet of the stones that stand in the water) is not in it: that is TROPIC_SEEN's.

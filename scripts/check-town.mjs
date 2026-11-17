@@ -11989,7 +11989,7 @@ let tropicReport = '';
       change(SDE4);
       try {
         const v = build(make('summer'));
-        assert(check(SDE4, check === scaleOf ? v.out : meshesOf(v.group), v.group).length > 0, `SDE4 built with ${what} passes its checks.`);
+        assert(check(SDE4, check === scaleOf ? v.out : meshesOf(v.group), v.group).length > 0, `SDE4 built with ${String(what)} passes its checks.`);
       } finally {
         // Put every measure back in place (the objects the checks below hold stay the same objects).
         const restore = (to, from) => {
