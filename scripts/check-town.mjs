@@ -6399,6 +6399,7 @@ function crossingEdges(X, Y) {
     for (const m of paleMeshes) assert.equal(m.material.color.getHex(), 0xffffff, 'The clouds are dimmed by day.');
   }
 }
+let tropicGardenWalks = '';
 // The tropic island's garden kit (town-tropic-garden's createTropicGarden), each piece built on its own
 // with the check's own context, then the whole garden laid out in the island's frame on the island's
 // own site (tropicGardenSite of SDE4's plan: the land's ground, lawn and beach, SDE4's anchors and
@@ -6744,7 +6745,7 @@ function crossingEdges(X, Y) {
   }
 
   // The layout. Distances in the island's frame, against the land (its turf's edge, plan.tropicInland;
-  // its walks, plan.TROPIC_PATH_LINES, 0.56 wide; its plaza, the garden's own round paving), SDE4's
+  // its paving, plan.tropicPaving; its plaza, the garden's own round paving), SDE4's
   // footprint, mass and columns (its plan), Filip's walks (centripetal lines through their points) and
   // call stretch, and his stations as tropicGarden returns them. (A piece's group stands in the island's
   // frame; its vertices come out in the world's.)
@@ -6755,16 +6756,17 @@ function crossingEdges(X, Y) {
     turf = (x, z) => plan.tropicInland(x, z),
     curve = (points) => new T.CatmullRomCurve3(points.map(([x, z]) => new T.Vector3(x, 0, z)), false, 'centripetal').getSpacedPoints(160).map((p) => [p.x, p.z]),
     toLines = (lines) => (x, z) => Math.min(...lines.map((line) => Math.min(...line.slice(1).map((q, k) => plan.distanceToSegment([x, z], line[k], q))))),
-    walkLines = Object.values(plan.TROPIC_PATH_LINES).map((line) => line.filter((_, k) => k % 4 === 0 || k === line.length - 1).map(([x, z]) => [x - P.x, z - P.z])),
-    toPaths = toLines(walkLines),
+    // (How far a point is off the land's paving: its signed distance, the plaza and the podium apart.)
+    toPaths = (x, z) => plan.tropicPaving(x, z).paving,
     toWalks = toLines(W.ways.map(curve)),
     toCall = (x, z) => plan.distanceToSegment([x, z], W.call[0], W.call[1]),
     toCourt = (x, z) => Math.hypot(x - plan.TROPIC_PLAZA.x, z - plan.TROPIC_PLAZA.z) - plan.TROPIC_PLAZA.r,
     inRect = (r, x, z, m = 0) => x > r.x0 - m && x < r.x1 + m && z > r.z0 - m && z < r.z1 + m,
     toColumns = (x, z) => Math.min(...B.columns.map((c) => Math.hypot(x - c.x, z - c.z) - c.r)),
     top = tropicLawn(B.desk.x, B.desk.z) + B.podium.top,
-    // (The plaza is the land's paving the garden lays: the planting and the furniture keep off it.)
-    groups = raw.children.filter((o) => o.isGroup && o.name !== 'tropic-plaza');
+    // (The plaza is the land's paving the garden lays: the planting and the furniture keep off it; the
+    // walks' timber, the landing and the seat's bench, stands on the walks: its own checks, below.)
+    groups = raw.children.filter((o) => o.isGroup && o.name !== 'tropic-plaza' && o.name !== 'tropic-walk-timber');
   assert(raw.children.some((o) => o.name === 'tropic-plaza' && Math.hypot(o.position.x - plan.TROPIC_PLAZA.x, o.position.z - plan.TROPIC_PLAZA.z) < 1e-9), 'The tropic garden lays no plaza on the land\'s terrace before SDE4\'s door.');
   const kinds = (prefix) => groups.filter((o) => o.name.startsWith(prefix));
   // Trees on the lawn (the rain trees and frangipani a unit or so in), palms on the sand: on its dry
@@ -6825,9 +6827,11 @@ function crossingEdges(X, Y) {
         desk = group.name === 'tropic-desk',
         plant = !desk && group.name !== 'tropic-cafe-table';
       if (low && !desk) {
-        clearOf.paths = Math.min(clearOf.paths, toPaths(x, z) - plan.TROPIC_PATHS.width / 2);
         clearOf.court = Math.min(clearOf.court, toCourt(x, z));
-        assert(toPaths(x, z) > plan.TROPIC_PATHS.width / 2 + 0.05, `${m.name} reaches a path at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+        if (plant) {
+          clearOf.paths = Math.min(clearOf.paths, toPaths(x, z));
+          assert(toPaths(x, z) > 0.05, `${m.name} reaches a path at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
+        }
         assert(toCourt(x, z) > 0.05, `${m.name} reaches the court at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
         for (const f of B.footprint) {
           assert(!inRect(f, x, z, 0.02), `${m.name} reaches SDE4's footprint at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}.`);
@@ -6886,10 +6890,93 @@ function crossingEdges(X, Y) {
         assert(inRect(V, x, z, -0.1), `The desk set leaves the veranda at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
         for (const p of B.planters) assert(!inRect(p, x, z, 0.27), `The desk set stands within 0.27 of a planter at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
       });
-    assert(desk.seat.heading === 0 && Math.abs(desk.floor - top) < 1e-9 && cafe.seat.heading > 0.9 && cafe.seat.heading < 1.4, 'The desk\'s sitter does not face south on the deck, or the café\'s east-south-east.');
+    assert(desk.seat.heading === 0 && Math.abs(desk.floor - top) < 1e-9 && Math.abs(plan.angleDiff(cafe.seat.heading, G.file)) < 0.35 && cafe.seat.heading > G.file, 'The desk\'s sitter does not face south on the deck, or the café\'s south-east, over the lawn toward the island\'s file.');
+    // The café set on its terrace: every point of it low down on the terrace's paving (the walks' café
+    // terrace, clear of its kerb's outer edge), its chairs with it, at the paving's level.
+    for (const { m } of furniture.filter(({ group }) => group.name === 'tropic-cafe-table'))
+      at(m, (x, y, z) => {
+        if (y < cafe.floor + 0.3) assert(plan.tropicPaving(x, z).paving < -0.02, `The café set stands off its terrace at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      });
+    assert(Math.abs(cafe.floor - (tropicLawn(B.cafe.x, B.cafe.z) + plan.TROPIC_PATHS.lift)) < 1e-9, 'The café set does not stand on its terrace\'s paving.');
     // And they are where Filip sits (FILIP_SITE's anchors, and the floors his sets stand on).
     const F = (await load('tropic-figure')).FILIP_SITE;
     assert(Math.abs(F.desk.x - B.desk.x) < 1e-9 && Math.abs(F.desk.z - B.desk.z) < 1e-9 && Math.abs(F.desk.y - desk.floor) < 1e-9 && Math.abs(F.cafe.x - B.cafe.x) < 1e-9 && Math.abs(F.cafe.z - B.cafe.z) < 1e-9 && Math.abs(F.cafe.y - cafe.floor) < 1e-9, 'The garden\'s desk and café are not where Filip sits.');
+  }
+  // The walks' timber (WALK_TIMBER: one oak mesh, the landing and the seat's bench), as built:
+  // - the landing: its deck level, carried over the turf's lip (its north edge on the lawn, its south
+  //   edge over the sand), its deck no more than 0.06 over the bay walk's surface where they meet (and
+  //   not under it), its visible edge (the deck's slab over a dark plinth set back under it) no thicker
+  //   than 0.10, standing on the lawn and the sand with no gap (its plinth and its steps reach into the
+  //   ground under every point of them), its steps as wide as the deck, each rise 0.06 to 0.08, the
+  //   last landing on the sand; the mesh's deck at its stated top;
+  // - the bench: wholly on the seat's paving, its feet on it (no gap, sunk 0.05 at most: the seat follows the lawn's gentle fall), its sitter facing back
+  //   down the tree walk;
+  // each rule refusing a broken copy.
+  {
+    const timber = raw.children.find((o) => o.name === 'tropic-walk-timber'),
+      D = timber?.userData.landing,
+      Wk = plan.TROPIC_PATHS,
+      ground = tropicLawn;
+    assert(D && timber.children.length === 1 && timber.children[0].name === 'tropic-walk-oak', 'The walks\' timber is not one oak mesh with its landing.');
+    const landingFaults = (D) => {
+      const out = [],
+        sample = (x0, x1, z0, z1, visit) => {
+          for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) visit(x0 + ((x1 - x0) * i) / 10, z0 + ((z1 - z0) * j) / 10);
+        };
+      if (!(plan.tropicAt(P.x + Wk.landing.x, P.z + D.z0).shore < 0 && plan.tropicAt(P.x + Wk.landing.x, P.z + D.z1).shore > 0)) out.push('not carried over the lip');
+      const over = D.top - D.walk;
+      if (!(over >= 0 && over <= 0.06 && Math.abs(D.walk - (ground(Wk.landing.x, D.z0) + Wk.lift)) < 1e-9)) out.push(`its deck ${over.toFixed(3)} over the walk`);
+      if (!(D.slab <= 0.1 && D.plinth.x0 - D.x0 >= 0.05 && D.x1 - D.plinth.x1 >= 0.05 && D.plinth.z0 - D.z0 >= 0.05 && D.z1 - D.plinth.z1 >= 0.05)) out.push('its edge thicker than 0.10');
+      sample(D.plinth.x0, D.plinth.x1, D.plinth.z0, D.plinth.z1, (x, z) => {
+        if (D.plinth.bottom > ground(x, z) - 0.02) out.push(`a gap under its deck at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+      });
+      let level = D.top;
+      for (const s of D.steps) {
+        const rise = level - s.top;
+        if (rise < 0.06 - 1e-9 || rise > 0.08 + 1e-9) out.push(`a rise of ${rise.toFixed(3)}`);
+        sample(D.x0, D.x1, s.z0, s.z1, (x, z) => {
+          if (s.bottom > ground(x, z) - 0.02) out.push(`a gap under a step at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+        });
+        level = s.top;
+      }
+      const last = level - ground(Wk.landing.x, D.foot);
+      if (last < 0.06 - 0.005 || last > 0.08 + 0.005 || !(plan.tropicAt(P.x + Wk.landing.x, P.z + D.foot).shore > 0)) out.push(`its last step ${last.toFixed(3)} over the sand, or not on the sand`);
+      return out;
+    };
+    assert.deepEqual(landingFaults(D), [], `The landing: ${landingFaults(D).slice(0, 4).join('; ')}.`);
+    assert(landingFaults({ ...D, top: D.top + 0.1 }).length > 0, 'The landing rule does not refuse a deck 0.1 higher over the walk.');
+    assert(landingFaults({ ...D, slab: 0.14 }).length > 0, 'The landing rule does not refuse a thick edge.');
+    assert(landingFaults({ ...D, plinth: { ...D.plinth, bottom: D.top - 0.1 } }).length > 0, 'The landing rule does not refuse a deck standing clear of the ground.');
+    assert(landingFaults({ ...D, steps: D.steps.slice(0, -1), foot: D.foot - 0.3 }).length > 0 || D.steps.length === 0, 'The landing rule does not refuse steps that stop short of the sand.');
+    // The mesh's deck is at the stated top, its boards spanning the deck.
+    {
+      let deck = -Infinity;
+      at(timber.children[0], (x, y, z) => {
+        if (x > D.x0 - 1e-4 && x < D.x1 + 1e-4 && z > D.z0 - 1e-4 && z < D.z1 + 1e-4) deck = Math.max(deck, y);
+      });
+      assert(Math.abs(deck - D.top) < 1e-6, `The landing's deck is built at ${deck.toFixed(3)}, not ${D.top.toFixed(3)}.`);
+    }
+    const B = timber.userData.bench,
+      benchFaults = (B, points) => {
+        const out = [];
+        for (const [x, y, z] of points) {
+          if (plan.tropicPaving(x, z).paving > -0.02 || Math.hypot(x - Wk.seat.x, z - Wk.seat.z) > Wk.seat.r) out.push(`off the seat at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+          if (y < ground(x, z) + Wk.lift - 0.05) out.push(`sunk at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+        }
+        const low = Math.min(...points.map(([x, y, z]) => y - ground(x, z) - Wk.lift));
+        if (low > 0.005 || low < -0.05) out.push(`its feet ${low.toFixed(3)} off the seat`);
+        if (Math.abs(plan.angleDiff(B.facing, Math.atan2(-Wk.tree.ahead[0], -Wk.tree.ahead[1]))) > 1e-9) out.push('not facing back down the walk');
+        return out;
+      },
+      benchPoints = [];
+    at(timber.children[0], (x, y, z) => {
+      if (Math.hypot(x - B.x, z - B.z) < 0.9) benchPoints.push([x, y, z]);
+    });
+    assert(benchPoints.length > 20, 'The seat\'s bench is not built.');
+    assert.deepEqual(benchFaults(B, benchPoints), [], `The seat's bench: ${benchFaults(B, benchPoints).slice(0, 4).join('; ')}.`);
+    assert(benchFaults(B, benchPoints.map(([x, y, z]) => [x + 0.6 * Wk.tree.ahead[0], y, z + 0.6 * Wk.tree.ahead[1]])).length > 0, 'The bench rule does not refuse a bench pushed off the seat.');
+    assert(benchFaults(B, benchPoints.map(([x, y, z]) => [x, y + 0.05, z])).length > 0, 'The bench rule does not refuse a bench standing clear of the seat.');
+    tropicGardenWalks = `; its landing ${(D.x1 - D.x0).toFixed(2)} by ${(D.z1 - D.z0).toFixed(2)}, its deck ${(D.top - D.walk).toFixed(3)} over the bay walk, ${D.steps.length + 1} rises of ${D.rise.toFixed(3)} to the sand`;
   }
   // The lines of sight. From the island's file (the gate's bearing) and its three other Rotate stops at the
   // town's pitch, every point of a stand-in Filip (his head, chest and lap seated at the desk and the café;
@@ -6904,18 +6991,28 @@ function crossingEdges(X, Y) {
       { desk, cafe } = stations,
       boxes = mass.map((b) => new T.Box3(new T.Vector3(island.x + b.x0, b.y0, island.z + b.z0), new T.Vector3(island.x + b.x1, b.y1, island.z + b.z1))),
       lift = (x, z, dy) => new T.Vector3(island.x + x, tropicLawn(x, z) + dy, island.z + z),
-      lanes = [-W.turn, W.turn].flatMap((o) => [0, 0.25, 0.5, 0.75, 1].map((t) => [W.call[0][0] + (W.call[1][0] - W.call[0][0]) * t, W.call[0][1] + o])),
+      // (Both his pacing lanes: the stretch and 2·turn to its left, along it.)
+      along = [W.call[1][0] - W.call[0][0], W.call[1][1] - W.call[0][1]],
+      leftOf = [along[1] / Math.hypot(...along), -along[0] / Math.hypot(...along)],
+      lanes = [0, 2 * W.turn].flatMap((o) => [0, 0.25, 0.5, 0.75, 1].map((t) => [W.call[0][0] + along[0] * t + leftOf[0] * o, W.call[0][1] + along[1] * t + leftOf[1] * o])),
       samples = {
         desk: [1.02, 0.8, 0.58].map((dy) => new T.Vector3(island.x + desk.seat.x, desk.floor + dy, island.z + desk.seat.z + 0.05)),
         cafe: [1.02, 0.8, 0.58].map((dy) => new T.Vector3(island.x + cafe.seat.x, cafe.floor + dy, island.z + cafe.seat.z)),
         call: lanes.flatMap(([x, z]) => [0.9, 0.65, 0.4].map((dy) => lift(x, z, dy))),
+        // (The seat and its bench, seen from the file itself: the bench's seat and the seat's paving
+        // before it, not swallowed by the big rain tree's crown.)
+        seat: (() => {
+          const b = raw.children.find((o) => o.name === 'tropic-walk-timber').userData.bench,
+            S = plan.TROPIC_PATHS.seat;
+          return [lift(b.x, b.z, 0.47), lift(S.x, S.z, 0.05), lift(S.x - 0.4 * plan.TROPIC_PATHS.tree.ahead[0], S.z - 0.4 * plan.TROPIC_PATHS.tree.ahead[1], 0.05)];
+        })(),
       },
       hidden = [];
     for (let k = 0; k < 4; k++) {
       const b = G.file + (k * Math.PI) / 2,
         back = new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38).normalize();
       for (const [station, points] of Object.entries(samples))
-        for (const p of points) {
+        for (const p of station === 'seat' && k ? [] : points) {
           ray.set(p, back);
           const byMass = boxes.some((box) => ray.ray.intersectsBox(box)),
             hit = ray.intersectObjects(targets, false)[0];
@@ -6940,7 +7037,7 @@ function crossingEdges(X, Y) {
     assert(!hidden.length, `The garden hides Filip: ${hidden.slice(0, 6).join('; ')}${hidden.length > 6 ? ` and ${hidden.length - 6} more` : ''}.`);
   }
   console.log(
-    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops, at least ${Math.round(100 * sight.glass)}% of the glazed front in view.`,
+    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops and the seat and its bench from the file, at least ${Math.round(100 * sight.glass)}% of the glazed front in view${tropicGardenWalks}.`,
   );
 }
 // The street and pier lamps (town-props' lamp), Glasgow cast-iron lamp standards, built alone: one
@@ -11154,9 +11251,9 @@ let tropicReport = '';
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) assert(plan.tropicAt(P.x + B.x + sx * B.hw, P.z + B.z + sz * B.hd).lawn <= 0.88, 'The building\'s podium stands at the lawn\'s edge.');
     for (let a = 0; a < Math.PI * 2; a += 0.2) assert(plan.tropicAt(P.x + Q.x + Math.cos(a) * Q.r, P.z + Q.z + Math.sin(a) * Q.r).lawn <= 0.7, 'The plaza reaches the lawn\'s edge.');
     // The coast keeps at least 1.2 of lawn round SDE4's footprint (TROPIC_BUILDING, its veranda in it),
-    // the plaza and his stations on the lawn in front: the café set (its table's middle on SDE4's café
-    // anchor, (-4.0, 3.7) in both takes, its chairs within 0.9 of that) and the phone path (the call
-    // stretch's walk, its edges).
+    // the plaza and his stations in front: the café set (its table's middle on SDE4's café anchor, on the
+    // walks' café terrace, its chairs within 0.9 of that) and the phone path (his pacing on the bay
+    // walk: both his lanes and his turns).
     {
       const turfLine = Array.from({ length: 1440 }, (_, j) => plan.tropicShorePoint((j / 1440) * Math.PI * 2, 0)),
         circle = (x, z, r) => Array.from({ length: 72 }, (_, j) => [P.x + x + Math.cos((j / 72) * Math.PI * 2) * r, P.z + z + Math.sin((j / 72) * Math.PI * 2) * r]),
@@ -11165,13 +11262,15 @@ let tropicReport = '';
         const u = j / 40;
         footprint.push([B.x - B.hw + 2 * B.hw * u, B.z - B.hd], [B.x - B.hw + 2 * B.hw * u, B.z + B.hd], [B.x - B.hw, B.z - B.hd + 2 * B.hd * u], [B.x + B.hw, B.z - B.hd + 2 * B.hd * u]);
       }
-      const call = [];
-      for (let j = 0; j <= 32; j++) for (const side of [-1, 1]) call.push([P.x + W.stretch[0][0] + (W.stretch[1][0] - W.stretch[0][0]) * (j / 32), P.z + W.stretch[0][1] + side * (W.width / 2)]);
-      for (const a of [0, Math.PI]) call.push([P.x + W.stretch[a ? 0 : 1][0] + Math.cos(a) * (W.width / 2), P.z + W.stretch[0][1]]);
+      // (The phone path: his two pacing lanes down the bay walk and the half circles of his turns.)
+      const call = [],
+        [[sx, near], [, far]] = W.stretch;
+      for (let j = 0; j <= 32; j++) for (const x of [sx, sx - 2 * W.pace]) call.push([P.x + x, P.z + far + (near - far) * (j / 32)]);
+      for (const [z, s] of [[near, 1], [far, -1]]) for (let k = 0; k <= 12; k++) call.push([P.x + W.bay.x + Math.cos((k / 12) * Math.PI) * W.pace, P.z + z + s * Math.sin((k / 12) * Math.PI) * W.pace]);
       const lawnRound = {
         footprint: footprint.map(([x, z]) => [P.x + x, P.z + z]),
         plaza: circle(Q.x, Q.z, Q.r),
-        'café set': circle(-4.0, 3.7, 0.9),
+        'café set': circle(W.cafe.tableX, W.cafe.tableZ, 0.9),
         'phone path': call,
       };
       for (const [name, points] of Object.entries(lawnRound)) {
@@ -11199,70 +11298,156 @@ let tropicReport = '';
       }
     assert(mound <= 0.2 && steepest <= 0.32, `The tropic island's lawn is too steep (${steepest.toFixed(2)}; on its mound ${mound.toFixed(2)}).`);
     assert(crest <= P.dome + M.h + 1e-9 && crest < TROPIC_HIT.top - 0.03, `The lawn stands ${crest.toFixed(2)} high, over its dome and mound or its pointer slab.`);
-    // The walks (design 1.3): each on the lawn, its edges 0.4 in from the turf's edge or more. The south
-    // and front walks start on the plaza's rim and nothing of them lies inside it (the garden paves it);
-    // the call walk starts on the front walk's middle line and leaves it, and ends in its call stretch:
-    // its last 1.6, straight and running east-west, 1 in from the turf's lip or more (his stations' rule).
-    // The south walk keeps clear of the other two (no crossing but the call walk's mouth on the front
-    // walk), and passes round the mound's foot, outside it.
+    // The walks (work/ual-design/walks/design.md: two destinations, one forecourt), solved from the
+    // plaza, the podium, the ramp and the lip: the plaza the hinge of a cross, each arm meeting its rim
+    // on a diameter (the forecourt east, the café terrace west, the bay walk south), the forecourt's
+    // north edge the podium's face, its south edge one straight line clear of the ramp's foot, the café
+    // terrace on the same line west of the plaza, the bay walk on the entrance's axis down to the
+    // landing over the turf's lip, the tree walk on in line with the forecourt's south edge round one
+    // arc to the seat; every concave junction filleted; all of it on the lawn, 0.4 in from the turf's
+    // edge or more (the landing's walk end aside, which runs on under its deck); the call stretch on
+    // the bay walk, straight 1.6, both his lanes on the walk and his turns 1.2 in from the lip.
     const L = plan.TROPIC_PATH_LINES,
-      half = W.width / 2,
-      plaza = ([x, z]) => Math.hypot(x - P.x - Q.x, z - P.z - Q.z),
-      distanceTo = (line, x, z) => plan.distanceToPolyline([x, z], line);
+      Fc = W.forecourt,
+      Cf = W.cafe,
+      loc = ([x, z]) => [x - P.x, z - P.z],
+      onRim = (p) => Math.abs(Math.hypot(p[0] - Q.x, p[1] - Q.z) - Q.r) < 1e-6;
     for (const [name, line] of Object.entries(L)) {
-      assert(line.length > 100, `The ${name} walk's line is coarse.`);
-      for (const [x, z] of line)
-        for (let a = 0; a < Math.PI * 2; a += Math.PI / 6)
-          assert(plan.tropicAt(x + Math.cos(a) * (half + 0.4), z + Math.sin(a) * (half + 0.4)).lawn < 1, `The ${name} walk runs within 0.4 of the lawn's edge at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      assert(line.length > 20 && line.every((p, k) => !k || Math.hypot(p[0] - line[k - 1][0], p[1] - line[k - 1][1]) <= 0.06), `The ${name} walk's line is coarse.`);
     }
-    for (const name of ['south', 'front']) {
-      assert(Math.abs(plaza(L[name][0]) - Q.r) < 1e-6 && L[name].every((p) => plaza(p) >= Q.r - 1e-6), `The ${name} walk does not start on the plaza's rim, or runs into the plaza.`);
-      assert(plan.tropicWalkInside(name, P.x + Q.x, P.z + Q.z) === -Infinity, `The ${name} walk reaches into the plaza.`);
-    }
+    assert(onRim(loc(L.forecourt[0])) && Math.abs(loc(L.forecourt.at(-1))[0] - (B.x + B.hw)) < 1e-9 && Fc.z0 === B.z + B.hd && Fc.z0 <= Q.z && Fc.z1 >= Q.z, 'The forecourt does not run from the plaza\'s rim on its diameter to the podium\'s east end, on the podium\'s face.');
+    assert(Fc.z1 >= Fc.z0 + Fc.depth - 1e-9 && Fc.z1 >= B.z + B.hd + B.ramp.run + Fc.clear - 1e-9 && Fc.z1 === Math.max(Fc.z0 + Fc.depth, B.z + B.hd + B.ramp.run + Fc.clear), 'The forecourt\'s south edge is not the face and its depth, or the ramp\'s foot and its clearance, whichever is further out.');
+    assert(Cf.x1 === Q.x - Q.r && Cf.z0 === B.z + B.hd && Cf.z0 <= Q.z && Cf.z1 >= Q.z && Cf.x0 < B.x - B.hw, 'The café terrace does not run west from the plaza\'s rim on its diameter, on the podium\'s face, past the building\'s south-west corner.');
+    assert(W.bay.x === Q.x && onRim(loc(L.bay[0])) && Math.abs(loc(L.bay.at(-1))[1] - (W.landing.z0 + 0.05)) < 1e-9 && L.bay.every(([x]) => Math.abs(x - P.x - Q.x) < 1e-9), 'The bay walk does not run straight down the entrance\'s axis from the plaza\'s rim to under the landing.');
+    assert(Math.abs(loc(L.tree[0])[0] - W.east) < 1e-9 && Math.abs(W.tree.line + W.tree.width / 2 - Fc.z1) < 1e-9 && Math.hypot(...loc(L.tree.at(-1)).map((v, k) => v - [W.seat.x, W.seat.z][k])) < 1e-9, 'The tree walk does not leave the forecourt\'s east end in line with its south edge, or does not end in the seat.');
+    assert(W.tree.radius >= 2.3 - 1e-9 && W.tree.radius <= 2.5 + 1e-9 && W.tree.turn > 0 && W.tree.turn <= Math.PI / 4 + 1e-9, 'The tree walk\'s arc is not one R 2.3 to 2.5 turning north-east at most.');
+    // Its edges: every point of the paving 0.4 in from the turf's edge or more, but the bay walk's end
+    // under the landing's deck (the landing carries the line over the lip).
     {
-      const [x0, z0] = L.call[0],
-        [sa, sb] = W.stretch.map(([x, z]) => [P.x + x, P.z + z]),
-        on = L.call.filter(([x]) => x >= sa[0] - 1e-9 && x <= sb[0] + 1e-9);
-      assert(distanceTo(L.front, x0, z0) < 0.01 && W.call[0].every((v, k) => v === W.front[1][k]), 'The call walk does not leave the front walk from its line.');
-      assert(L.call.some(([x, z]) => distanceTo(L.front, x, z) > W.width + 0.5), 'The call walk never leaves the front walk.');
-      assert(Math.abs(sb[0] - sa[0] - 1.6) < 1e-9 && sa[1] === sb[1] && on.length > 10 && on.every(([, z]) => Math.abs(z - sa[1]) < 0.005), 'The call stretch is not a straight 1.6 running east-west.');
-      assert(L.call.at(-1).every((v, k) => Math.abs(v - sb[k]) < 1e-9) && W.call.slice(-3).every(([, z]) => z === W.stretch[0][1]) && W.call.at(-4)[1] === W.stretch[0][1], 'The call walk does not end in its stretch.');
-      for (const [x, z] of [sa, sb])
-        for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) assert(plan.tropicAt(x + Math.cos(a), z + Math.sin(a)).lawn < 1, 'The call stretch is within 1 of the turf\'s lip.');
-      let gap = Infinity;
-      for (const [x, z] of L.south) gap = Math.min(gap, distanceTo(L.front, x, z), distanceTo(L.call, x, z));
-      assert(gap >= W.width + 0.3, `The south walk comes within ${(gap - W.width).toFixed(2)} of the other walks.`);
-      const mound = Math.min(...L.south.map(([x, z]) => Math.hypot(x - P.x - M.x, z - P.z - M.z)));
-      assert(mound >= M.r - 0.4 && mound <= M.r + 1.2, `The south walk does not pass round the mound's foot (${mound.toFixed(2)} from its middle).`);
+      let least = Infinity;
+      for (let x = Cf.x0 - 0.5; x <= W.seat.x + W.seat.r + 0.5; x += 0.1)
+        for (let z = Fc.z0 - 1.5; z <= W.bay.end + 0.2; z += 0.1) {
+          if (plan.tropicPaving(x, z).paving > 0 || (Math.abs(x - Q.x) < W.landing.width / 2 && z > W.landing.z0)) continue;
+          least = Math.min(least, plan.tropicInland(x, z));
+        }
+      assert(least >= 0.4, `The walks come within ${least.toFixed(2)} of the turf's edge.`);
+      tropicReport += `; its walks ${least.toFixed(2)} in from the turf's edge at least`;
     }
-    // tropicFloor, what the figure stands on: on a walk's middle line its lift over the lawn (the call
-    // walk's where it lies on the front walk), the lawn half a step off a walk's edge, and the lawn (the
-    // garden's paving's own floor aside) inside the plaza and the podium.
+    // Filleted: where an arm's lawn edge meets the plaza's rim, or the tree walk's north edge meets the
+    // forecourt's end, the corner is paved (the fillet's arc runs between the two edges), in this plan
+    // and refused in a copy with its fillets taken out.
+    const corners = (S) => {
+      const out = [],
+        rim = (z) => [Q.x + Math.sqrt(Q.r ** 2 - (z - Q.z) ** 2), z],
+        rimW = (z) => [Q.x - Math.sqrt(Q.r ** 2 - (z - Q.z) ** 2), z],
+        rimS = (x) => [x, Q.z + Math.sqrt(Q.r ** 2 - (x - Q.x) ** 2)];
+      out.push(['the forecourt\'s south edge at the plaza', rim(S.forecourt.z1)]);
+      if (S.cafe.form === 'rect') out.push(['the café terrace\'s south edge at the plaza', rimW(S.cafe.z1)]);
+      out.push(['the bay walk\'s west edge at the plaza', rimS(S.bay.x - S.bay.width / 2)], ['the bay walk\'s east edge at the plaza', rimS(S.bay.x + S.bay.width / 2)]);
+      out.push(['the tree walk\'s north edge at the forecourt\'s end', [S.east, S.tree.line - S.tree.width / 2]]);
+      return out;
+    };
+    const unfilleted = (S) => corners(S).filter(([, [x, z]]) => plan.tropicPaving(x, z, S).union > -0.02).map(([name]) => name);
+    assert.deepEqual(unfilleted(W), [], `A junction of the walks is not filleted: ${unfilleted(W).join(', ')}.`);
+    {
+      const bare = { ...W, main: { ...W.main, fillet: 0 } };
+      assert(unfilleted(bare).length >= 4, 'The walks\' fillet rule does not refuse a plan without fillets.');
+    }
+    // No two paved shapes touching at a point, and no strip of lawn narrower than 0.4 between two paved
+    // shapes or between the paving and the podium: a lawn point is in such a strip when the paving (or
+    // the podium) lies nearest it in two directions more than 135 degrees apart, both together under
+    // 0.4 away (a square corner, whose two nearest walls lie 90 degrees apart, is no strip). Held on this
+    // plan, and refused on broken copies: a round terrace touching the bay walk at a point, and a bed of
+    // paving 0.15 off the podium's west face.
+    const strips = (distance) => {
+      const found = [],
+        N = 36;
+      for (let x = Cf.x0 - 1.2; x <= W.seat.x + W.seat.r + 1; x += 0.05)
+        for (let z = W.face - 1.5; z <= W.bay.end + 0.6; z += 0.05) {
+          const d = distance(x, z);
+          if (d <= 0.02 || d >= 0.2 || plan.tropicInland(x, z) <= 0) continue;
+          // (How far each way to the paving: marched on its distance.)
+          const reach = Array.from({ length: N }, (_, k) => {
+            const a = (k / N) * Math.PI * 2;
+            for (let t = 0, n = 0; t <= 0.4 && n < 200; n++) {
+              const s = distance(x + Math.cos(a) * t, z + Math.sin(a) * t);
+              if (s < 0.002) return t;
+              t += Math.max(s, 0.002);
+            }
+            return Infinity;
+          });
+          const minima = reach.map((r, k) => [r, k]).filter(([r, k]) => r < Infinity && r <= reach[(k + 1) % N] && r <= reach[(k + N - 1) % N]);
+          const strip = minima.some(([r1, k1]) => minima.some(([r2, k2]) => {
+            const apart = Math.min(Math.abs(k1 - k2), N - Math.abs(k1 - k2)) * (360 / N);
+            return apart > 135 && r1 + r2 < 0.4;
+          }));
+          if (strip) found.push([+x.toFixed(2), +z.toFixed(2)]);
+        }
+      return found;
+    };
+    {
+      const union = (x, z) => plan.tropicPaving(x, z).union,
+        found = strips(union);
+      assert(!found.length, `The walks leave a strip of lawn under 0.4 (or two paved shapes touch) at ${found.slice(0, 4).map((p) => p.join(', ')).join('; ')}.`);
+      const r = 0.5,
+        cx = W.bay.x - W.bay.width / 2 - r,
+        cz = W.bay.z0 + 1.2,
+        touchingAt = (x, z) => Math.min(union(x, z), Math.hypot(x - cx, z - cz) - r);
+      assert(strips(touchingAt).length > 0, 'The lawn-strip rule does not refuse a round terrace touching the bay walk at a point.');
+      const box = (x, z) => Math.max(W.west - 1.2 - x, x - (W.west - 0.15), W.face - 1.2 - z, z - (W.face - 0.3)),
+        sliverAt = (x, z) => Math.min(union(x, z), box(x, z));
+      assert(strips(sliverAt).length > 0, 'The lawn-strip rule does not refuse a sliver of lawn against the podium.');
+    }
+    // The seat: its rim 1.2 or more inside the turf's lip, here, and refused on a seat pushed out.
+    const seatRim = (S) => Math.min(...Array.from({ length: 48 }, (_, k) => plan.tropicInland(S.seat.x + Math.cos((k / 48) * Math.PI * 2) * S.seat.r, S.seat.z + Math.sin((k / 48) * Math.PI * 2) * S.seat.r)));
+    assert(seatRim(W) >= 1.2, `The seat's rim is ${seatRim(W).toFixed(2)} in from the turf's lip.`);
+    assert(seatRim({ ...W, seat: { ...W.seat, x: W.seat.x + 0.5 } }) < 1.2, 'The seat rule does not refuse a seat pushed out toward the shore.');
+    tropicReport += `, the seat's rim ${seatRim(W).toFixed(2)} in from the lip`;
+    // The level paving: the forecourt and the café terrace on the level terrace (TROPIC.pad), the
+    // mound moved off it.
+    for (const [x0, x1, z0, z1, name] of [[Q.x + Q.r, Fc.x1, Fc.z0, Fc.z1, 'forecourt'], [Cf.x0, Cf.x1, Cf.z0, Cf.z1, 'café terrace']])
+      for (let x = x0; x <= x1 + 1e-9; x += 0.2) for (let z = z0; z <= z1 + 1e-9; z += 0.2) assert(Math.abs(plan.tropicTop(P.x + x, P.z + z) - P.pad) < 1e-9, `The ${name} is not level at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+    assert(Math.hypot(Cf.x0 - M.x, Cf.z1 - M.z) > M.r * 0.5, 'The mound sits under the café terrace.');
+    // The call stretch: straight 1.6 down the bay walk (near end south, its far end at the walk's mouth
+    // on the plaza's rim), both his lanes (the stretch and 0.6 to its left) on the paving between the
+    // walk's kerbs, and his pacing turns at both ends 1.2 in from the turf's lip or more.
+    {
+      const [[nx, nz], [fx, fz]] = W.stretch,
+        lanes = [nx, nx - 2 * W.pace];
+      assert(nx === fx && Math.abs(nz - fz - 1.6) < 1e-9 && nz > fz, 'The call stretch is not a straight 1.6 down the bay walk, its near end south.');
+      for (const x of lanes) for (let z = fz; z <= nz + 1e-9; z += 0.1) assert(Math.abs(x - W.bay.x) <= W.bay.width / 2 - W.main.kerb - 0.1 && plan.tropicPaving(x, z).union < -0.1, `A pacing lane of the call leaves the bay walk at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+      // (Its far end runs off the walk's mouth onto the plaza's rim, the paving there the plaza's.)
+      assert(fz < Q.z + Q.r && fz > Q.z + Q.r - 0.5, 'The call stretch\'s far end is not at the bay walk\'s mouth.');
+      let turn = Infinity;
+      for (const [z, s] of [[nz, 1], [fz, -1]]) for (let k = 0; k <= 24; k++) turn = Math.min(turn, plan.tropicInland(W.bay.x + Math.cos((k / 24) * Math.PI) * W.pace, z + s * Math.sin((k / 24) * Math.PI) * W.pace));
+      assert(turn >= 1.2, `His pacing turns come ${turn.toFixed(2)} in from the turf's lip.`);
+    }
+    // tropicFloor, what the figure stands on: on each walk's middle line its lift over the lawn, the
+    // lawn half a step off the paving's edge, and the lawn (the garden's paving's own floor aside)
+    // inside the plaza (but its outer `ease`, where the walks' step down eases) and the podium.
     {
       const lawnOnly = (x, z) => Math.abs(plan.tropicFloor(x, z) - plan.tropicTop(x, z)) < 1e-9;
       for (const [name, line] of Object.entries(L))
-        for (let k = 2; k < line.length - 2; k += 7) {
-          const [x, z] = line[k],
-            // (Where the call walk lies on the front walk, its surface is the floor there, for both.)
-            under = name === 'call' ? plan.tropicWalkInside('front', x, z) > -0.2 : name === 'front' && plan.tropicWalkInside('call', x, z) > -0.2;
-          if (under) continue;
-          assert(Math.abs(plan.tropicFloor(x, z) - plan.tropicTop(x, z) - (name === 'call' ? W.branch : W.lift)) < 1e-9, `The floor on the ${name} walk at ${x.toFixed(2)}, ${z.toFixed(2)} is not its surface.`);
-          const [ax, az] = line[k - 1],
-            [bx, bz] = line[k + 1],
-            l = Math.hypot(bx - ax, bz - az),
-            nx = -(bz - az) / l,
-            nz = (bx - ax) / l;
-          for (const side of [-1, 1]) {
-            const ox = x + nx * side * (half + plan.TROPIC_FLOOR.ease + 0.02),
-              oz = z + nz * side * (half + plan.TROPIC_FLOOR.ease + 0.02);
-            if (Object.keys(L).every((other) => plan.tropicWalkInside(other, ox, oz) < -plan.TROPIC_FLOOR.ease)) assert(lawnOnly(ox, oz), `The floor beside the ${name} walk is not the lawn at ${ox.toFixed(2)}, ${oz.toFixed(2)}.`);
-          }
+        for (let k = 1; k < line.length - 1; k += 3) {
+          const [x, z] = line[k];
+          if (Math.hypot(x - P.x - Q.x, z - P.z - Q.z) < Q.r + plan.TROPIC_FLOOR.ease) continue;
+          assert(Math.abs(plan.tropicFloor(x, z) - plan.tropicTop(x, z) - W.lift) < 1e-9, `The floor on the ${name} walk at ${x.toFixed(2)}, ${z.toFixed(2)} is not its surface.`);
         }
-      const [jx, jz] = L.call[Math.floor(L.call.length * 0.02)];
-      assert(Math.abs(plan.tropicFloor(jx, jz) - plan.tropicTop(jx, jz) - W.branch) < 1e-9, 'The floor where the call walk leaves the front walk is not the call walk\'s surface.');
-      for (let a = 0; a < Math.PI * 2; a += 0.3) for (const r of [0, 0.8, Q.r - 0.05]) assert(lawnOnly(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r), 'The floor in the plaza is a walk\'s.');
+      let beside = 0;
+      for (let x = Cf.x0 - 1; x <= W.seat.x + 1.5; x += 0.13)
+        for (let z = Fc.z0; z <= W.bay.end + 1; z += 0.13) {
+          if (plan.tropicWalkInside(P.x + x, P.z + z) >= -plan.TROPIC_FLOOR.ease - 1e-9 || Math.hypot(x - Q.x, z - Q.z) < Q.r || plan.tropicAt(P.x + x, P.z + z).lawn >= 1) continue;
+          beside++;
+          assert(lawnOnly(P.x + x, P.z + z), `The floor off the walks is not the lawn at ${x.toFixed(2)}, ${z.toFixed(2)}.`);
+        }
+      assert(beside > 500, 'The floor beside the walks was hardly sampled.');
+      // (Where a walk meets the plaza's rim his step down onto the plaza's stone eases over the plaza's
+      // outer `ease`, as onto the lawn.)
+      for (let a = 0; a < Math.PI * 2; a += 0.3) for (const r of [0, 0.8, Q.r - plan.TROPIC_FLOOR.ease - 0.02]) assert(lawnOnly(P.x + Q.x + Math.cos(a) * r, P.z + Q.z + Math.sin(a) * r), 'The floor in the plaza is a walk\'s.');
       assert(lawnOnly(P.x + B.x, P.z + B.z), 'The floor under the building is a walk\'s.');
     }
+    // The ramp's foot lands on the forecourt: inside its paving, clear of its south edge.
+    assert(plan.tropicPaving((B.ramp.x0 + B.ramp.x1) / 2, B.z + B.hd + B.ramp.run).paving <= -Fc.clear + 1e-9, 'The veranda\'s ramp does not land on the forecourt.');
   }
 
   /* ---------------- its rocks ---------------- */
@@ -11301,8 +11486,10 @@ let tropicReport = '';
   // Nothing of its ground in the land's batch (only its tide line, in the shore's foam).
   each(model.land, (p, o) => assert(o === foam || !plan.onTropic(p.x, p.z, 2), 'Something of the tropic island is in the land\'s batch.'));
   // Its ground: at most four meshes (the lawn's grass, the beach's sand, and stone: the walks, which
-  // cast nothing, and the rocks) and 9,500 triangles (decision 13: what the island's 90,000 leaves once
-  // its building, garden and figure have their caps, 30,000, 45,000 and 5,500), every one batched with
+  // cast nothing, and the rocks) and 16,500 triangles (set again with the walks before SDE4: their one
+  // paving mesh, cut on its grid with fine cells along its curves, measured 15,872 for the whole ground,
+  // and a little over; decision 13's 9,500 was what the island's 90,000 left once its building, garden
+  // and figure had their caps, and the island's own 90,000 below still binds), every one batched with
   // a surface kind, front-sided, opaque, cutting no holes; and the island as a whole (its ground, its
   // building and whatever is joined to it: its garden and its figure) within 36 meshes and 90,000
   // triangles.
@@ -11319,7 +11506,7 @@ let tropicReport = '';
     assert(!o.material.onBeforeCompile || !patchedShader(o.material).fragmentShader.includes('discard'), `${o.material.name} on the tropic island cuts holes.`);
     assert(o.receiveShadow, 'A mesh of the tropic island\'s ground takes no shadow.');
   });
-  assert(landMeshes <= 4 && landTriangles <= 9500 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
+  assert(landMeshes <= 4 && landTriangles <= 16500 && [...kinds].every((k) => ['grass', 'sand', 'stone'].includes(k)), `The tropic island's ground is ${landMeshes} meshes and ${landTriangles} triangles of ${[...kinds].join(', ')}.`);
   // (The island is every group setShown takes: its ground first, then its building's model root and
   // whatever else is joined to it, counted once each.)
   const parts = tropic.groups();
@@ -11338,10 +11525,13 @@ let tropicReport = '';
   // concrete and its kerb the pavement's buff, the rocks' greys the armour's warmed a step (no more
   // saturated than the kerb's buff, all of them greys).
   assert.deepEqual(TROPIC_LOOK.lawn, ['#98b74a', '#aac757']);
-  assert.deepEqual(Object.keys(TROPIC_LOOK), ['lawn', 'paving', 'kerb', 'granite'], 'The tropic island\'s ground has colours of the plaza\'s (the garden\'s own).');
+  // (Its ground lays no plaza: the garden's own. Its one colour of the plaza's is on purpose: the main
+  // line's kerbs are the grey granite of the plaza's grey rings, so they run on into its rim.)
+  assert.deepEqual(Object.keys(TROPIC_LOOK), ['lawn', 'paving', 'kerb', 'kerbMain', 'granite'], 'The tropic island\'s ground has colours of the plaza\'s (the garden\'s own).');
   for (const [name, colour, family] of [
     ['paving', TROPIC_LOOK.paving, palette.pavement],
     ['kerb', TROPIC_LOOK.kerb, palette.pavement],
+    ['main line\'s kerb', TROPIC_LOOK.kerbMain, palette.kerb],
     ...TROPIC_LOOK.granite.map((c, k) => ['granite ' + k, c, palette.kerb]),
   ])
     assert(hsv(colour).s <= hsv(family).s + 1e-9, `The tropic island's ${name} (${colour}) is more saturated than its family.`);
@@ -12053,7 +12243,9 @@ let tropicReport = '';
       front = doors.filter((m) => Math.abs(m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).z - out.entrance.z) < 1e-3);
     assert(front.length >= 2 && Math.abs(front.reduce((s, m) => s + m.getWorldPosition(new T.Vector3()).applyMatrix4(toIsland).x, 0) / front.length - out.entrance.x) < 0.05 && out.entrance.heading === 0, 'The entrance anchor is not at the lobby\'s doors.');
     const cafe = out.cafe;
-    assert(cafe.z >= out.footprint.z1 + 0.8 && cafe.x >= A.x + B.x0 - 0.6 && cafe.x <= A.x + B.x1 + 0.6 && Math.abs(cafe.y - (A.y - SDE4.lift)) < 1e-9, `The café at ${cafe.x.toFixed(2)}, ${cafe.z.toFixed(2)} is not before the end block, off the podium.`);
+    // (The café on the walks' café terrace: off the podium, by the end block's south-west corner, well
+    // inside the terrace's paving, its level the lawn the podium assumes.)
+    assert(cafe.z >= out.podiumPlan.z1 + 0.5 && cafe.x >= A.x + B.x0 - 1.5 && cafe.x <= A.x + B.x1 && plan.tropicPaving(cafe.x, cafe.z).paving <= -0.6 && Math.abs(cafe.y - (A.y - SDE4.lift)) < 1e-9, `The café at ${cafe.x.toFixed(2)}, ${cafe.z.toFixed(2)} is not on its terrace by the end block, off the podium.`);
     // Its plan is what it built: the plan it hands back is sde4Plan's at its `at` (the garden and the
     // figure read that without building it); every column of the plan stands there, a white shaft of its
     // radius; the veranda's planting lies inside the reach the plan gives each planter (what Filip and the
@@ -12222,7 +12414,8 @@ let tropicReport = '';
 //   0.005;
 // - his ways: his root 0.27 (the walkers' clearance) in plan from every solid (SDE4's, the court's drum)
 //   and his furniture (but the chair or desk he stands beside, at a walk's ends), 1.2 or more in from
-//   the turf's lip (site.inland), onto the podium only by its ramp, and never an edge under his feet (the
+//   the turf's lip (site.inland), off the building wholly on the paving (the land's walks or the
+//   plaza, 0.1 in from the lawn), onto the podium only by its ramp, and never an edge under his feet (the
 //   floor 0.15 from his root no more than 0.06 off its own there: a walk's 0.036 lip on the lawn's
 //   slope passes, the ramp's sides and the podium's 0.12 do not);
 // - all of him (every other point of every mesh, his props too) against every solid where he goes
@@ -12511,6 +12704,7 @@ let filipReport = '';
       clearOf = '',
       lip = Infinity,
       edge = 0,
+      paving = Infinity,
       walked = 0;
     for (const a of acts) {
       if (a.kind !== 'walk') continue;
@@ -12525,6 +12719,16 @@ let filipReport = '';
           assert(g >= 0.27, `Filip walks ${fmt(g)} from ${s.name} at ${fmt(p.x)}, ${fmt(p.z)}.`);
         }
         lip = Math.min(lip, site.inland(p.x, p.z));
+        // (Off the building, wholly on the paving: the land's walks or the plaza, 0.1 in from the lawn.)
+        {
+          const Bd = plan.TROPIC_BUILDING,
+            onBuilding = Math.abs(p.x - Bd.x) <= Bd.hw && (Math.abs(p.z - Bd.z) <= Bd.hd || (p.x >= Bd.ramp.x0 && p.x <= Bd.ramp.x1 && p.z <= Bd.z + Bd.hd + Bd.ramp.run)),
+            // (The paved union: the walks and the plaza, its edges the lawn's.)
+            inside = -plan.tropicPaving(p.x, p.z).union,
+            onPaving = inside >= 0.1;
+          if (!onBuilding) paving = Math.min(paving, inside);
+          assert(onBuilding || onPaving, `Filip walks off the paving at ${fmt(p.x)}, ${fmt(p.z)}.`);
+        }
         const y = floor(p.x, p.z);
         assert(last === null || Math.abs(y - last) < 0.02, `Filip steps ${fmt(Math.abs(y - last))} up or down at ${fmt(p.x)}, ${fmt(p.z)} (onto the podium only by its ramp).`);
         last = y;
@@ -12540,7 +12744,7 @@ let filipReport = '';
       walked += a.length;
     }
     assert(lip >= 1.2, `Filip walks ${fmt(lip)} from the turf's lip.`);
-    filipReport = `Filip on the tropic island (${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of ${clearOf} in plan, ${fmt(lip)} in from the turf's lip and never over an edge (${fmt(edge)})`;
+    filipReport = `Filip on the tropic island (${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of ${clearOf} in plan, ${fmt(lip)} in from the turf's lip, wholly on the paving (${fmt(paving)} in from the lawn at least) and never over an edge (${fmt(edge)})`;
   }
   // All of him against every solid where he goes, every other frame (seated, every fourth).
   {

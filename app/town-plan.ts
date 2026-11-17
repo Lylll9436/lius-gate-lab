@@ -2005,8 +2005,9 @@ export function onTropic(x: number, z: number, margin = 0) {
 }
 /**
  * The level terrace the building stands on, in the island's own frame: its podium
- * (TROPIC_BUILDING) and the round plaza before its door (TROPIC_PLAZA, `r` round its middle), each
- * grown by `grow`, at TROPIC.pad; the lawn eases into it over `ease`. The land lays no paving on the
+ * (TROPIC_BUILDING), the round plaza before its door (TROPIC_PLAZA, `r` round its middle) and the
+ * walks' forecourt and café terrace either side of it (TROPIC_PATHS), each grown by `grow`, at
+ * TROPIC.pad; the lawn eases into it over `ease`. The land lays no paving on the
  * plaza: the garden builds it (town-tropic-garden's plaza, the photo's circular paving, its north
  * third under the roof's front edge), lying on this level ground, and the walks start at its rim.
  */
@@ -2040,7 +2041,8 @@ export function tropicTop(x: number, z: number) {
     dome = TROPIC.dome * (1 - lawn ** 2.4),
     podium = Math.hypot(Math.max(0, Math.abs(lx - B.x) - B.hw - G.grow), Math.max(0, Math.abs(lz - B.z) - B.hd - G.grow)),
     C = TROPIC_PATHS.cafe,
-    court = Math.max(0, Math.min(Math.hypot(lx - P.x, lz - P.z) - P.r, boxDistance(lx, lz, C.x0, C.x1, C.z0, C.z1)) - G.grow),
+    F = TROPIC_PATHS.forecourt,
+    court = Math.max(0, Math.min(Math.hypot(lx - P.x, lz - P.z) - P.r, boxDistance(lx, lz, C.x0, C.x1, C.z0, C.z1), boxDistance(lx, lz, F.x0, F.x1, F.z0, F.z1)) - G.grow),
     terrace = (1 - smoothstep(Math.min(podium, court) / G.ease)) * edge,
     m = Math.hypot(lx - M.x, lz - M.z) / M.r,
     mound = m < 1 ? M.h * 0.5 * (1 + Math.cos(Math.PI * m)) * edge : 0;
@@ -2098,7 +2100,7 @@ export const TROPIC_PATHS = (() => {
     main = { kerb: 0.11, fillet: 0.3 },
     forecourt = { depth: 1.2, clear: 0.28 },
     z1 = Math.max(face + forecourt.depth, rampFoot + forecourt.clear),
-    cafe = { form: 'rect' as 'rect' | 'round', length: 2.4, depth: 1.95, corner: 0.3, table: 1.0, tableIn: 0.55, heading: 0.8, r: 1.25 },
+    cafe = { form: 'rect' as 'rect' | 'round', length: 2.4, depth: 2.1, corner: 0.3, table: 1.0, tableIn: 0.78, heading: 0.85, r: 1.25 },
     bay = { width: 1.1 },
     // The turf's lip on the entrance's axis: the first point south of the plaza that is off the lawn.
     lip = (() => {
@@ -2176,14 +2178,14 @@ function roundUnion(a: number, b: number, r: number) {
  * - `union`: everything paved or built as one shape (the plaza, the podium, the forecourt, the café
  *   terrace, the bay walk, the tree walk and the seat), its concave junctions filleted; its edge is
  *   the lawn's edge;
- * - `paving`: what the land paves, the union less the plaza (the garden's: the land's paving runs 0.01
- *   onto its rim) and the podium (tucked 0.02 under its face);
+ * - `paving`: what the land paves, the paved shapes less the plaza (the garden's: the land's paving
+ *   runs 0.01 onto its rim) and the podium (tucked 0.02 under its face);
  * - `kerb`: the width of the flush kerb there (the main line's, or the tree walk's east of the
  *   forecourt's end), so the kerb is where union > -kerb inside the paving.
+ * (`W`, the walks' plan, is TROPIC_PATHS: check-town hands it broken copies, which its rules must refuse.)
  */
-export function tropicPaving(x: number, z: number) {
-  const W = TROPIC_PATHS,
-    Q = TROPIC_PLAZA,
+export function tropicPaving(x: number, z: number, W: typeof TROPIC_PATHS = TROPIC_PATHS) {
+  const Q = TROPIC_PLAZA,
     B = TROPIC_BUILDING,
     r = W.main.fillet,
     plaza = Math.hypot(x - Q.x, z - Q.z) - Q.r,
@@ -2225,8 +2227,9 @@ export function tropicPaving(x: number, z: number) {
   main = roundUnion(main, cafe, C.form === 'rect' ? r : 0.4);
   main = roundUnion(main, bay, r);
   const lesser = roundUnion(treeWalk, seat, r),
-    union = Math.min(roundUnion(main, lesser, r), podium),
-    paving = Math.max(union, -(plaza + 0.01), -(podium + 0.02));
+    walks = roundUnion(main, lesser, r),
+    union = Math.min(walks, podium),
+    paving = Math.max(walks, -(plaza + 0.01), -(podium + 0.02));
   return { union, paving, kerb: x > W.east - 0.1 ? T0.kerb : W.main.kerb };
 }
 /**
@@ -2252,7 +2255,7 @@ export const TROPIC_PATH_LINES = (() => {
     });
   return {
     forecourt: straight([Q.x + Math.sqrt(Q.r ** 2 - (mid - Q.z) ** 2), mid], [W.east, mid]),
-    bay: straight([Q.x, W.bay.z0], [Q.x, W.bay.end]),
+    bay: straight([Q.x, Q.z + Q.r], [Q.x, W.bay.end]),
     tree: [...arc, ...straight(T0.arcEnd, [W.seat.x, W.seat.z]).slice(1)],
   };
 })();

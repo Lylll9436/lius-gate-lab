@@ -306,7 +306,7 @@ export const CAFE_SAUCER = { ahead: 0.29, right: 0.07 };
  */
 export const WALK_TIMBER = {
   landing: { board: 0.24, slab: 0.07, inset: 0.1, dark: 0.5, tread: 0.3, rise: [0.06, 0.08] as [number, number], tones: [1.06, 0.97] },
-  bench: { length: 1.2, depth: 0.46, slab: 0.09, seat: 0.44, leg: 0.13, inset: 0.18, back: 0.4 },
+  bench: { length: 1.2, depth: 0.46, slab: 0.09, seat: 0.44, leg: 0.13, inset: 0.18, back: 0.2 },
 };
 /**
  * The landing as the garden builds it on the island's ground (`ground`, in the island's frame), from
@@ -1345,9 +1345,15 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
     // The plinth under them, in shadow, down into the lawn and the sand.
     let low = Infinity;
     for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) low = Math.min(low, ground(D.x0 + ((D.x1 - D.x0) * i) / 8, D.z0 + ((D.z1 - D.z0) * j) / 8));
-    box(D.x0 + L0.inset, D.x1 - L0.inset, low - 0.05, D.top - L0.slab + 0.001, D.z0 + L0.inset, D.z1 - L0.inset, toned(L.oak, L0.dark));
+    const plinth = { x0: D.x0 + L0.inset, x1: D.x1 - L0.inset, z0: D.z0 + L0.inset, z1: D.z1 - L0.inset, bottom: low - 0.05 };
+    box(plinth.x0, plinth.x1, plinth.bottom, D.top - L0.slab + 0.001, plinth.z0, plinth.z1, toned(L.oak, L0.dark));
     // The steps: each tread a block down into the sand, its rise lit as the oak's side.
-    D.steps.forEach((s, k) => box(D.x0, D.x1, Math.min(ground(D.x0, s.z1), ground(D.x1, s.z1), ground((D.x0 + D.x1) / 2, s.z1)) - 0.05, s.top, s.z0, s.z1, toned(L.oak, L0.tones[(boards + k) % 2])));
+    const steps = D.steps.map((s) => {
+      let under = Infinity;
+      for (let i = 0; i <= 6; i++) for (const z of [s.z0, s.z1]) under = Math.min(under, ground(D.x0 + ((D.x1 - D.x0) * i) / 6, z));
+      return { ...s, bottom: under - 0.05 };
+    });
+    steps.forEach((s, k) => box(D.x0, D.x1, s.bottom, s.top, s.z0, s.z1, toned(L.oak, L0.tones[(boards + k) % 2])));
     // The bench on the seat.
     const B = WALK_TIMBER.bench,
       at = tropicBench(),
@@ -1355,9 +1361,17 @@ export function createTropicGarden(ctx: TownContext, kit: Kit) {
       m = new T.Matrix4().makeRotationY(at.facing).setPosition(at.x, y, at.z),
       on = (x: number, yy: number, z: number) => m.clone().multiply(placed(x, yy, z));
     parts.push({ geometry: chamfered(B.length, B.slab, B.depth), tint: toned(L.oak, 1.04), matrix: on(0, B.seat - B.slab / 2, 0) });
-    for (const sx of [-1, 1]) parts.push({ geometry: chamfered(B.leg, B.seat - B.slab + 0.05, B.depth - 0.08), tint: toned(L.oak, 0.82), matrix: on(sx * (B.length / 2 - B.inset), (B.seat - B.slab - 0.05) / 2, 0) });
+    for (const sx of [-1, 1]) {
+      // Each leg from the seat's paving (its lowest point under the leg, sunk a hair) up to the slab.
+      const lx = sx * (B.length / 2 - B.inset),
+        c = Math.cos(at.facing),
+        s = Math.sin(at.facing);
+      let foot = Infinity;
+      for (const [u, v] of [[-B.leg / 2, -B.depth / 2], [B.leg / 2, -B.depth / 2], [-B.leg / 2, B.depth / 2], [B.leg / 2, B.depth / 2]]) foot = Math.min(foot, ground(at.x + (lx + u) * c + v * s, at.z - (lx + u) * s + v * c) + plan.TROPIC_PATHS.lift - y - 0.01);
+      parts.push({ geometry: chamfered(B.leg, B.seat - B.slab - foot, B.depth - 0.08), tint: toned(L.oak, 0.82), matrix: on(lx, (B.seat - B.slab + foot) / 2, 0) });
+    }
     solidMesh(material, g, parts, 'wood', 'tropic-walk-oak', ['oak']);
-    g.userData.landing = D;
+    g.userData.landing = { ...D, steps, plinth, slab: L0.slab };
     g.userData.bench = at;
     return g;
   }
@@ -1568,7 +1582,7 @@ export const TROPIC_GARDEN = {
   },
   rainTrees: [
     { size: 'big' as RainTreeSize, x: 8.45, z: -1.2, ry: 1.1, seed: 3 },
-    { size: 'small' as RainTreeSize, x: -7.49, z: 2.81, ry: 0.3, seed: 5 },
+    { size: 'small' as RainTreeSize, x: -7.8, z: 1.25, ry: 0.3, seed: 5 },
   ],
   palms: [
     { bearing: 1.0, shore: 1.0, height: 3.6, lean: 0.27, seed: 1 },
@@ -1582,7 +1596,7 @@ export const TROPIC_GARDEN = {
   ],
   beds: [
     // Behind the café terrace, where it passes the building's south-west corner and the west screen.
-    { line: [[-5.0, 1.27], [-3.85, 1.25]], width: 0.6, height: 0.5, seed: 1, leaves: { toward: -Math.PI / 2, spread: 0.55 } },
+    { line: [[-5.05, 1.27], [-4.05, 1.25]], width: 0.6, height: 0.5, seed: 1, leaves: { toward: -Math.PI / 2, spread: 0.55 } },
     // Inside the tree walk's arc, along the podium's east face.
     { line: [[6.5, -0.55], [6.55, 0.95]], width: 0.62, height: 0.56, seed: 3, leaves: { toward: 0, spread: 0.6 } },
     // Along the back.
@@ -1600,7 +1614,7 @@ export const TROPIC_GARDEN = {
     { line: [[0.3, -6.35], [1.9, -6.6]], width: 0.6, height: 0.5, seed: 12, leaves: null },
   ] as { line: [number, number][]; width: number; height: number; seed: number; leaves?: { toward: number; spread: number } | null }[],
   fans: [
-    { x: -3.95, z: 1.2, height: 0.9, ry: 0.1, seed: 1 },
+    { x: -4.2, z: 1.22, height: 0.9, ry: 0.1, seed: 1 },
     { x: 6.55, z: 0.25, height: 0.95, ry: -0.2, seed: 2 },
     { x: -0.95, z: -4.42, height: 1.05, ry: 0.05, seed: 3 },
     { x: -4.1, z: -2.05, height: 1.0, ry: 1.5, seed: 4 },

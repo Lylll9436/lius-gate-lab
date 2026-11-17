@@ -12,7 +12,8 @@ import { RESIDENCE_LOOK } from './town-residence';
  * lawn, terrace, walks and shore): built in a group of its own, `tropicLand`, as the airport's is,
  * never in the land's batch. Its colours, each no more saturated than its palette family: the
  * town's own two lawn greens (the main island's and the airport deck's), the residence's pale
- * concrete for the walks with their flush kerbs a shade lighter, and the granite of its rocks: the
+ * concrete for the walks with their flush kerbs, the tree walk's a shade lighter (`kerb`) and the main
+ * line's the grey granite of the plaza's grey rings (`kerbMain`), and the granite of its rocks: the
  * airport armour's greys warmed a step (Singapore's granite reads warm grey), two of five dark. (The
  * round plaza before the building's door is the garden's: town-tropic-garden.)
  */
@@ -21,7 +22,7 @@ export const TROPIC_LOOK = {
   paving: RESIDENCE_LOOK.paving,
   kerb: '#e3dac6',
   /** The main line's kerbs: the grey granite of the plaza's grey rings (the residence's gravel). */
-  granite2: RESIDENCE_LOOK.gravel,
+  kerbMain: RESIDENCE_LOOK.gravel,
   granite: ['#958f84', '#8b867d', '#9e978a', '#7d7871', '#706c66'],
 };
 /**
@@ -215,14 +216,23 @@ export function createTropicIsland(ctx: TownContext) {
   function draped() {
     const pos: number[] = [],
       nor: number[] = [],
-      col: number[] = [];
+      col: number[] = [],
+      // The lawn's height and normal at each point, worked out once (a point is shared by several triangles).
+      seen = new Map<string, [number, T.Vector3]>(),
+      lawnAt = (x: number, z: number) => {
+        const key = `${Math.round(x * 1e5)},${Math.round(z * 1e5)}`;
+        let at = seen.get(key);
+        if (!at) seen.set(key, (at = [plan.tropicTop(x, z), lawnNormal(x, z)]));
+        return at;
+      };
     return {
       triangle(a: plan.XZ, b: plan.XZ, c: plan.XZ, tone: T.Color, lift: number) {
         const turn = (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]);
         if (Math.abs(turn) < 1e-9) return;
         for (const [x, z] of turn > 0 ? [a, b, c] : [a, c, b]) {
-          pos.push(x, plan.tropicTop(x, z) + lift, z);
-          lawnNormal(x, z).toArray(nor, nor.length);
+          const [y, n] = lawnAt(x, z);
+          pos.push(x, y + lift, z);
+          n.toArray(nor, nor.length);
           col.push(tone.r, tone.g, tone.b);
         }
       },
@@ -352,16 +362,23 @@ export function createTropicIsland(ctx: TownContext) {
     const W = plan.TROPIC_PATHS,
       G = PAVING_GRID,
       pave = new T.Color(L.paving),
-      main = new T.Color(L.granite2),
+      main = new T.Color(L.kerbMain),
       light = new T.Color(L.kerb),
       surface = draped(),
       split = W.east - 0.1;
     // A vertex: its place in the island's frame and the paving's distances there (paving, union, split line).
     type V = [number, number, number, number, number];
-    const vertex = (x: number, z: number): V => {
-      const p = plan.tropicPaving(x, z);
-      return [x, z, p.paving, p.union, x - split];
-    };
+    // (Every grid point lies on the fine grid: each is worked out once.)
+    const known = new Map<number, V>(),
+      vertex = (x: number, z: number): V => {
+        const key = Math.round(x / G.fine) * 100003 + Math.round(z / G.fine);
+        let v = known.get(key);
+        if (!v) {
+          const p = plan.tropicPaving(x, z);
+          known.set(key, (v = [x, z, p.paving, p.union, x - split]));
+        }
+        return v;
+      };
     /** The part of a convex polygon where field k is at most `at` (or more, `above`), the field linear along its edges. */
     const clip = (poly: V[], k: number, at: number, above = false): V[] => {
       const out: V[] = [],

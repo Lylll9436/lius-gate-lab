@@ -32,7 +32,7 @@ import {
   type Material,
   type V3,
 } from './figure-rig';
-import { angleDiff, blendDay, planDay, samplePolyline, smoothstep, TROPIC, TROPIC_PATHS, TROPIC_PLAZA, tropicFloor, tropicInland, tropicTop, walkProgress, type DayGait, type XZ } from './town-plan';
+import { angleDiff, blendDay, planDay, samplePolyline, smoothstep, TROPIC, TROPIC_PATHS, TROPIC_PLAZA, tropicFloor, tropicInland, walkProgress, type DayGait, type XZ } from './town-plan';
 import type { TownContext } from './town-shared';
 import { sde4Plan } from './town-sde4';
 import { createFilip, FILIP_FACE, FILIP_PHONE, FILIP_SCALE, type FilipJoints, type FilipProps } from './tropic-figure-look';
@@ -260,7 +260,7 @@ export const FILIP_SITE: FilipSite = (() => {
     W = TROPIC_PATHS,
     Q = TROPIC_PLAZA,
     turn = 0.3,
-    [near, far] = W.stretch,
+    [near] = W.stretch,
     // The stretch's two lanes on the bay walk: the stretch itself (east of the axis) and his second lane
     // 2·turn to its left (west), which he walks down from the far end to the near.
     xa = near[0] - 2 * turn,
@@ -269,10 +269,10 @@ export const FILIP_SITE: FilipSite = (() => {
     zw = (W.rampFoot + W.forecourt.z1) / 2,
     // His ring round the plaza's drum (its solid 0.46 round and the walkers' 0.27, and a little), the
     // radius of his turns off it, and his line across the plaza's south half onto the café terrace,
-    // the walkers' 0.27 in from the terrace's south edge (clear of the café's guest chair).
+    // 0.24 in from the terrace's south edge (the walkers' 0.27 clear of the café's guest chair).
     ring = 0.8,
     bend = 0.4,
-    south = W.cafe.z1 - 0.27,
+    south = W.cafe.z1 - 0.24,
     /** Points `step` apart along a circle about c, radius r, from bearing a0 to a1. */
     circle = (c: XZ, r: number, a0: number, to: number, step = 0.05): XZ[] => {
       // (The shorter way round.)
