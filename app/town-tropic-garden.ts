@@ -1586,7 +1586,7 @@ export const TROPIC_GARDEN = {
   ],
   palms: [
     { bearing: 1.0, shore: 1.0, height: 3.6, lean: 0.27, seed: 1 },
-    { bearing: 0.12, shore: 1.0, height: 3.15, lean: 0.22, seed: 2 },
+    { bearing: 0.17, shore: 1.0, height: 3.15, lean: 0.22, seed: 2 },
     { bearing: 1.32, shore: 1.1, height: 3.85, lean: 0.24, seed: 3 },
     { bearing: -0.42, shore: 1.0, height: 3.35, lean: 0.26, seed: 4 },
   ],

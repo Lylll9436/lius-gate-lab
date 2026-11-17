@@ -2066,7 +2066,8 @@ export function tropicTop(x: number, z: number) {
  *   deep, its two far corners rounded `corner`; the café table on it `table` west of the plaza's rim and
  *   `tableIn` south of the face, its sitter facing `heading` (south-east, over the lawn to the bay and
  *   toward the island's file). `form` 'round' is the fallback studied beside it (a round terrace `r`
- *   round, joined to the plaza on its south-west as one outline): see design.md.
+ *   round, its middle `round.a` west and `round.b` south of the plaza's, joined to it on its south-west
+ *   as one outline with a 0.4 fillet, 0.6 of lawn clear of the bay walk): see design.md.
  * - `bay` (the main walk, south arm): straight down the entrance's axis from the plaza's rim to the
  *   landing, `width` across (the town's pavement), its end square under the landing's deck.
  * - `landing`: a low wide oak deck `width` by `depth` across the axis, carried level over the turf's
@@ -2100,7 +2101,7 @@ export const TROPIC_PATHS = (() => {
     main = { kerb: 0.11, fillet: 0.3 },
     forecourt = { depth: 1.2, clear: 0.28 },
     z1 = Math.max(face + forecourt.depth, rampFoot + forecourt.clear),
-    cafe = { form: 'rect' as 'rect' | 'round', length: 2.4, depth: 2.1, corner: 0.3, table: 1.0, tableIn: 0.78, heading: 0.85, r: 1.25 },
+    cafe = { form: 'rect' as 'rect' | 'round', length: 2.4, depth: 2.1, corner: 0.3, table: 1.0, tableIn: 0.78, heading: 0.85, r: 1.1, round: { a: 2.3, b: 0.9 } },
     bay = { width: 1.1 },
     // The turf's lip on the entrance's axis: the first point south of the plaza that is off the lawn.
     lip = (() => {
@@ -2196,7 +2197,7 @@ export function tropicPaving(x: number, z: number, W: typeof TROPIC_PATHS = TROP
     cafe =
       C.form === 'rect'
         ? roundBoxDistance(x, z, C.x0, Q.x + C.corner, C.z0, C.z1, C.corner)
-        : Math.hypot(x - (Q.x - Q.r * 0.82), z - (Q.z + Q.r * 0.85)) - C.r,
+        : Math.hypot(x - (Q.x - C.round.a), z - (Q.z + C.round.b)) - C.r,
     bay = boxDistance(x, z, W.bay.x - W.bay.width / 2, W.bay.x + W.bay.width / 2, Q.z, W.bay.end),
     T0 = W.tree,
     h = T0.width / 2,
