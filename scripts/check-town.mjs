@@ -10023,10 +10023,11 @@ let skyReport = '';
 }
 // Filip Biljecki on the tropic island (app/tropic-figure.ts, lane figure): his figure and his day, on
 // the shared rig (figure-rig.ts, Alison's) scaled 1.08 at his root. Until the island is merged he is
-// built here on his own, on the stand-in site (FILIP_SITE: SDE4's desk and café anchors, its columns,
-// stack and fin block, the land's paths, court and podium, the garden's call stretch, as they stand in
-// their lanes, on a stand-in floor) with the stand-in body (filipStandIn, of lane figlook's shape); once
-// it is, these checks are to read the island's own Filip, his site and his body. Alison's bars, his:
+// built here on his own, on the stand-in site (FILIP_SITE: SDE4's desk and café anchors and its solids
+// (columns, pads, stack, fin block, the veranda's planters, steps), the land's walks, court, mound and
+// podium with its ramp, the call stretch, as they stand in their lanes, on a stand-in floor) with the
+// stand-in body (filipStandIn, of lane figlook's shape); once it is, these checks are to read the
+// island's own Filip, his site (its floor, anchors, solids and turf) and his body. Alison's bars, his:
 // - he is one entry in the animated list, a pivot of his own (keepSeparate, prebatched), his root
 //   scaled 1.08 all over, and inside it exactly Alison's joints, pivots and hierarchy; 14 meshes and
 //   5,500 triangles at most as built and as batched (each group's own meshes, a batch a kind and a
@@ -10034,8 +10035,9 @@ let skyReport = '';
 // - his day is pure and periodic (the same time the same answer, a period on, and at 10^7 s), time 0
 //   the still pose of his work (seated at the desk, his hands at rest on the keys), exactly the owner's
 //   three activities in order (the desk, the call, coffee, and back to the desk) with the walks between,
-//   his phone in his hand only from the one 'answer' to the other, 140 to 160 s round (never Alison's
-//   127, so the islands never fall into step);
+//   his phone in his hand only from his answering it as he sets off from the desk to his putting it
+//   away, 130 to 160 s round (design.md's about 137 s or more; never Alison's 127, so the islands
+//   never fall into step);
 // - frame by frame through his day and on past its wrap: his root no more than 0.016 a sixtieth of a
 //   second and every part (each mesh's points, every seventh) no more than 0.036 (his own walk at his
 //   size and pace: Alison's 0.015 and 0.025 scaled); no part's motion more than 0.02 off its motion
@@ -10043,17 +10045,27 @@ let skyReport = '';
 //   at a kink in each stride, comes to about 0.012); his heading never faster than 2.5 a second
 //   (a walk sets off on a curve: no spin on the spot); his phone shows and goes only wholly inside his
 //   chest (its breast pocket); his cup always shows, and while he is away from it, or has set it down,
-//   it stands exactly in the café table's saucer's well; at the desk, at coffee and on the phone his
-//   arms are never straight (a hand put out of its reach);
+//   it stands exactly in the café table's saucer's well; at the desk, at coffee and on the phone (and
+//   answering it as he walks) his arms are never straight (a hand put out of its reach);
 // - his soles: standing and walking, the lower one within 0.005 of the floor drawn under it (up the
 //   ramp, over the paths' edges, across the dome); seated, on his chair's foot ring (FILIP_RING) within
 //   0.005;
-// - his ways: 0.27 (the walkers' clearance) from SDE4's columns, stack and fin block, the court's drum
+// - his ways: his root 0.27 (the walkers' clearance) in plan from every solid (SDE4's, the court's drum)
 //   and his furniture (but the chair or desk he stands beside, at a walk's ends), 1 or more in from the
-//   turf's lip, and onto the podium only by its ramp;
+//   turf's lip (site.inland), onto the podium only by its ramp, and never an edge under his feet (the
+//   floor 0.15 from his root no more than 0.06 off its own there: a walk's 0.036 lip on the lawn's
+//   slope passes, the ramp's sides and the podium's 0.12 do not);
+// - all of him (every other point of every mesh, his props too) against every solid where he goes
+//   (the site's and his furniture's, filipFurniture), every other frame: standing, walking, turning,
+//   answering and on the phone 0.01 or more from all of them (his phone arm too, out to his side;
+//   nothing exempt); seated at the desk or the café table, 0.01 or more from all of them but his own
+//   chair's seat (he sits on it) and its foot ring under his shoes (they rest on it), his hands resting
+//   on the desk, the laptop or the table's top (into none of them) and the rest of him (his forearms
+//   and belly) 0.01 or more from them; getting up and sitting down (the rig's rise, as Alison's: it
+//   slides him through his chair) measured and reported, not held;
 // - his props never through him: his phone 0.01 clear of all of him but the hand that holds it, as he
-//   answers, calls and walks on the phone; his cup 0.01 clear of his head and hair as he drinks; at the
-//   desk nothing of him in the desk or the laptop; his back and hair ahead of his chair's back;
+//   answers, calls and walks on the phone; his cup 0.01 clear of his head and hair as he drinks; his
+//   back and hair ahead of his chair's back;
 // - held (Pause) at a moment every 0.77 s of his day he settles within a second and then never moves,
 //   settling and let go no faster than his day itself moves (as above), raising the frame's `moved` in
 //   every frame he moves; under reduced motion within a quarter of a second, his root no further than
@@ -10128,7 +10140,7 @@ let filipReport = '';
   // His day: pure, periodic, his three activities, time 0 his still work.
   const P = D.period,
     acts = D.acts;
-  assert(P >= 140 && P <= 160 && P !== 127, `Filip's day is ${P} s round (140 to 160, never Alison's 127).`);
+  assert(P >= 130 && P <= 160 && P !== 127, `Filip's day is ${P} s round (130 to 160, never Alison's 127).`);
   for (let k = 0; k < 400; k++) {
     const t = (k / 400) * P + 0.0137;
     assert.deepEqual(D.day(t), D.day(t + P), `Filip's day at ${fmt(t)} s is not what it is a period on.`);
@@ -10143,11 +10155,14 @@ let filipReport = '';
   assert(D.day(0).pose === 'desk' && D.day(0).keys === 1 && D.day(0).tap === 0 && D.day(0).back === 0 && D.day(0).pad === 0, 'Filip at time 0 is not at rest at his desk, his hands on the keys.');
   {
     const stations = acts.filter((a, i) => !i || a.station !== acts[i - 1].station).map((a) => a.station),
+      answering = acts.filter((a) => a.kind === 'walk' && a.answer),
       answers = acts.filter((a) => a.kind === 'answer'),
       phoned = acts.filter((a) => a.phone);
     assert.deepEqual(stations, ['desk', 'walk', 'call', 'walk', 'cafe', 'walk', 'desk'], `Filip's day goes ${stations.join(', ')}.`);
-    assert(acts.filter((a) => a.kind === 'desk').length === 2 && acts.filter((a) => a.kind === 'cafe').length === 1 && acts.filter((a) => a.kind === 'call').length === 1 && answers.length === 2 && answers[0].up && !answers[1].up, 'Filip does not work, call and drink once each, answering and putting his phone away once each.');
-    assert(phoned.length && phoned[0] === acts[acts.indexOf(answers[0]) + 1] && phoned.at(-1) === answers[1], 'Filip has his phone in his hand outside his call.');
+    assert(acts.filter((a) => a.kind === 'desk').length === 2 && acts.filter((a) => a.kind === 'cafe').length === 1 && acts.filter((a) => a.kind === 'call').length === 1 && answering.length === 1 && answers.length === 1 && !answers[0].up, 'Filip does not work, call and drink once each, answering his phone as he sets off and putting it away once each.');
+    const off = acts.findIndex((a) => a.kind === 'walk');
+    assert(acts[off] === answering[0] && acts.slice(0, off).every((a) => a.station === 'desk') && answering[0].answer.at >= 0 && answering[0].answer.at + answering[0].answer.seconds < answering[0].t1 - answering[0].t0, 'Filip does not answer his phone as he sets off from his desk, and have it at his ear before he is down the ramp.');
+    assert(phoned.length && phoned[0] === answering[0] && phoned.at(-1) === answers[0], 'Filip has his phone in his hand outside his call.');
   }
   // Frame by frame.
   const shows = (o) => {
@@ -10229,8 +10244,7 @@ let filipReport = '';
           const q = m.geometry.attributes.position;
           for (let i = 0; i < q.count; i++) low = Math.min(low, v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld).y);
         });
-      const seat = day.station === 'cafe' ? D.seats.cafe : D.seats.desk;
-      return low - floor(seat.x, seat.z) - F.FILIP_RING.height;
+      return low - (day.station === 'cafe' ? D.levels.cafe : D.levels.desk) - F.FILIP_RING.height;
     },
     saucerAt = new T.Vector3(D.saucer.x, D.saucer.y, D.saucer.z);
   const worst = { root: 0, parts: 0, pop: 0, turn: 0, reach: 0, away: 0, stand: { low: Infinity, high: -Infinity }, seated: 0, flips: 0 };
@@ -10260,8 +10274,9 @@ let filipReport = '';
       const turn = Math.abs(plan.angleDiff(day.heading, prevDay.heading)) / frame;
       worst.turn = Math.max(worst.turn, turn);
       assert(turn <= 2.5, `At ${fmt(t)} s Filip turns ${fmt(turn)} a second (${day.pose}).`);
-      // (Where his hands are put on a target: at the desk and at coffee both, on the phone his right.)
-      for (const k of day.pose === 'desk' || day.pose === 'coffee' ? [0, 1] : day.pose === 'call' ? [0] : []) worst.reach = Math.max(worst.reach, R.figureHand(joints, k).distanceTo(joints.arms[k].position));
+      // (Where his hands are put on a target: at the desk and at coffee both, on the phone his right, and
+      // answering it as he walks once his hand is at his pocket: before that it comes up from its swing.)
+      for (const k of day.pose === 'desk' || day.pose === 'coffee' ? [0, 1] : day.pose === 'call' || (day.pose === 'walk' && day.phone && day.answer >= 0.3) ? [0] : []) worst.reach = Math.max(worst.reach, R.figureHand(joints, k).distanceTo(joints.arms[k].position));
       // His props: the phone comes and goes only inside his chest; the cup always shows.
       meshes.forEach((mesh, i) => {
         if (now.vis[i] === prev.vis[i]) return;
@@ -10300,53 +10315,112 @@ let filipReport = '';
     assert(worst.seated < 0.005, `Seated, Filip's soles are ${fmt(worst.seated)} off his chair's foot ring.`);
   }
   // His ways.
+  const solids = [...site.solids, ...F.filipFurniture(D)].map((s) => ({ s, reach: F.filipSolidReach(s) }));
   {
-    const DK = F.FILIP_DESK,
-      CF = F.FILIP_CAFE,
-      CH = F.FILIP_CHAIR,
-      G = F.FILIP_GROUND,
-      chairOf = (s) => (x, z) => {
-        const c = Math.cos(s.facing),
-          sn = Math.sin(s.facing),
-          lx = (x - s.x) * c - (z - s.z) * sn,
-          lz = (x - s.x) * sn + (z - s.z) * c;
-        return Math.max(-CH.width / 2 - lx, lx - CH.width / 2, CH.setback - CH.depth - 0.1 - lz, lz - CH.setback);
+    const mid = (s) => {
+        // (A solid's plan, read at its middle height: the distance in plan from an upright box or post.)
+        const v = new T.Vector3().setFromMatrixPosition(s.at);
+        return s.kind === 'post' ? v.y + (s.size[1] + s.size[2]) / 2 : v.y;
       },
-      guest = { x: site.cafe.x + Math.sin(site.cafe.heading) * (CF.radius + CF.gap + CH.setback), z: site.cafe.z + Math.cos(site.cafe.heading) * (CF.radius + CF.gap + CH.setback), facing: site.cafe.heading + Math.PI },
-      things = [
-        ...site.round.map((c) => ({ name: 'post', d: (x, z) => Math.hypot(x - c.x, z - c.z) - c.r })),
-        ...site.keepOut.map((r) => ({ name: 'wall', d: (x, z) => Math.max(r.x0 - x, x - r.x1, r.z0 - z, z - r.z1) })),
-        { name: 'desk', beside: true, d: (x, z) => Math.max(Math.abs(x - site.desk.x) - DK.width / 2, Math.abs(z - site.desk.z) - DK.depth / 2) },
-        { name: 'table', beside: true, d: (x, z) => Math.hypot(x - site.cafe.x, z - site.cafe.z) - CF.radius },
-        { name: 'desk chair', beside: true, d: chairOf(D.seats.desk) },
-        { name: 'café chair', beside: true, d: chairOf(D.seats.cafe) },
-        { name: 'guest chair', d: chairOf(guest) },
-      ];
+      beside = (s) => /^(desk|desk chair|café chair|café table) /.test(s.name) || s.name === 'desk top' || s.name === 'laptop' || s.name === 'laptop lid' || s.name === 'desk plant';
     let clear = Infinity,
+      clearOf = '',
       lip = Infinity,
+      edge = 0,
       walked = 0;
     for (const a of acts) {
       if (a.kind !== 'walk') continue;
       let last = null;
-      for (let s = 0; s <= a.length; s += 0.02) {
-        const p = plan.samplePolyline(a.line, Math.min(a.length - 1e-9, s), false, true);
-        for (const th of things) {
-          if (th.beside && (s < 0.6 || s > a.length - 0.6)) continue;
-          const d = th.d(p.x, p.z);
-          clear = Math.min(clear, d);
-          assert(d >= 0.27, `Filip walks ${fmt(d)} from ${th.name === 'post' ? 'a column' : th.name === 'wall' ? "SDE4's walls" : 'his ' + th.name} at ${fmt(p.x)}, ${fmt(p.z)}.`);
+      for (let d = 0; d <= a.length; d += 0.02) {
+        const p = plan.samplePolyline(a.line, Math.min(a.length - 1e-9, d), false, true);
+        for (const { s, reach } of solids) {
+          if (Math.hypot(p.x - reach.x, p.z - reach.z) > reach.r + 0.5) continue;
+          if (beside(s) && (d < 0.6 || d > a.length - 0.6)) continue;
+          const g = F.filipSolidDistance(s, p.x, mid(s), p.z);
+          if (g < clear) [clear, clearOf] = [g, s.name];
+          assert(g >= 0.27, `Filip walks ${fmt(g)} from ${s.name} at ${fmt(p.x)}, ${fmt(p.z)}.`);
         }
-        const q = Math.hypot(p.x / G.turf.a, p.z / G.turf.b),
-          g = Math.hypot(p.x / G.turf.a ** 2, p.z / G.turf.b ** 2) / q;
-        lip = Math.min(lip, (1 - q) / g);
+        lip = Math.min(lip, site.inland(p.x, p.z));
         const y = floor(p.x, p.z);
         assert(last === null || Math.abs(y - last) < 0.02, `Filip steps ${fmt(Math.abs(y - last))} up or down at ${fmt(p.x)}, ${fmt(p.z)} (onto the podium only by its ramp).`);
         last = y;
+        // (No edge under his feet: the floor 0.15 round his root, ahead, behind and to each side.)
+        for (const [ax, az] of [[0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15]]) {
+          const c = Math.cos(p.heading),
+            sn = Math.sin(p.heading),
+            off = Math.abs(floor(p.x + ax * c + az * sn, p.z - ax * sn + az * c) - y);
+          edge = Math.max(edge, off);
+          assert(off <= 0.06, `Filip walks with an edge under his feet (the floor 0.15 from his root ${fmt(off)} off) at ${fmt(p.x)}, ${fmt(p.z)}.`);
+        }
       }
       walked += a.length;
     }
     assert(lip >= 1, `Filip walks ${fmt(lip)} from the turf's lip.`);
-    filipReport = `Filip on the tropic island's stand-ins (lane figure; ${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of the columns, walls and furniture and ${fmt(lip)} in from the turf's lip`;
+    filipReport = `Filip on the tropic island's stand-ins (lane figure; ${meshes.length} meshes as built and ${batched} batched, ${triangles} triangles, on Alison's rig at 1.08): his day ${P} s (the desk, the call, coffee; ${fmt(walked)} walked), frame by frame his root ${fmt(worst.root)} and his parts ${fmt(worst.parts)} at most a sixtieth of a second and never a pop (${fmt(worst.pop)}), turning ${fmt(worst.turn)} a second at most, his phone in and out of his breast pocket, his cup in the café's saucer while he is away, his soles ${fmt(worst.stand.low)} to ${fmt(worst.stand.high)} over the floor and ${fmt(worst.seated)} off his chairs' foot rings, his ways ${fmt(clear)} clear of ${clearOf} in plan, ${fmt(lip)} in from the turf's lip and never over an edge (${fmt(edge)})`;
+  }
+  // All of him against every solid where he goes, every other frame (seated, every fourth).
+  {
+    const H = [],
+      kinds = [];
+    // (Each point of his: its mesh and which of him it is: a hand, a shoe or the rest.)
+    for (const m of meshes) {
+      const q = m.geometry.attributes.position,
+        g = m.parent;
+      for (let i = 0; i < q.count; i += 2) {
+        const p = new T.Vector3().fromBufferAttribute(q, i);
+        H.push([m, i]);
+        kinds.push(joints.elbows.includes(g) && Math.hypot(p.x, p.y + R.FORE, p.z) < 0.06 ? 'hand' : joints.knees.includes(g) && p.y < -0.09 ? 'shoe' : 'rest');
+      }
+    }
+    const v = new T.Vector3(),
+      own = { desk: /^desk chair /, cafe: /^café chair / },
+      rests = { desk: /^(desk top|laptop|laptop lid)$/, cafe: /^café table top$/ };
+    let stood = Infinity,
+      stoodAt = '',
+      sat = Infinity,
+      satAt = '',
+      hands = Infinity,
+      rising = Infinity,
+      risingAt = '';
+    for (let n = 0; n <= Math.round(P / frame); n += 2) {
+      const t = n * frame,
+        day = D.day(t),
+        seated = day.pose === 'desk' || day.pose === 'coffee';
+      if (seated && n % 4) continue;
+      entry.update(t, 0, 0);
+      parent.updateMatrixWorld(true);
+      const near = solids.filter(({ reach }) => Math.hypot(reach.x - him.position.x, reach.z - him.position.z) < reach.r + 1.3),
+        chair = day.station === 'cafe' ? 'cafe' : 'desk';
+      for (let k = 0; k < H.length; k++) {
+        const [m, i] = H[k];
+        if (!shows(m)) continue;
+        v.fromBufferAttribute(m.geometry.attributes.position, i).applyMatrix4(m.matrixWorld);
+        for (const { s } of near) {
+          const d = F.filipSolidDistance(s, v.x, v.y, v.z);
+          if (d > 0.05) continue;
+          if (day.pose === 'rise') {
+            // (Getting up or sitting down: the rig's rise slides him through his own chair; measured.)
+            if (d < rising) [rising, risingAt] = [d, `${s.name}, ${fmt(t)} s`];
+            continue;
+          }
+          if (!seated) {
+            if (d < stood) [stood, stoodAt] = [d, `${s.name}, ${day.pose} at ${fmt(t)} s`];
+            assert(d >= 0.01, `At ${fmt(t)} s (${day.pose}) Filip is ${fmt(d)} from ${s.name}.`);
+            continue;
+          }
+          if (own[chair].test(s.name) && (s.name.endsWith(' seat') || (s.name.endsWith(' foot ring') && kinds[k] === 'shoe'))) continue;
+          if (rests[chair].test(s.name) && kinds[k] === 'hand') {
+            hands = Math.min(hands, d);
+            assert(d >= 0, `At ${fmt(t)} s Filip's hand is ${fmt(-d)} into the ${s.name}.`);
+            continue;
+          }
+          if (d < sat) [sat, satAt] = [d, `${s.name}, ${day.pose} at ${fmt(t)} s`];
+          assert(d >= 0.01, `At ${fmt(t)} s (${day.pose}) Filip is ${fmt(d)} from ${s.name} (his forearms, belly and all but his hands 0.01 clear).`);
+        }
+      }
+    }
+    entry.update(0, 0, 0);
+    filipReport += `, all of him ${fmt(stood)} or more from every solid as he stands and walks (${stoodAt}) and ${fmt(sat)} seated (${satAt}), his hands resting on his desk, laptop and table (${fmt(hands)}), getting up and sitting down ${fmt(rising)} into his chair (${risingAt}: the rig's rise)`;
   }
   // His props against him.
   {
@@ -10386,9 +10460,11 @@ let filipReport = '';
       for (let t = a.t0 + 0.05; t < a.t1; t += 0.1) {
         entry.update(t, 0, 0);
         parent.updateMatrixWorld(true);
-        // (In his hand: on the call, walking with it, and answering once it is out of his pocket.)
-        const day = D.day(t);
-        if (props.phone.visible && (day.pose !== 'answer' || day.phase >= 0.55)) phone = Math.min(phone, near(phonePoints().filter((_, i) => i % 3 === 0), notPhoneArm));
+        // (In his hand: on the call, walking with it, and answering, as he walks or standing, once it is
+        // out of his pocket.)
+        const day = D.day(t),
+          out = day.pose === 'answer' ? day.phase >= 0.55 : day.pose !== 'walk' || day.answer >= 0.55;
+        if (props.phone.visible && out) phone = Math.min(phone, near(phonePoints().filter((_, i) => i % 3 === 0), notPhoneArm));
         if (a.kind === 'cafe') {
           const m = props.cup.children.find((c) => c.isMesh),
             q = m.geometry.attributes.position,
@@ -10400,39 +10476,33 @@ let filipReport = '';
     }
     assert(phone >= 0.01, `Filip's phone comes ${fmt(phone)} from him (0.01 at the least, but the hand that holds it).`);
     assert(cup >= 0.01, `Filip's cup comes ${fmt(cup)} from his head as he drinks.`);
-    // At the desk and in his chairs, in his seated frame (his root seated over the chair's floor): nothing
-    // of him in the desk's top or the laptop, his back and hair ahead of his chair's back (its rail).
-    const DK = F.FILIP_DESK,
-      CH = F.FILIP_CHAIR,
-      inBox = (p, b) => Math.max(b[0] - p.x, p.x - b[3], b[1] - p.y, p.y - b[4], b[2] - p.z, p.z - b[5]),
-      deskBox = [-DK.across - DK.width / 2, DK.top - DK.thick, DK.near, -DK.across + DK.width / 2, DK.top, DK.near + DK.depth],
-      lapBox = [-DK.laptop.w / 2, DK.top, DK.near + DK.laptop.inset, DK.laptop.w / 2, DK.top + DK.laptop.base, DK.near + DK.laptop.inset + DK.laptop.d],
+    // In his chairs, in his seated frame (his root seated over the chair's floor): his back and hair
+    // ahead of his chair's back (its rail).
+    const CH = F.FILIP_CHAIR,
       rail = (y) => -(CH.depth / 2 - CH.setback) - 0.16 - Math.tan(CH.rake) * (y - 0.735);
-    let desk = Infinity,
-      back = Infinity;
+    let back = Infinity;
     for (const a of acts) {
       if (a.kind !== 'desk' && a.kind !== 'cafe') continue;
       for (let t = a.t0 + 0.03; t < a.t1; t += 0.13) {
         entry.update(t, 0, 0);
         const day = D.day(t),
           seat = day.station === 'cafe' ? D.seats.cafe : D.seats.desk,
-          local = new T.Matrix4().makeRotationY(-seat.facing).multiply(new T.Matrix4().makeTranslation(-seat.x, -floor(seat.x, seat.z), -seat.z));
+          level = day.station === 'cafe' ? D.levels.cafe : D.levels.desk,
+          local = new T.Matrix4().makeRotationY(-seat.facing).multiply(new T.Matrix4().makeTranslation(-seat.x, -level, -seat.z));
         parent.updateMatrixWorld(true);
         for (const m of meshes) {
           if (!shows(m) || Object.values(props).includes(m.parent)) continue;
           const q = m.geometry.attributes.position;
           for (let i = 0; i < q.count; i += 2) {
             const p = v.fromBufferAttribute(q, i).applyMatrix4(m.matrixWorld).applyMatrix4(local);
-            if (a.kind === 'desk') desk = Math.min(desk, inBox(p, deskBox), inBox(p, lapBox));
             if (p.y > CH.rail[0] && p.y < CH.rail[1]) back = Math.min(back, p.z - rail(p.y));
           }
         }
       }
     }
     entry.update(0, 0, 0);
-    assert(desk > 0, `At his desk something of Filip is ${fmt(-desk)} into the desk or the laptop.`);
     assert(back >= 0.01, `Seated, Filip's back or hair is ${fmt(back)} from his chair's back.`);
-    filipReport += `, his phone ${fmt(phone)} clear of him and his cup ${fmt(cup)} clear of his head, nothing of him in his desk or laptop (${fmt(desk)}) and his back ${fmt(back)} ahead of his chair's`;
+    filipReport += `, his phone ${fmt(phone)} clear of him and his cup ${fmt(cup)} clear of his head, and his back ${fmt(back)} ahead of his chair's`;
   }
   // Holds.
   {
