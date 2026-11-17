@@ -71,6 +71,16 @@ const models = new Map(
     return [id, { root }];
   }),
 );
+// The tropic island's building: a model of the town's, out between and behind the two (the scene
+// leaves it out of picking while the island is hidden: pickAt's tropicShown).
+{
+  const root = new T.Group();
+  root.userData.buildingId = 'tropic-island';
+  root.position.set(0, 0, -5);
+  root.add(new T.Mesh(new T.BoxGeometry(1.6, 1, 1.6), new T.MeshBasicMaterial()));
+  root.updateMatrixWorld(true);
+  models.set('tropic-island', { root });
+}
 const parkHit = new T.Mesh(new T.BoxGeometry(1.5, 0.2, 1.5));
 parkHit.position.set(0, 0, 3);
 parkHit.userData.placeId = 'corner-park';
@@ -103,6 +113,9 @@ const h = {
   models,
   parkHit,
   skyPick: { hit: skyHit, root: skyRoot },
+  // The tropic island in view (followIslands), and the models without it for while it is not.
+  tropicShown: true,
+  shownWithoutTropic: new Map([...models].filter(([id]) => id !== 'tropic-island')),
   labels,
   hover: api.hoverPointer(),
   width: 800,
@@ -205,6 +218,25 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   assert.deepEqual(selection, [], 'Hidden, the sky island must not open.');
   skyRoot.visible = true;
 }
+// The tropic island's building answers on itself as any building does; hidden (the opening view and
+// the last shot, while the camera holds them), it answers neither the pointer nor a click.
+{
+  const on = eventAt('tropic-island');
+  emit('pointermove', on);
+  f.updateHover();
+  assert.deepEqual(visible(), ['tropic-island'], 'The tropic island must answer the pointer.');
+  emit('pointerdown', on);
+  emit('pointerup', on);
+  assert.deepEqual(selection.splice(0), ['tropic-island'], 'A click on the tropic island must open it.');
+  h.tropicShown = false;
+  emit('pointermove', on);
+  f.updateHover();
+  assert.deepEqual(visible(), [], 'Hidden, the tropic island must name nothing.');
+  emit('pointerdown', on);
+  emit('pointerup', on);
+  assert.deepEqual(selection, [], 'Hidden, the tropic island must not open.');
+  h.tropicShown = true;
+  hoverPins.push('the tropic island picked only while it is in view');
 // The tropic island: a building model of the town's whose ground answers for it, as addHitBoxes
 // hangs it (a slab of the island's waterline, no taller than its lawn, on its building's box; here a
 // toy island's round slab): the pointer on its lawn or its beach names it and a click opens it; the

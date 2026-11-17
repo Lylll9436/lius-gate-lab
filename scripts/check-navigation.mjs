@@ -12,21 +12,12 @@ await fs.copyFile(
   path.join(root, 'content/lab.json'),
   path.join(output, 'lab.json'),
 );
-for (const name of [
-  'content-schema',
-  'lab-records',
-  'city-inspection',
-  'city-ink',
-  'city-materials',
-  'city-data',
-  'city-water',
-  'lab-navigation',
-  'people-photos',
-  'glasgow-sun',
-  'town-plan',
-  'town-shared',
-  'city-atmosphere',
-]) {
+// Each module the checks load, and every module it imports in turn (the tropic island's land
+// builder, town-tropic, brings its own: its extent is what the scene's framing of it reads).
+const modulesCompiled = new Set();
+async function compileModule(name) {
+  if (modulesCompiled.has(name)) return;
+  modulesCompiled.add(name);
   const source = await fs.readFile(
     path.join(root, 'app', name + '.ts'),
     'utf8',
@@ -42,9 +33,32 @@ for (const name of [
     .replace("'../content/lab.json'", "'./lab.json'")
     .replace(/(['"])\.\/(city-data)\1/g, "'./$2.mjs'");
   await fs.writeFile(path.join(output, name + '.mjs'), result);
+  for (const [, imported] of source.matchAll(/\bfrom\s+['"]\.\/([\w-]+)['"]/g)) await compileModule(imported);
 }
-// What the sky island's framing checks found, for the summary.
-const skyNav = {};
+for (const name of [
+  'content-schema',
+  'lab-records',
+  'city-inspection',
+  'city-ink',
+  'city-materials',
+  'city-data',
+  'city-water',
+  'lab-navigation',
+  'people-photos',
+  'glasgow-sun',
+  'town-plan',
+  'town-shared',
+  'city-atmosphere',
+  'town-tropic',
+])
+  await compileModule(name);
+// The tropic island's extent (town-tropic: its outline at the water and the tops of its roof and
+// trees) and what of it can show on screen (its extent, its shelf and shallows round it, its crowns'
+// ring a little past its waterline), which the scene's pieces below read as city-scene imports them.
+const { TROPIC_EXTENT, TROPIC_SEEN } = await import(pathToFileURL(path.join(output, 'town-tropic.mjs')).href);
+// What the sky island's framing checks found, for the summary; and the tropic island's.
+const skyNav = {},
+  tropicNav = { fits: [] };
 /**
  * Code without its formatting, to look for a statement in: no whitespace, and no trailing comma
  * before a closing bracket. The repo's formatter (pnpm format, oxfmt) wraps long lines and adds
@@ -53,7 +67,8 @@ const skyNav = {};
 const unformatted = (code) => code.replace(/\s+/g, '').replace(/,(?=[)\]}])/g, '');
 /** Whether `code` holds each statement, formatted however (see unformatted). */
 const holds = (code, ...statements) => statements.every((s) => unformatted(code).includes(unformatted(s)));
-const nav = await import(
+const plan0 = await import(pathToFileURL(path.join(output, 'town-plan.mjs')).href),
+  nav = await import(
     pathToFileURL(path.join(output, 'lab-navigation.mjs')).href
   ),
   { buildings } = await import(
@@ -97,44 +112,48 @@ assert.deepEqual(nav.tourStops, [
   'corner-park',
 ]);
 assert.equal(new Set(nav.tourStops).size, nav.tourStops.length);
-// Twelve stops: the gate, the hall, the three homes, the residence, then the sky island and the
-// tropic island (their files' bearing is the airport's, so the tour turns no more for them), the
-// airport, the studio, the archive and the park.
+// Twelve stops: the gate, the hall, the three homes, the residence, then the two neighbour islands,
+// the sky island and the tropic island (their files' bearing is the airport's, so the tour turns no
+// more for them), the airport, the studio, the archive and the park.
 assert.equal(nav.tourStops.length, 12);
 assert.deepEqual(
   nav.tourStops.slice(5),
   ['visiting-phd', 'sky-island', 'tropic-island', 'airport', 'research-studio', 'city-archive', 'corner-park'],
 );
-// The sky island has a City file and a bearing of its own but no reading chapter: its address
-// reads its host chapter, About (the Town Hall's), whose chip it lights in the masthead; City mode
-// faces it from its own bearing; and the reading page never makes it its address, so the reading
-// camera keeps to About's own subject.
-assert.equal(nav.chapterFor('sky-island'), 'town-hall');
-assert.equal(nav.chapterFor('place:sky-island'), 'town-hall');
-assert.equal(nav.facingChapter('sky-island'), 'sky-island');
-assert.equal(nav.facingChapter('place:sky-island'), 'sky-island');
-assert.equal(nav.readingContent('sky-island', 'town-hall'), 'town-hall');
-assert.deepEqual(nav.sceneTarget('sky-island'), { building: 'sky-island' });
-assert.equal(nav.placeFor('sky-island'), 'sky-island');
-assert(!nav.readingChapters.includes('sky-island') && !nav.destinations.includes('sky-island'), 'The sky island has a reading chapter or a masthead chip of its own.');
-// A place picked on the model opens in the mode it was picked in, but the sky island and the tropic
-// island, with no chapter of their own, open their City files from the reading page too
-// (#city/sky-island), where a pick would only have scrolled to About. pickRoute says where a pick
-// goes: that mode, and the address the place opens.
-const hostedPlaces = ['sky-island', 'tropic-island'];
+assert(['sky-island', 'tropic-island', 'airport'].every((id) => plan0.chapterBearings[id] === plan0.chapterBearings['lius-gate']), 'The neighbour islands\' files and the airport\'s no longer share the gate\'s bearing: the tour turns between them.');
+// The neighbour islands (the sky island and the tropic island) each have a City file and a bearing
+// of their own but no reading chapter: an island's address reads its host chapter, About (the Town
+// Hall's), whose chip it lights in the masthead; City mode faces it from its own bearing; and the
+// reading page never makes it its address, so the reading camera keeps to About's own subject.
+const neighbourIslands = ['sky-island', 'tropic-island'];
+for (const island of neighbourIslands) {
+  assert.equal(nav.chapterFor(island), 'town-hall');
+  assert.equal(nav.chapterFor('place:' + island), 'town-hall');
+  assert.equal(nav.facingChapter(island), island);
+  assert.equal(nav.facingChapter('place:' + island), island);
+  assert.equal(nav.readingContent(island, 'town-hall'), 'town-hall');
+  assert.deepEqual(nav.sceneTarget(island), { building: island });
+  assert.equal(nav.placeFor(island), island);
+  assert(!nav.readingChapters.includes(island) && !nav.destinations.includes(island), `The ${island} has a reading chapter or a masthead chip of its own.`);
+}
+// A place picked on the model opens in the mode it was picked in, but a neighbour island, with no
+// chapter of its own, opens its City file from the reading page too (#city/sky-island,
+// #city/tropic-island), where its pick would only have scrolled to About. pickRoute says where a
+// pick goes: that mode, and the address the place opens.
 for (const b of buildings) {
+  const hosted = neighbourIslands.includes(b.id);
   for (const id of [nav.contentForBuilding(b.id), 'place:' + b.id]) {
     assert.equal(nav.modeForPick('city', id), 'city', 'A pick in the city leaves the city: ' + id);
-    assert.equal(nav.modeForPick('reading', id), hostedPlaces.includes(b.id) ? 'city' : 'reading', 'A reading-page pick of ' + id + ' opens the wrong mode.');
+    assert.equal(nav.modeForPick('reading', id), hosted ? 'city' : 'reading', 'A reading-page pick of ' + id + ' opens the wrong mode.');
   }
   for (const mode of ['city', 'reading'])
     assert.deepEqual(
       nav.pickRoute(mode, b.id),
-      [mode === 'reading' && hostedPlaces.includes(b.id) ? 'city' : mode, nav.contentForBuilding(b.id)],
+      [mode === 'reading' && hosted ? 'city' : mode, nav.contentForBuilding(b.id)],
       'A pick of ' + b.id + ' on the ' + mode + ' page goes to the wrong mode or address.',
     );
 }
-assert.deepEqual(nav.pickRoute('reading', 'sky-island'), ['city', 'sky-island']);
+for (const island of neighbourIslands) assert.deepEqual(nav.pickRoute('reading', island), ['city', island]);
 // The page sends every pick on the model through pickRoute: createCity's pick callback (its second
 // argument) hands navigate the spread of pickRoute(the page's mode, the place picked). Read from
 // page.tsx's syntax tree, so its formatting (pnpm format wraps the call) changes nothing here.
@@ -310,6 +329,10 @@ const source = await fs.readFile(
     path.join(root, 'app', 'city-scene.ts'),
     'utf8',
   ),
+  // The widest zoom the town allows on a w x h frame (city-scene's WIDEST: OrbitControls' minZoom, set
+  // by resize() for the frame's shape, which the overview's fit keeps to as well).
+  WIDEST_ZOOM = (([, wide, tall]) => ({ wide: Number(wide), tall: Number(tall) }))(/\bexport const WIDEST = \{ wide: ([\d.]+), tall: ([\d.]+) \};/.exec(await fs.readFile(path.join(root, 'app', 'city-scene.ts'), 'utf8')) ?? []),
+  widestOf = (w, h) => (w >= h ? WIDEST_ZOOM.wide : WIDEST_ZOOM.tall),
   syntax = ts.createSourceFile(
     'scene.ts',
     source,
@@ -332,6 +355,8 @@ const camera = new T.OrthographicCamera(-24, 24, 24, -24, 0.1, 180),
     height: 1,
     camera,
     Math,
+    controls: { minZoom: 0 },
+    WIDEST: WIDEST_ZOOM,
     ink: { resize() {} },
     autoFocus: false,
     renderer: {
@@ -366,6 +391,9 @@ assert.deepEqual(
   ],
   'Hidden canvases must not invalidate their last camera frame.',
 );
+// The widest zoom follows the frame's shape: a wide frame's (the last one, 1100 x 720) goes out to
+// City mode's overview of both neighbour islands, a tall one's (360 x 460 before it) stays as it was.
+assert(context.controls.minZoom === WIDEST_ZOOM.wide && WIDEST_ZOOM.wide === 0.4 && WIDEST_ZOOM.tall === 0.45, 'The town\'s widest zoom no longer follows the frame\'s shape (0.4 wide, 0.45 tall).');
 // A new framing carries its panel offset from the start, so one that also turns the camera
 // (each reading chapter has its own bearing) glides: the first turning frame moves the view
 // centre only by the offset's own turn, never sideways by the whole offset at once.
@@ -842,7 +870,7 @@ const laneD3 = {};
       controls = new OrbitControls(camera, null);
     controls.domElement = { clientWidth: w, clientHeight: h, getBoundingClientRect: () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h }) };
     // As the scene sets them up; City mode's plain wheel zooms at the pointer, 1.5 times as fast (wheelIntent).
-    Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: 0.45, maxZoom: 4, zoomToCursor: city, zoomSpeed: city ? 1.5 : 1 });
+    Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: widestOf(w, h), maxZoom: 4, zoomToCursor: city, zoomSpeed: city ? 1.5 : 1 });
     const s = {
         T,
         Math,
@@ -980,21 +1008,24 @@ const laneD3 = {};
 {
   const pieces = [];
   const collect = (node) => {
-    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
+    if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'driftHold', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
-    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH'].includes(d.name.getText(syntax))))
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'TROPIC_MIDDLE'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 26, 'The pan and fit check must find every piece it runs.');
-  assert(/controls\.minZoom = 0\.45;/.test(source), 'The town\'s widest zoom is no longer 0.45.');
+  assert.equal(pieces.length, 28, 'The pan and fit check must find every piece it runs.');
+  // Down from 0.45 on wide frames for City mode's overview, which takes in the tropic island as well
+  // (resize(): WIDEST, by the frame's shape).
+  assert(/controls\.minZoom = width >= height \? WIDEST\.wide : WIDEST\.tall;/.test(source), 'The town\'s widest zoom no longer follows the frame\'s shape.');
   const view = {
     T,
     Math,
     plan,
+    TROPIC_EXTENT,
     camera: new T.OrthographicCamera(),
-    controls: { minZoom: 0.45 },
+    controls: { minZoom: WIDEST_ZOOM.wide },
     target: new T.Vector3(),
     shiftApplied: new T.Vector3(),
     screenRight: new T.Vector3(),
@@ -1014,7 +1045,7 @@ const laneD3 = {};
     // The camera's pitch as it stands (0, the town's: viewOffset), unless a check brings it down.
     pitch: 0,
   };
-  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH, panLast });`,
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH, TROPIC_MIDDLE, panLast });`,
     scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
@@ -1028,21 +1059,35 @@ const laneD3 = {};
       return [r.x + (x - r.x) * k, r.z + (z - r.z) * k];
     },
     // The union, measured from the plan rather than from panRegion: the disc, the capsule round the
-    // causeway's line (x 0.5, from z -20 to the deck's south edge), the deck's signed distance, and
-    // the sky island's pocket (a disc of 16 round its middle) with the capsule of 8 that links it
-    // back to the town (from 30 out along the line between them).
+    // causeway's line (x 0.5, from z -20 to the deck's south edge), the deck's signed distance, the
+    // sky island's pocket (a disc of 16 round its middle) with the capsule of 8 that links it back to
+    // the town (from 30 out along the line between them), and the tropic island's likewise: a disc of
+    // 16 round its middle (the middle of its extent's outline at the water) and a capsule of 8 from 30
+    // out toward it.
     beyondDeck = (x, z) => plan.airportDistance(x, z),
     skyLink = [(plan.SKY.x * 30) / Math.hypot(plan.SKY.x, plan.SKY.z), (plan.SKY.z * 30) / Math.hypot(plan.SKY.x, plan.SKY.z)],
     beyondSky = (x, z) => Math.min(Math.hypot(x - plan.SKY.x, z - plan.SKY.z) - 16, plan.distanceToSegment([x, z], skyLink, [plan.SKY.x, plan.SKY.z]) - 8),
+    tropicAt = (() => {
+      const water = TROPIC_EXTENT.filter((p) => p.y < 0.5),
+        xs = water.map((p) => p.x),
+        zs = water.map((p) => p.z);
+      return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2];
+    })(),
+    tropicLink = tropicAt.map((v) => (v * 30) / Math.hypot(...tropicAt)),
+    beyondTropic = (x, z) => Math.min(Math.hypot(x - tropicAt[0], z - tropicAt[1]) - 16, plan.distanceToSegment([x, z], tropicLink, tropicAt) - 8),
     // How far a point lies outside the union (negative inside).
     beyond = (x, z) => {
       const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
-      return Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4, beyondSky(x, z));
+      return Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4, beyondSky(x, z), beyondTropic(x, z));
     },
-    // Whether the sky island's regions are the ones a point is deepest in or nearest to.
+    // Whether the sky island's regions (or the tropic island's) are the ones a point is deepest in or nearest to.
     nearSky = (x, z) => {
       const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
-      return beyondSky(x, z) < Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4);
+      return beyondSky(x, z) < Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4, beyondTropic(x, z));
+    },
+    nearTropic = (x, z) => {
+      const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, z));
+      return beyondTropic(x, z) < Math.min(Math.hypot(x, z) - DISC, Math.hypot(x - plan.AIRPORT_ROAD.x, z - along) - 8, beyondDeck(x, z) - 4, beyondSky(x, z));
     },
     inside = (x, z) => beyond(x, z) <= 1e-6,
     DISC = 36;
@@ -1091,6 +1136,29 @@ const laneD3 = {};
     // Its link overlaps both the island's disc and its own pocket, so a visitor can pan back.
     assert(Math.hypot(...skyLink) + 8 > DISC && beyondSky(...skyLink) < 0 && beyond((skyLink[0] + S.x) / 2, (skyLink[1] + S.z) / 2) < 0, 'The sky island\'s pocket is cut off from the town.');
   }
+  // The tropic island's pocket (a disc of 16 round the middle of its outline at the water, its long
+  // half-axis and 4 more, as the airport's deck keeps 4): the scene's middle is the check's; a ring 12
+  // out round it (past its outline, 13 by 10.5 to the beach's toe, and past its file's ground point at
+  // every bearing: below) lies in it, unclamped; a pan away from it is held to it, or back along its
+  // strip to the town, never out to open sea; and the strip overlaps both the town's disc and the
+  // pocket, so a visitor can pan back.
+  {
+    const [cx, cz] = tropicAt;
+    assert(scene.TROPIC_MIDDLE.distanceTo(new T.Vector3(cx, 0, cz)) < 1e-9 && Math.abs(cx - 19.5) < 0.01 && Math.abs(cz - 51) < 0.01, `The tropic island's pocket stands round ${scene.TROPIC_MIDDLE.x.toFixed(2)}, ${scene.TROPIC_MIDDLE.z.toFixed(2)}, not its middle (19.5, 51).`);
+    assert(scene.PAN.tropic.reach === 16 && scene.PAN.tropic.link === 8 && scene.PAN.tropic.from.distanceTo(new T.Vector3(tropicLink[0], 0, tropicLink[1])) < 1e-9, 'The tropic island\'s pocket is no longer a disc of 16 with a strip of 8 from 30 out toward it.');
+    for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) {
+      const x = cx - Math.sin(b) * 12,
+        z = cz - Math.cos(b) * 12;
+      assert(nearTropic(x, z) && clamp(x, z).every((c, i) => Math.abs(c - [x, z][i]) < 1e-9), `The tropic island's pocket does not hold the ground 12 out from its middle at bearing ${b.toFixed(2)}.`);
+    }
+    for (const [x, z] of [[70, 51], [19.5, 110], [-25, 75], [60, 95], [45, 30], [-5, 55]]) {
+      const [qx, qz] = clamp(x, z);
+      assert(inside(qx, qz) && Math.hypot(qx - x, qz - z) > 1, `A pan to ${x}, ${z} is not held to the tropic island's pocket.`);
+    }
+    assert(Math.hypot(...tropicLink) + 8 > DISC && beyondTropic(...tropicLink) < 0 && beyond((tropicLink[0] + cx) / 2, (tropicLink[1] + cz) / 2) < 0, 'The tropic island\'s pocket is cut off from the town.');
+    // Neither neighbour's pocket reaches the other's, nor the airport's deck.
+    assert(Math.hypot(cx - plan.SKY.x, cz - plan.SKY.z) > 16 + 16 + 8 && beyondDeck(cx, cz) > 16 + 4, 'The tropic island\'s pocket runs into another\'s.');
+  }
   // The limit as the frame loop applies it, through three's real OrbitControls as a drag drives
   // it: each pointer move pans and updates, then each frame holds the limit (holdPan) and updates
   // again, 8 px a frame on a 1440 x 900 frame. Screen-space panning lifts the target 0.74 a unit of
@@ -1105,7 +1173,7 @@ const laneD3 = {};
       vertical = Math.max(53, 76 / aspect),
       camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
       controls = new OrbitControls(camera, null),
-      held = { T, Math, plan, camera, controls, shiftApplied: new T.Vector3(), tween: false, panSlack: Infinity, pitch: 0, panPitch: 0 },
+      held = { T, Math, plan, TROPIC_EXTENT, camera, controls, shiftApplied: new T.Vector3(), tween: false, panSlack: Infinity, pitch: 0, panPitch: 0 },
       pan = runInNewContext(panScript, held);
     controls.domElement = { clientWidth: w, clientHeight: h };
     Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true });
@@ -1152,7 +1220,7 @@ const laneD3 = {};
         // Past the deck, where the deck's region is the nearest (neither the disc nor the capsule holds it).
         const along = Math.min(-20, Math.max(plan.AIRPORT.z + plan.AIRPORT.hd, g.z)),
           deckOut = beyondDeck(g.x, g.z) - 4;
-        if (deckOut < Math.hypot(g.x, g.z) - DISC && deckOut < Math.hypot(g.x - plan.AIRPORT_ROAD.x, g.z - along) - 8 && deckOut < beyondSky(g.x, g.z)) worst.deck = Math.max(worst.deck, deckOut + 4);
+        if (deckOut < Math.hypot(g.x, g.z) - DISC && deckOut < Math.hypot(g.x - plan.AIRPORT_ROAD.x, g.z - along) - 8 && deckOut < beyondSky(g.x, g.z) && deckOut < beyondTropic(g.x, g.z)) worst.deck = Math.max(worst.deck, deckOut + 4);
         worst.lift = Math.max(worst.lift, Math.abs(controls.target.y - held.shiftApplied.y));
         worst.reached = Math.min(worst.reached, beyondDeck(g.x, g.z));
         return g;
@@ -1212,6 +1280,37 @@ const laneD3 = {};
       assert(drive.worst.beyond <= 0.5 && drive.worst.move <= 16 && drive.worst.lift <= scene.PAN.lift + 1, `A drag from the sky island's file toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.beyond.toFixed(2)} out of the pan regions, or jumps ${drive.worst.move.toFixed(0)} px.`);
       if (!x && !z) assert(Math.hypot(end.x, end.z) < DISC, `A drag from the sky island's file back to the town at bearing ${yaw.toFixed(2)} stops at ${end.x.toFixed(1)}, ${end.z.toFixed(1)}.`);
     }
+  // The tropic island likewise: from its middle (its file's ground point lies within 3 of it at every
+  // bearing: its framing, below), at each Rotate stop and its file's bearing, a drag out to sea every
+  // way is held in its pocket, a drag back to the plaza gets there along the strip, never jumping or
+  // lifting the camera; and a straight drag from the plaza toward it gets onto it.
+  const tropicPan = { drags: 0, nearest: Infinity };
+  for (const yaw of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings['tropic-island']])
+    for (const [x, z] of [[19.5, 120], [90, 51], [-45, 62], [75, 100], [55, 10], [0, 0]]) {
+      const drive = drivePan(yaw),
+        ground = new T.Vector3(tropicAt[0], 0, tropicAt[1]);
+      drive.held.controls.target.copy(ground);
+      drive.held.camera.position.copy(ground).add(new T.Vector3(Math.sin(yaw) * 38, 35, Math.cos(yaw) * 38));
+      drive.held.controls.update();
+      drive.held.camera.updateMatrixWorld();
+      for (let f = 0; f < 500; f++) drive.frame(...drive.toward(x, z));
+      for (let f = 0; f < 120; f++) drive.frame();
+      const end = drive.ground();
+      tropicPan.drags++;
+      assert(drive.worst.beyond <= 0.5 && drive.worst.move <= 16 && drive.worst.lift <= scene.PAN.lift + 1, `A drag from the tropic island toward ${x}, ${z} at bearing ${yaw.toFixed(2)} ends ${drive.worst.beyond.toFixed(2)} out of the pan regions, or jumps ${drive.worst.move.toFixed(0)} px.`);
+      if (!x && !z) assert(Math.hypot(end.x, end.z) < 2, `A drag from the tropic island back to the plaza at bearing ${yaw.toFixed(2)} stops at ${end.x.toFixed(1)}, ${end.z.toFixed(1)}.`);
+      else assert(Math.hypot(end.x - tropicAt[0], end.z - tropicAt[1]) > 15.4 && region(end.x, end.z).radius === scene.PAN.tropic.reach, `A drag from the tropic island toward ${x}, ${z} at bearing ${yaw.toFixed(2)} stops at ${end.x.toFixed(1)}, ${end.z.toFixed(1)}, short of its pocket's edge or outside it.`);
+    }
+  for (const yaw of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4, plan.chapterBearings['tropic-island']]) {
+    const drive = drivePan(yaw);
+    let nearest = Infinity;
+    for (let f = 0; f < 600; f++) {
+      const g = drive.frame(...drive.toward(tropicAt[0], tropicAt[1]));
+      nearest = Math.min(nearest, Math.hypot(g.x - tropicAt[0], g.z - tropicAt[1]));
+    }
+    tropicPan.nearest = Math.min(tropicPan.nearest, nearest);
+    assert(nearest < 1 && drive.worst.beyond <= 0.5 && drive.worst.move <= 16, `A drag from the plaza toward the tropic island at bearing ${yaw.toFixed(2)} comes no nearer than ${nearest.toFixed(1)} to its middle, or leaves the pan regions, or jumps.`);
+  }
   // A straight drag from the plaza toward the airport gets there (measured at the lifted target it
   // stuck on the disc's sphere 30 out), and at the opening bearing a drag kept up against the limit
   // holds the view still.
@@ -1252,6 +1351,15 @@ const laneD3 = {};
         [nx, nz] = [-(plan.SKY.z - lz) / l, (plan.SKY.x - lx) / l];
       for (let k = 0; k <= 10; k++) for (const s of [-8.5, 8.5]) edge.push(new T.Vector3(lx + ((plan.SKY.x - lx) * k) / 10 + nx * s, 0, lz + ((plan.SKY.z - lz) * k) / 10 + nz * s));
     }
+    // The tropic island's pocket and the sides of its link back to the town.
+    for (let a = 0; a < 2 * Math.PI; a += Math.PI / 30) edge.push(new T.Vector3(tropicAt[0] + Math.cos(a) * 16.5, 0, tropicAt[1] + Math.sin(a) * 16.5));
+    {
+      const [lx, lz] = tropicLink,
+        [cx, cz] = tropicAt,
+        l = Math.hypot(cx - lx, cz - lz),
+        [nx, nz] = [-(cz - lz) / l, (cx - lx) / l];
+      for (let k = 0; k <= 10; k++) for (const s of [-8.5, 8.5]) edge.push(new T.Vector3(lx + ((cx - lx) * k) / 10 + nx * s, 0, lz + ((cz - lz) * k) / 10 + nz * s));
+    }
     const frames = [
       ...[[360, 640], [360, 800], [375, 667], [390, 844], [412, 915], [430, 932]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0, -0.26]]),
       ...[[768, 1024], [820, 1180]].flatMap(([w, h]) => [[w, h, 0, 0], [w, h, 0, -0.2]]),
@@ -1262,8 +1370,8 @@ const laneD3 = {};
     for (const [w, h, shift, drop] of frames) {
       const aspect = w / h,
         vertical = Math.max(53, 76 / aspect),
-        halfW = (vertical * aspect) / 2 / 0.45,
-        halfH = vertical / 2 / 0.45;
+        halfW = (vertical * aspect) / 2 / widestOf(w, h),
+        halfH = vertical / 2 / widestOf(w, h);
       for (let b = 0; b < 2 * Math.PI; b += Math.PI / 24) {
         const back = new T.Vector3(Math.sin(b) * 38, 35, Math.cos(b) * 38),
           right = new T.Vector3(Math.cos(b), 0, -Math.sin(b)),
@@ -1320,6 +1428,8 @@ const laneD3 = {};
       vertical = Math.max(53, 76 / aspect);
     Object.assign(view.camera, { left: (-vertical * aspect) / 2, right: (vertical * aspect) / 2, top: vertical / 2, bottom: -vertical / 2 });
     Object.assign(view, { width: w, height: h, frameShift: shift, yaw: bearing, targetYaw: bearing, targetZoom: 1 });
+    // (resize(): the frame's widest zoom, which the overview keeps to.)
+    view.controls.minZoom = widestOf(w, h);
   };
   assert(scene.islandMarks.some((p) => p.distanceTo(new T.Vector3(3.9, 7, -47.4)) < 1e-9) && scene.islandMarks.some((p) => plan.airportDistance(p.x, p.z) > plan.AIRPORT.armour - 1e-6), 'The overview leaves the airport out.');
   frame(1440, 900, 0, Math.PI / 4);
@@ -1328,7 +1438,7 @@ const laneD3 = {};
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     frame(w, h, (460 + 32) / (2 * w), Math.PI / 4);
     scene.fitOverview();
-    assert(view.targetZoom > 0.45, `Beside the file at ${w} x ${h} the overview is clamped (${view.targetZoom.toFixed(3)}).`);
+    assert(view.targetZoom > widestOf(w, h), `Beside the file at ${w} x ${h} the overview is clamped (${view.targetZoom.toFixed(3)}).`);
   }
   // The airport's chapter (at the gate's bearing, beside the reading panel): the island and the
   // causeway's far half fitted between 0.95 and 2.6, its subject inside the airport's pan region,
@@ -1394,6 +1504,56 @@ const laneD3 = {};
         assert(region(subject.x, subject.z).radius === scene.PAN.deck.reach && inside(subject.x, subject.z), `Beside the reading panel at ${vw} x ${vh} the airport's framing leaves its pan region.`);
       }
     assert(worst >= 24 && worst < 80, `The armour's nearest approach to the reading panel is ${worst.toFixed(0)} px.`);
+  }
+  // The tropic island's file (City mode: the file's panel down the right on desktops, a sheet under it
+  // on phones upright and the 768 x 1024 tablet, a panel and the bars on phones on their side), from
+  // its own bearing and every Rotate stop (each refits it, as the airport's file does): the whole
+  // island (TROPIC_EXTENT) fitted like a group between 0.95 and 2.6, inside the part of the frame the
+  // file and the page's bands leave free at rest and through the idle drift, and its ground point in its
+  // own pocket, within 3 of its middle and unclamped, so a glide's end is never pulled back.
+  {
+    const project = (w, h, zoom, bearing, centre, p) => {
+        const per = (h * zoom) / Math.max(53, (76 * h) / w),
+          back = new T.Vector3(Math.sin(bearing) * 38, 35, Math.cos(bearing) * 38).normalize(),
+          right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+          up = new T.Vector3().crossVectors(back, right),
+          d = p.clone().sub(centre);
+        return [w / 2 + d.dot(right) * per, h / 2 - d.dot(up) * per];
+      },
+      boxOf = (points) => points.reduce(([x0, y0, x1, y1], [x, y]) => [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)], [Infinity, Infinity, -Infinity, -Infinity]),
+      // [w, h, fileFrame's shift and drop, the part of the frame left free: x0, y0, x1, y1]
+      files = [
+        ...[[1024, 768], [1180, 820], [1280, 720], [1280, 800], [1366, 768], [1440, 900], [1536, 864], [1680, 1050], [1920, 1080], [2560, 1440]].map(([w, h]) => [w, h, 492 / (2 * w), 0, [0, 76, w - 476, h - 76]]),
+        ...[[360, 640], [375, 667], [390, 844], [412, 915], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h, [0, 58, w, h - 259.9]]),
+        ...[[667, 375], [844, 390], [932, 430]].map(([w, h]) => [w, h, (Math.min(340, 0.42 * w) + 28) / (2 * w), -33 / h, [0, 58, w - 12 - Math.min(340, 0.42 * w), h - 124]]),
+        [768, 1024, 0, -0.2629, [0, 58, 768, 427.52]],
+      ],
+      fileBearing = plan.chapterBearings['tropic-island'],
+      least = { rest: Infinity, drift: Infinity },
+      zooms = [];
+    for (const [w, h, shift, drop, free] of files)
+      for (const bearing of [fileBearing, Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+        frame(w, h, shift, bearing);
+        Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['tropic-island'], overviewFit: false });
+        scene.fitFocused();
+        const zoom = view.targetZoom,
+          centre = view.target.clone(),
+          subject = centre.clone().sub(view.shiftApplied),
+          at = `The tropic island's file at ${String(w)} x ${String(h)} at bearing ${bearing.toFixed(2)}`;
+        assert(zoom >= 0.95 - 1e-9 && zoom <= 2.6 + 1e-9, `${at} fits at ${zoom.toFixed(3)}.`);
+        assert(region(subject.x, subject.z).radius === scene.PAN.tropic.reach && clamp(subject.x, subject.z).every((c, i) => Math.abs(c - [subject.x, subject.z][i]) < 1e-9) && Math.hypot(subject.x - tropicAt[0], subject.z - tropicAt[1]) < 3, `${at} frames ${subject.x.toFixed(1)}, ${subject.z.toFixed(1)}, outside its pocket or off its middle.`);
+        for (const d of [-0.16, -0.08, 0, 0.08, 0.16]) {
+          const [x0, y0, x1, y1] = boxOf(TROPIC_EXTENT.map((p) => project(w, h, zoom, bearing + d, centre, p))),
+            margin = Math.min(x0 - free[0], y0 - free[1], free[2] - x1, free[3] - y1);
+          if (d) least.drift = Math.min(least.drift, margin);
+          else least.rest = Math.min(least.rest, margin);
+          assert(margin >= (d ? -0.5 : 8), `${at}${d ? `, drifted ${d}` : ''}, spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px, outside the part the file and the bands leave free (${free.map((n) => n.toFixed(0)).join(', ')}).`);
+        }
+        if (bearing === fileBearing && [1440, 1280, 390, 844, 768].includes(w)) zooms.push(`${String(w)} x ${String(h)} ${zoom.toFixed(2)}`);
+      }
+    Object.assign(view, { frameDrop: 0, focusedIds: [] });
+    tropicNav.file = `its file fitted at ${zooms.join(', ')} (from its bearing and every Rotate stop, on ${files.length} screens), the island ${least.rest.toFixed(0)} px inside the part the file and the bands leave free at rest and ${Math.max(0, least.drift).toFixed(0)} px through the drift at the least, its ground point in its pocket`;
+    tropicNav.pan = `a pocket of 16 round its middle and a strip of 8 back to the plaza: ${tropicPan.drags} drags out from it held in its pocket or back on the plaza, and a straight drag from the plaza reaching within ${tropicPan.nearest.toFixed(2)} of its middle at every Rotate stop`;
   }
   // A glide between the People side and the airport (or the residence and the airport, the tour's
   // stops 6 and 7) runs straight across open water, out of the pan regions. Cut short by a touch on
@@ -1512,6 +1672,23 @@ const laneD3 = {};
           rel = new T.Vector3(p.x, p.y, p.z).sub(centre).sub(back);
         return !(Math.abs(rel.dot(right)) > (vertical * aspect) / 2 / zoom + reach || Math.abs(rel.dot(up)) > vertical / 2 / zoom + reach || rel.dot(forward) - give >= fogFar);
       };
+      // How far into the frame (px, the nearer of its edges; negative: out of it) the plane's middle lies.
+    const depthIn = (w, h, zoom, bearing, centre, p) => {
+        const aspect = w / h,
+          vertical = Math.max(53, 76 / aspect),
+          back = scene.viewOffset(bearing, new T.Vector3(), 0),
+          forward = back.clone().normalize().negate(),
+          right = new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)),
+          up = new T.Vector3().crossVectors(right, forward),
+          rel = new T.Vector3(p.x, p.y, p.z).sub(centre).sub(back),
+          perUnit = (h * zoom) / vertical;
+        return Math.min((vertical * aspect) / 2 / zoom - Math.abs(rel.dot(right)), vertical / 2 / zoom - Math.abs(rel.dot(up))) * perUnit;
+      },
+      // The one exception (as the sky island's on phones at 5pi/4): a phone held upright, zoomed right out
+      // over the tropic island at the 3pi/4 stop, has the plane's return from the east in its frame's
+      // bottom left corner (the island lies so far south that the frame's foot, which looks back toward
+      // the camera, reaches the approach; the timetable has no slack to send it further). How far in.
+      phoneCorner = { worst: -Infinity, frames: 0 };
     assert(edges.every(([, p]) => p.visible) && plan.planePose(times.lost).phase === 'away' && !plan.planePose(times.lost).visible, 'The check does not look at the last and the first moments the plane shows.');
     let frames = 0;
     const hold = (what, w, h, zoom, bearing, centre, low = 0) => {
@@ -1546,7 +1723,7 @@ const laneD3 = {};
           Object.assign(view, { frameDrop: drop, focusedIds: ['sky-island'], pitch: 1 });
           scene.focusSky();
           hold('the sky island’s file', w, h, view.targetZoom, bearing, view.target.clone(), 1);
-          if (w >= 768) hold('the widest zoom on the sky island', w, h, 0.45, bearing, view.target.clone(), 0);
+          if (w >= 768) hold('the widest zoom on the sky island', w, h, widestOf(w, h), bearing, view.target.clone(), 0);
           Object.assign(view, { focusedIds: [], pitch: 0 });
         }
       view.frameDrop = 0;
@@ -1556,16 +1733,40 @@ const laneD3 = {};
         scene.fitGroup(scene.AIRPORT_FIT, 0.95, 2.6);
         hold('the airport’s framing', w, h, view.targetZoom, plan.chapterBearings.airport, view.target.clone());
       }
+      // The tropic island's own file, beside its panel or above its sheet, from its own bearing and
+      // every Rotate stop (the turn keeps its subject), and zoomed out from there to the widest.
+      view.frameDrop = 0;
+      for (const bearing of [plan.chapterBearings['tropic-island'], ...stops])
+        for (const [shift, drop] of narrow ? [[0, 0], [0, -0.26]] : [[(460 + 32) / (2 * w), 0]]) {
+          frame(w, h, shift, bearing);
+          Object.assign(view, { frameDrop: drop, focusedIds: ['tropic-island'] });
+          scene.fitFocused();
+          hold('the tropic island’s file', w, h, view.targetZoom, bearing, view.target.clone());
+          if (w >= 768) hold('the widest zoom on the tropic island', w, h, widestOf(w, h), bearing, view.target.clone());
+          else
+            for (const centre of [view.target.clone(), new T.Vector3(tropicAt[0], 0, tropicAt[1])])
+              for (const [when, p] of edges)
+                for (const drift of [-0.16, -0.08, 0, 0.08, 0.16]) {
+                  const depth = depthIn(w, h, widestOf(w, h), bearing + drift, centre, p);
+                  phoneCorner.frames++;
+                  if (depth > -plan.PLANE.length / 2 && seen(w, h, widestOf(w, h), bearing + drift, centre, p)) {
+                    phoneCorner.worst = Math.max(phoneCorner.worst, depth);
+                    assert(when === 'comes back' && Math.abs(bearing - (3 * Math.PI) / 4) < 1e-9 && depth < 100, `The plane ${when} ${depth.toFixed(1)} px into a ${w} x ${h} phone's frame zoomed right out over the tropic island at bearing ${bearing.toFixed(2)} drifted ${drift}.`);
+                  }
+                }
+          Object.assign(view, { focusedIds: [] });
+        }
       view.frameDrop = 0;
       if (!narrow) {
         // The opening view: the island's centre at zoom 1, the hero's frame shift.
         const shift = new T.Vector3(Math.cos(Math.PI / 4), 0, -Math.sin(Math.PI / 4)).multiplyScalar(-0.06 * ((Math.max(53, (76 * h) / w) * w) / h));
         hold('the opening view', w, h, 1, Math.PI / 4, shift);
       }
-      for (const centre of [new T.Vector3(), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z)])
-        for (const bearing of [...stops, plan.chapterBearings.airport]) hold('the widest zoom', w, h, 0.45, bearing, centre);
+      for (const centre of [new T.Vector3(), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(4, 0, 2.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z), ...(w >= 768 ? [new T.Vector3(tropicAt[0], 0, tropicAt[1])] : [])])
+        for (const bearing of [...stops, plan.chapterBearings.airport]) hold('the widest zoom', w, h, widestOf(w, h), bearing, centre);
     }
     assert(frames > 6000, `The plane check looks at only ${frames} frames.`);
+    tropicNav.plane = `the plane out of its file's frames and, but on phones held upright, of the widest zoom over it (on those, at the 3pi/4 stop only, its return from the east ${phoneCorner.worst.toFixed(1)} px into the frame's bottom left corner at most, over ${phoneCorner.frames} frames)`;
   }
   // The sky island in the scene's own framings (sky-placement.md sections 2 and 5): the opening
   // view without it, City mode's overview with it, its own file beside the panel or above the sheet
@@ -1641,17 +1842,31 @@ const laneD3 = {};
       for (const d of drifts) assert(!overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, centre, p))), [0, 0, w, h]), `The opening view shows the sky island at ${w} x ${h}, drifted ${d.toFixed(2)}.`);
     }
 
-    // (b) City mode's overview takes it in (the reading page's last shot does not: see above). Beside
-    // the file at 1440 x 900 at the opening bearing the zoom is today's; 16:9 screens give some up
-    // (0.78 of it at 1920 x 1080), and with the file hidden it is 0.76 at every desktop size; the
-    // other stops lose a tenth at most. At rest the island is whole in the part of the frame the
-    // file and the page's bands leave free, from 1280 wide (at 1024 and 1180 the overviews sit at
-    // the widest zoom, as they did); through the idle drift nine tenths of it stay in the frame (at
-    // the drift's extreme the chimneys slide up past the top edge, under the masthead's band, by 22
-    // px at most, on the widest screens at 3pi/4 with the file hidden). Its clouds and rocks never
-    // widen the overview (they hang on the town's side, inside the town's own box). The fog all but
-    // never touches it: 5% at most at rest; at the opening bearing the drift turns the view about a
-    // centre far east of it (the file's offset), and at the drift's extreme it takes 15% at most.
+    // (b) City mode's overview takes in both neighbour islands (the reading page's last shot neither: see
+    // above): the sky island north-west of the town and the tropic island south of it. At the opening
+    // bearing the frame is bound by its height, the sky island at the top of the part the page's bands
+    // leave free and the tropic island at its foot, so it fits at the same zoom beside the file or not:
+    // 0.468 at 1440 x 900 (main's fit with the sky island alone: 0.591, 0.580 beside the file), 0.444 at
+    // 1280 x 720, 0.456 at 1280 x 800, 0.451 at 1366 x 768, 0.464 at 1536 x 864, 0.481 at 1680 x 1050,
+    // 0.483 at 1920 x 1080, 0.60 of the last shot's at every desktop size with the file hidden. At the
+    // other stops the islands lie at either side, and the fit keeps more than two thirds of the last
+    // shot's or sits at the widest zoom (beside the file at 1024 to 1440 wide at the second and fourth
+    // stops, which would want 0.22 to 0.40). At rest the town (the island, the lighthouse's rock and the
+    // airport's island) and the sky island always stand whole in the part of the frame the file and the
+    // page's bands leave free, on every desktop at every stop, the file open or not; the tropic island
+    // too, but where the overview sits at the widest zoom and still cannot hold it (beside the file at
+    // 1024 and 1180 wide at the second and fourth stops: there it is the one cut, by the frame's edge or
+    // the file, reported in the summary; the review found the airport's armour and the sky island cut
+    // there when the whole box was centred). Beside the file what stands whole keeps PANEL_CLEAR from it
+    // at rest, and 20 px or more through the drift (at 1024 x 768 at those two stops, where the town and
+    // the sky island fill the room beside it at rest, 8 px or more). Through the idle drift nine tenths of
+    // each island stay in the frame up to 1920 wide, four fifths on the widest screens (at the drift's
+    // extreme the sky island's chimneys slide up past the top edge, under the masthead's band, at 3440 x
+    // 1440 at the second stop with the file hidden). The sky island's clouds and rocks never widen the
+    // overview (they hang on the town's side, inside the town's own box). The box now runs from the
+    // airport's north shore to the tropic island's south beach, so the island on its far side reaches
+    // into the fog's first quarter at its farthest point (the sky island 18% at the opening bearing, 5%
+    // with it alone; the tropic island 26% at the third stop): 27% at most at rest, 30% through the drift.
     const overviewAt = (w, h, shift, bearing, city) => {
       frame(w, h, shift, bearing);
       view.frameDrop = 0;
@@ -1660,48 +1875,131 @@ const laneD3 = {};
       view.cityMode = false;
       return { zoom: view.targetZoom, centre: view.target.clone() };
     };
-    const ratio = (w, h, shift, bearing) => overviewAt(w, h, shift, bearing, true).zoom / overviewAt(w, h, shift, bearing, false).zoom;
-    assert(Math.abs(ratio(1440, 900, 492 / 2880, Math.PI / 4) - 1) < 1e-9, 'City mode\'s default view at 1440 x 900 no longer keeps today\'s zoom.');
-    assert(Math.abs(ratio(1920, 1080, 492 / 3840, Math.PI / 4) - 0.783) < 0.01, `City mode's default view at 1920 x 1080 keeps ${ratio(1920, 1080, 492 / 3840, Math.PI / 4).toFixed(3)} of today's zoom.`);
-    const fog = { rest: 0, drift: 0 };
-    let worstCut = 1;
+    const ratio = (w, h, shift, bearing) => overviewAt(w, h, shift, bearing, true).zoom / overviewAt(w, h, shift, bearing, false).zoom,
+      tropicShape = TROPIC_EXTENT.map((p) => p.clone()),
+      islandsOf = { 'sky island': shape, 'tropic island': tropicShape };
+    // (What City mode's overview fits at without the tropic island, for the summary: the scene's pieces
+    // read TROPIC_EXTENT where they run, so the check takes it away for a moment. Main's own fit with the
+    // sky island alone differs beside the file, where its sideways move kept no room through the drift:
+    // 0.580 at 1440 x 900, 0.518 at 1280 x 800.)
+    const skyAlone = (fit) => {
+      const kept = view.TROPIC_EXTENT;
+      view.TROPIC_EXTENT = [];
+      try {
+        return fit();
+      } finally {
+        view.TROPIC_EXTENT = kept;
+      }
+    };
+    for (const [w, h, want] of [[1440, 900, 0.468], [1280, 720, 0.444], [1280, 800, 0.456], [1366, 768, 0.451], [1536, 864, 0.464], [1680, 1050, 0.481], [1920, 1080, 0.483]])
+      for (const shift of [0, 492 / (2 * w)]) {
+        const { zoom } = overviewAt(w, h, shift, Math.PI / 4, true),
+          before = skyAlone(() => overviewAt(w, h, shift, Math.PI / 4, true).zoom);
+        assert(Math.abs(zoom - want) < 0.005, `City mode's default view at ${w} x ${h}${shift ? ' beside the file' : ''} fits at ${zoom.toFixed(3)} (${want} expected).`);
+        tropicNav.fits.push(`${w} x ${h}${shift ? ' with the file open' : ''} ${before.toFixed(3)} to ${zoom.toFixed(3)}`);
+      }
+    // Phones, upright above the file's sheet (its drop) and on their side beside the file's panel and over
+    // the bars: the overview goes out for the tropic island where the box's height binds it; it reaches
+    // the widest zoom only where it sat there with the sky island alone (the smallest phone on its side).
+    for (const [w, h, shift, drop] of [...[[360, 640], [375, 667], [390, 844], [412, 915], [430, 932]].map(([w, h]) => [w, h, 0, -100.95 / h]), ...[[667, 375], [844, 390], [932, 430]].map(([w, h]) => [w, h, (Math.min(340, 0.42 * w) + 28) / (2 * w), -33 / h])]) {
+      const fit = () => {
+          frame(w, h, shift, Math.PI / 4);
+          Object.assign(view, { frameDrop: drop, cityMode: true });
+          scene.fitOverview();
+          Object.assign(view, { frameDrop: 0, cityMode: false });
+          return view.targetZoom;
+        },
+        zoom = fit(),
+        before = skyAlone(fit);
+      assert(zoom <= before + 1e-9 && (zoom > widestOf(w, h) + 1e-9 || before <= widestOf(w, h) + 1e-9), `City mode's overview on a ${w} x ${h} phone fits at ${zoom.toFixed(3)} (${before.toFixed(3)} with the sky island alone).`);
+      tropicNav.fits.push(`${w} x ${h} phone ${before.toFixed(3)} to ${zoom.toFixed(3)}${zoom <= widestOf(w, h) + 1e-9 ? ' (the widest zoom, as before)' : ''}`);
+    }
+    const fog = { 'sky island': { rest: 0, drift: 0 }, 'tropic island': { rest: 0, drift: 0 } },
+      cut = { 'sky island': 1, 'tropic island': 1 },
+      narrowCut = [],
+      fileGap = { rest: Infinity, least: Infinity, at: '', tight: Infinity, tightAt: '', over: Infinity, overAt: '' };
+    // (On the widest screens, 2560 and 3440 wide, with the file hidden at the second and fourth stops, the
+    // drift's extreme takes a little more of the sky island past the frame's edge, under the masthead's band
+    // or past the left edge: their own floor.)
+    let ultrawide = 1;
     for (const [w, h] of desktops)
       for (const open of [false, true])
         for (const bearing of stops) {
           const shift = open ? 492 / (2 * w) : 0,
             r = ratio(w, h, shift, bearing);
-          assert(r > (bearing === Math.PI / 4 ? 0.75 : 0.88) - 1e-9 && r <= 1 + 1e-9, `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} keeps ${r.toFixed(3)} of today's zoom.`);
           const { zoom, centre } = overviewAt(w, h, shift, bearing, true),
-            right = w - (open ? 476 : 0);
+            right = w - (open ? 476 : 0),
+            clamped = Math.abs(zoom - widestOf(w, h)) < 1e-9;
+          assert(r <= 1 + 1e-9 && (clamped || r > (bearing === Math.PI / 4 ? 0.6 : 0.68) - 1e-9), `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} keeps ${r.toFixed(3)} of the last shot's zoom.`);
           // The floats inside the overview's box: adding them changes nothing.
           scene.SKY_MARKS.push(...floats);
           const withFloats = overviewAt(w, h, shift, bearing, true);
           scene.SKY_MARKS.splice(scene.SKY_MARKS.length - floats.length);
           assert(Math.abs(withFloats.zoom - zoom) < 1e-9 && withFloats.centre.distanceTo(centre) < 1e-9, `The sky island's clouds and rocks widen City mode's overview at ${w} x ${h} at bearing ${bearing.toFixed(2)}.`);
-          for (const d of [0, -0.16, -0.08, 0.08, 0.16]) {
-            const [x0, y0, x1, y1] = box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p)));
-            if (!d && w >= 1280) assert(x0 >= 0 && x1 <= right && y0 >= 76 - 0.5 && y1 <= h - 76 + 0.5, `In City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)} the sky island spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
-            else if (w >= 1280) worstCut = Math.min(worstCut, (Math.min(x1, w) - Math.max(x0, 0)) / (x1 - x0), (Math.min(y1, h) - Math.max(y0, 0)) / (y1 - y0));
-            // The fog (72 to 150 along the line of sight) over its farthest point.
-            const back = new T.Vector3(Math.sin(bearing + d) * 38, 35, Math.cos(bearing + d) * 38);
-            for (const p of shape) {
-              const f = (back.length() - p.clone().sub(centre).dot(back.clone().normalize()) - 72) / (150 - 72);
-              if (d) fog.drift = Math.max(fog.drift, f);
-              else fog.rest = Math.max(fog.rest, f);
+          let tropicWhole = true;
+          // Whether the town and the sky island, swung by the drift either way, fit the room beside the file
+          // (PANEL_CLEAR from its edge and from the frame's): not at 1024 x 768 at the second and fourth
+          // stops, where at the widest zoom they fill it at rest.
+          const kept = [...scene.islandMarks, ...shape],
+            swept = [0, -0.16, -0.08, 0.08, 0.16].map((d) => box(kept.map((p) => px(w, h, zoom, bearing + d, centre, p)))),
+            roomy = Math.max(...swept.map((b) => b[2])) - Math.min(...swept.map((b) => b[0])) <= right - 2 * 24 + 1;
+          for (const [name, points] of [...Object.entries(islandsOf), ['town', scene.islandMarks]])
+            for (const d of [0, -0.16, -0.08, 0.08, 0.16]) {
+              const [x0, y0, x1, y1] = box(points.map((p) => px(w, h, zoom, bearing + d, centre, p))),
+                whole = x0 >= 0 && x1 <= right && y0 >= 76 - 0.5 && y1 <= h - 76 + 0.5;
+              // At rest the town (the island, the lighthouse and the airport's island) and the sky island
+              // always stand whole in the part of the frame the file and the page's bands leave free, and
+              // the tropic island too but where the overview sits at the widest zoom, which leaves it cut.
+              if (!d) {
+                if (name === 'tropic island' && !whole && clamped && w < 1280) {
+                  tropicWhole = false;
+                  narrowCut.push(`${(((Math.min(x1, right) - Math.max(x0, 0)) / (x1 - x0)) * 100).toFixed(0)}% at ${w} x ${h} at stop ${stops.indexOf(bearing) + 1}`);
+                } else assert(whole, `In City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''} at bearing ${bearing.toFixed(2)}, fitted at ${zoom.toFixed(3)}, the ${name} spans ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px.`);
+              } else if (w >= 1280 && name !== 'town') {
+                const inFrame = Math.min((Math.min(x1, w) - Math.max(x0, 0)) / (x1 - x0), (Math.min(y1, h) - Math.max(y0, 0)) / (y1 - y0));
+                if (w <= 1920) cut[name] = Math.min(cut[name], inFrame);
+                else ultrawide = Math.min(ultrawide, inFrame);
+              }
+              // Beside the file the town and the sky island keep PANEL_CLEAR from it at rest (to half a pixel:
+              // the scene measures the sky island's marks, the check its clouds and rocks as well) and nearly
+              // as much through the drift, where they fit the room beside it; the tropic island too, where the
+              // overview is not at the widest zoom (where it is, the tropic island is what gives).
+              if (open) {
+                const gap = right - x1,
+                  at = `the ${name} at ${w} x ${h} at stop ${stops.indexOf(bearing) + 1}${d ? `, drifted ${d}` : ''}`;
+                if (name === 'tropic island' ? !clamped : roomy) {
+                  if (!d) fileGap.rest = Math.min(fileGap.rest, gap);
+                  else if (gap < fileGap.least) Object.assign(fileGap, { least: gap, at });
+                } else if (name !== 'tropic island' && gap < fileGap.tight) Object.assign(fileGap, { tight: gap, tightAt: at });
+                else if (name === 'tropic island' && tropicWhole && gap < fileGap.over) Object.assign(fileGap, { over: gap, overAt: at });
+              }
+              if (name === 'town') continue;
+              // The fog (72 to 150 along the line of sight) over its farthest point.
+              const back = new T.Vector3(Math.sin(bearing + d) * 38, 35, Math.cos(bearing + d) * 38);
+              for (const p of points) {
+                const f = (back.length() - p.clone().sub(centre).dot(back.clone().normalize()) - 72) / (150 - 72);
+                if (d) fog[name].drift = Math.max(fog[name].drift, f);
+                else fog[name].rest = Math.max(fog[name].rest, f);
+              }
             }
-          }
         }
-    assert(worstCut >= 0.9, `Through the idle drift only ${(worstCut * 100).toFixed(0)}% of the sky island stays in City mode's overview.`);
-    assert(fog.rest <= 0.05 && fog.drift <= 0.15, `The fog reaches ${fog.rest.toFixed(3)} at rest (and ${fog.drift.toFixed(3)} through the drift) over the sky island in City mode's overview.`);
-    skyNav.overview = `the fog ${(fog.rest * 100).toFixed(1)}% at rest, ${(worstCut * 100).toFixed(0)}% of it in frame through the drift`;
+    for (const [name, share] of Object.entries(cut)) assert(share >= 0.9, `Through the idle drift only ${(share * 100).toFixed(0)}% of the ${name} stays in City mode's overview.`);
+    assert(ultrawide >= 0.8, `Through the idle drift only ${(ultrawide * 100).toFixed(0)}% of a neighbour island stays in City mode's overview on the widest screens.`);
+    for (const [name, { rest, drift }] of Object.entries(fog)) assert(rest <= 0.27 && drift <= 0.3, `The fog reaches ${rest.toFixed(3)} at rest (and ${drift.toFixed(3)} through the drift) over the ${name} in City mode's overview.`);
+    skyNav.overview = `the fog ${(fog['sky island'].rest * 100).toFixed(1)}% at rest, ${(cut['sky island'] * 100).toFixed(0)}% of it in frame through the drift (${(ultrawide * 100).toFixed(0)}% on the widest screens)`;
+    assert(fileGap.rest >= 23.5 && fileGap.least >= 20 && fileGap.tight >= 8, `City mode's overview comes within ${fileGap.rest.toFixed(1)} px of the file at rest, ${fileGap.least.toFixed(1)} px through the drift (${fileGap.at}), or where the town and the sky island fill the room beside it within ${fileGap.tight.toFixed(1)} px (${fileGap.tightAt}).`);
+    tropicNav.overview = `the fog ${(fog['tropic island'].rest * 100).toFixed(1)}% at rest over its farthest point, ${(cut['tropic island'] * 100).toFixed(0)}% of it in frame through the drift; the town, the airport's island and the sky island whole at rest on every desktop at every Rotate stop, the file open or not, and beside the file ${fileGap.rest.toFixed(0)} px clear of it at rest and ${fileGap.least.toFixed(0)} px through the drift at the least (${fileGap.at}; where the town and the sky island fill the room beside it, ${fileGap.tight.toFixed(0)} px, ${fileGap.tightAt}; the tropic island where the overview sits at the widest zoom, ${fileGap.over.toFixed(0)} px, ${fileGap.overAt})${narrowCut.length ? `; where the second and fourth stops sit at the widest zoom beside the file on narrow windows, the tropic island alone cut: ${narrowCut.join(', ')} of it in the frame` : ''}`;
 
     // (b2) Clear of the caption (the art review's fourth finding): at the opening bearing the island
     // lands at the box's top left, and it stood under or right beside the caption's sky chip (16 to
     // 182 px across with its longest caption, its foot 102 down): 3 px from its column at 1280 x 800,
     // overlapping it at 1280 x 720, 1366 x 768 and 1440 x 900. In City mode fitOverview moves the
-    // view sideways (the town right), never up or down and at the same zoom, until the island, its
-    // clouds and rocks clear that column by 24 px (PANEL_CLEAR), the whole overview kept 24 px from
-    // the file and the frame's left edge; on every desktop size, the file open or hidden, it is then
+    // view sideways (the town right), at the same zoom, until the island, its clouds and rocks clear
+    // that column by 24 px (PANEL_CLEAR), the whole overview kept 24 px from the file and the frame's
+    // left edge; where the file leaves no room for that (1024 to 1180 px wide with the file open, the
+    // overview taking in the tropic island at its foot), it moves the view up instead, the town down,
+    // the overview's foot kept over the bottom band, going out a little first where that band is short
+    // (never past the widest zoom). On every desktop size, the file open or hidden, the island is then
     // clear by 24 px at rest and off the column all through the idle drift. Where there is no room for
     // that (a phone upright, the smallest on its side), the framing stays as it was.
     {
@@ -1711,15 +2009,16 @@ const laneD3 = {};
         up = new T.Vector3().crossVectors(back, right),
         // How far a screen box lies from the chip's column (negative: on it).
         gap = ([x0, y0, x1, y1]) => Math.max(x0 - 182, y0 - 102, 16 - x1, 72 - y1),
-        found = { moved: [], rest: Infinity, drift: Infinity, kept: 0 },
+        found = { moved: [], lifted: [], rest: Infinity, drift: Infinity, kept: 0 },
         // The overview of a w x h frame (beside a file `shift`, over a sheet `drop`): where it put the
         // view, and how far (px) that is left of the box's own middle with the panel offset.
         overviewOf = (w, h, shift, drop) => {
           frame(w, h, shift, bearing);
           Object.assign(view, { frameDrop: drop, cityMode: true });
           scene.fitOverview();
-          const xs = [...scene.islandMarks, ...scene.SKY_MARKS].map((p) => p.dot(right)),
-            ys = [...scene.islandMarks, ...scene.SKY_MARKS].map((p) => p.dot(up)),
+          // (City mode's whole box: the town and both neighbour islands.)
+          const xs = [...scene.islandMarks, ...scene.SKY_MARKS, ...TROPIC_EXTENT].map((p) => p.dot(right)),
+            ys = [...scene.islandMarks, ...scene.SKY_MARKS, ...TROPIC_EXTENT].map((p) => p.dot(up)),
             zoom = view.targetZoom,
             centre = view.target.clone(),
             perUnit = (h * zoom) / Math.max(53, (76 * h) / w),
@@ -1732,12 +2031,22 @@ const laneD3 = {};
         for (const open of [false, true]) {
           const { zoom, centre, moved, lifted, panel } = overviewOf(w, h, open ? 492 / (2 * w) : 0, 0),
             at = `City mode's overview at ${w} x ${h}${open ? ' beside the file' : ''}`,
-            all = box([...scene.islandMarks, ...shape].map((p) => px(w, h, zoom, bearing, centre, p))),
+            all = box([...scene.islandMarks, ...shape, ...TROPIC_EXTENT].map((p) => px(w, h, zoom, bearing, centre, p))),
             rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
-          if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
+          if (moved > 1e-6) found.moved.push(`${w} x ${h}${open ? ' beside the file' : ''} ${moved.toFixed(0)} px at ${zoom.toFixed(3)}`);
           found.rest = Math.min(found.rest, rest);
-          assert(moved > -1e-6 && Math.abs(lifted) < 1e-6 && (moved < 1e-6 || rest < 24 + 6), `${at} moves the view ${moved.toFixed(1)} px sideways and ${lifted.toFixed(1)} px up, the island ${rest.toFixed(1)} px from the caption's column.`);
+          // Sideways, or failing that (no room beside the file) up, the town down; never both, never further
+          // than the island needs: 24 px clear of the column at rest, or off it through the drift.
+          const offs = drifts.map((d) => gap(box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p))))),
+            driftLeast = Math.min(...offs);
+          if (Math.abs(lifted) > 1e-6) found.lifted.push(`${w} x ${h}${open ? ' beside the file' : ''} ${(-lifted).toFixed(0)} px at ${zoom.toFixed(3)}`);
+          assert(moved > -1e-6 && (Math.abs(lifted) < 1e-6 || (moved < 1e-6 && lifted < 0)) && ((moved < 1e-6 && Math.abs(lifted) < 1e-6) || rest < 24 + 6 || driftLeast < 6), `${at} moves the view ${moved.toFixed(1)} px sideways and ${lifted.toFixed(1)} px up, the island ${rest.toFixed(1)} px from the caption's column (${driftLeast.toFixed(1)} px through the drift).`);
           assert(rest >= 24 - 1e-6 && all[0] >= 24 - 1e-6 && all[2] <= panel - 24 + 1e-6, `${at} leaves the sky island ${rest.toFixed(1)} px from the caption's column, the overview spanning ${all[0].toFixed(0)} to ${all[2].toFixed(0)} px (the file at ${panel.toFixed(0)}).`);
+          // Moved up (where the file leaves no room beside it, at 1024 to 1180 px with the file open, the
+          // box as tall as the part of the frame the bands leave free, the tropic island at its foot), the
+          // box's foot keeps over the bottom band; where the view went out first for the room, no further
+          // than the drift asked (the island a pixel or two off the column at its extreme).
+          if (lifted < -1e-6) assert(all[3] <= h - 76 + 0.5 && (Math.abs(zoom - widestOf(w, h)) < 1e-9 || driftLeast < 6), `${at}, moved up, puts the overview's foot ${(all[3] - (h - 76)).toFixed(1)} px into the bottom band, or goes further out than the island needs (${driftLeast.toFixed(1)} px off the column through the drift).`);
           for (const d of drifts) {
             const off = gap(box(shape.map((p) => px(w, h, zoom, bearing + d, centre, p))));
             found.drift = Math.min(found.drift, off);
@@ -1750,13 +2059,13 @@ const laneD3 = {};
         ...[[667, 375], [844, 390], [932, 430]].map(([w, h]) => [w, h, (Math.min(340, 0.42 * w) + 28) / (2 * w), -33 / h]),
       ]) {
         const { zoom, centre, moved, panel } = overviewOf(w, h, shift, drop),
-          all = box([...scene.islandMarks, ...shape].map((p) => px(w, h, zoom, bearing, centre, p))),
+          all = box([...scene.islandMarks, ...shape, ...TROPIC_EXTENT].map((p) => px(w, h, zoom, bearing, centre, p))),
           rest = gap(box(shape.map((p) => px(w, h, zoom, bearing, centre, p))));
         if (moved > 1e-6) found.moved.push(`${w} x ${h} ${moved.toFixed(0)} px`);
         else found.kept++;
         assert(moved < 1e-6 || (rest >= 24 - 1e-6 && rest < 24 + 6 && all[2] <= panel - 24 + 1e-6), `City mode's overview on a ${w} x ${h} phone moves the view ${moved.toFixed(1)} px, the island ${rest.toFixed(1)} px from the caption's column.`);
       }
-      laneD3.overview = `the sky island in City mode's overview ${found.rest.toFixed(1)} px clear of the caption's column at rest and ${found.drift.toFixed(1)} px through the drift on every desktop size (the view moved ${found.moved.join(', ')}; ${found.kept} phones as they were)`;
+      laneD3.overview = `the sky island in City mode's overview ${found.rest.toFixed(1)} px clear of the caption's column at rest and ${found.drift.toFixed(1)} px through the drift on every desktop size (the view moved ${found.moved.join(', ')}${found.lifted.length ? `, and up where the file leaves no room beside it: ${found.lifted.join(', ')}` : ''}; ${found.kept} phones as they were)`;
     }
 
     // (c) Its own file, at its own lower pitch (city-scene's SKY_PITCH, 30 degrees; from the town's
@@ -1957,7 +2266,7 @@ const laneD3 = {};
         Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
         scene.focusSky();
         const fit = view.targetZoom,
-          widest = corners(w, h, 0, 0, 0.45, 0, fileBearing, new T.Vector3(S.x, 0, S.z)).fog;
+          widest = corners(w, h, 0, 0, widestOf(w, h), 0, fileBearing, new T.Vector3(S.x, 0, S.z)).fog;
         found.widest = Math.max(found.widest, widest);
         for (const k of [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7]) {
           const zoom = fit * k,
@@ -2057,14 +2366,14 @@ const laneD3 = {};
       // down to seven tenths of it, the camera at the pitch it heads for there, every bearing a turn or
       // the idle drift can bring and its ground point anywhere on that pitch's pocket's edge. The sea
       // fills the frame, and the fog closes in on no corner of it further than on the corners of the
-      // same phone's own widest view of the town (zoom 0.45, at the town's pitch).
+      // same phone's own widest view of the town (its widest zoom, at the town's pitch).
       const sideways = { fog: 0, town: 0 };
       for (const [w, h, shift, drop] of landscapeFiles) {
         frame(w, h, shift, fileBearing);
         Object.assign(view, { frameDrop: drop, panelEdge: 1, focusedIds: ['sky-island'], pitch: 1 });
         scene.focusSky();
         const fit = view.targetZoom,
-          widest = seaFrame(w, h, 0, 0, 0.45, 0, fileBearing, 0, 0);
+          widest = seaFrame(w, h, 0, 0, widestOf(w, h), 0, fileBearing, 0, 0);
         sideways.town = Math.max(sideways.town, widest);
         for (const k of [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7]) {
           const zoom = fit * k,
@@ -2209,7 +2518,7 @@ const laneD3 = {};
     // the phone held sideways, keep it in the island's pocket.
     {
       const want = ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
-        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE'],
+        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE', 'TROPIC_MIDDLE'],
         code = [];
       let pitchSource, wheelSource;
       (function collect(node) {
@@ -2245,11 +2554,12 @@ const laneD3 = {};
           camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
           controls = new OrbitControls(camera, null);
         controls.domElement = { clientWidth: w, clientHeight: h, getBoundingClientRect: () => ({ left: 0, top: 0, width: w, height: h }) };
-        Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, zoomToCursor: true, zoomSpeed: how === 'wheel' ? 1.5 : 1, minZoom: 0.45, maxZoom: 4 });
+        Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, zoomToCursor: true, zoomSpeed: how === 'wheel' ? 1.5 : 1, minZoom: widestOf(w, h), maxZoom: 4 });
         const zoom = {
             T,
             Math,
             plan,
+            TROPIC_EXTENT,
             camera,
             controls,
             target: new T.Vector3(),
@@ -2430,7 +2740,7 @@ const laneD3 = {};
           Math,
           plan,
           camera: new T.OrthographicCamera(),
-          controls: { minZoom: 0.45, target: new T.Vector3() },
+          controls: { minZoom: WIDEST_ZOOM.wide, target: new T.Vector3() },
           target: new T.Vector3(),
           shiftApplied: new T.Vector3(),
           screenRight: new T.Vector3(),
@@ -2488,6 +2798,7 @@ const laneD3 = {};
           free = phone ? [12, 76 + 12, w - 12, sheet - 12] : [24, 76 + 24, w - 476 - 24, h - 76 - 24],
           whole = ([x0, y0, x1, y1]) => x0 >= free[0] && y0 >= free[1] && x1 <= free[2] && y1 <= free[3];
         Object.assign(spin.camera, { left: (-vertical * aspect) / 2, right: (vertical * aspect) / 2, top: vertical / 2, bottom: -vertical / 2 });
+        spin.controls.minZoom = widestOf(w, h);
         Object.assign(spin, { width: w, height: h, frameShift: shift, frameDrop: drop, yaw: fileBearing, targetYaw: fileBearing, autoFocus: true });
         // The file as it frames the island, at rest.
         run.focusSky();
@@ -2591,7 +2902,7 @@ const laneD3 = {};
     //   ground point well inside the island's pocket.
     {
       const want = ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim', 'skyFile', 'skyPivot', 'turnSky', 'align', 'cancel'],
-        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE'],
+        vars = ['PAN', 'panSubject', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'YAW_RATE', 'TROPIC_MIDDLE'],
         code = [];
       let pitchSource;
       (function collect(node) {
@@ -2618,11 +2929,12 @@ const laneD3 = {};
             camera = new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
             controls = new OrbitControls(camera, null);
           controls.domElement = { clientWidth: w, clientHeight: h };
-          Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: 0.45, maxZoom: 4 });
+          Object.assign(controls, { enableRotate: false, enableDamping: true, dampingFactor: 0.09, screenSpacePanning: true, minZoom: widestOf(w, h), maxZoom: 4 });
           const turn = {
               T,
               Math,
               plan,
+              TROPIC_EXTENT,
               camera,
               controls,
               target: new T.Vector3(),
@@ -2960,8 +3272,9 @@ const laneD3 = {};
       // (its turn and its zoom with it) hands the box to the island only on a frame whose own view is
       // close in on it (skyShadowWanted on the camera as it stands).
       {
-        const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'fitFocused', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'skyAhead', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'skyExtent', 'skyHidden', 'skyOnScreen', 'followSky', 'align', 'select', 'skyShadowWanted', 'skyClose', 'bandShare', 'clipToFrame', 'skySettled', 'skyWide', 'skyHolds', 'skyViews', 'keyAt', 'skyWideBox', 'sunBoxHolds', 'sunReach', 'eachLandSeen', 'lightAxes'],
-          vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_HIDES', 'SKY_EXTENT', 'onScreen', 'YAW_RATE', 'SKY_SHADOW', 'TOWN_WATERLINE', 'LAND_MARKS', '[rockX, rockZ]', 'ahead', 'UP', 'AIRPORT_FIT', 'SKY_WIDE', 'TOWN_LAND', 'SKY_TIGHT', 'skyStillAt'],
+        // (The shadow's half of the sky island's frame step: followIslands, which hides and shows it, is (d)'s.)
+        const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitGroup', 'groupFrame', 'fitFocused', 'driftHold', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'skyAhead', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'followSky', 'align', 'select', 'skyShadowWanted', 'skyClose', 'bandShare', 'clipToFrame', 'skySettled', 'skyWide', 'skyHolds', 'skyViews', 'keyAt', 'skyWideBox', 'sunBoxHolds', 'sunReach', 'eachLandSeen', 'lightAxes'],
+          vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'YAW_RATE', 'SKY_SHADOW', 'TOWN_WATERLINE', 'LAND_MARKS', '[rockX, rockZ]', 'ahead', 'UP', 'AIRPORT_FIT', 'SKY_WIDE', 'TOWN_LAND', 'SKY_TIGHT', 'skyStillAt'],
           code = [];
         let pitchSource;
         (function collect(node) {
@@ -3002,7 +3315,7 @@ const laneD3 = {};
               Math,
               plan,
               camera: new T.OrthographicCamera((-vertical * aspect) / 2, (vertical * aspect) / 2, vertical / 2, -vertical / 2, -200, 180),
-              controls: { target: new T.Vector3(), minZoom: 0.45 },
+              controls: { target: new T.Vector3(), minZoom: widestOf(w, h) },
               target: new T.Vector3(),
               shiftApplied: new T.Vector3(),
               screenRight: new T.Vector3(),
@@ -3341,35 +3654,69 @@ const laneD3 = {};
     //   come to rest there with no more than half the box round it in the frame; it is gone by the
     //   time the phone's opening view rests, and a frame that holds it whole (a portrait tablet's
     //   opening view) keeps it.
+    // The tropic island (south of the town, on the sea) goes and comes by the same rule (city-scene's
+    // islandShown, for both islands through followIslands), through its land builder's setShown, which
+    // takes its shallows with it: its hides are the last shot and the opening view alone (every other
+    // reading frame leaves it out of sight: below), so
+    // (d1) it stays out of view, and so in the scene, in About, People and Departures; City mode and
+    //   Inspect show it;
+    // (d2) the opening view, on phones, tablets and desktops (where a corner of it, or the whole of it,
+    //   would stand in the frame's bottom left), as the page opens on it and through the idle drift,
+    //   never shows it nor its shallows;
+    // (d3) a drag, a wheel zoom or the - button in the opening view, or a drag in the last shot, shows
+    //   it at once wherever any of it is in view;
+    // (d4) glided into the opening view, People or the last shot from its own file, or from About
+    //   panned to it by Recentre, it goes only on a frame where neither it nor its shallows reach more
+    //   than a pixel into the frame, or once the camera has come to rest there with no more than half
+    //   the box round them in the frame; where more of it stands in the resting frame it is kept.
     {
-      const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'skyExtent', 'skyHidden', 'skyOnScreen', 'followSky', 'align', 'reset', 'select', 'focusBuildings', 'overview', 'cancel', 'resize'],
-        vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'SKY_HIDES', 'SKY_EXTENT', 'onScreen', 'YAW_RATE', 'shortestAngle'],
+      const want = ['viewOffset', 'panelOffset', 'offsetTarget', 'followPanel', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'driftHold', 'focusSky', 'skyFitZoom', 'skyFile', 'skyPivot', 'turnSky', 'aim', 'elevationAt', 'skyFit', 'skyMarks', 'skyExtent', 'settledView', 'islandHidden', 'islandOnScreen', 'islandShown', 'followIslands', 'followSky', 'align', 'reset', 'select', 'focusBuildings', 'overview', 'cancel', 'resize'],
+        vars = ['TOWN_PITCH', 'SKY_LIFT', 'PANEL_CLEAR', 'SKY_MARKS', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'SKY_HIDES', 'SKY_EXTENT', 'onScreen', 'YAW_RATE', 'shortestAngle', 'TROPIC_MIDDLE', 'settling'],
         methods = ['setYaw', 'setFrameShift', 'zoom', 'focusPark'],
         code = [];
-      let pitchSource, firstShown;
+      let pitchSource, firstShown, tropicFirst;
       (function collect(node) {
         if (ts.isFunctionDeclaration(node) && want.includes(node.name?.text)) code.push(node.getText(syntax).replace(/^export\s+/, ''));
         if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => vars.includes(d.name.getText(syntax)))) code.push(node.getText(syntax).replace(/^export\s+/, ''));
-        // (How the scene starts: shown or not, before its first frame.)
+        // (How the scene starts: each island shown or not, before its first frame.)
         if (ts.isVariableDeclaration(node) && node.name.getText(syntax) === 'skyShown') firstShown = node.initializer?.getText(syntax);
+        if (ts.isVariableDeclaration(node) && node.name.getText(syntax) === 'tropicShown') tropicFirst = node.initializer?.getText(syntax);
         if (ts.isMethodDeclaration(node) && methods.includes(node.name.getText(syntax)))
           code.push(`function ${node.name.getText(syntax) === 'zoom' ? 'zoomBy' : node.name.getText(syntax)}(${node.parameters.map((p) => p.getText(syntax)).join(', ')}) ${node.body.getText(syntax)}`);
         if (ts.isBlock(node) && node.statements[0]?.getText(syntax) === 'const left = aim(camera.zoom) - pitch;') pitchSource = `function pitchStep() ${node.getText(syntax)}`;
         ts.forEachChild(node, collect);
       })(syntax);
       const turning = turnPieces.find((p) => p.startsWith('function turnStep'));
-      assert(code.length === want.length + vars.length + methods.length && turning && glideSource && pitchSource && ['true', 'false'].includes(firstShown), 'The hiding check must find every piece it runs.');
+      assert(code.length === want.length + vars.length + methods.length && turning && glideSource && pitchSource && ['true', 'false'].includes(firstShown) && tropicFirst === 'false', 'The hiding check must find every piece it runs.');
+      // The tropic island starts hidden, as the sky island does: its land is built shown, so the scene
+      // hides it before the first frame (followIslands only calls setShown when the rule changes its mind).
+      assert(holds(source, 'tropic.setShown(false);'), 'The scene no longer hides the tropic island before its first frame.');
       const { WATER } = await import(pathToFileURL(path.join(output, 'town-shared.mjs')).href),
         { createSeaShadow } = await import(pathToFileURL(path.join(output, 'city-water.mjs')).href),
         UP = new T.Vector3(0, 1, 0),
         keyOffset = new T.Vector3(),
         pool = createSeaShadow(WATER),
+        // The tropic island in the scene, as its land builder's setShown leaves it (land, building,
+        // garden, figure, shallows and foam all at once), and the calls the scene makes to it.
+        tropicLand = { visible: true, calls: [] },
         sky = {
           T,
           Math,
           plan,
+          TROPIC_EXTENT,
+          TROPIC_SEEN,
+          tropic: {
+            setShown(shown) {
+              tropicLand.visible = shown;
+              tropicLand.calls.push(shown);
+            },
+          },
+          tropicShown: false,
+          tropicDrawn: false,
+          shadowDirty: false,
           camera: new T.OrthographicCamera(-24, 24, 24, -24, -200, 180),
-          controls: { target: new T.Vector3(), minZoom: 0.45, zoomToCursor: false },
+          controls: { target: new T.Vector3(), minZoom: WIDEST_ZOOM.wide, zoomToCursor: false },
+          WIDEST: WIDEST_ZOOM,
           container: { clientWidth: 1, clientHeight: 1 },
           renderer: { setSize() {} },
           ink: { resize() {} },
@@ -3446,11 +3793,14 @@ const laneD3 = {};
           },
         },
         run = runInNewContext(
-          `${ts.transpileModule([...code, turning, glideSource, pitchSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ followPanel, turnStep, glideStep, pitchStep, align, followSky, reset, select, focusBuildings, cancel, resize, overview, setYaw, setFrameShift, zoomBy, focusPark, aim })`,
+          `${ts.transpileModule([...code, turning, glideSource, pitchSource].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ followPanel, turnStep, glideStep, pitchStep, align, followIslands, followSky, reset, select, focusBuildings, cancel, resize, overview, setYaw, setFrameShift, zoomBy, focusPark, aim })`,
           sky,
         ),
+        tropicTurns = { count: 0 },
         // One frame of step(): the panel offset, the turn, the pitch, the glide, the camera on its target
-        // (OrbitControls' update), the view handed over, then followSky and the pool laid for the frame.
+        // (OrbitControls' update), the view handed over, then followIslands, followSky and the pool laid
+        // for the frame. Each time the tropic island goes or comes, its land goes or comes with it and the
+        // sun's shadow is drawn again in that very frame (it casts in the town's box).
         step = () => {
           run.followPanel();
           run.turnStep();
@@ -3459,6 +3809,14 @@ const laneD3 = {};
           run.align();
           if (!sky.tween) sky.target.copy(sky.controls.target);
           sky.camera.updateMatrixWorld();
+          const before = sky.tropicShown;
+          sky.shadowDirty = false;
+          run.followIslands();
+          assert(tropicLand.visible === sky.tropicShown, 'The tropic island\'s land is not shown or hidden with it.');
+          if (sky.tropicShown !== before) {
+            tropicTurns.count++;
+            assert(sky.shadowDirty && tropicLand.calls.at(-1) === sky.tropicShown, 'The tropic island goes or comes without its shadow drawn again in that frame.');
+          }
           run.followSky(1 / 60);
           sky.placeSun();
           pool.update(keyOffset, 0, 0, sky.skyShown);
@@ -3486,6 +3844,12 @@ const laneD3 = {};
         square = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => new T.Vector3(x, 0, z)),
         island = () => seen(shape),
         water = () => seen(square, pool.mesh.matrixWorld),
+        // The tropic island as it can show (town-tropic's TROPIC_SEEN: its extent, its outline at the
+        // water and the tops of its roof and trees, and round it its shelf and shallows, which go and
+        // come with it, 4.6 past the waterline, and its crowns' ring 0.7 past it), as the scene measures it.
+        tropicMiddle = new T.Box3().setFromPoints(TROPIC_EXTENT.filter((p) => p.y < 0.5)).getCenter(new T.Vector3()).setY(0),
+        tropicShape = TROPIC_SEEN,
+        tropicIsland = () => seen(tropicShape),
         // The stage at w x h (resize(): the scene's camera fitted to it).
         stage = (w, h) => {
           Object.assign(sky.container, { clientWidth: w, clientHeight: h });
@@ -3498,10 +3862,10 @@ const laneD3 = {};
           return (vw - pad - Math.min(vw - 2 * pad, wide)) / vw;
         },
         // The page's framing calls: City mode's file (frameCity, fileFrame's shift and drop), and the reading page's shots (page.tsx).
-        file = (shift, drop) => {
+        file = (shift, drop, id = 'sky-island') => {
           Object.assign(sky, { cityMode: true, frameShift: shift, frameDrop: drop, panelEdge: 1 });
-          run.setYaw(fileBearing);
-          run.select('sky-island');
+          run.setYaw(plan.chapterBearings[id]);
+          run.select(id);
         },
         chapter = (id, w, wide) => {
           sky.cityMode = false;
@@ -3528,7 +3892,9 @@ const laneD3 = {};
           sky.target.set(0, 0, 0);
           sky.shiftApplied.set(0, 0, 0);
           sky.camera.zoom = 1;
-          Object.assign(sky, { yaw: Math.PI / 4, targetYaw: Math.PI / 4, targetZoom: 1, pitch: 0, driftAngle: 0, tween: true, focusedIds: [], overviewFit: false, inspect: null, parkSelected: false, autoFocus: false, cityMode: false, skyShown: firstShown === 'true', frameShift: 0, frameDrop: 0, frameFoot: 1, panelEdge: 1 });
+          Object.assign(sky, { yaw: Math.PI / 4, targetYaw: Math.PI / 4, targetZoom: 1, pitch: 0, driftAngle: 0, tween: true, focusedIds: [], overviewFit: false, inspect: null, parkSelected: false, autoFocus: false, cityMode: false, skyShown: firstShown === 'true', tropicShown: tropicFirst === 'true', tropicDrawn: false, frameShift: 0, frameDrop: 0, frameFoot: 1, panelEdge: 1 });
+          // (The scene hides the tropic island's land as it starts: tropic.setShown(false).)
+          tropicLand.visible = false;
           stage(w, h);
         },
         settle = () => {
@@ -3538,13 +3904,28 @@ const laneD3 = {};
           }
         },
         worst = { went: 0, share: 0, glides: 0 },
-        // Frame by frame to rest: wherever it goes, nothing of it or its pool is left in the frame but a pixel, or the camera has come to rest with no more than half the box round it in the frame.
+        tropicWorst = { went: 0, gone: 0, unseen: 0, kept: 0, drifts: 0 },
+        // Whether the camera moves this frame: a glide, a turn or the pitch under way (the idle drift aside).
+        moving = () => sky.tween || Math.abs(sky.targetYaw - sky.yaw) > 1e-4 || Math.abs(run.aim(sky.camera.zoom) - sky.pitch) > 1e-4,
+        // Frame by frame to rest: wherever it goes, nothing of it or its pool is left in the frame but a
+        // pixel, or the camera has come to rest with no more than half the box round it in the frame.
+        // The tropic island and its shelf and shallows go only on a frame where nothing of them is left
+        // in it and the camera moves, or where none of them was drawn the frame before; never at rest.
         watch = (label) => {
           let went = false;
           for (let f = 0, still = 0; f < 1200 && still < 5; f++) {
-            const was = sky.skyShown;
+            const was = sky.skyShown,
+              wasTropic = sky.tropicShown,
+              drawn = wasTropic && tropicIsland().reach > 1;
             step();
             still = rests() ? still + 1 : 0;
+            if (wasTropic && !sky.tropicShown) {
+              const it = tropicIsland();
+              assert(!drawn || (it.reach <= 1 + 1e-9 && moving()), `${label}: the tropic island goes at frame ${f} with ${it.reach.toFixed(1)} px of it or its shelf and shallows (${(it.share * 100).toFixed(0)}% of the box round them) in the frame and drawn in the frame before${moving() ? '' : ', the camera at rest'}.`);
+              tropicWorst.gone++;
+              if (drawn) tropicWorst.went = Math.max(tropicWorst.went, it.reach);
+              else tropicWorst.unseen++;
+            }
             if (!was || sky.skyShown) continue;
             const it = island(),
               sea = water();
@@ -3561,11 +3942,14 @@ const laneD3 = {};
       chapter('town-hall', 1440, true);
       settle();
       assert(sky.skyShown && island().reach === 0, 'The sky island is hidden in the About chapter, or in view there.');
+      // (The tropic island, which no chapter's frame hides, is out of view there and so in the scene.)
+      assert(sky.tropicShown && tropicIsland().reach === 0, 'The tropic island is hidden in the About chapter, or in view there.');
       chapter('people', 1440, true);
       step();
       assert(!sky.skyShown && !pool.mesh.visible, 'Glided into the People chapter from About, where it is out of view, the sky island does not go at once.');
       settle();
       assert(!sky.skyShown, 'The sky island shows in the People chapter.');
+      assert(sky.tropicShown && tropicIsland().reach === 0, 'The tropic island is hidden in the People chapter, or in view there.');
       chapter('airport', 1440, true);
       for (let f = 0, still = 0; f < 1200 && still < 5; f++) {
         const was = sky.skyShown;
@@ -3574,6 +3958,7 @@ const laneD3 = {};
         assert(was || !sky.skyShown || !sky.tween || island().reach <= 1, `The sky island comes back in view at frame ${f} of the glide out of the People chapter.`);
       }
       assert(sky.skyShown && island().reach === 0, 'The sky island does not come back once the glide out of the People chapter has ended, or shows in Departures.');
+      assert(sky.tropicShown && tropicIsland().reach === 0, 'The tropic island is hidden in Departures, or in view there.');
       chapter('people', 1440, true);
       step();
       sky.cityMode = true;
@@ -3583,35 +3968,59 @@ const laneD3 = {};
       step();
       assert(sky.skyShown, 'The sky island is hidden in Inspect.');
       sky.inspect = null;
+      // From the opening view, where it is hidden, City mode and Inspect bring the tropic island back at once.
+      for (const into of ['City mode', 'Inspect']) {
+        open(1440, 900);
+        hero(true);
+        settle();
+        assert(!sky.tropicShown && !tropicLand.visible, 'The tropic island shows in the opening view at 1440 x 900.');
+        if (into === 'City mode') sky.cityMode = true;
+        else sky.inspect = {};
+        step();
+        assert(sky.tropicShown && tropicLand.visible, `The tropic island is hidden in ${into}.`);
+        Object.assign(sky, { cityMode: false, inspect: null });
+      }
       // (d2) The opening view on phones and upright tablets (the reading page docks the stage 46% of the
       // screen tall, 320 px at the least: globals.css; a portrait tablet of 1024 wide lays the page out
       // wide, the stage the whole screen, and holds it all but whole) and on desktops, as the page
       // opens on it, through the drift.
       let cut = 0;
-      for (const [w, screen, wide] of [[360, 640], [375, 667], [375, 812], [390, 844], [414, 896], [430, 932], [768, 1024], [820, 1180], [1024, 1366, true], [1440, 900, true]]) {
+      // (And the opening frames, desktops among them, the tropic island would stand in.)
+      const tropicIn = [];
+      for (const [w, screen, wide] of [[360, 640], [375, 667], [375, 812], [390, 844], [414, 896], [430, 932], [768, 1024], [820, 1180], [1024, 1366, true], [1024, 768, true], [1280, 720, true], [1440, 900, true], [1920, 1080, true]]) {
         const h = wide ? screen : Math.max(320, 0.46 * screen);
         if (!wide && drifts.some((d) => overlaps(hull(shape.map((p) => px(w, h, 1, Math.PI / 4 + d, new T.Vector3(), p))), [0, 0, w, h]))) cut++;
         open(w, h);
         hero(wide);
         settle();
+        let inView = false;
         for (const d of drifts) {
           sky.driftAngle = d;
           step();
           assert(!sky.skyShown && !sky.island.root.visible && !pool.mesh.visible, `The opening view at ${w} x ${h.toFixed(0)}, drifted ${d.toFixed(2)}, shows the sky island or its pool.`);
+          assert(!sky.tropicShown && !tropicLand.visible, `The opening view at ${w} x ${h.toFixed(0)}, drifted ${d.toFixed(2)}, shows the tropic island or its shallows.`);
+          inView ||= tropicIsland().reach > 1;
         }
+        if (inView) tropicIn.push(`${w} x ${h.toFixed(0)}`);
       }
       assert(cut > 0, 'The check no longer finds the opening frame the sky island was cut by.');
+      assert(tropicIn.length > 0, 'The check no longer finds an opening frame the tropic island would stand in.');
       // (d3) The visitor's own view: the -button three times in the opening view at 1440 x 900 (it
       // comes into view at the top), a drag toward it in a phone's opening view, a wheel zoom out
       // at 1440 x 900; in the last shot, a drag and the + button.
+      // (Each frame both islands: wherever more than a pixel of one is in the frame, it is in the scene.)
       const shownInView = (label, frames, act = () => {}) => {
         for (let f = 0; f < frames; f++) {
           act(f);
           step();
-          const it = island();
+          const it = island(),
+            south = tropicIsland();
           assert(it.reach <= 1 || sky.skyShown, `${label}: at frame ${f} ${it.reach.toFixed(1)} px of the sky island are in the frame, hidden.`);
+          assert(south.reach <= 1 || sky.tropicShown, `${label}: at frame ${f} ${south.reach.toFixed(1)} px of the tropic island are in the frame, hidden.`);
         }
       };
+      // A drag that moves the view's centre toward a point on the ground, `by` a frame.
+      const dragToward = (x, z, by = 0.25) => sky.controls.target.addScaledVector(new T.Vector3(x - sky.controls.target.x, 0, z - sky.controls.target.z).normalize(), by);
       open(1440, 900);
       hero(true);
       settle();
@@ -3620,6 +4029,7 @@ const laneD3 = {};
         if (f % 30 === 0 && f < 90) run.zoomBy(1 / 1.25);
       });
       assert(sky.skyShown && island().reach > 1, 'Zoomed out three times from the opening view at 1440 x 900, the sky island is not in view.');
+      assert(sky.tropicShown && tropicIsland().reach > 1, 'Zoomed out three times from the opening view at 1440 x 900, the tropic island is not in view.');
       open(390, Math.max(320, 0.46 * 844));
       hero(false);
       settle();
@@ -3629,6 +4039,17 @@ const laneD3 = {};
         sky.controls.target.addScaledVector(new T.Vector3().setFromMatrixColumn(sky.camera.matrixWorld, 1), 0.25);
       });
       assert(sky.skyShown, 'Dragged in a phone\'s opening view, the sky island stays hidden.');
+      // Dragged toward the tropic island, on a phone (where it stands in the opening frame's bottom
+      // left, hidden) and at 1440 x 900 (where it lies just past the frame's foot).
+      for (const [w, h, wide] of [[390, Math.max(320, 0.46 * 844), false], [1440, 900, true]]) {
+        open(w, h);
+        hero(wide);
+        settle();
+        assert(!sky.tropicShown, `The tropic island shows in the opening view at ${w} x ${h.toFixed(0)}.`);
+        run.cancel();
+        shownInView(`The opening view at ${w} x ${h.toFixed(0)} dragged toward the tropic island`, 120, () => dragToward(tropicMiddle.x, tropicMiddle.z));
+        assert(sky.tropicShown && tropicIsland().reach > 1, `Dragged toward it in the opening view at ${w} x ${h.toFixed(0)}, the tropic island is not in view.`);
+      }
       open(1440, 900);
       hero(true);
       settle();
@@ -3637,15 +4058,18 @@ const laneD3 = {};
       sky.camera.updateProjectionMatrix();
       shownInView('The opening view zoomed out by the wheel at 1440 x 900', 30);
       assert(sky.skyShown, 'Zoomed out by the wheel from the opening view, the sky island stays hidden.');
+      assert(sky.tropicShown, 'Zoomed out by the wheel from the opening view, the tropic island stays hidden.');
       open(1440, 900);
       chapter('town-hall', 1440, true);
       settle();
       last(true);
       settle();
       assert(!sky.skyShown, 'The sky island shows in the reading page\'s last shot.');
+      assert(!sky.tropicShown && !tropicLand.visible, 'The tropic island shows in the reading page\'s last shot.');
       run.cancel();
       shownInView('The last shot dragged', 30);
       assert(sky.skyShown, 'Dragged, the reading page\'s last shot keeps the sky island hidden.');
+      assert(sky.tropicShown, 'Dragged, the reading page\'s last shot keeps the tropic island hidden.');
       chapter('town-hall', 1440, true);
       settle();
       last(true);
@@ -3697,6 +4121,101 @@ const laneD3 = {};
       watch('From its file into the opening view at 1024 x 1366');
       assert(sky.skyShown && island().share > 0.75, `The opening view at 1024 x 1366, glided into from the sky island's file, takes it away where most of it stands in the frame (${(island().share * 100).toFixed(0)}% of the box round it).`);
       skyNav.hero = `hidden in the opening view (it would be cut on ${cut} of 8 phone and tablet frames) until the visitor pans or zooms it, and never taken away in view: ${worst.glides} glides into the frames that hide it, ${worst.went.toFixed(1)} px of it or its pool in the frame at most where it went mid-glide, ${(worst.share * 100).toFixed(0)}% of the box round it where it went at rest`;
+      // The tropic island, glided from its own file into the opening view, People and the last shot, from
+      // About panned to it by Recentre, and from the opening view dragged toward it by Reset (on desktops,
+      // where the opening view leaves a corner of it in the frame's foot): it goes only on a frame where
+      // nothing of it is in view and the camera moves, or where nothing of it was drawn the frame before;
+      // where the glide leaves some of it in the frame it stays (kept), at rest and all through the idle
+      // drift, which may swing it out of the frame and back.
+      const kept = [],
+        glidesBefore = worst.glides,
+        // The camera at rest: through the idle drift's swing, frame by frame, the island kept is never taken away.
+        keepsAtRest = (label) => {
+          const was = sky.tropicShown;
+          if (was) {
+            const it = tropicIsland();
+            assert(it.reach > 1, `${label}: the camera comes to rest with the tropic island shown out of view.`);
+            kept.push(`${label} (${(it.share * 100).toFixed(0)}%)`);
+          }
+          for (const d of [...drifts, ...[...drifts].reverse()]) {
+            sky.driftAngle = d;
+            step();
+            tropicWorst.drifts++;
+            assert(!was || sky.tropicShown, `${label}: the tropic island is taken away at rest, drifted ${d.toFixed(2)}.`);
+          }
+          sky.driftAngle = 0;
+          step();
+          if (was) tropicWorst.kept++;
+        };
+      for (const [size, w, h, shift, drop, wide] of [...leaving, ['1024 x 1366', 1024, 1366, 492 / 2048, 0, true], ['2560 x 1440', 2560, 1440, 492 / 5120, 0, true], ['3440 x 1440', 3440, 1440, 492 / 6880, 0, true]])
+        for (const { into, frameIt } of [
+          { into: 'the opening view', frameIt: () => hero(wide) },
+          { into: 'the People chapter', frameIt: () => chapter('people', w, wide) },
+          { into: 'the last shot', frameIt: () => last(wide) },
+        ]) {
+          open(w, h);
+          file(shift, drop, 'tropic-island');
+          settle();
+          assert(sky.tropicShown && tropicLand.visible && tropicIsland().reach > 50, `The tropic island's file at ${size} does not show it.`);
+          frameIt();
+          if (!wide) stage(w, Math.max(320, 0.46 * h));
+          watch(`From the tropic island's file at ${size} into ${into}`);
+          // (People's frames leave it out of view, and do not hide it: it stays in the scene there.)
+          if (into === 'the People chapter') assert(sky.tropicShown && tropicIsland().reach === 0, `From its file at ${size}, the People chapter hides the tropic island or shows it.`);
+          else keepsAtRest(`${into} from its file at ${size}`);
+        }
+      open(1440, 900);
+      chapter('town-hall', 1440, true);
+      settle();
+      run.cancel();
+      for (let f = 0; f < 400 && tropicIsland().share < 0.75; f++) {
+        dragToward(tropicMiddle.x, tropicMiddle.z, 0.5);
+        step();
+      }
+      assert(sky.tropicShown && tropicIsland().share >= 0.75, `Panned to the tropic island in the About chapter, the check cannot bring it into view (${(tropicIsland().share * 100).toFixed(0)}% of it).`);
+      hero(true);
+      watch('Recentre in About panned to the tropic island, at 1440 x 900');
+      keepsAtRest('the opening view by Recentre from About panned to it at 1440 x 900');
+      // Reset after a drag in the opening view (the island shown, part of it in view): the glide back to
+      // the opening view never takes away what of it is drawn.
+      for (const [w, h] of [[1024, 768], [1280, 720], [1440, 900], [1920, 1080]]) {
+        open(w, h);
+        hero(true);
+        settle();
+        run.cancel();
+        for (let f = 0; f < 60 && tropicIsland().share < 0.4; f++) {
+          dragToward(tropicMiddle.x, tropicMiddle.z, 0.25);
+          step();
+        }
+        assert(sky.tropicShown && tropicIsland().reach > 50, `Dragged toward it in the opening view at ${w} x ${h}, the tropic island is not in view.`);
+        hero(true);
+        watch(`Reset after a drag toward the tropic island in the opening view at ${w} x ${h}`);
+        keepsAtRest(`the opening view by Reset after a drag at ${w} x ${h}`);
+      }
+      // The + button in the opening view, where a corner of it (hidden) stands in the frame's foot and the
+      // zoom in carries it off: it is never drawn for a moment on the way out; where the zoom in leaves
+      // some of it in the frame (a phone's), it shows at once and stays.
+      const plus = [];
+      for (const [w, h, wide] of [[1280, 720, true], [1440, 900, true], [1920, 1080, true], [390, Math.max(320, 0.46 * 844), false]]) {
+        open(w, h);
+        hero(wide);
+        settle();
+        const before = tropicIsland().reach;
+        run.zoomBy(1.25);
+        let flashed = 0,
+          drawnFrames = 0;
+        for (let f = 0, still = 0; f < 600 && still < 5; f++) {
+          step();
+          still = !sky.tween ? still + 1 : 0;
+          if (sky.tropicShown && tropicIsland().reach > 1) drawnFrames++;
+        }
+        const after = tropicIsland().reach;
+        if (after <= 1) flashed = drawnFrames;
+        assert(flashed === 0 && (after <= 1 || sky.tropicShown), `The + button in the opening view at ${w} x ${h.toFixed(0)} draws the tropic island for ${flashed} frames on its way out of the frame (${before.toFixed(0)} px in before, ${after.toFixed(0)} after), or leaves it hidden in view.`);
+        plus.push(`${w} x ${h.toFixed(0)} ${before.toFixed(0)} px in, ${after <= 1 ? 'carried off unseen' : `${after.toFixed(0)} px left, shown`}`);
+      }
+      assert(tropicWorst.gone > 0 && tropicTurns.count > 0, 'The check never sees the tropic island go.');
+      tropicNav.hero = `hidden in the opening view (it would stand in ${tropicIn.length} of 13 opening frames: ${tropicIn.join(', ')}) and the last shot until the visitor pans or zooms them, shown in City mode and Inspect, its land shown and hidden with it and its shadow drawn again in that frame (${tropicTurns.count} times), and never taken away in view: ${worst.glides - glidesBefore} glides from its file, from About panned to it and from the opening view dragged toward it, ${tropicWorst.gone} goings (${tropicWorst.unseen} where none of it was drawn the frame before${tropicWorst.gone > tropicWorst.unseen ? `, ${tropicWorst.gone - tropicWorst.unseen} out of view as the camera moved, ${tropicWorst.went.toFixed(1)} px of it in the frame at most` : ''}), kept at rest through ${tropicWorst.drifts} drift frames where a glide left it in view (${kept.join(', ')}); the + button in the opening view ${plus.join(', ')}`;
     }
     // Every other reading frame leaves it out of sight through the idle drift: each chapter's
     // subject framed beside the reading panel from 1024 wide (its buildings as their sites' boxes,
@@ -3722,16 +4241,31 @@ const laneD3 = {};
             wide = vw <= 1180 ? Math.min(600, Math.max(380, 0.5 * vw)) : Math.min(640, Math.max(400, 0.44 * vw));
           return (vw - pad - Math.min(vw - 2 * pad, wide)) / vw;
         },
-        subjects = { 'town-hall': 'town-hall', airport: 'airport', 'research-studio': 'research-studio', 'city-archive': 'city-archive', 'lius-gate': 'lius-gate', 'corner-park': null };
-      for (const [w, h, narrow] of [...desktops.map(([w, h]) => [w, h, false]), [768, 1024, true], [820, 1180, true], [390, 844, true], [430, 932, true], [360, 800, true]])
-        for (const [chapter, id] of Object.entries(subjects)) {
-          const bearing = plan.chapterBearings[chapter];
+        subjects = { 'town-hall': 'town-hall', airport: 'airport', 'research-studio': 'research-studio', 'city-archive': 'city-archive', 'lius-gate': 'lius-gate', 'corner-park': null },
+        // The tropic island too (TROPIC_SEEN: its outline at the water, its roof's and trees' tops, and its
+        // shelf and shallows 4.6 past the waterline): it hides only in the last shot and the opening view, so every chapter's frame,
+        // the People chapter's (its row, and each home and the residence) among them, must leave it out of
+        // sight, on the stages the reading page docks on phones (46% of the screen tall) as well. One frame
+        // reaches it: the Life chapter's on a 3440 x 1440 screen, close in on the park (2.2) and 3440 px
+        // wide, sees its trees' tops and, at the idle drift's far end, a corner of its sand at the frame's
+        // bottom right, at the reading panel's left edge or past it (where the panel stands), never left of
+        // it: a corner of the sea-level island beyond the town, as the airport's shows at the opening view's
+        // top right, so it is left there (the rule hides it only where a slice of it would stand on its own).
+        tropicShape = TROPIC_SEEN,
+        people = [['people', plan.chapterSubjects.people], ...plan.chapterSubjects.people.map((id) => ['people:' + id, [id]])];
+      const tropicLeast = { gap: Infinity, at: '' };
+      const tropicWide = [],
+        tropicShelf = new Set();
+      for (const [w, h, narrow] of [...desktops.map(([w, h]) => [w, h, false]), [768, 1024, true], [820, 1180, true], [390, 844, true], [430, 932, true], [360, 800, true], [390, 388, true], [430, 429, true], [360, 368, true]])
+        for (const [chapter, id] of [...Object.entries(subjects), ...people]) {
+          const bearing = plan.chapterBearings[chapter.split(':')[0]],
+            ofPeople = chapter.startsWith('people');
           frame(w, h, narrow ? 0 : 0.21, bearing);
           view.frameDrop = 0;
           view.panelEdge = narrow ? 1 : edgeOf(w);
           view.overviewFit = false;
           if (id) {
-            view.focusedIds = [id];
+            view.focusedIds = Array.isArray(id) ? [...id] : [id];
             view.target.set(0, 0, 0);
             scene.fitFocused();
           } else {
@@ -3739,9 +4273,43 @@ const laneD3 = {};
             view.targetZoom = 2.2;
             view.target.add(new T.Vector3(Math.cos(bearing), 0, -Math.sin(bearing)).multiplyScalar(((narrow ? 0 : 0.21) * (view.camera.right - view.camera.left)) / 2.2));
           }
-          for (const d of drifts)
-            assert(!overlaps(hull(shape.map((p) => px(w, h, view.targetZoom, bearing + d, view.target, p))), [0, 0, w, h]), `The reading page's ${chapter} chapter shows the sky island at ${w} x ${h}, drifted ${d.toFixed(2)}.`);
+          for (const d of drifts) {
+            if (!ofPeople && h > 400) assert(!overlaps(hull(shape.map((p) => px(w, h, view.targetZoom, bearing + d, view.target, p))), [0, 0, w, h]), `The reading page's ${chapter} chapter shows the sky island at ${w} x ${h}, drifted ${d.toFixed(2)}.`);
+            const south = hull(tropicShape.map((p) => px(w, h, view.targetZoom, bearing + d, view.target, p)));
+            if (chapter === 'corner-park' && w > 2560) {
+              // (The 3440 px Life frame: its sand, where it is in the frame at all, at or right of the panel's edge.)
+              const [x0, y0] = box(TROPIC_EXTENT.filter((p) => p.y < 0.5).map((p) => px(w, h, view.targetZoom, bearing + d, view.target, p))),
+                panel = edgeOf(w) * w;
+              assert(y0 >= h || x0 >= panel, `The reading page's Life chapter at ${w} x ${h}, drifted ${d.toFixed(2)}, shows the tropic island's sand ${(panel - x0).toFixed(0)} px left of the reading panel.`);
+              tropicWide.push(y0 >= h ? 'tops' : 'sand');
+              continue;
+            }
+            if (w > 2560 && overlaps(south, [0, 0, w, h])) {
+              // (A 3440 px frame close in on the archive at the drift's one end: the far edge of its shelf
+              // and shallows, the sea's colour only, its land out of the frame, all of it right of the
+              // reading panel's left edge.)
+              const panel = edgeOf(w) * w,
+                [x0] = box(TROPIC_EXTENT.map((p) => px(w, h, view.targetZoom, bearing + d, view.target, p)));
+              assert(!overlaps(south, [0, 0, panel, h]) && x0 >= w, `The reading page's ${chapter} chapter at ${w} x ${h}, drifted ${d.toFixed(2)}, shows the tropic island's land, or its sea left of the reading panel.`);
+              tropicShelf.add(`the ${chapter} chapter's`);
+              continue;
+            }
+            assert(!overlaps(south, [0, 0, w, h]), `The reading page's ${chapter} chapter shows the tropic island at ${w} x ${h}, drifted ${d.toFixed(2)}.`);
+            // How near it comes: the widest gap between its outline and the frame along any axis that
+            // parts them (px; the least over every frame and drift).
+            const rect = [[0, 0], [w, 0], [w, h], [0, h]],
+              apart = Math.max(
+                ...[[1, 0], [0, 1], ...south.map((q, i) => [south[(i + 1) % south.length][1] - q[1], q[0] - south[(i + 1) % south.length][0]])].map(([ax, ay]) => {
+                  const l = Math.hypot(ax, ay) || 1,
+                    a = south.map(([x, y]) => (x * ax + y * ay) / l),
+                    b = rect.map(([x, y]) => (x * ax + y * ay) / l);
+                  return Math.max(Math.min(...a) - Math.max(...b), Math.min(...b) - Math.max(...a));
+                }),
+              );
+            if (apart < tropicLeast.gap) Object.assign(tropicLeast, { gap: apart, at: `${chapter} at ${w} x ${h}` });
+          }
         }
+      tropicNav.reading = `out of sight in every reading chapter's frame through the drift (People's row, homes and residence among them), ${tropicLeast.gap.toFixed(0)} px off the frame at the nearest (${tropicLeast.at}), but the Life chapter's on 3440 x 1440 (its trees' tops at the frame's foot, ${tropicWide.filter((s) => s === 'sand').length} of ${tropicWide.length} drift steps a corner of its sand, at or past the panel's left edge)${tropicShelf.size ? ` and ${[...tropicShelf].join(', ')} there (the far edge of its shelf and shallows at the frame's right edge, right of the reading panel's left edge, its land out of the frame, at the drift's one end)` : ''}`;
       view.panelEdge = 1;
       view.focusedIds = [];
       view.models = new Map();
@@ -3812,12 +4380,28 @@ function collectShadow(node) {
 }
 collectShadow(syntax);
 assert.equal(shadowPieces.length, 3, 'The shadow check must find every piece it runs.');
+// The town's box as the scene works it out from the plan as the page loads (TOWN_SHADOW: the smallest
+// circle round the island, the lighthouse's rock, the airport's island and the tropic island a unit
+// past its waterline, and half a unit more), run as written.
+const townShadowPieces = [];
+(function collectTownShadow(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'enclosingCircle') townShadowPieces.push(node.getText(syntax).replace(/^export\s+/, ''));
+  if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['TROPIC_MIDDLE', 'SHADOW_FIT', 'TOWN_SHADOW'].includes(d.name.getText(syntax))))
+    townShadowPieces.push(node.getText(syntax).replace(/^export\s+/, ''));
+  ts.forEachChild(node, collectTownShadow);
+})(syntax);
+assert.equal(townShadowPieces.length, 4, 'The town shadow box check must find every piece it runs.');
+const { TOWN_SHADOW, SHADOW_FIT, enclosingCircle } = runInNewContext(
+  `${ts.transpileModule(townShadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ TOWN_SHADOW, SHADOW_FIT, enclosingCircle });`,
+  { T, Math, plan, TROPIC_EXTENT },
+);
 const shadowSun = new T.DirectionalLight();
 Object.assign(shadowSun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46 });
 shadowSun.shadow.mapSize.set(2048, 2048);
 const shadows = {
   T,
   Math,
+  TOWN_SHADOW,
   sun: shadowSun,
   tier: 'high',
   shadowBase: 1536,
@@ -3837,34 +4421,145 @@ const drawn = () => {
   shadows.shadowDirty = false;
   shadows.renderer.shadowMap.needsUpdate = false;
 };
-const redrawn = (what) => {
-  assert.equal(shadowSun.shadow.map, null, `${what}: the check expects a new map.`);
+const redrawn = (what, map = 'new') => {
+  if (map === 'new') assert.equal(shadowSun.shadow.map, null, `${what}: the check expects a new map.`);
+  else assert.notEqual(shadowSun.shadow.map, null, `${what} threw the map away: one the same size is drawn again in place.`);
   assert(
     shadows.shadowDirty && shadows.renderer.shadowMap.needsUpdate,
     `${what} left the sun with no shadow map until the next scheduled shadow pass.`,
   );
 };
+// The town's own box, as the scene starts on it (TOWN_SHADOW): the island, the airport's island and
+// the tropic island whole, in a map twice the base (3072), the light SHADOW_HOME.reach back along the
+// key light.
+focusing();
+const home = { centre: shadowSun.target.position.clone(), radius: shadowSun.shadow.camera.right, map: shadowSun.shadow.mapSize.x, far: shadowSun.shadow.camera.far, back: shadows.sunBack };
+assert(!shadows.shadowInspect && home.centre.equals(TOWN_SHADOW.centre) && home.radius === TOWN_SHADOW.radius && home.map === 3072 && home.far === TOWN_SHADOW.far && home.back === TOWN_SHADOW.reach, 'The town\'s shadow box is not the one worked out from the plan.');
+// Sharper than the old box round the island and the airport alone (±46 at 2048: 22.3 texels a unit).
+assert(home.map / (2 * home.radius) >= 2048 / 92, `The town's shadows lost their sharpness (${(home.map / (2 * home.radius)).toFixed(2)} texels a unit).`);
+// It is the smallest circle round what it holds on the ground plan, and half a unit more: the ground's
+// farthest points lie on its rim, at least two of them (the airport's armour at its north-west corner
+// and the tropic island a unit past its beach at its south-east, as the stub lays it out), and none
+// past it; a brute force over every pair and triple of the ground's hull finds none smaller.
+const shadowGround = {
+  island: plan.islandOutline.map(([x, z]) => new T.Vector3(x * (1 + 3.3 / Math.hypot(x, z)), 0, z * (1 + 3.3 / Math.hypot(x, z)))),
+  rock: [new T.Vector3(plan.lighthouseRock[0], 0, plan.lighthouseRock[1])],
+  airport: plan.airportOutline(plan.AIRPORT.armour, 1).map((p) => new T.Vector3(p.x, 0, p.z)),
+  tropic: (() => {
+    const middle = new T.Box3().setFromPoints(TROPIC_EXTENT.filter((p) => p.y < 0.5)).getCenter(new T.Vector3()).setY(0);
+    return TROPIC_EXTENT.map((p) => {
+      const out = new T.Vector3(p.x - middle.x, 0, p.z - middle.z);
+      return out.setLength(out.length() + SHADOW_FIT.past).add(middle);
+    });
+  })(),
+};
+{
+  const all = Object.values(shadowGround).flat(),
+    from = (p) => Math.hypot(p.x - home.centre.x, p.z - home.centre.z),
+    rim = home.radius - SHADOW_FIT.edge,
+    on = Object.entries(shadowGround).filter(([, points]) => points.some((p) => Math.abs(from(p) - rim) < 1e-6)).map(([name]) => name);
+  assert(all.every((p) => from(p) <= rim + 1e-6) && on.includes('airport') && on.includes('tropic'), `The town's shadow box (${home.radius.toFixed(2)} round ${home.centre.x.toFixed(2)}, ${home.centre.z.toFixed(2)}) does not sit on the airport's armour and the tropic island (${on.join(', ')} on its rim).`);
+  // (The ground's hull, then every circle on two or three of its points that holds it all: none smaller.)
+  const flat = all.map((p) => ({ x: p.x, z: p.z })),
+    hull = (() => {
+      const sorted = [...flat].sort((a, b) => a.x - b.x || a.z - b.z),
+        cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x),
+        half = (list) => {
+          const out = [];
+          for (const p of list) {
+            while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+            out.push(p);
+          }
+          out.pop();
+          return out;
+        };
+      return [...half(sorted), ...half([...sorted].reverse())];
+    })();
+  let least = Infinity;
+  for (let i = 0; i < hull.length; i++)
+    for (let j = i + 1; j < hull.length; j++) {
+      const two = enclosingCircle([hull[i], hull[j]]);
+      if (flat.every((p) => Math.hypot(p.x - two.x, p.z - two.z) <= two.r + 1e-6)) least = Math.min(least, two.r);
+      for (let k = j + 1; k < hull.length; k++) {
+        const three = enclosingCircle([hull[i], hull[j], hull[k]]);
+        if (flat.every((p) => Math.hypot(p.x - three.x, p.z - three.z) <= three.r + 1e-6)) least = Math.min(least, three.r);
+      }
+    }
+  assert(Math.abs(least - rim) < 1e-6, `The town's shadow box (${rim.toFixed(3)} before its edge) is not the smallest circle round its ground (${least.toFixed(3)}).`);
+}
+// The box holds, for every sun and yaw, everything a shadow falls from or on, in the light's own
+// projection (a DirectionalLight placed as placeSun places it, its shadow camera as the scene sets it):
+// the island to its waterline, the lighthouse's rock, the airport's island to its armour's toe and the
+// tower's mast, and the tropic island (its extent and its crowns' ring 0.7 past its waterline, a palm
+// leaning out as far as town-tropic allows), each lifted as high as the Town Hall's roof (10) and sunk
+// half a unit under the water, inside the square the light sees, 0.4 inside its rim at least (a dozen
+// texels: the filter's taps never reach it), and between the near plane and the far, in the key light
+// at every bearing and height it takes (city-atmosphere's sunOffsetFor: 40 to 57 degrees up).
+{
+  const held = [
+      ...shadowGround.island,
+      ...shadowGround.rock,
+      ...shadowGround.airport,
+      new T.Vector3(3.9, 7, -47.4),
+      ...TROPIC_EXTENT,
+      ...TROPIC_SEEN.filter((p) => p.y >= 0.5),
+    ].flatMap((p) => [p.clone().setY(-0.5), p.clone(), p.clone().setY(10)]),
+    light = new T.DirectionalLight(),
+    ndc = new T.Vector3();
+  Object.assign(light.shadow.camera, { left: -home.radius, right: home.radius, top: home.radius, bottom: -home.radius, near: 0.5, far: home.far });
+  light.shadow.camera.updateProjectionMatrix();
+  light.target.position.copy(home.centre);
+  light.target.updateMatrixWorld();
+  let rim = Infinity,
+    nearest = Infinity,
+    deepest = -Infinity,
+    suns = 0;
+  for (const up of [40, 45, 50, 55, 57.3].map((d) => (d * Math.PI) / 180))
+    for (let a = 0; a < 2 * Math.PI - 1e-9; a += Math.PI / 90) {
+      const toLight = new T.Vector3(Math.cos(up) * Math.sin(a), Math.sin(up), Math.cos(up) * Math.cos(a));
+      light.position.copy(home.centre).addScaledVector(toLight, home.back);
+      light.updateMatrixWorld();
+      light.shadow.updateMatrices(light);
+      suns++;
+      for (const p of held) {
+        ndc.copy(p).applyMatrix4(light.shadow.camera.matrixWorldInverse);
+        const depth = -ndc.z;
+        nearest = Math.min(nearest, depth);
+        deepest = Math.max(deepest, depth);
+        rim = Math.min(rim, (1 - Math.max(Math.abs(ndc.x), Math.abs(ndc.y)) / home.radius) * home.radius);
+      }
+    }
+  assert(rim >= 0.4 && nearest > 0.5 && deepest < home.far, `In ${suns} suns the town's shadow box keeps what it holds ${rim.toFixed(2)} inside its rim, ${nearest.toFixed(1)} to ${deepest.toFixed(1)} from the light (its near plane 0.5, its far one ${home.far}).`);
+  tropicNav.shadow = `the town's shadow box ${home.radius.toFixed(2)} round (${home.centre.x.toFixed(2)}, ${home.centre.z.toFixed(2)}), the smallest circle round the island, the airport's and the tropic island a unit past its beach and half a unit more, ${(home.map / (2 * home.radius)).toFixed(1)} texels a unit (${(2048 / (2 * home.radius)).toFixed(1)} on the low tier; 22.3 and 16.7 in the old box), everything it holds ${rim.toFixed(2)} inside its rim and ${nearest.toFixed(1)} to ${deepest.toFixed(1)} from the light in ${suns} suns`;
+}
 drawn();
 focusing(new T.Vector3(6, 2, -4), 9);
-redrawn('Entering Inspect');
-// Inspect's map is twice the old base (3072), not twice the town's (4096), and it says so outright.
-assert(shadows.shadowInspect && shadowSun.shadow.mapSize.x === 3072 && shadowSun.shadow.camera.right === 9, 'Inspect\'s shadow map is not its own.');
+// Inspect frames its building in a box of its own, in a map twice the old base (3072, the town's own
+// size now, so the box moves and the map is drawn again in place), and it says so outright.
+redrawn('Entering Inspect', 'kept');
+assert(shadows.shadowInspect && shadowSun.shadow.mapSize.x === 3072 && shadowSun.shadow.camera.right === 9 && shadows.sunBack === 0, 'Inspect\'s shadow map is not its own.');
 drawn();
 focusing();
-redrawn('Leaving Inspect');
-// The town's own box: the island and the airport's island whole, about 22 texels a unit.
-assert(!shadows.shadowInspect && shadowSun.target.position.equals(new T.Vector3(-3.5, 0, -13.5)) && shadowSun.shadow.camera.right === 46 && shadowSun.shadow.mapSize.x === 2048, 'The town\'s shadow box moved.');
-assert(shadowSun.shadow.mapSize.x / (2 * shadowSun.shadow.camera.right) > 22, 'The town\'s shadows lost their sharpness.');
+redrawn('Leaving Inspect', 'kept');
+assert(!shadows.shadowInspect && shadowSun.target.position.equals(home.centre) && shadowSun.shadow.camera.right === home.radius && shadowSun.shadow.camera.far === home.far && shadows.sunBack === home.back, 'Leaving Inspect does not put the sun back on the town\'s box.');
 drawn();
 focusing();
 assert(!shadows.renderer.shadowMap.needsUpdate, 'An unchanged focus costs no extra shadow pass.');
 shadows.quality = 2;
 focusing();
 redrawn('A quality step');
-assert.equal(shadowSun.shadow.mapSize.x, 1024, 'A quality step does not halve the town\'s map.');
+assert.equal(shadowSun.shadow.mapSize.x, 1536, 'A quality step does not halve the town\'s map.');
 focusing(new T.Vector3(6, 2, -4), 9);
 assert.equal(shadowSun.shadow.mapSize.x, 1536, 'A quality step does not halve Inspect\'s map.');
-// The box's depth runs from about 1.2 to 76 from the light: a near plane of 0.5 keeps all of it. The
+// The low tier: twice its base too (2048), 16.3 texels a unit (16.7 in the old box at 1536: a fiftieth
+// softer, where the high tier's 24.5 is a tenth sharper than its old 22.3).
+{
+  const low = { ...shadows, tier: 'low', shadowBase: 1024, quality: 0, sun: new T.DirectionalLight() },
+    lowFocus = runInNewContext(`${ts.transpileModule(shadowPieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};shadowFocus;`, low);
+  lowFocus();
+  assert(low.sun.shadow.mapSize.x === 2048 && low.sun.shadow.mapSize.x / (2 * low.sun.shadow.camera.right) > 16, `The low tier's town shadows lost their sharpness (${(low.sun.shadow.mapSize.x / (2 * low.sun.shadow.camera.right)).toFixed(2)} texels a unit).`);
+}
+// The box's depth runs from about 7 to 108 from the light: a near plane of 0.5 keeps all of it. The
 // sun's target starts on the home box, so no frame before the first framing call is shaded round
 // the origin.
 assert(/near: 0\.5,/.test(source), 'The sun\'s shadow camera lost its near plane.');
@@ -4283,3 +4978,6 @@ console.log(
   `Navigation checks passed: ${ids.length} shared records in both modes, legacy/back-navigation targets, ${nav.readingChapters.length} reading chapters with Departures (the airport's, framed on its island) right after People, a tour of ${nav.tourStops.length} stops ending in the park, the sky island out of the opening view and every reading frame but those that hide it, in City mode's overview (${skyNav.overview}) and whole in its own file ${skyNav.file} through the drift, ${skyNav.rotate}, ${skyNav.rotatePanned}, ${skyNav.sideways}, ${skyNav.pocket}, ${skyNav.zoomWalk}, ${skyNav.shadow}, ${skyNav.turns}, ${skyNav.wide}, ${skyNav.hero}, ${Object.keys(personPhotos).length} portrait slots (${nav.people.length} members), hidden/visible camera resizing, quick Rotate presses that keep their way round, +/- during a glide, a pan limit held on the view's ground point through real OrbitControls (no jumps, no pull when a glide hands over), a sea past every zoomed-out frame, a plane that leaves and comes back out of every standard frame, an eased zoom out of Inspect, no idle drift with reduced motion and a drift that stops where it is, a motion preference followed while the page is open, a sun shadow redrawn whenever its map is replaced, a quality governor that climbs back after a slow moment, no frame before the first sky, windows put on the clock after hours without frames, a moon that turns with the camera, a studio light baked again after a lost GPU context.`,
 );
 console.log(`And: ${Object.values(laneD3).join('; ')}.`);
+console.log(
+  `The tropic island: City mode's overview at the opening bearing (its fit without the tropic island, then with it) ${tropicNav.fits.join(', ')}; ${tropicNav.overview}; ${tropicNav.file}; ${tropicNav.pan}; ${tropicNav.plane}; ${tropicNav.hero}; ${tropicNav.reading}; ${tropicNav.shadow}.`,
+);
