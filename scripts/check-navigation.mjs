@@ -1010,12 +1010,12 @@ const laneD3 = {};
   const collect = (node) => {
     if (ts.isFunctionDeclaration(node) && ['panRegion', 'holdPan', 'excessAt', 'viewOffset', 'panelOffset', 'offsetTarget', 'fitOverview', 'fitGroup', 'groupFrame', 'fitFocused', 'driftHold', 'skyMarks', 'skyFit', 'focusSky', 'skyFitZoom', 'skyReach', 'elevationAt', 'aim'].includes(node.name?.text))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
-    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'TROPIC_MIDDLE'].includes(d.name.getText(syntax))))
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => ['PAN', 'panSubject', 'islandMarks', '[rockX, rockZ]', 'AIRPORT_FIT', 'PANEL_CLEAR', 'CONTROLS_CLEAR', 'SIDE_HUD', 'SKY_MARKS', 'SKY_LIFT', 'TOWN_PITCH', 'TROPIC_MIDDLE'].includes(d.name.getText(syntax))))
       pieces.push(node.getText(syntax).replace(/^export\s+/, ''));
     ts.forEachChild(node, collect);
   };
   collect(syntax);
-  assert.equal(pieces.length, 28, 'The pan and fit check must find every piece it runs.');
+  assert.equal(pieces.length, 30, 'The pan and fit check must find every piece it runs.');
   // Down from 0.45 on wide frames for City mode's overview, which takes in the tropic island as well
   // (resize(): WIDEST, by the frame's shape).
   assert(/controls\.minZoom = width >= height \? WIDEST\.wide : WIDEST\.tall;/.test(source), 'The town\'s widest zoom no longer follows the frame\'s shape.');
@@ -1024,6 +1024,8 @@ const laneD3 = {};
     Math,
     plan,
     TROPIC_EXTENT,
+    TROPIC_SEEN,
+    WIDEST: WIDEST_ZOOM,
     camera: new T.OrthographicCamera(),
     controls: { minZoom: WIDEST_ZOOM.wide },
     target: new T.Vector3(),
@@ -1031,6 +1033,9 @@ const laneD3 = {};
     screenRight: new T.Vector3(),
     screenUp: new T.Vector3(),
     frameDrop: 0,
+    // Where the part of the frame left free ends below (setFrameShift's foot): the frame's foot unless a
+    // check stands a phone on its side, whose bars form a row of their own over it.
+    frameFoot: 1,
     tween: false,
     // The reading page's overview (its last shot) unless a check says City mode.
     cityMode: false,
@@ -1045,7 +1050,7 @@ const laneD3 = {};
     // The camera's pitch as it stands (0, the town's: viewOffset), unless a check brings it down.
     pitch: 0,
   };
-  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH, TROPIC_MIDDLE, panLast });`,
+  const panScript = `${ts.transpileModule(pieces.join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText};({ panRegion, holdPan, fitOverview, fitGroup, fitFocused, focusSky, skyFitZoom, viewOffset, skyReach, aim, islandMarks, AIRPORT_FIT, SKY_MARKS, SKY_FIT, PAN, SKY_PITCH, TOWN_PITCH, TROPIC_MIDDLE, SIDE_HUD, panLast });`,
     scene = runInNewContext(panScript, view);
   const region = (x, z) => {
       const r = scene.panRegion(new T.Vector3(x, 0, z));
@@ -1764,6 +1769,25 @@ const laneD3 = {};
       for (const centre of [new T.Vector3(), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(4, 0, 2.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z), ...(w >= 768 ? [new T.Vector3(tropicAt[0], 0, tropicAt[1])] : [])])
         for (const bearing of [...stops, plan.chapterBearings.airport]) hold('the widest zoom', w, h, widestOf(w, h), bearing, centre);
     }
+    // Phones on their side, City mode's overview beside the file's panel or with it put away, over the
+    // bars (their row's top the foot of the part left free): it goes out past the widest zoom where the
+    // tropic island would lie part under the controls at it, and the visitor's floor comes down with it
+    // (fitOverview), so the plane is held off the frame at that zoom too, over the overview's own subject
+    // and the town's usual centres, at every Rotate stop.
+    for (const [w, h] of [[667, 375], [844, 390], [932, 430]]) {
+      let floor = widestOf(w, h);
+      for (const bearing of stops)
+        for (const shift of [(Math.min(340, 0.42 * w) + 28) / (2 * w), 0]) {
+          frame(w, h, shift, bearing);
+          Object.assign(view, { frameDrop: -33 / h, frameFoot: (h - 124) / h, cityMode: true });
+          scene.fitOverview();
+          floor = Math.min(floor, view.controls.minZoom);
+          hold(`City mode's overview on a phone on its side (shift ${shift.toFixed(2)})`, w, h, view.targetZoom, bearing, view.target.clone());
+          Object.assign(view, { frameDrop: 0, frameFoot: 1, cityMode: false });
+        }
+      for (const centre of [new T.Vector3(), new T.Vector3(-3.5, 0, -13.5), new T.Vector3(4, 0, 2.5), new T.Vector3(plan.AIRPORT.x, 0, plan.AIRPORT.z), new T.Vector3(tropicAt[0], 0, tropicAt[1])])
+        for (const bearing of [...stops, plan.chapterBearings.airport]) hold('the widest zoom on a phone on its side after City mode’s overview', w, h, floor, bearing, centre);
+    }
     assert(frames > 6000, `The plane check looks at only ${frames} frames.`);
     tropicNav.plane = `the plane out of its file's frames and, but on phones held upright, of the widest zoom over it (on those, at the 3pi/4 stop only, its return from the east ${phoneCorner.worst.toFixed(1)} px into the frame's bottom left corner at most, over ${phoneCorner.frames} frames)`;
   }
@@ -1917,6 +1941,97 @@ const laneD3 = {};
         before = skyAlone(fit);
       assert(zoom <= before + 1e-9 && (zoom > widestOf(w, h) + 1e-9 || before <= widestOf(w, h) + 1e-9), `City mode's overview on a ${w} x ${h} phone fits at ${zoom.toFixed(3)} (${before.toFixed(3)} with the sky island alone).`);
       tropicNav.fits.push(`${w} x ${h} phone ${before.toFixed(3)} to ${zoom.toFixed(3)}${zoom <= widestOf(w, h) + 1e-9 ? ' (the widest zoom, as before)' : ''}`);
+    }
+    // (b1) Phones on their side (the first review of take b, its camera lens's first finding): at the
+    // widest zoom City mode's overview left the tropic island half under the tool pills and the bar on
+    // the default bearing, a slice of SDE4's roof between two pills, since the fit saw the bars only as
+    // a band taken off the free height. Now, at 667 x 375, 844 x 390 and 932 x 430, the file open or put
+    // away, at every Rotate stop, the island's box (TROPIC_SEEN: its shelf and shallows too) lies wholly
+    // clear of what covers the scene (the masthead's wordmark and switches, the caption's chip, the tool
+    // pills, the bar and the file's panel, as the page lays them out at those sizes in English, whose bar
+    // and switches are the wider) and in the frame, or wholly out of the frame: at rest and all through
+    // the idle drift; never part under them. The town, the airport's island and the sky island stay whole
+    // in the frame, clear of the file and no deeper into the masthead's band or the pills' row than they
+    // were. Where only going out past the widest zoom does it, the overview goes no further than 0.30
+    // (SIDE_HUD.floor: past it the plane's return comes into the frame, held in the plane check above);
+    // beside the file at 667 x 375 at the first three stops and at 844 x 390 at the first two even that
+    // is not enough (the town, the sky island and the tropic island would want 0.24 to 0.30 together),
+    // and the framing there stays exactly as it was: reported in the summary. (The checks above stand
+    // these phones over a band, the bars' row not given: their fits there are as they were.)
+    {
+      const side = [[667, 375], [844, 390], [932, 430]],
+        shiftOf = (w, open) => (open ? (Math.min(340, 0.42 * w) + 28) / (2 * w) : 0),
+        coversOf = (w, h, open) => [
+          [12, 7, 299, 51],
+          [w - 209, 10, w - 12, 48],
+          [12, 64, 172, 100],
+          [12, h - 124, 300, h - 72],
+          [12, h - 64, 312, h - 12],
+          ...(open ? [[w - 12 - Math.min(340, 0.42 * w), 66, w - 12, h - 12]] : []),
+        ],
+        // City mode's overview on a w x h phone on its side, over its bars' row (`row`: their top the foot
+        // of the part left free) or, as the checks above have it, over a band.
+        fitOf = (w, h, open, bearing, row = true) => {
+          frame(w, h, shiftOf(w, open), bearing);
+          Object.assign(view, { frameDrop: -33 / h, frameFoot: row ? (h - 124) / h : 1, cityMode: true });
+          scene.fitOverview();
+          const fit = { zoom: view.targetZoom, centre: view.target.clone(), floor: view.controls.minZoom };
+          Object.assign(view, { frameDrop: 0, frameFoot: 1, cityMode: false });
+          return fit;
+        },
+        overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3],
+        // The drift turns at which the tropic island lies part under what covers the scene, or part out of
+        // the frame without being wholly out of it.
+        misplaced = (w, h, open, bearing, { zoom, centre }) =>
+          drifts.filter((d) => {
+            const b = box(TROPIC_SEEN.map((p) => px(w, h, zoom, bearing + d, centre, p))),
+              out = b[2] <= 0 || b[0] >= w || b[3] <= 0 || b[1] >= h,
+              inside = b[0] >= 0 && b[2] <= w && b[1] >= 0 && b[3] <= h;
+            return !out && (!inside || coversOf(w, h, open).some((c) => overlap(b, c)));
+          }),
+        stays = new Set(['667 x 375 open 1', '667 x 375 open 2', '667 x 375 open 3', '844 x 390 open 1', '844 x 390 open 2']),
+        found = { moved: [], out: [], stayed: [], least: Infinity };
+      for (const [w, h] of side)
+        for (const open of [true, false])
+          for (const bearing of stops) {
+            const key = `${w} x ${h} ${open ? 'open' : 'closed'} ${stops.indexOf(bearing) + 1}`,
+              at = `City mode's overview on a ${w} x ${h} phone on its side${open ? ' beside the file' : ''} at stop ${stops.indexOf(bearing) + 1}`,
+              fit = fitOf(w, h, open, bearing),
+              before = fitOf(w, h, open, bearing, false),
+              moved = Math.abs(fit.zoom - before.zoom) > 1e-9 || fit.centre.distanceTo(before.centre) > 1e-9;
+            if (stays.has(key)) {
+              assert(!moved, `${at} moves, where it was to stay as it was.`);
+              found.stayed.push(`${w} x ${h} at stop ${stops.indexOf(bearing) + 1} (${misplaced(w, h, open, bearing, fit).length} of ${drifts.length} drift steps)`);
+              continue;
+            }
+            const bad = misplaced(w, h, open, bearing, fit);
+            assert(!bad.length, `${at}, fitted at ${fit.zoom.toFixed(3)}, leaves the tropic island part under the controls or part out of the frame (drifted ${bad.map((d) => d.toFixed(2)).join(', ')}).`);
+            assert(fit.zoom >= 0.3 - 1e-9 && fit.floor >= 0.3 - 1e-9 && fit.floor <= Math.min(widestOf(w, h), fit.zoom) + 1e-9, `${at} fits at ${fit.zoom.toFixed(3)}, the widest zoom left at ${fit.floor.toFixed(3)}.`);
+            const right = open ? w - 12 - Math.min(340, 0.42 * w) : w;
+            for (const [name, points] of [['town', scene.islandMarks], ['sky island', shape]]) {
+              const [x0, y0, x1, y1] = box(points.map((p) => px(w, h, fit.zoom, bearing, fit.centre, p))),
+                was = box(points.map((p) => px(w, h, before.zoom, bearing, before.centre, p)));
+              assert(x0 >= 0 && x1 <= right && y0 >= Math.min(58, was[1]) - 0.5 && y1 <= Math.max(h - 124, was[3]) + 0.5, `${at} leaves the ${name} at ${[x0, y0, x1, y1].map((n) => n.toFixed(0)).join(', ')} px, out of the frame, under the file or deeper into the bands than ${was.map((n) => n.toFixed(0)).join(', ')}.`);
+            }
+            if (moved) found.moved.push(`${w} x ${h}${open ? ' beside the file' : ''} at stop ${stops.indexOf(bearing) + 1}${fit.zoom < before.zoom - 1e-9 ? ` (${before.zoom.toFixed(3)} to ${fit.zoom.toFixed(3)})` : ''}`);
+            const b = box(TROPIC_SEEN.map((p) => px(w, h, fit.zoom, bearing, fit.centre, p)));
+            if (b[2] <= 0 || b[0] >= w || b[3] <= 0 || b[1] >= h) found.out.push(key);
+            else found.least = Math.min(found.least, ...coversOf(w, h, open).map((c) => Math.max(c[0] - b[2], b[0] - c[2], c[1] - b[3], b[1] - c[3])), b[0], b[1], w - b[2], h - b[3]);
+          }
+      assert(found.least >= 8 - 0.5, `On a phone on its side the tropic island comes within ${found.least.toFixed(1)} px of the controls or the frame's edge at rest.`);
+      // The check catches what it is for (negative tests): the overview as it was, the bars a band (the
+      // review's 844 x 390 with the file put away at the first stop, the island's shallows under the
+      // pills), and the scene blind to the pills and the bar (SIDE_HUD.controls nought: the default
+      // bearing at 844 x 390 with the file put away again), each leave the island part under them.
+      assert(misplaced(844, 390, false, stops[0], fitOf(844, 390, false, stops[0], false)).length > 0, 'The side-phone check passes the overview as it was.');
+      const controls = scene.SIDE_HUD.controls;
+      scene.SIDE_HUD.controls = 0;
+      try {
+        assert(misplaced(844, 390, false, stops[0], fitOf(844, 390, false, stops[0])).length > 0, 'The side-phone check passes an overview blind to the tool pills and the bar.');
+      } finally {
+        scene.SIDE_HUD.controls = controls;
+      }
+      tropicNav.side = `on phones on their side (667 x 375, 844 x 390, 932 x 430, the file open or not, every Rotate stop) clear of the masthead, the caption's chip, the tool pills, the bar and the file or wholly out of the frame, at rest and through the drift, ${found.least.toFixed(1)} px from them at the least; the view moved for it ${found.moved.join(', ')}; as it was, part under them, beside the file at ${found.stayed.join(', ')}`;
     }
     const fog = { 'sky island': { rest: 0, drift: 0 }, 'tropic island': { rest: 0, drift: 0 } },
       cut = { 'sky island': 1, 'tropic island': 1 },
@@ -4992,5 +5107,5 @@ console.log(
 );
 console.log(`And: ${Object.values(laneD3).join('; ')}.`);
 console.log(
-  `The tropic island: City mode's overview at the opening bearing (its fit without the tropic island, then with it) ${tropicNav.fits.join(', ')}; ${tropicNav.overview}; ${tropicNav.file}; ${tropicNav.pan}; ${tropicNav.plane}; ${tropicNav.hero}; ${tropicNav.reading}; ${tropicNav.shadow}.`,
+  `The tropic island: City mode's overview at the opening bearing (its fit without the tropic island, then with it) ${tropicNav.fits.join(', ')}; ${tropicNav.side}; ${tropicNav.overview}; ${tropicNav.file}; ${tropicNav.pan}; ${tropicNav.plane}; ${tropicNav.hero}; ${tropicNav.reading}; ${tropicNav.shadow}.`,
 );
