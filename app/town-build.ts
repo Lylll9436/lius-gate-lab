@@ -468,7 +468,7 @@ export function* buildTownInPhases(options: TownOptions = {}) {
     g.position.set(plan.TROPIC.x, 0, plan.TROPIC.z);
     city.add(g);
   }
-  tropicGarden.tropicGarden(tropicGardenGroup, tropicGardenSite(sde4!));
+  tropicGarden.tropicGarden(tropicGardenGroup, tropicGardenSite(sde4!, tropicLand));
   const filip = placeFilip(ctx, filipGroup).root;
   tropic.join(tropicGardenGroup, filipGroup);
   yield 'tropic garden';

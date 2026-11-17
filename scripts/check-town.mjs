@@ -6703,7 +6703,7 @@ let tropicGardenWalks = '';
   // batches it; built again in winter, it is the same garden (evergreen).
   const island = { x: P.x, z: P.z },
     site = TG.tropicGardenSite(sde4Plan()),
-    layoutTime = timeBuild(fresh, ({ garden, batch }) => {
+    layoutTime = timeBuild(fresh, ({ ctx, garden, batch }) => {
       const root = new T.Group();
       root.position.set(island.x, 0, island.z);
       const stations = garden.tropicGarden(root, site);
@@ -6711,9 +6711,9 @@ let tropicGardenWalks = '';
       const raw = new T.Group();
       raw.copy(root, true);
       batch(root, { floor: tropicGroundAt });
-      return { root, raw, stations };
+      return { root, raw, stations, lamps: ctx.lamps };
     }),
-    { root, raw, stations } = layoutTime.built;
+    { root, raw, stations, lamps: gardenLamps } = layoutTime.built;
   // (About three times what it takes at the limits' pace: set at the merge from eight runs at loads of
   // 6 to 9 on 15 cores, median 169 ms, its sculpted canopies and beds and the plaza in it; made five
   // times slower it failed twice, at 904 and 825 ms. The town builds it in a phase of its own, 'tropic
@@ -6725,11 +6725,53 @@ let tropicGardenWalks = '';
     tropicTriangles = trisOf(all);
   assert(all.length <= 10 && tropicTriangles <= 45000, `The tropic garden costs ${all.length} meshes and ${tropicTriangles} triangles.`);
   for (const m of all) {
+    // (The lamps' globes are lamps: never batched, in the lamps' own glass; held below.)
+    if (gardenLamps.includes(m)) continue;
     const key = m.material.customProgramCacheKey();
     assert(m.material.vertexColors && (key === 'lius-bake-solid' || key === 'lius-ground-paving'), `The tropic garden's ${m.material.name} batch is not on the solids' or the paving's program (${key}).`);
     assert(m.material.side !== T.DoubleSide && !m.material.transparent, `The tropic garden's ${m.material.name} batch is two-sided or transparent.`);
   }
   assert(!stations.skipped.length, `The tropic garden leaves out what would stand on SDE4: ${stations.skipped.join('; ')}.`);
+  // Its garden lamps (town-tropic's tropicLampSpots, the review's night finding): four, two flanking
+  // the bay walk's mouth, one off the café terrace's outer corner and one off the seat's round, each
+  // standing on the lawn (its plinth wholly on it) TROPIC_LAMPS.off from the paving's edge, 0.3 to
+  // 0.45 out (never on the paving: Filip's ways run there), placed from the walks' plan (a plan with
+  // its walks moved moves them); the mouth's pair as near the plaza as keeps their pools (a pool's
+  // radius) off its granite. Their globes are one mesh of the lamps' own glass (the kit's lamp glass,
+  // frosted, never batched), lit with the town's through ctx.lamps, one globe over each post at the
+  // garden lamp's height; the posts batch with the garden's stone.
+  {
+    const { TROPIC_LAMPS: TL, tropicLampSpots } = await load('town-tropic'),
+      { GARDEN_LAMP: GL } = await load('town-sky-garden'),
+      { TROPIC_LAMP } = TG,
+      { palette } = await load('town-shared'),
+      spots = stations.lamps,
+      W = plan.TROPIC_PATHS,
+      Q = plan.TROPIC_PLAZA,
+      onLawn = (s) => [-1, 1].every((a) => [-1, 1].every((b) => plan.tropicAt(s.x + P.x + (a * TROPIC_LAMP.base) / 2, s.z + P.z + (b * TROPIC_LAMP.base) / 2).shore < 0)),
+      placedWell = (list) =>
+        list.length === 4 &&
+        list.every((s) => onLawn(s) && plan.tropicPaving(s.x, s.z).union >= 0.3 - 1e-6 && plan.tropicPaving(s.x, s.z).union <= 0.45 + 1e-6) &&
+        list.filter((s) => s.name.startsWith('mouth')).every((s) => Math.abs(Math.abs(s.x - W.bay.x) - W.bay.width / 2 - TL.off) < 1e-9 && Math.hypot(s.x - Q.x, s.z - Q.z) >= Q.r + TL.pool.r - 1e-6);
+    assert.deepEqual(spots.map((s) => s.name), ['mouth west', 'mouth east', 'cafe', 'seat'], 'The tropic garden\'s lamps are not the bay walk\'s pair, the café\'s and the seat\'s.');
+    assert(placedWell(spots), `A lamp of the tropic garden stands off the lawn, on the paving or away from it: ${spots.map((s) => `${s.name} ${plan.tropicPaving(s.x, s.z).union.toFixed(2)} off`).join(', ')}.`);
+    assert.deepEqual(spots, tropicLampSpots(), 'The tropic garden\'s lamps are not where the walks\' plan puts them.');
+    // (The rule refuses a lamp moved onto the paving, one pushed out onto the open lawn and a mouth lamp drawn in over the plaza's rim.)
+    const moved = (k, dx, dz) => spots.map((s, i) => (i === k ? { ...s, x: s.x + dx, z: s.z + dz } : s)),
+      away = Math.hypot(spots[3].x - W.seat.x, spots[3].z - W.seat.z);
+    assert(!placedWell(moved(2, 0.3, -0.3)) && !placedWell(moved(3, (0.6 * (spots[3].x - W.seat.x)) / away, (0.6 * (spots[3].z - W.seat.z)) / away)) && !placedWell(moved(0, 0, -0.5)), 'The lamps\' rule lets a lamp onto the paving, out onto the lawn or over the plaza.');
+    const globes = byName(raw, 'tropic-lamp-globes'),
+      posts = byName(raw, 'tropic-lamp-posts');
+    assert(gardenLamps.length === 1 && byName(root, 'tropic-lamp-globes') === gardenLamps[0] && globes.material.userData.surfaceKind === 'glass' && globes.material.emissive.getHex() === new T.Color(palette.lantern).getHex() && !globes.castShadow, 'The tropic garden\'s lamps do not light one mesh of the lamps\' own glass with the town\'s.');
+    assert(posts.material.userData.surfaceKind === 'stone' && posts.castShadow, 'The tropic garden\'s lamp posts are not stone.');
+    const balls = pieces(globes);
+    assert.equal(balls.length, 4, 'The tropic garden\'s four lamps have not four globes.');
+    for (const s of spots) {
+      const top = tropicLawn(s.x, s.z) + GL.cap + GL.cup + 2 * TROPIC_LAMP.globe - 0.03,
+        ball = balls.find((b) => Math.hypot(b.box.getCenter(v).x - island.x - s.x, v.z - island.z - s.z) < 0.01);
+      assert(ball && Math.abs(ball.box.max.y - top) < 0.005, `No globe stands at the garden lamp's height on the ${s.name} lamp.`);
+    }
+  }
   // The furniture the garden builds is where Filip's day uses it, so the two can never drift apart:
   // his seat at the desk and at the café (his root, and the way he faces) are the chairs' sitters',
   // the saucer his day sets his cup in is the one standing on the café table, and seated at his work
@@ -6775,13 +6817,42 @@ let tropicGardenWalks = '';
     g.updateMatrixWorld(true);
     const a = meshesOf(raw),
       b = meshesOf(g);
-    assert(a.length === b.length && a.every((m, k) => m.geometry.getAttribute('color').array.every((n, i) => n === b[k].geometry.getAttribute('color').array[i])), 'The tropic garden changes with the season.');
+    // (The lamps' globes carry no colours of their own: their glass is the lamps'.)
+    assert(a.length === b.length && a.every((m, k) => m.geometry.attributes.position.count === b[k].geometry.attributes.position.count && (!m.geometry.getAttribute('color') || m.geometry.getAttribute('color').array.every((n, i) => n === b[k].geometry.getAttribute('color').array[i]))), 'The tropic garden changes with the season.');
   }
 
-  // The town's own garden is this one (the same site: what the town's build hands tropicGarden).
+  // The town's own garden is this one (the same site: what the town's build hands tropicGarden), and
+  // the lamps' pools, which the town's site lays on the island's ground as built (its land; the site
+  // checked above has none): one mesh more, flat ground of the bark's solid program casting nothing,
+  // at most 1,200 triangles, every vertex carrying the wash (a negative w, the pool's strength, its
+  // edge's height past the pool) within the pool's radius of a lamp, lying on the lawn (TROPIC_LAMPS'
+  // lift over it); and the island's paving as laid carries the same wash on its own vertices (no
+  // triangle added). Hidden with the island, as the garden is (setShown, below).
+  let poolTriangles = 0,
+    washedPaving = 0;
   {
-    const town = meshesOf(model.tropicGarden);
-    assert(town.length === all.length && Math.abs(trisOf(town) - tropicTriangles) < 1e-9, `The town's tropic garden (${town.length} meshes, ${trisOf(town)} triangles) is not the one checked (${all.length}, ${tropicTriangles}).`);
+    const { TROPIC_LAMPS: TL } = await load('town-tropic'),
+      town = meshesOf(model.tropicGarden),
+      pools = town.filter((m) => m.geometry.getAttribute('aWash') && m.material.userData.surfaceKind === 'bark' && !m.castShadow),
+      rest = town.filter((m) => !pools.includes(m));
+    assert(pools.length === 1 && town.length === all.length + 1 && Math.abs(trisOf(rest) - tropicTriangles) < 1e-9 && rest.every((m) => !m.geometry.getAttribute('aWash')), `The town's tropic garden (${town.length} meshes, ${trisOf(town)} triangles) is not the one checked (${all.length}, ${tropicTriangles}) and the lamps' pools.`);
+    const pool = pools[0],
+      p = pool.geometry.attributes.position,
+      w = pool.geometry.getAttribute('aWash'),
+      feet = stations.lamps.map((s) => [s.x + island.x, s.z + island.z]);
+    poolTriangles = trisOf(pools);
+    assert(poolTriangles > 50 * feet.length && poolTriangles <= 1200, `The tropic island's lamps' pools are ${poolTriangles} triangles.`);
+    pool.updateMatrixWorld(true);
+    for (let i = 0; i < p.count; i++) {
+      const q = new T.Vector3().fromBufferAttribute(p, i).applyMatrix4(pool.matrixWorld),
+        d = Math.min(...feet.map(([x, z]) => Math.hypot(q.x - x, q.z - z)));
+      assert(d < TL.pool.r + TL.pool.cell * 1.5 && w.getW(i) === -1 && Math.abs(w.getX(i) - TL.pool.strength) < 1e-6 && Math.abs(q.y - TL.pool.lift - plan.tropicTop(q.x, q.z)) < 0.03, `A vertex of the lamps' pools at ${fmt(q)} is off the lawn, far from its lamps or without the wash.`);
+    }
+    const paving = meshesOf(model.tropicLand).filter((m) => m.geometry.getAttribute('aWash'));
+    assert(paving.length === 1 && paving[0].material.userData.surfaceKind === 'stone' && !paving[0].castShadow, 'The island\'s paving does not carry the lamps\' wash.');
+    const pw = paving[0].geometry.getAttribute('aWash');
+    for (let i = 0; i < pw.count; i++) if (pw.getW(i) === -1 && pw.getZ(i) < 0.84) washedPaving++;
+    assert(washedPaving > 20 * feet.length, `Only ${washedPaving} of the paving's vertices take the lamps' wash.`);
   }
 
   // The layout. Distances in the island's frame, against the land (its turf's edge, plan.tropicInland;
@@ -7121,7 +7192,7 @@ let tropicGardenWalks = '';
     }
   }
   console.log(
-    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops and on his ways from the file (under a fifth of him in sight for ${sight.ways} s at most), and the seat and its bench from the file, at least ${Math.round(100 * sight.glass)}% of the glazed front in view${tropicGardenWalks}.`,
+    `Tropic garden checks passed: ${all.length} meshes and ${Math.round(tropicTriangles)} triangles batched (built and batched in ${Math.round(layoutTime.paced)} ms at the limits' pace); the rain trees' hems continuous (deepest dip ${Math.max(hems.big.notch, hems.small.notch).toFixed(3)} of the radius), their limbs ending in the crowns; the thinnest blade ${BLADES.thinnest.toFixed(3)} at its midrib; clear of the paths by ${clearOf.paths.toFixed(2)}, the court by ${clearOf.court.toFixed(2)}, SDE4's footprint by ${clearOf.footprint.toFixed(2)}, its columns by ${clearOf.columns.toFixed(2)} and Filip's walks by ${clearOf.walks.toFixed(2)}; Filip in sight at his three stations from the file's four stops and on his ways from the file (under a fifth of him in sight for ${sight.ways} s at most), and the seat and its bench from the file, at least ${Math.round(100 * sight.glass)}% of the glazed front in view${tropicGardenWalks}; its four lamps beside the walks, their pools ${poolTriangles} triangles on the lawn and a wash on ${washedPaving} of the paving's vertices.`,
   );
 }
 // The street and pier lamps (town-props' lamp), Glasgow cast-iron lamp standards, built alone: one
@@ -11652,7 +11723,12 @@ let tropicReport = '';
   ])
     assert(hsv(colour).s <= hsv(family).s + 1e-9, `The tropic island's ${name} (${colour}) is more saturated than its family.`);
   const value = (hex) => Math.max(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255));
-  assert(TROPIC_LOOK.granite.every((c) => hsv(c).s < 0.15) && TROPIC_LOOK.granite.filter((c) => value(c) < 0.5).length >= 2, 'The tropic island\'s rocks are not greys, two of them dark.');
+  // Its rocks are pale warm greys (the town's kerb granite's family) with a little spread between them
+  // and none dark, so they stay grey at night beside the town's pebbles, never black lumps round the
+  // rim (the review's night finding); the rule refuses the old greys, two of which were dark.
+  const paleGranite = (greys) => greys.every((c) => hsv(c).s < 0.15 && value(c) >= 0.58) && Math.max(...greys.map(value)) - Math.min(...greys.map(value)) >= 0.04;
+  assert(paleGranite(TROPIC_LOOK.granite), `The tropic island's rocks (${TROPIC_LOOK.granite.join(', ')}) are not pale greys with a spread, or one is dark.`);
+  assert(!paleGranite(['#958f84', '#8b867d', '#9e978a', '#7d7871', '#706c66']) && !paleGranite(['#aaa397', '#aaa397']), 'The tropic island\'s granite rule lets dark or uniform greys through.');
   // Its lawn is the town's (no stripes, no texture of its own) and lies on plan.tropicTop; its beach is
   // the shore's profile on its stations' rays; its rocks stand on the shore, sunk a third of their height.
   {
