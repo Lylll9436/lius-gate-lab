@@ -38,9 +38,11 @@ const WALK_STEP = { step: 0.25, fine: 0.05, mouth: 0.9 };
  * n out to sea), sizes (half sizes, unit-free: `size` scales them) and seeds. Along the rocky
  * stretches, low ledges (`ledges`: one long flat stone each, `ledge` its half sizes) lie between and
  * beyond the clusters, so the point and the knoll read as low outcrops broken into blocks, not piles
- * on sand; and two lone boulders lie on the sand (at the bay's east end, and on the tail at the
- * hollow's south end), as the town's own beach has. Each stone is sunk a third of its height,
- * damp-darkened below the waterline as the armour is, lighter where it faces the sky.
+ * on sand (the point's easternmost lies where that stretch turns fully rocky: its stones begin
+ * where its beach has narrowed and its surf breaks); and two lone boulders lie on the sand (at the
+ * bay's east end, and on the tail at the hollow's south end), as the town's own beach has. Each
+ * stone is sunk a third of its height, damp-darkened below the waterline as the armour is, lighter
+ * where it faces the sky.
  */
 export const TROPIC_ROCKS = {
   clusters: [
@@ -52,6 +54,7 @@ export const TROPIC_ROCKS = {
   ],
   spread: 1.35,
   ledges: [
+    { bearing: Math.PI - 1.02, at: 1.8, size: 1.1, seed: 73 },
     { bearing: Math.PI - 0.54, at: 1.75, size: 1.0, seed: 71 },
     { bearing: Math.PI - 0.2, at: 1.85, size: 1.12, seed: 79 },
     { bearing: Math.PI + 0.28, at: 1.8, size: 1.02, seed: 83 },
