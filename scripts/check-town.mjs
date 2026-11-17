@@ -5312,18 +5312,27 @@ function crossingEdges(X, Y) {
 //   its chinos navy, its belt, shoes and brows brown.
 // - Thickness: every joined piece of him and his props is 0.07 or more across every way (in his own
 //   frame, so 0.0756 on the island), but his nose (a resident's, a 0.04 bump sunk in his face).
+// - His head is his own (FILIP_HEAD), not the residents' nearly round HEAD, which read too full on
+//   him (the owner, 2026-11-16: his face a little longer, less fat): 8 to 12% taller and 5 to 8%
+//   narrower than HEAD, taller than it is wide (by 15% or more), its lower half narrowing faster
+//   than its upper (at 60% of the way down from its widest ring it is 4% or more narrower than at
+//   60% of the way up, where an ellipsoid's are alike), and the head he is built with is that one
+//   (every vertex of it on FILIP_HEAD's surface). What sits on it is measured on it: his ears, nose
+//   and eyes where FILIP_FACE says, his ears standing 0.015 or more out of it.
 // - Likeness (work/ual-design/facts.md: short brown hair swept to the side, clean-shaven, no glasses,
 //   light skin, a white open-collar shirt): his hair short (nowhere under 0.68, so his nape shows,
 //   and clear of his ears), never bald (its top 0.02 or more over his skull), parted on his left (at
 //   0.02 and 0.06 ahead of his crown its top steps down 0.008 or more somewhere between x 0.04 and
-//   0.09) and swept across to his right (his right side 0.01 or more higher than his left); no
-//   glasses (his face is his head, neck, nose and two ears, and nothing but his skin and features is
-//   over his eyes: from the town camera's height, in front and 40 degrees either side, a ray at each
-//   eye meets his face at a cell of FILIP_LOOK.eyes, not his hair); his open collar a V of skin on
-//   his chest, its point at 0.53; his sleeves rolled to the elbow (a white cuff standing 0.006 or
-//   more proud of the sleeve, his forearm bare below it).
+//   0.09, those on HEAD's width and carried to his as his hair is: times FILIP_HEAD.r[0] / HEAD.r[0])
+//   and swept across to his right (his right side, at 0.1 out so carried, 0.01 or more higher than
+//   his left); no glasses (his face is his head, neck, nose and two ears, nothing but his head lies
+//   across his eyes, and nothing but his skin and features is over them: from the town camera's
+//   height, in front and 40 degrees either side, a ray at each eye meets his face at a cell of
+//   FILIP_LOOK.eyes, not his hair); his open collar a V of skin on his chest, its point at 0.53; his
+//   sleeves rolled to the elbow (a white cuff standing 0.006 or more proud of the sleeve, his
+//   forearm bare below it).
 {
-  const { createFilip, FILIP, FILIP_LOOK, FILIP_SCALE } = await load('tropic-figure-look'),
+  const { createFilip, FILIP, FILIP_FACE, FILIP_HEAD, FILIP_LOOK, FILIP_SCALE, filipHeadReach } = await load('tropic-figure-look'),
     { createAlison, poseAlison, ALISON_POSES } = await load('sky-figure'),
     { createResident, HEAD } = await load('city-people'),
     { createCityMaterials } = await load('city-materials'),
@@ -5428,7 +5437,7 @@ function crossingEdges(X, Y) {
   assert(value(parse(L.shirt)) > 0.85 && saturation(parse(L.shirt)) < 0.1, 'His shirt is not white.');
   assert(hueOf(parse(L.trousers)) >= 200 && hueOf(parse(L.trousers)) <= 235 && value(parse(L.trousers)) < 0.4, 'His chinos are not navy.');
   for (const key of ['hair', 'brows', 'belt', 'shoes']) assert(hueOf(parse(L[key])) >= 15 && hueOf(parse(L[key])) <= 40 && value(parse(L[key])) < 0.55, `FILIP_LOOK.${key} is not a brown.`);
-  // Each run of joined faces in a mesh, as its box in the mesh's own frame.
+  // Each run of joined faces in a mesh, as its box in the mesh's own frame and its vertices (their indices).
   const pieces = (m) => {
     const q = m.geometry.getAttribute('position'),
       index = m.geometry.index,
@@ -5442,10 +5451,11 @@ function crossingEdges(X, Y) {
     const boxes = new Map();
     for (let i = 0; i < n; i++) {
       const piece = find(key(i));
-      if (!boxes.has(piece)) boxes.set(piece, new T.Box3());
-      boxes.get(piece).expandByPoint(v.fromBufferAttribute(q, at(i)));
+      if (!boxes.has(piece)) boxes.set(piece, { box: new T.Box3(), points: [] });
+      boxes.get(piece).box.expandByPoint(v.fromBufferAttribute(q, at(i)));
+      boxes.get(piece).points.push(at(i));
     }
-    return [...boxes.values()].map((b) => ({ size: b.getSize(new T.Vector3()), centre: b.getCenter(new T.Vector3()) }));
+    return [...boxes.values()].map(({ box: b, points }) => ({ size: b.getSize(new T.Vector3()), centre: b.getCenter(new T.Vector3()), points }));
   };
   const thin = (p) => Math.min(p.size.x, p.size.y, p.size.z) < 0.07 - 1e-3,
     sized = (p) => p.size.toArray().map((n) => n.toFixed(3)).join(' x '),
@@ -5453,10 +5463,49 @@ function crossingEdges(X, Y) {
   for (const m of meshes.filter((m) => m !== face)) for (const p of pieces(m)) assert(!thin(p), `A piece of his ${label(m)} is ${sized(p)}.`);
   // His face: his head, neck, nose and two ears, no glasses; only the nose under 0.07.
   const features = pieces(face),
-    slight = features.filter(thin);
+    slight = features.filter(thin),
+    volume = (p) => p.size.x * p.size.y * p.size.z,
+    skull = features.reduce((a, b) => (volume(a) >= volume(b) ? a : b)),
+    nose = new T.Vector3(...FILIP_FACE.nose);
   assert.equal(features.length, 5, `His face is ${features.length} pieces, not his head, neck, nose and ears.`);
-  assert(slight.length === 1 && Math.abs(slight[0].centre.x) < 0.005 && Math.abs(slight[0].centre.y - 0.729) < 0.01 && slight[0].centre.z > 0.12 && Math.max(slight[0].size.x, slight[0].size.y, slight[0].size.z) < 0.05, `Something on his face other than his nose is under 0.07: ${slight.map(sized).join('; ')}.`);
-  assert(features.filter((p) => Math.abs(p.centre.y - 0.775) < 0.03 && p.size.x > 0.1 && p.size.x < 0.29).length === 0, 'Something lies across his eyes: he wears no glasses.');
+  assert(slight.length === 1 && Math.abs(slight[0].centre.x - nose.x) < 0.005 && Math.abs(slight[0].centre.y - nose.y) < 0.01 && slight[0].centre.z > 0.12 && Math.max(slight[0].size.x, slight[0].size.y, slight[0].size.z) < 0.05, `Something on his face other than his nose is under 0.07: ${slight.map(sized).join('; ')}.`);
+  assert(features.filter((p) => p !== skull && Math.abs(p.centre.y - FILIP_FACE.eyes[0][1]) < 0.03 && p.size.x > 0.1).length === 0, 'Something lies across his eyes: he wears no glasses.');
+  // His head is his own: longer and leaner than a resident's, its lower half narrowing faster, and
+  // the head he is built with.
+  {
+    const H = FILIP_HEAD,
+      tall = H.up + H.down,
+      wide = 2 * H.r[0],
+      // Its half-width at height y: the furthest out across (x) that is on or in it, at any depth.
+      across = (y) => {
+        let most = 0;
+        for (let z = -0.2; z <= 0.2; z += 0.0005) {
+          if (filipHeadReach(0, y, z) > 1) continue;
+          let lo = 0,
+            hi = 0.3;
+          for (let k = 0; k < 40; k++) {
+            const m = (lo + hi) / 2;
+            if (filipHeadReach(m, y, z) <= 1) lo = m;
+            else hi = m;
+          }
+          most = Math.max(most, lo);
+        }
+        return most;
+      },
+      widest = across(H.y),
+      below = across(H.y - 0.6 * H.down) / widest,
+      above = across(H.y + 0.6 * H.up) / widest;
+    assert(tall / (2 * HEAD.r[1]) >= 1.08 && tall / (2 * HEAD.r[1]) <= 1.12, `His head is ${tall.toFixed(3)} tall, a resident's ${(2 * HEAD.r[1]).toFixed(3)}: not 8 to 12% taller.`);
+    assert(wide / (2 * HEAD.r[0]) >= 0.92 && wide / (2 * HEAD.r[0]) <= 0.95, `His head is ${wide.toFixed(3)} across, a resident's ${(2 * HEAD.r[0]).toFixed(3)}: not 5 to 8% narrower.`);
+    assert(tall >= 1.15 * wide && Math.abs(widest - H.r[0]) < 1e-4, `His head is ${tall.toFixed(3)} tall and ${(2 * widest).toFixed(3)} across: not taller than it is wide.`);
+    assert(below <= 0.95 * above, `Down its lower half his head is ${below.toFixed(3)} of its widest at 60%, up its upper half ${above.toFixed(3)}: his jaw does not narrow.`);
+    const q = face.geometry.getAttribute('position');
+    let off = 0;
+    for (const i of skull.points) off = Math.max(off, Math.abs(filipHeadReach(q.getX(i), q.getY(i), q.getZ(i)) - 1));
+    assert(skull.points.length > 1000 && off < 1e-4 && Math.abs(skull.size.x - 2 * H.r[0]) < 1e-3, `His head is not FILIP_HEAD (${off.toExponential(1)} off it, ${skull.size.x.toFixed(4)} across).`);
+    for (const ear of features.filter((p) => FILIP_FACE.ears.some((e) => p.centre.distanceTo(new T.Vector3(...e)) < 0.002)))
+      assert(Math.abs(ear.centre.x) + ear.size.x / 2 - across(ear.centre.y) >= 0.015, `His ear at ${ear.centre.toArray().map((n) => n.toFixed(3)).join(', ')} hardly stands out of his head.`);
+  }
   // His hair (in his own frame, his root unscaled for the measuring): short, clear of his ears,
   // never bald, parted on his left and swept to his right; and his eyes clear of it.
   root.scale.setScalar(1);
@@ -5464,7 +5513,7 @@ function crossingEdges(X, Y) {
   {
     const hair = meshes.find((m) => m.name === 'filip-hair'),
       q = hair.geometry.getAttribute('position'),
-      ears = features.filter((p) => Math.abs(Math.abs(p.centre.x) - 0.131) < 0.01 && Math.abs(p.centre.y - 0.745) < 0.01);
+      ears = features.filter((p) => FILIP_FACE.ears.some((e) => p.centre.distanceTo(new T.Vector3(...e)) < 0.002));
     assert.equal(ears.length, 2, 'He has not two ears either side of his head.');
     let low = Infinity,
       top = -Infinity;
@@ -5473,23 +5522,25 @@ function crossingEdges(X, Y) {
       low = Math.min(low, v.y);
       top = Math.max(top, v.y);
       // (Hair inside his head, the hidden rim of its cut edge, covers nothing.)
-      if (Math.hypot(v.x / HEAD.r[0], (v.y - HEAD.y) / HEAD.r[1], (v.z - 0.005) / HEAD.r[2]) < 1) continue;
+      if (filipHeadReach(v.x, v.y, v.z) < 1) continue;
       for (const ear of ears)
         assert(Math.hypot((v.x - ear.centre.x) / (ear.size.x / 2 + 0.008), (v.y - ear.centre.y) / (ear.size.y / 2 + 0.008), (v.z - ear.centre.z) / (ear.size.z / 2 + 0.008)) > 1, `His hair covers his ear at ${v.toArray().map((n) => n.toFixed(3)).join(', ')}.`);
     }
     assert(low >= 0.68, `His hair comes down to ${low.toFixed(3)}: it is not short.`);
-    assert(top >= HEAD.y + HEAD.r[1] + 0.02, `His hair's top is ${(top - HEAD.y - HEAD.r[1]).toFixed(3)} over his skull: he reads bald.`);
+    assert(top >= FILIP_FACE.crown + 0.02, `His hair's top is ${(top - FILIP_FACE.crown).toFixed(3)} over his skull: he reads bald.`);
     const ray = new T.Raycaster(),
       down = new T.Vector3(0, -1, 0),
       over = (x, z) => {
         ray.set(new T.Vector3(x, 2, z), down);
         return ray.intersectObject(hair)[0]?.point.y ?? NaN;
       };
+    // (Across, on HEAD's width carried to his, as his hair is.)
+    const k = FILIP_HEAD.r[0] / HEAD.r[0];
     for (const z of [0.02, 0.06]) {
       let step = 0;
-      for (let x = 0.04; x <= 0.09 + 1e-9; x += 0.0025) step = Math.max(step, over(x, z) - over(x + 0.012, z));
+      for (let x = 0.04 * k; x <= 0.09 * k + 1e-9; x += 0.0025 * k) step = Math.max(step, over(x, z) - over(x + 0.012 * k, z));
       assert(step >= 0.008, `At ${z} ahead of his crown his hair has no parting on his left (its top steps down ${step.toFixed(4)} at the most).`);
-      assert(over(-0.1, z) >= over(0.1, z) + 0.01, `At ${z} ahead of his crown his hair is not swept to his right (${over(-0.1, z).toFixed(3)} on his right, ${over(0.1, z).toFixed(3)} on his left).`);
+      assert(over(-0.1 * k, z) >= over(0.1 * k, z) + 0.01, `At ${z} ahead of his crown his hair is not swept to his right (${over(-0.1 * k, z).toFixed(3)} on his right, ${over(0.1 * k, z).toFixed(3)} on his left).`);
     }
     const eyes = new T.Color(L.eyes),
       rise = Math.atan2(35, 38);
@@ -5497,9 +5548,7 @@ function crossingEdges(X, Y) {
       for (const side of [-1, 1]) {
         const turn = (deg * Math.PI) / 180,
           look = new T.Vector3(-Math.sin(turn) * Math.cos(rise), -Math.sin(rise), -Math.cos(turn) * Math.cos(rise)),
-          [a, b, c] = HEAD.r,
-          x = side * 0.052,
-          eye = new T.Vector3(x, 0.772, 0.005 + c * Math.sqrt(1 - (x / a) ** 2 - ((0.772 - HEAD.y) / b) ** 2));
+          eye = new T.Vector3(...FILIP_FACE.eyes[(side + 1) / 2]);
         ray.set(eye.clone().addScaledVector(look, -3), look);
         const first = ray.intersectObjects([hair, face])[0],
           drawn = first && colour.fromBufferAttribute(face.geometry.getAttribute('color'), first.face.a);

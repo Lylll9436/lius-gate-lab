@@ -11,10 +11,11 @@ import { ellipsoid, sculpt, strand, type Shape } from './town-sculpt';
  * FILIP_SCALE all over (he is taller), so every pose's numbers stay hers in his root's frame. His
  * look is the public profile's: short brown hair parted on his left and swept across to his right,
  * clean-shaven, no glasses, light skin, a white open-collar shirt with its sleeves rolled to the
- * elbow, tucked into navy chinos with a brown belt, and brown shoes. Every part is one mesh per
- * surface kind with its colours on its vertices, as hers are; features are drawn as flat colour
- * cells whose edges are the triangles' own (the eyes and brows, the open collar's skin, the placket,
- * the buckle), so nothing thin stands free to twinkle.
+ * elbow, tucked into navy chinos with a brown belt, and brown shoes. His head is his own
+ * (FILIP_HEAD): a little longer and leaner than the residents' nearly round one, which read too
+ * full on him. Every part is one mesh per surface kind with its colours on its vertices, as hers
+ * are; features are drawn as flat colour cells whose edges are the triangles' own (the eyes and
+ * brows, the open collar's skin, the placket, the buckle), so nothing thin stands free to twinkle.
  */
 type Material = (c: string, k?: SurfaceKind) => T.MeshStandardMaterial;
 type V3 = [number, number, number];
@@ -70,10 +71,29 @@ const BELT = { foot: 0.316, head: 0.388, proud: 0.008, buckle: 0.022 };
  * Features drawn on the head, each a cell between its rows (heights, bottom to top) either side of
  * the face: at each row, how far out its middle is (x) and its half-width there. His eyes are small
  * rounded ovals; his brows soft bars a little fuller at their inner ends, their outer ends tapering
- * down, so the face reads friendly, not stern.
+ * down, so the face reads friendly, not stern. They are drawn as on a resident's head (HEAD); each
+ * feature's middle is carried onto his by onFilip, its size kept (rows and half-widths about it).
  */
 const EYES = { rows: [0.759, 0.7655, 0.7785, 0.785], x: [0.052, 0.052, 0.052, 0.052], half: [0.006, 0.0102, 0.0102, 0.006] },
   BROWS = { rows: [0.8025, 0.8085, 0.8138], x: [0.0535, 0.0528, 0.0498], half: [0.0185, 0.0198, 0.0128] };
+/**
+ * His head, his own: the residents' HEAD is nearly a ball (0.15 by 0.148 by 0.142), and on him it
+ * read too round and full (the owner, 2026-11-16). His is a smooth egg a little longer and leaner,
+ * taller than it is wide: its widest ring `y` up (its middle `z` ahead), `r` its half-width and
+ * half-depth there; the crown rises `up` above it and the chin falls `down` below it (0.33 in all,
+ * 11.5% more than HEAD's 0.296; 0.278 across, 7.3% less). Down its lower half (s from 0 at the
+ * widest ring to -1 at the chin's end) each ring narrows across by `jaw` |s|^1.5 and in depth by
+ * `tuck` |s|^1.5, and its middle comes forward by `chin` |s|^1.5: the cheeks are less full (the
+ * face 8 to 10% narrower than HEAD's from the nose down), the jaw and chin narrow gently and come
+ * a little lower and forward (the chin meets his shoulders 0.009 lower), and the back of his head
+ * still meets his shoulders where HEAD's does, under the collar. Its upper half is HEAD's shape,
+ * 7.3% narrower, 1.4% shallower and 4.7% taller, so the crown rises 0.007.
+ */
+export const FILIP_HEAD = { y: 0.75, z: 0.005, up: 0.155, down: 0.175, r: [0.139, 0.14] as [number, number], jaw: 0.26, tuck: 0.22, chin: 0.012 };
+/** His ears' middles on a resident's head (HEAD), and their half-sizes: carried onto his, each stands 0.019 out of it. */
+const EAR = { at: [0.131, 0.745, -0.006] as V3, r: [0.0372, 0.042, 0.0372] as V3 };
+/** His nose's height on a resident's head, its middle 0.006 inside the face, and its half-sizes (a resident's). */
+const NOSE = { y: 0.729, r: [0.022, 0.02, 0.02] as V3 };
 
 /* ------------------------------------------------------------------ */
 /* Colour                                                              */
@@ -446,34 +466,138 @@ function collarGeometry() {
 /* ------------------------------------------------------------------ */
 /* The head: face, ears and hair                                       */
 /* ------------------------------------------------------------------ */
+/** Where height y lies on his head's own scale: 1 at the crown, 0 at the widest ring, -1 at the chin's end. */
+const headS = (y: number) => (y - FILIP_HEAD.y) / (y < FILIP_HEAD.y ? FILIP_HEAD.down : FILIP_HEAD.up);
 /**
- * His head: a resident's (HEAD, the same 16 by 10 facets) as a lat-long surface with his eyes and
- * brows drawn on it as cells whose edges are the triangles' own: each eye a small dark rounded oval
- * (EYES), each brow a short soft bar in a deeper brown than his hair (BROWS).
+ * His head's ring at s on its own scale: its height, its middle (z), and its half-width and
+ * half-depth before the ring's own sqrt(1 - s²) (so the ring is x² / X² + (z - mid)² / Z² = 1 - s²).
+ */
+function headRing(s: number) {
+  const H = FILIP_HEAD,
+    low = s < 0 ? Math.min(1, -s) ** 1.5 : 0;
+  return { y: H.y + s * (s < 0 ? H.down : H.up), mid: H.z + H.chin * low, X: H.r[0] * (1 - H.jaw * low), Z: H.r[1] * (1 - H.tuck * low) };
+}
+/**
+ * How far out a point is on his head's own scale: 1 on its surface, less inside (as HEAD's
+ * ellipsoid test is on a resident's head).
+ */
+export function filipHeadReach(x: number, y: number, z: number) {
+  const s = headS(y),
+    R = headRing(s);
+  return Math.hypot(x / R.X, s, (z - R.mid) / R.Z);
+}
+/** His face's front (its z) at x across and y up, on his head's surface. */
+function headFront(x: number, y: number) {
+  const s = headS(y),
+    R = headRing(s);
+  return R.mid + R.Z * Math.sqrt(Math.max(0, 1 - s * s - (x / R.X) ** 2));
+}
+/**
+ * A point carried from a resident's head (HEAD) onto his, keeping its place: as far round, as high
+ * on its head's own scale and as far out (1 on the surface), so what was drawn on HEAD (his hair, his
+ * ears, his nose, his features' middles) lies on his head as it lay on HEAD. offFilip carries it back.
+ */
+function onFilip([x, y, z]: V3): V3 {
+  const [a, b, c] = HEAD.r,
+    s = (y - HEAD.y) / b,
+    R = headRing(s);
+  return [(x / a) * R.X, R.y, R.mid + ((z - 0.005) / c) * R.Z];
+}
+function offFilip([x, y, z]: V3): V3 {
+  const [a, b, c] = HEAD.r,
+    s = headS(y),
+    R = headRing(s);
+  return [(x / R.X) * a, HEAD.y + s * b, 0.005 + ((z - R.mid) / R.Z) * c];
+}
+/**
+ * A normal carried with its point (q, already carried) by onFilip: the gradient there of the
+ * normal's plane carried back (offFilip's inverse transpose), so a carried surface shades as its own.
+ */
+function carriedNormal(q: V3, n: T.Vector3) {
+  const e = 1e-5,
+    f = (x: number, y: number, z: number) => {
+      const p = offFilip([x, y, z]);
+      return p[0] * n.x + p[1] * n.y + p[2] * n.z;
+    };
+  return new T.Vector3(f(q[0] + e, q[1], q[2]) - f(q[0] - e, q[1], q[2]), f(q[0], q[1] + e, q[2]) - f(q[0], q[1] - e, q[2]), f(q[0], q[1], q[2] + e) - f(q[0], q[1], q[2] - e)).normalize();
+}
+/** His head's outward normal at p on it (its reach's gradient). */
+function headNormal(p: T.Vector3) {
+  const e = 1e-5,
+    f = (x: number, y: number, z: number) => filipHeadReach(x, y, z) ** 2;
+  return new T.Vector3(f(p.x + e, p.y, p.z) - f(p.x - e, p.y, p.z), f(p.x, p.y + e, p.z) - f(p.x, p.y - e, p.z), f(p.x, p.y, p.z + e) - f(p.x, p.y, p.z - e)).normalize();
+}
+/**
+ * A feature (EYES, BROWS) carried onto his head: its middle carried by onFilip (its middle row's
+ * height and its middle's x there), its rows and half-widths kept about it.
+ */
+function carried(F: { rows: number[]; x: number[]; half: number[] }) {
+  const y = (F.rows[0] + F.rows[F.rows.length - 1]) / 2,
+    x = F.x.reduce((n, v) => n + v, 0) / F.x.length,
+    [cx, cy] = onFilip([x, y, 0.005 + HEAD.r[2] * Math.sqrt(Math.max(0, 1 - (x / HEAD.r[0]) ** 2 - ((y - HEAD.y) / HEAD.r[1]) ** 2))]);
+  return { rows: F.rows.map((r) => r - y + cy), x: F.x.map((v) => v - x + cx), half: F.half };
+}
+const FACE_EYES = carried(EYES),
+  FACE_BROWS = carried(BROWS);
+/**
+ * Where things are on his face, in his own frame (his root unscaled): each eye's middle on his face,
+ * each ear's middle, the nose's middle; the crown (his skull's top, under the hair); his mouth, where
+ * a mouth would be (none is drawn: on his face's midline, half way from the nose's underside down to
+ * where his chin meets his shoulders); and that height (`chin`). For the poses that bring something
+ * to his face (the phone to his ear, the cup to his mouth).
+ */
+export const FILIP_FACE = (() => {
+  const eyeY = (FACE_EYES.rows[0] + FACE_EYES.rows[FACE_EYES.rows.length - 1]) / 2,
+    eyeX = FACE_EYES.x.reduce((n, v) => n + v, 0) / FACE_EYES.x.length,
+    nose = onFilip([0, NOSE.y, 0.005 + HEAD.r[2] * Math.sqrt(1 - ((NOSE.y - HEAD.y) / HEAD.r[1]) ** 2) - 0.006]),
+    ear = onFilip(EAR.at);
+  // Where his chin goes under his shoulders: down his face's midline to where it meets the torso's front.
+  let chin = nose[1];
+  while (chin > 0.55 && headFront(0, chin - 0.0005) > torsoAt(chin - 0.0005) * DEPTH) chin -= 0.0005;
+  const mouthY = (nose[1] - NOSE.r[1] + chin) / 2;
+  return {
+    eyes: [-1, 1].map((s) => [s * eyeX, eyeY, headFront(s * eyeX, eyeY)]) as [V3, V3],
+    ears: [-1, 1].map((s) => [s * ear[0], ear[1], ear[2]]) as [V3, V3],
+    nose,
+    mouth: [0, mouthY, headFront(0, mouthY)] as V3,
+    crown: FILIP_HEAD.y + FILIP_HEAD.up,
+    chin,
+  };
+})();
+/**
+ * His head (FILIP_HEAD) as a lat-long surface, 16 round by 10 up as a resident's and three rings
+ * more down the jaw (where it narrows, so its outline stays round), with his eyes and brows drawn on
+ * it as cells whose edges are the triangles' own: each eye a small dark rounded oval (EYES), each
+ * brow a short soft bar in a deeper brown than his hair (BROWS).
  */
 function headGeometry() {
-  const [a, b, c] = HEAD.r,
-    centre = new T.Vector3(0, HEAD.y, 0.005),
-    lats = [...Array.from({ length: 11 }, (_, k) => -Math.PI / 2 + (Math.PI * k) / 10), ...[...EYES.rows, ...BROWS.rows].map((y) => Math.asin((y - HEAD.y) / b))].sort((p, q) => p - q),
-    rings: Ring[] = lats.map((phi) => {
-      const rho = Math.cos(phi),
-        y = HEAD.y + b * Math.sin(phi);
-      if (rho < 1e-9) return { cols: [{ a: 0 }], at: () => ({ p: new T.Vector3(0, y, centre.z), n: new T.Vector3(0, Math.sign(phi), 0) }) };
+  // Each ring by its place on the head's own scale (s): ten even steps of latitude, half steps down
+  // the jaw (9, 27 and 45 degrees below the widest ring), and the features' rows.
+  const steps = [
+      ...Array.from({ length: 11 }, (_, k) => (k === 0 ? -1 : k === 10 ? 1 : Math.sin(-Math.PI / 2 + (Math.PI * k) / 10))),
+      ...[9, 27, 45].map((d) => -Math.sin((d * Math.PI) / 180)),
+      ...[...FACE_EYES.rows, ...FACE_BROWS.rows].map(headS),
+    ].sort((p, q) => p - q),
+    rings: Ring[] = steps.map((s) => {
+      const R = headRing(s),
+        q = Math.sqrt(Math.max(0, 1 - s * s)),
+        y = R.y;
+      if (q < 1e-9) return { cols: [{ a: 0 }], at: () => ({ p: new T.Vector3(0, y, R.mid), n: new T.Vector3(0, Math.sign(s), 0) }) };
       const tags: Column[] = [];
-      for (const [F, edge] of [[EYES, 'AB'], [BROWS, 'CD']] as const) {
+      for (const [F, edge] of [[FACE_EYES, 'AB'], [FACE_BROWS, 'CD']] as const) {
         const row = F.rows.findIndex((e) => Math.abs(e - y) < 1e-9);
         if (row >= 0)
-          for (const [s, name] of [[-1, 'r'], [1, 'l']] as const) {
-            const mid = s * F.x[row],
+          for (const [side, name] of [[-1, 'r'], [1, 'l']] as const) {
+            const mid = side * F.x[row],
               half = F.half[row];
-            tags.push({ a: Math.asin((mid - half) / (a * rho)), tag: name + edge[0] }, { a: Math.asin((mid + half) / (a * rho)), tag: name + edge[1] });
+            tags.push({ a: Math.asin((mid - half) / (R.X * q)), tag: name + edge[0] }, { a: Math.asin((mid + half) / (R.X * q)), tag: name + edge[1] });
           }
       }
       return {
         cols: columns(16, tags, 0.03),
         at: (t: number) => {
-          const p = new T.Vector3(a * rho * Math.sin(t), y, centre.z + c * rho * Math.cos(t));
-          return { p, n: new T.Vector3(p.x / (a * a), (p.y - centre.y) / (b * b), (p.z - centre.z) / (c * c)).normalize() };
+          const p = new T.Vector3(R.X * q * Math.sin(t), y, R.mid + R.Z * q * Math.cos(t));
+          return { p, n: headNormal(p) };
         },
       };
     });
@@ -481,8 +605,7 @@ function headGeometry() {
 }
 /** Whether a point is hidden inside his head or his torso (a little under their surfaces). */
 function insideBody(x: number, y: number, z: number) {
-  const [a, b, c] = HEAD.r;
-  if (Math.hypot(x / a, (y - HEAD.y) / b, (z - 0.005) / c) < 0.94) return true;
+  if (filipHeadReach(x, y, z) < 0.94) return true;
   const r = torsoAt(y);
   return r > 0 && Math.hypot(x / r, z / (r * DEPTH)) < 0.9;
 }
@@ -502,20 +625,26 @@ function shownOnly(geometry: T.BufferGeometry, hidden: (x: number, y: number, z:
 }
 /**
  * The triangles of an indexed geometry that are not wholly `hidden`, un-indexed, with colours on
- * their vertices from `colour` (sRGB, from each vertex's position and normal).
+ * their vertices from `colour` (sRGB, from each vertex's position and normal), every vertex and its
+ * normal first carried by `carry` (the colour taken where it was, `hidden` asked where it goes).
  */
-function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean, colour: (p: T.Vector3, n: T.Vector3) => V3) {
-  const p = geometry.getAttribute('position'),
-    nrm = geometry.getAttribute('normal'),
+function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: number) => boolean, colour: (p: T.Vector3, n: T.Vector3) => V3, carry?: (p: T.Vector3, n: T.Vector3) => void) {
+  const p = geometry.getAttribute('position').clone(),
+    nrm = geometry.getAttribute('normal').clone(),
     index = geometry.index!,
     gone = new Uint8Array(p.count),
     rgb = new Float32Array(p.count * 3),
     v = new T.Vector3(),
     n = new T.Vector3();
   for (let i = 0; i < p.count; i++) {
-    gone[i] = hidden(p.getX(i), p.getY(i), p.getZ(i)) ? 1 : 0;
     const [r, g, b] = colour(v.fromBufferAttribute(p, i), n.fromBufferAttribute(nrm, i));
     srgb.setRGB(r, g, b, T.SRGBColorSpace).toArray(rgb, i * 3);
+    if (carry) {
+      carry(v, n);
+      p.setXYZ(i, v.x, v.y, v.z);
+      nrm.setXYZ(i, n.x, n.y, n.z);
+    }
+    gone[i] = hidden(p.getX(i), p.getY(i), p.getZ(i)) ? 1 : 0;
   }
   const pos: number[] = [],
     nor: number[] = [],
@@ -536,14 +665,16 @@ function kept(geometry: T.BufferGeometry, hidden: (x: number, y: number, z: numb
   return g;
 }
 /**
- * The hairline round his head: its height at each azimuth (0 straight ahead, + round to his left,
- * +x), as [azimuth, height] for one side, mirrored, but over the forehead, where the side parting
- * lifts it on his left and the swept fringe lowers it on his right. Close over the ears, down to the
- * nape behind; the sideburns are added on their own.
+ * The hairline round his head (on a resident's head, HEAD, as the hair is sculpted; see hair()): its
+ * height at each azimuth (0 straight ahead, + round to his left, +x), as [azimuth, height] for one
+ * side, mirrored, but over the forehead, where the side parting lifts it on his left and the swept
+ * fringe lowers it on his right. Close over the ears, down to the nape behind, where it is drawn a
+ * little higher (0.699) than it ends, so that carried onto his longer head it ends about 0.69 up,
+ * as it did on HEAD, and his nape still shows; the sideburns are added on their own.
  */
 const HAIRLINE: [number, number][] = [
-  [-Math.PI, 0.692],
-  [-2.4, 0.706],
+  [-Math.PI, 0.699],
+  [-2.4, 0.711],
   [-2.0, 0.76],
   [-1.75, 0.795],
   [-1.38, 0.8],
@@ -557,8 +688,8 @@ const HAIRLINE: [number, number][] = [
   [1.38, 0.8],
   [1.75, 0.795],
   [2.0, 0.76],
-  [2.4, 0.706],
-  [Math.PI, 0.692],
+  [2.4, 0.711],
+  [Math.PI, 0.699],
 ];
 /** The hairline's height and its slope (per radian) at azimuth `t`: a smooth curve through HAIRLINE, round the head. */
 function hairline(t: number): [number, number] {
@@ -614,9 +745,13 @@ function turnTo(x: V3, y: V3): V3 {
  *   crop's thickness steps in over the ears and at the nape; short sideburns in front of the ears;
  * - the parting, a soft crease on his left, and three broad, shallow comb grooves that follow the
  *   sweep from the parting across to his right.
- * Whatever the head or the torso hides is left out. Its brown keeps one saturation in every shade:
- * a step lighter on what faces up, deeper on what faces down, towards the nape and in the creases.
- * Returns the cap and `covers`: whether a point lies under the hair.
+ * It is sculpted on a resident's head (HEAD), which its numbers here (and HAIRLINE's) are drawn to,
+ * then carried onto his own by onFilip, every vertex and its normal: so the crop keeps its thickness
+ * over his longer, narrower head, and the parting, the fringe, the grooves, the sideburns and the
+ * nape lie on it where they lay on HEAD, clear of his ears (carried the same way). Whatever his head
+ * or the torso hides is left out. Its brown keeps one saturation in every shade: a step lighter on
+ * what faces up, deeper on what faces down, towards the nape and in the creases (all taken before
+ * the carry). Returns the cap and `covers`: whether a point (on his head) lies under the hair.
  */
 function hair() {
   const s = sculpt([-0.205, 0.62, -0.215], [0.205, 0.985, 0.205], HAIR_GRID);
@@ -673,8 +808,12 @@ function hair() {
       return hsv(hue + 2 * up, sat, value * k);
     };
   return {
-    cap: kept(s.mesh(), insideBody, brown),
-    covers: (x: number, y: number, z: number) => s.exact(x, y, z) < -0.004,
+    cap: kept(s.mesh(), insideBody, brown, (p, n) => {
+      const q = onFilip([p.x, p.y, p.z]);
+      n.copy(carriedNormal(q, n));
+      p.set(...q);
+    }),
+    covers: (x: number, y: number, z: number) => s.exact(...offFilip([x, y, z])) < -0.004,
   };
 }
 
@@ -735,10 +874,11 @@ export function filipProps(material: Material): FilipProps {
  * What a station needs to know of him (units of the island, his root scaled FILIP_SCALE):
  * - `scale`: his root's scale all over; every number of Alison's rig (her lift, her hand points, her
  *   stride, her seat) is in his root's frame, so it is this much larger on the island;
- * - `height`: standing, to the top of his hair;
+ * - `height`: standing, to the top of his hair (0.948 in his own frame: his longer head carries it
+ *   0.009 higher than on a resident's head);
  * - `stride`: how far one 'walk' phase (two steps, the residents' gait) carries him.
  */
-export const FILIP = { scale: FILIP_SCALE, height: 0.94 * FILIP_SCALE, stride: ((Math.PI * 2) / 17) * FILIP_SCALE };
+export const FILIP = { scale: FILIP_SCALE, height: 0.948 * FILIP_SCALE, stride: ((Math.PI * 2) / 17) * FILIP_SCALE };
 /** His joints: exactly Alison's (sky-figure's AlisonJoints). */
 export type FilipJoints = AlisonJoints;
 
@@ -763,15 +903,17 @@ export function createFilip(material: Material) {
   part(body, [torsoGeometry(), beltGeometry(), ...collarGeometry()], material, 'fabric');
   const locks = hair();
   part(body, [locks.cap], material, 'fabric', 'filip-hair');
-  // Skin: the head with his eyes drawn on it (less what the hair covers), the neck, a resident's
-  // small nose and two low ears.
+  // Skin: his head with his eyes and brows drawn on it (less what the hair covers), the neck (hidden
+  // between his head and his shoulders), a resident's small nose and two low ears, the nose and the
+  // ears where they sit on a resident's head, carried onto his (FILIP_FACE).
+  const F = FILIP_FACE;
   part(body, [
     shownOnly(headGeometry(), locks.covers),
     paint(lathe([[0, 0.585], [0.05, 0.585], [0.05, 0.66], [0, 0.66]], 8), shade(L.skin, 0.96)),
-    paint(blob([0.022, 0.02, 0.02], [0, 0.729, 0.005 + HEAD.r[2] * Math.sqrt(1 - ((0.729 - HEAD.y) / HEAD.r[1]) ** 2) - 0.006], 8), shade(L.skin, 0.97)),
+    paint(blob(NOSE.r, F.nose, 8), shade(L.skin, 0.97)),
     // (Each ear whole, most of it sunk in the head: only a low bump of it shows, and it is 0.07 or
     // more across every way.)
-    ...[-1, 1].map((side) => paint(blob([0.0372, 0.042, 0.0372], [side * 0.131, 0.745, -0.006], 8), shade(L.skin, 0.95))),
+    ...F.ears.map((ear) => paint(blob(EAR.r, ear, 8), shade(L.skin, 0.95))),
   ], material, 'paint');
   const legs: T.Object3D[] = [],
     knees: T.Object3D[] = [],
