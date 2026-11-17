@@ -72,7 +72,7 @@ const models = new Map(
   }),
 );
 // The tropic island's building: a model of the town's, out between and behind the two (the scene
-// leaves it out of picking while the island is hidden: pickAt's tropicShown).
+// leaves it out of picking while the island is hidden: setShown hides its root, which pickTarget skips).
 {
   const root = new T.Group();
   root.userData.buildingId = 'tropic-island';
@@ -113,9 +113,8 @@ const h = {
   models,
   parkHit,
   skyPick: { hit: skyHit, root: skyRoot },
-  // The tropic island in view (followIslands), and the models without it for while it is not.
+  // The tropic island in view (followIslands; hidden, setShown hides its building's root with it).
   tropicShown: true,
-  shownWithoutTropic: new Map([...models].filter(([id]) => id !== 'tropic-island')),
   labels,
   hover: api.hoverPointer(),
   width: 800,
@@ -228,7 +227,9 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   emit('pointerdown', on);
   emit('pointerup', on);
   assert.deepEqual(selection.splice(0), ['tropic-island'], 'A click on the tropic island must open it.');
+  // (Hidden as setShown hides it: the scene's flag and its building's root together.)
   h.tropicShown = false;
+  models.get('tropic-island').root.visible = false;
   emit('pointermove', on);
   f.updateHover();
   assert.deepEqual(visible(), [], 'Hidden, the tropic island must name nothing.');
@@ -236,6 +237,7 @@ for (const id of [...models.keys(), 'corner-park', 'sky-island']) {
   emit('pointerup', on);
   assert.deepEqual(selection, [], 'Hidden, the tropic island must not open.');
   h.tropicShown = true;
+  models.get('tropic-island').root.visible = true;
   hoverPins.push('the tropic island picked only while it is in view');
 }
 // The tropic island: a building model of the town's whose ground answers for it, as addHitBoxes

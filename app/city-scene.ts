@@ -1061,8 +1061,6 @@ export async function createCity(
   // The island is built shown; the scene starts with it hidden (tropicShown), as with the sky island,
   // and followIslands only calls setShown when the rule changes its mind, so this call stays.
   tropic.setShown(false);
-  // Pointer picking leaves the tropic island's building out while the island is hidden (pickAt).
-  const shownWithoutTropic = new Map([...models].filter(([id]) => id !== 'tropic-island'));
   const driftFollowers = animated.map((entry) => entry.object).filter((o) => o.userData.followsDrift);
   // Everything the frame loop turns: Inspect's copy of a building follows these parts of it.
   const movingParts = new Set<T.Object3D>([
@@ -2749,7 +2747,8 @@ export async function createCity(
     // can sit behind that plane (low on tall frames), so start the ray at the near plane.
     ray.ray.origin.addScaledVector(ray.ray.direction, camera.near);
     ray.far = camera.far - camera.near;
-    return pickTarget(ray, tropicShown ? models : shownWithoutTropic, parkHit, skyPick);
+    // (A hidden tropic island answers nothing: setShown hides its building's root, which pickTarget leaves out.)
+    return pickTarget(ray, models, parkHit, skyPick);
   }
   function down(e: PointerEvent) {
     clearHover();
